@@ -15,6 +15,8 @@
 | [docs/research/agent-architecture-survey.md](docs/research/agent-architecture-survey.md) | 调研 v1（Claude 会话产出：六场景基准、高星生态、厂商观点、A/B/C 分级制度） |
 | [docs/research/agent-architecture-survey-zcode.md](docs/research/agent-architecture-survey-zcode.md) | 调研 v1（ZCode 会话产出：国内攻防黑板谱系、通用框架演化、五层共识） |
 | [docs/research/agent-architecture-survey-v2.md](docs/research/agent-architecture-survey-v2.md) | **调研 v2：两路合并版，当前权威版本**（新增两范式 × 五层交叉表与四条张力） |
+| [docs/design/base-layer-spec-v1.md](docs/design/base-layer-spec-v1.md) | 基座规格 v1.1（提案，待裁决）：约束审计、六个契约、三个机制、两个走查、M0 清单与 M1 目标 |
+| [docs/design/reference-model/](docs/design/reference-model/README.md) | 规格 3.1 节等级函数与消费门的可执行参考模型（规格的对照，不是实现） |
 
 ## 命名体系
 
