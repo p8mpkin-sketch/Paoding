@@ -16,6 +16,26 @@
 
 调研完成（2026-11）。基座规格 v1.3 是当前权威：v1.1 已裁决（十条异议全部采纳，附三项补充），v1.2（三项补充与典故对账 D1 到 D6）、蓝图 v2 的采纳项与评审附加条件、人机界面设计的裁决落地项都已并入。参考模型 88 条测试全绿。下一步是 M0 的 D1 到 D15。
 
+## 代码（M0，EDR-001 D-4）
+
+| 目录 | 组件 | 规格 |
+| --- | --- | --- |
+| [pd/](pd/SPEC.md) | 人的通道 CLI，F0 四语域文本 | §3.1.2 人的操作、HMI F0 |
+| [graph/](graph/SPEC.md) | 解牛图服务、Artifact 仓库、预算账本投影 | §3.1、§3.2、§3.5 |
+| [adapter/](adapter/SPEC.md) | Worker Adapter、端点代理 | §3.4 |
+| [executor/](executor/SPEC.md) | 执行层 | §3.6 |
+| [judgebox/](judgebox/SPEC.md) | 判官运行器、内建判官、保密库 | §3.3 |
+| [watchdog/](watchdog/SPEC.md) | 哮天犬 | §3.5 |
+| [eval/](eval/SPEC.md) | 评测台（M0：B1、B1b） | §8 |
+
+```
+uv run pytest -q                      # 单元与对抗测试
+python ci/check_domain_words.py       # 红线 3
+python ci/check_deps.py               # 依赖只走契约接口
+```
+
+M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格缝隙见 `docs/m0/dissent-*.md`。
+
 ## 文档
 
 | 文档 | 说明 |

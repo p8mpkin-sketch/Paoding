@@ -1,0 +1,21 @@
+# 领域词表（红线 3）：内核与组件代码里不得出现。随锦囊与判官配置维护。
+# 一行一个，不分大小写，按词边界匹配。故意不收 shell、flag 这类通用编程词。
+ctf
+capture the flag
+exploit
+payload
+xss
+sqli
+sql injection
+nmap
+burp
+lean
+mathlib
+theorem
+lemma
+kubernetes
+k8s
+prometheus
+diagnosis
+patient
+symptom

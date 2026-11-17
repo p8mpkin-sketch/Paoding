@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 参考模型（规格的对照，88 条 + 性质测试）
+        working-directory: docs/design/reference-model
+        run: python -m unittest test_kernel
+      - name: 红线 3：组件代码零领域词
+        run: python ci/check_domain_words.py
+      - name: 依赖方向：只走契约接口
+        run: python ci/check_deps.py
+      - name: 单元与对抗测试
+        run: uv run --frozen pytest -q
