@@ -28,6 +28,7 @@ class Rendered:
     package: dict            # TaskPackage 的内容形态（各段正文就地给出，留档时整体登记）
     system: str              # ①–⑤：追加系统提示
     user: str                # ⑥⑦：首条用户消息
+    prefix: str = ""         # ①–④：同题内只追加的稳定前缀
 
     def as_bytes(self) -> bytes:
         return _j(self.package).encode()
@@ -88,9 +89,10 @@ def render(state: dict, pid: str, lease: dict, *, statement: str, judges_cfg: di
         ("③ 锦囊", _j(kit_index)),
         ("④ 节点", listing(state, pid)),
     ]
-    prefix = "".join(f"# {h}\n{t.rstrip()}\n\n" for h, t in sections)
+    # 段间空行放在下一段的开头：这样①–④的字节在只追加节点时恰好是后一个包的前缀（3.4.5 的 5）
+    prefix = "\n".join(f"# {h}\n{t.rstrip()}\n" for h, t in sections)
     st = status(state, pid, budget)
-    system = prefix + f"# ⑤ 状态\n{st}\n"
+    system = prefix + f"\n# ⑤ 状态\n{st}\n"
     shown = {**focus, **({"hint_text": hint_text} if hint_text else {})}
     shown.pop("restate")                                   # 复述放在最末一行（⑥的 restate）
     user = (f"# ⑥ 焦点\n{_j(shown)}\n\n"
@@ -98,11 +100,11 @@ def render(state: dict, pid: str, lease: dict, *, statement: str, judges_cfg: di
     package = {"role_prompt": sections[0][1], "problem_brief": sections[1][1], "kit_index": kit_index,
                "listing": sections[3][1], "status": st, "focus": focus, "limits": limits or {},
                "as_of_seq": as_of_seq(state), "task_id": lease["id"], "role": role}
-    return Rendered(package, system, user)
+    return Rendered(package, system, user, prefix)
 
 
 def common_prefix_ratio(a: str, b: str) -> float:
-    """b 与 a 的公共前缀占 a 的字节比例（3.4.5 的 5）。"""
+    """b 与 a 的公共前缀占 a 的字节比例。遥测读数，不设阈值（异议 002 第 3 项裁决）。"""
     x, y = a.encode(), b.encode()
     n = 0
     for n, (p, q) in enumerate(zip(x, y)):

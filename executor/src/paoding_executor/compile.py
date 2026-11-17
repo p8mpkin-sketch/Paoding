@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from paoding_graph.contract import RESOURCE_EXTERNAL
+
 RISK_RANK = {"r0": 0, "r1": 1, "r2": 2}
 
 
@@ -33,10 +35,11 @@ class Workspace(ResourceKind):
         return {}
 
 
-RESOURCE_KINDS: dict[str, ResourceKind] = {
-    "net": NetAddress("net", external=False),
-    "workspace": Workspace("workspace", external=False),
-}
+_IMPL = {"net": NetAddress, "workspace": Workspace}
+# external 取自 graph 的登记表（单一事实源）；这里只挂编译行为。键集合不一致时导入即失败。
+if set(_IMPL) != set(RESOURCE_EXTERNAL):
+    raise RuntimeError(f"资源种类与 graph 登记表不一致：{sorted(_IMPL)} vs {sorted(RESOURCE_EXTERNAL)}")
+RESOURCE_KINDS: dict[str, ResourceKind] = {k: cls(k, external=RESOURCE_EXTERNAL[k]) for k, cls in _IMPL.items()}
 
 
 @dataclass(frozen=True)

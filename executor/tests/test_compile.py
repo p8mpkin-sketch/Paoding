@@ -34,3 +34,22 @@ def test_unknown_resource_kind():
 def test_workspace_no_egress():
     spec = compile_spec("s", [{"resource": "workspace", "pattern": "*", "actions": [], "risk": "r0"}], ENV, "r0", False, "/w")
     assert spec.egress_allow == ()
+
+
+def test_resource_kinds_single_source():
+    """红队 #14 必修 1：执行层的资源种类与 graph 登记表同一张；external 不各持一份。"""
+    from paoding_executor.compile import RESOURCE_KINDS
+    from paoding_graph.contract import RESOURCE_EXTERNAL
+    assert set(RESOURCE_KINDS) == set(RESOURCE_EXTERNAL)
+    assert all(k.external == RESOURCE_EXTERNAL[name] for name, k in RESOURCE_KINDS.items())
+    assert RESOURCE_EXTERNAL["net"] is True and RESOURCE_EXTERNAL["workspace"] is False
+
+
+def test_owner_alive():
+    import os
+    import socket
+    from paoding_executor.runtime import owner_alive, owner_id
+    assert owner_alive(owner_id()) is True
+    assert owner_alive(f"{socket.gethostname()}:{os.getpid()}:0") is False      # pid 复用
+    assert owner_alive(f"{socket.gethostname()}:999999:1") is False
+    assert owner_alive("other-host:1:1") is None and owner_alive("") is None
