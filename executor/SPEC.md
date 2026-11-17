@@ -32,3 +32,8 @@
 2. **访问摘要 `touched` 为空。** 同一个闸门可以记下实际连到过的授权目标，届时填入。
 3. **端口粒度未强制。** 白名单写到 host:port，但目前整台目标容器可达。闸门落地后按端口放行。
 4. **只支持本机容器作为目标。** M0 的题目都是本机靶场，够用；外部地址要等闸门。
+
+## 红队 #14 必修项（已修）
+
+1. **资源种类登记表单一事实源**：`graph/src/paoding_graph/resources.py` 的 `RESOURCE_EXTERNAL`（`net` 为外部资源，`workspace` 不是）。画像推导的 `Config.external_resources` 默认取自它；执行层的 `RESOURCE_KINDS` 只挂编译行为，external 取自同一张表，键集合不一致时导入即失败。原先这里把 `net` 登记为 `external=False`，与 §6.1 走查（CTF 题画像为 partial）矛盾；当时画像侧另持一份（缺省为空），两边都错且互不相干。
+2. **孤儿清扫查属主**：沙箱容器与网络打 `paoding.owner=<主机名>:<pid>:<进程启动时刻>` 标签；`sweep_orphans` 只清本机属主确定已死的（pid 不在或启动时刻不符，防 pid 复用）。别的主机的、标签缺失或格式不明的一律不动。
