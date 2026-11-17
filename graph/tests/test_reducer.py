@@ -332,3 +332,40 @@ def test_profile_info_from_resource_registry():
     k.open("pb", resource="workspace")
     assert k.state["problems"]["pa"]["profile"]["info"] == "partial"
     assert k.state["problems"]["pb"]["profile"]["info"] == "complete"
+
+
+# ---------- 无结论裁决（§3.3.2 reason_code） ----------
+
+def test_inconclusive_verdict_leaves_levels_and_sequence_alone(k):
+    """超时、环境错误、空谓词：请求结案，但不进裁决序列，等级不变，迟滞不受影响。"""
+    k.open()
+    f = k.obs()
+    k.verdict("p1", f, "pass")
+    n = len(k.state["verdicts"])
+    rid = k.submit(HUMAN, "p1", "request_judge", {"target": f, "judge_id": "replay"})
+    assert k.submit(JUDGE, "p1", "judge_verdict", {"request": rid, "result": "inconclusive", "version": "1",
+                                                   "evidence": [], "reason": "timeout"}) not in (
+        "schema_error", "forbidden_op", "unknown_ref")
+    assert len(k.state["verdicts"]) == n and lv.levels(k.state, "p1")[f] == "E3"
+    assert k.state["requests"][rid]["inconclusive"] == "timeout" and k.state["requests"][rid]["verdict_seq"]
+
+
+@pytest.mark.parametrize("reason", [None, "ok", "flaky", "whatever"])
+def test_inconclusive_requires_a_known_reason(k, reason):
+    k.open()
+    f = k.obs()
+    rid = k.submit(HUMAN, "p1", "request_judge", {"target": f, "judge_id": "replay"})
+    body = {"request": rid, "result": "inconclusive", "version": "1", "evidence": [],
+            **({"reason": reason} if reason else {})}
+    assert k.submit(JUDGE, "p1", "judge_verdict", body) == "schema_error"
+
+
+def test_inconclusive_request_cannot_be_judged_twice(k):
+    k.open()
+    f = k.obs()
+    rid = k.submit(HUMAN, "p1", "request_judge", {"target": f, "judge_id": "replay"})
+    k.submit(JUDGE, "p1", "judge_verdict", {"request": rid, "result": "inconclusive", "version": "1", "evidence": [],
+                                            "reason": "env_error"})
+    assert k.submit(JUDGE, "p1", "judge_verdict", {"request": rid, "result": "pass", "version": "1",
+                                                   "evidence": []}) == "schema_error"
+    assert lv.levels(k.state, "p1")[f] == "E0"
