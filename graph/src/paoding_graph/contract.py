@@ -22,6 +22,11 @@ from .reducer import Config  # noqa: E402,F401
 from .service import GraphService  # noqa: E402,F401
 from .tokens import TokenRegistry, UnknownToken  # noqa: E402,F401
 
+# HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
+from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
+from .views import LEVEL_WORDS, REGISTER, REGISTERS  # noqa: E402,F401
+from . import views  # noqa: E402,F401
+
 
 class GraphPort(Protocol):
     """POST /v1/problems/{pid}/proposals 的进程内形态：令牌决定身份，整批原子，同 idem_key 恰好一次。"""

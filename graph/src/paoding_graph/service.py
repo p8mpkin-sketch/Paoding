@@ -9,7 +9,9 @@
 """
 from __future__ import annotations
 
+import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
@@ -28,11 +30,20 @@ class GraphService:
                  clock: Callable[[], int] = lambda: int(time.time() * 1000)):
         self.log, self.cfg, self.tokens, self._clock = EventLog(path), cfg, tokens, clock
         self.state = replay(self.log.events(), apply, empty_state())     # 崩溃恢复即重放
+        self._lock = threading.RLock()                 # 单写者：提交串行；日志连接只在锁内使用
+        self._cond = threading.Condition(self._lock)   # 新事件落盘后唤醒长轮询与事件流
+        self._snaps: OrderedDict[int, dict] = OrderedDict()   # as_of 回放的状态缓存（日志只追加，永不失效）
 
     def _ts(self) -> int:
         return max(self._clock(), self.state["now"] + 1)
 
     def submit(self, token: str, pid: str, idem_key: str, ops: list[dict]) -> dict:
+        with self._cond:
+            out = self._submit(token, pid, idem_key, ops)
+            self._cond.notify_all()
+            return out
+
+    def _submit(self, token: str, pid: str, idem_key: str, ops: list[dict]) -> dict:
         try:
             actor = self.tokens.resolve(token)
         except UnknownToken:
@@ -80,6 +91,55 @@ class GraphService:
             return self.submit(tok, pid, idem_key, [{"op": kind, "body": body}])
         finally:
             self.tokens.revoke(tok)
+
+    # ---------- 读日志与回放（HMI H3：每个只读端点都可带 as_of） ----------
+
+    def head(self) -> int:
+        return self.state["seq"]
+
+    def events(self, pid: str | None = None, after: int = 0, limit: int | None = None,
+               upto: int | None = None) -> list[dict]:
+        with self._lock:
+            out = []
+            for ev in self.log.events(pid, after):
+                if upto is not None and ev["seq"] > upto:
+                    break
+                out.append(ev)
+                if limit is not None and len(out) >= limit:
+                    break
+            return out
+
+    def wait_events(self, pid: str, after: int, timeout: float, limit: int | None = None) -> list[dict]:
+        """长轮询：有 seq > after 的本题事件就立刻返回，否则最多等 timeout 秒。"""
+        deadline = time.monotonic() + timeout
+        with self._cond:
+            while True:
+                evs = self.events(pid, after, limit)
+                left = deadline - time.monotonic()
+                if evs or left <= 0:
+                    return evs
+                self._cond.wait(left)
+
+    def state_at(self, seq: int | None = None) -> dict:
+        """某序号时的状态：由唯一的 reducer 重放日志前缀得到（不另写解释器）。缺省即链头。
+
+        日志只追加、apply 是纯函数，所以缓存永不失效；从不大于 seq 的最近一份缓存接着放。"""
+        with self._lock:
+            if seq is None or seq >= self.state["seq"]:
+                return self.state
+            if seq in self._snaps:
+                self._snaps.move_to_end(seq)
+                return self._snaps[seq]
+            base = max((k for k in self._snaps if k <= seq), default=0)
+            state = self._snaps[base] if base else empty_state()
+            for ev in self.log.events(None, base):
+                if ev["seq"] > seq:
+                    break
+                state = apply(state, ev)
+            self._snaps[seq] = state
+            while len(self._snaps) > 64:
+                self._snaps.popitem(last=False)
+            return state
 
     # 只读端点（§3.1.2）
     def work(self, pid: str) -> list[dict]:

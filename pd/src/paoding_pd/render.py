@@ -10,22 +10,9 @@
 """
 from __future__ import annotations
 
-from paoding_graph.contract import intent_status, node_levels
+from paoding_graph.contract import LEVEL_WORDS, REGISTER, intent_status, node_levels
 
-REGISTER = {
-    # 证据：exec、judge、input 类 Artifact 与判官裁决；以及由它们确定性算出的等级、状态、账目
-    "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "verdict": "证据",
-    "level": "证据", "predicate": "证据", "status": "证据", "budget": "证据", "lease": "证据",
-    "profile": "证据", "terminal": "证据", "structure": "证据",
-    # 叙述：authored 类与模型写的一切文字
-    "artifact:authored": "叙述", "title": "叙述", "summary": "叙述", "suggestion": "叙述", "candidate": "叙述",
-    # 人：Hint、裁决与拒绝的理由、豁免、覆盖理由
-    "hint": "人", "human_reason": "人",
-    # 估：期望增益、预测、行情、存活计数
-    "estimate": "估",
-}
-
-LEVEL_WORDS = {"E3": "判定通过", "E3d": "相符", "E2": "模型共识", "E1": "单源复核", "E0": "猜想", "X": "已证伪"}
+# 出处类别 → 语域的表与等级词表在图服务一侧（views.py）：pd 的文本与网页的卡片读同一张表（一卡多端）。
 
 
 def _flat(text: str) -> str:
