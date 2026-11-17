@@ -18,6 +18,7 @@ from typing import Any
 
 from . import levels as lv
 from . import refmodel as rm
+from . import work as wk
 from .envelope import sha256_hex
 from .jcs import canonicalize
 
@@ -50,7 +51,7 @@ class Config:
 def empty_state() -> dict[str, Any]:
     return {"problems": {}, "artifacts": {}, "facts": {}, "intents": {}, "requests": {},
             "verdicts": [], "content_keys": {}, "revoked": [], "approvals": {}, "lease_seqs": {},
-            "abandoned": [], "now": 0}
+            "abandoned": [], "leases": {}, "hints": {}, "costs": [], "now": 0}
 
 
 # ---------- 谁可以提交什么（§3.1.2 操作表） ----------
@@ -69,13 +70,34 @@ def _who(actor: dict, kind: str) -> bool:
         return k in ("adapter", "sinan", "human")
     if kind == "judge_verdict":
         return k == "judge"
+    if kind == "lease":
+        return k in ("sinan", "judge")                              # 租约种类与身份的匹配另查
+    if kind in ("renew", "release"):
+        return k in ("sinan", "judge", "adapter")                   # 限持有者，另查
+    if kind == "expire_lease":
+        return k == "watchdog"
+    if kind == "abandon_intent":
+        return (k == "adapter" and role == "reason") or k == "human"
+    if kind in ("hint", "approve"):
+        return k == "human"
+    if kind == "cost":
+        return k in ("adapter", "judge")
+    if kind == "close_problem":
+        return k in ("graph", "watchdog", "human")
+    if kind == "budget_mark":
+        return k == "graph"
     return False
 
 
-KINDS = ("open_problem", "register_artifact", "add_fact", "add_intent", "request_judge", "judge_verdict")
+KINDS = ("open_problem", "register_artifact", "add_fact", "add_intent", "request_judge", "judge_verdict",
+         "lease", "renew", "release", "expire_lease", "abandon_intent", "hint", "approve", "cost",
+         "close_problem", "budget_mark")
+AFTER_CLOSE = ("cost", "release")                  # 关题后在途任务仍可交回用量与释放租约
 
 
-def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Config) -> Ok | Reject:
+def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Config,
+             ts: int | None = None) -> Ok | Reject:
+    """ts：这条事件将被赋予的时间戳（服务层的时钟，作为参数传入）；缺省取 state["now"]。"""
     if kind not in KINDS:
         return Reject("schema_error", f"未知操作 {kind}")
     if not isinstance(body, dict):
@@ -86,9 +108,11 @@ def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Con
         p = state["problems"].get(pid)
         if p is None:
             return Reject("unknown_ref", f"题目 {pid} 未开")
-        if p.get("closed"):
+        if p.get("closed") and kind not in AFTER_CLOSE:
             return Reject("schema_error", "题目已关闭")
     try:
+        if kind in _TIMED:
+            return _TIMED[kind](state, actor, pid, body, cfg, state["now"] if ts is None else ts)
         return _VALIDATORS[kind](state, actor, pid, body, cfg)
     except (KeyError, TypeError, ValueError, AttributeError) as e:
         return Reject("schema_error", f"{type(e).__name__}: {e}")
@@ -389,7 +413,172 @@ def _v_judge_verdict(state, actor, pid, body, cfg):
                **({"reason": str(body["reason"])} if "reason" in body else {})})
 
 
-_VALIDATORS = {"open_problem": _v_open_problem, "register_artifact": _v_register_artifact,
+# ---------- 租约（§3.1.2、§3.5.2） ----------
+
+def _budget(b: Any) -> dict:
+    out = {"usd_milli": int(b["usd_milli"]), "wall_s": int(b.get("wall_s", 0))}
+    if b.get("tokens") is not None:
+        out["tokens"] = int(b["tokens"])
+    if out["usd_milli"] < 0 or out["wall_s"] < 0 or out.get("tokens", 0) < 0:
+        raise ValueError("预算不能为负")
+    return out
+
+
+def _v_lease(state, actor, pid, body, cfg, ts):
+    kind, target = body["kind"], body.get("target")
+    if kind not in ("bootstrap", "reason", "explore", "judge"):
+        return Reject("schema_error", f"租约种类 {kind} 非法")
+    if (kind == "judge") != (actor["kind"] == "judge"):
+        return Reject("forbidden_op", "judge 租约只由判官运行器申请；任务租约只由司南申请")
+    reserve, ttl = _budget(body["reserve"]), int(body["ttl_s"])
+    if ttl <= 0:
+        return Reject("schema_error", "ttl_s 必须为正")
+    if wk.in_flight(state, pid, kind, target) is not None:
+        return Reject("conflict_leased", "目标上已有在途租约")
+    item = {"kind": kind, **({"target": target} if target is not None else {})}
+    offered = [{k: v for k, v in w.items() if k in ("kind", "target")} for w in wk.work(state, pid)]
+    if item not in offered:
+        return Reject("forbidden_op", "目标不在 /work 内")
+    view = wk.budget_view(state, pid)
+    prob = state["problems"][pid]
+    if kind == "bootstrap" and reserve["usd_milli"] > prob["budget"]["bootstrap_share"] * view["cap"]["usd_milli"]:
+        return Reject("over_budget", "Bootstrap 的预留不超过 bootstrap_share × cap")
+    pool_res = wk._zero()
+    for l in wk.active_leases(state, pid):
+        if l["kind"] == "judge":
+            pool_res = wk._add(pool_res, l["reserve"])
+    ok = wk.fits(view, reserve, prob["budget"]["verify_share"], view["verify_spent"], pool_res) \
+        if kind == "judge" else wk.fits(view, reserve)
+    if not ok:
+        return Reject("over_budget", "spent + reserved + reserve 超过上限")
+    attempt = 1 + sum(1 for l in wk.leases_of(state, pid) if l["kind"] == kind and l.get("target") == target)
+    return Ok({"kind": kind, **({"target": target} if target is not None else {}),
+               "holder": str(body["holder"]), "reserve": reserve, "ttl_s": ttl, "attempt": attempt,
+               **({"reflect": True} if kind == "reason" and wk.in_review(state, pid) else {})})
+
+
+def _own_lease(state, actor, pid, body):
+    l = state["leases"].get(body["lease"])
+    if l is None or l["problem_id"] != pid:
+        return None, Reject("unknown_ref", "租约不存在")
+    if actor["kind"] != "judge" and actor["id"] != l["holder"] and actor.get("session") != l["id"]:
+        return None, Reject("forbidden_op", "续租与释放限持有者")
+    if not l["active"]:
+        return None, Reject("schema_error", "租约已结束")
+    return l, None
+
+
+def _v_renew(state, actor, pid, body, cfg, ts):
+    l, err = _own_lease(state, actor, pid, body)
+    if err:
+        return err
+    if ts >= l["expires_at"]:
+        return Reject("schema_error", "租约已过期，等待 expire_lease")
+    return Ok({"lease": l["id"], "ttl_s": int(body.get("ttl_s", l["ttl_s"]))})
+
+
+RELEASE_OUTCOMES = ("done", "failed", "nothing", "budget_exhausted")
+
+
+def _v_release(state, actor, pid, body, cfg, ts):
+    if state["problems"][pid].get("closed") and body["lease"] in state["leases"]:
+        return Ok({"lease": body["lease"], "outcome": "closed", "after_close": True})
+    l, err = _own_lease(state, actor, pid, body)
+    if err:
+        return err
+    if body["outcome"] not in RELEASE_OUTCOMES:
+        return Reject("schema_error", f"outcome 只取 {RELEASE_OUTCOMES}")
+    tr = body.get("transcript_ref")
+    if tr is not None and (tr not in state["artifacts"] or state["artifacts"][tr]["problem_id"] != pid):
+        return Reject("unknown_ref", "transcript_ref 不存在或属于别题")
+    return Ok({"lease": l["id"], "outcome": body["outcome"],
+               **({"transcript_ref": tr} if tr else {}),
+               **({"suggestions": [str(x) for x in body["suggestions"]]} if body.get("suggestions") else {})})
+
+
+def _v_expire_lease(state, actor, pid, body, cfg, ts):
+    l = state["leases"].get(body["lease"])
+    if l is None or l["problem_id"] != pid or not l["active"]:
+        return Reject("unknown_ref", "没有这条在途租约")
+    if ts < l["expires_at"]:
+        return Reject("schema_error", "ts < expires_at，租约未到期")
+    return Ok({"lease": l["id"]})
+
+
+# ---------- Intent 的放弃与审批、Hint、用量、关题 ----------
+
+def _v_abandon_intent(state, actor, pid, body, cfg):
+    iid = body["intent"]
+    i = state["intents"].get(iid)
+    if i is None or i["problem_id"] != pid:
+        return Reject("unknown_ref", "Intent 不存在")
+    status = wk.intent_status(state, pid, iid)
+    if status in ("achieved", "abandoned", "done"):
+        return Reject("schema_error", f"Intent 已是终态 {status}")
+    if status == "leased":
+        return Reject("conflict_leased", "Intent 有在途租约")
+    return Ok({"intent": iid, "reason": str(body.get("reason", ""))})
+
+
+def _v_approve(state, actor, pid, body, cfg):
+    iid = body["intent"]
+    i = state["intents"].get(iid)
+    if i is None or i["problem_id"] != pid:
+        return Reject("unknown_ref", "Intent 不存在")
+    if body["decision"] not in ("approve", "deny"):
+        return Reject("schema_error", "decision 只取 approve、deny")
+    if wk.intent_status(state, pid, iid) != "needs_human":
+        return Reject("schema_error", "只有 needs_human 的 Intent 待审批")
+    return Ok({"intent": iid, "decision": body["decision"]})
+
+
+def _v_hint(state, actor, pid, body, cfg):
+    if "close" in body:
+        h = state["hints"].get(body["close"])
+        if h is None or h["problem_id"] != pid:
+            return Reject("unknown_ref", "Hint 不存在")
+        return Ok({"close": h["id"]})
+    about = body.get("about")
+    if about is not None and about not in state["facts"] and about not in state["intents"] and about != "goal":
+        return Reject("unknown_ref", "about 所指节点不存在")
+    return Ok({"text": str(body["text"]), **({"about": about} if about else {})})
+
+
+def _v_cost(state, actor, pid, body, cfg):
+    l = state["leases"].get(body["task_id"])
+    if l is None or l["problem_id"] != pid:
+        return Reject("unknown_ref", "任务不存在")
+    if body["source"] not in ("proxy", "judge", "cli_reported"):
+        return Reject("schema_error", "source 非法")
+    nums = {k: int(body.get(k) or 0) for k in ("tokens_in", "tokens_cached", "tokens_out", "usd_milli", "wall_s")}
+    if any(v < 0 for v in nums.values()):
+        return Reject("schema_error", "用量不能为负")
+    return Ok({"task_id": l["id"], "source": body["source"], **nums,
+               "price_table": str(body["price_table"]), **({"model": str(body["model"])} if body.get("model") else {}),
+               **({"tokens_cached_unknown": True} if body.get("tokens_cached") is None else {})})
+
+
+def _v_close_problem(state, actor, pid, body, cfg):
+    if "terminal" in body and actor["kind"] != "graph":
+        return Reject("schema_error", "terminal 是派生量，由图服务按三值算出")
+    term = wk.terminal(state, pid)
+    if actor["kind"] == "graph" and term != "solved":
+        return Reject("schema_error", "图服务只在 Goal 到 E3 时自动关题")
+    if wk.closeout_items(state, pid) and actor["kind"] == "graph":
+        return Reject("schema_error", "四顾清单非空，需人确认")
+    return Ok({"terminal": term, "by": actor["kind"], "card_hash": body.get("card_hash"),
+               **({"reason": str(body["reason"])} if "reason" in body else {})})
+
+
+def _v_budget_mark(state, actor, pid, body, cfg):
+    return Ok({"mark": int(body["mark"]), "axis": str(body["axis"])})
+
+
+_TIMED = {"lease": _v_lease, "renew": _v_renew, "release": _v_release, "expire_lease": _v_expire_lease}
+
+_VALIDATORS = {"abandon_intent": _v_abandon_intent, "approve": _v_approve, "hint": _v_hint,
+               "cost": _v_cost, "close_problem": _v_close_problem, "budget_mark": _v_budget_mark,
+               "open_problem": _v_open_problem, "register_artifact": _v_register_artifact,
                "add_fact": _v_add_fact, "add_intent": _v_add_intent,
                "request_judge": _v_request_judge, "judge_verdict": _v_judge_verdict}
 
@@ -415,6 +604,9 @@ def apply(state: dict, ev: dict) -> dict:
         else:
             fid = f"f_{seq}"
             rec = {k: v for k, v in body.items() if k != "content_key"}
+            lease = s["leases"].get(session) if session else None
+            if lease and lease["kind"] == "explore":     # yields 边由租约推出，不由模型填写
+                rec["yielded_by"] = lease["target"]
             s["facts"] = {**s["facts"], fid: {**rec, "id": fid, "problem_id": pid, "session": session}}
             s["content_keys"] = {**s["content_keys"],
                                  pid: {**s["content_keys"].get(pid, {}), body["content_key"]: fid}}
@@ -431,6 +623,48 @@ def apply(state: dict, ev: dict) -> dict:
             "seq": seq, "problem_id": pid, "target": req["target"], "judge": req["judge_id"],
             "version": body["version"], "grade": body["grade"], "result": body["result"],
             "candidate": req["candidate"], "request": req["id"], "evidence": body["evidence"]}]
+    elif kind == "lease":
+        lid = f"l_{seq}"
+        rec = {**body, "id": lid, "problem_id": pid, "issued_seq": seq, "active": True,
+               "expires_at": ev["ts"] + body["ttl_s"] * 1000}
+        s["leases"] = {**s["leases"], lid: rec}
+        if body["kind"] == "explore":
+            s["lease_seqs"] = {**s["lease_seqs"], body["target"]: s["lease_seqs"].get(body["target"], []) + [seq]}
+    elif kind == "renew":
+        l = s["leases"][body["lease"]]
+        s["leases"] = {**s["leases"], l["id"]: {**l, "expires_at": ev["ts"] + body["ttl_s"] * 1000}}
+    elif kind in ("release", "expire_lease"):
+        l = s["leases"][body["lease"]]
+        outcome = "expired" if kind == "expire_lease" else body["outcome"]
+        s["leases"] = {**s["leases"], l["id"]: {**l, "active": False, "outcome": outcome, "ended_seq": seq,
+                                                **({"transcript_ref": body["transcript_ref"]}
+                                                   if body.get("transcript_ref") else {})}}
+    elif kind == "abandon_intent":
+        s["abandoned"] = s["abandoned"] + [body["intent"]]
+    elif kind == "approve":
+        if body["decision"] == "approve":
+            s["approvals"] = {**s["approvals"], body["intent"]: s["approvals"].get(body["intent"], []) + [seq]}
+        else:
+            s["abandoned"] = s["abandoned"] + [body["intent"]]
+    elif kind == "hint":
+        if "close" in body:
+            h = s["hints"][body["close"]]
+            s["hints"] = {**s["hints"], h["id"]: {**h, "closed": True}}
+        else:
+            hid = f"h_{seq}"
+            s["hints"] = {**s["hints"], hid: {**body, "id": hid, "problem_id": pid, "seq": seq,
+                                              "author": ev["actor"]["id"], "closed": False}}
+    elif kind == "cost":
+        lk = s["leases"][body["task_id"]]["kind"]
+        s["costs"] = s["costs"] + [{**body, "problem_id": pid, "seq": seq, "lease_kind": lk}]
+    elif kind == "close_problem":
+        p = s["problems"][pid]
+        s["problems"] = {**s["problems"], pid: {**p, "closed": True, "terminal": body["terminal"],
+                                                "closed_seq": seq}}
+    elif kind == "budget_mark":
+        p = s["problems"][pid]
+        s["problems"] = {**s["problems"], pid: {**p, "marks": p.get("marks", []) + [body["mark"]],
+                                                "mark_seqs": p.get("mark_seqs", []) + [seq]}}
     else:
         raise ValueError(f"apply：未知事件 {kind}")
     return s
@@ -438,7 +672,10 @@ def apply(state: dict, ev: dict) -> dict:
 
 def result_id(ev: dict) -> str | None:
     """一条事件给提议方的返回 id。"""
-    prefix = {"register_artifact": "a", "add_fact": "f", "add_intent": "i", "request_judge": "j"}.get(ev["kind"])
+    prefix = {"register_artifact": "a", "add_fact": "f", "add_intent": "i", "request_judge": "j",
+              "lease": "l"}.get(ev["kind"])
+    if ev["kind"] == "hint" and "close" not in ev["body"]:
+        prefix = "h"
     if ev["kind"] == "add_fact" and ev["body"].get("merge_into"):
         return ev["body"]["merge_into"]
     return f"{prefix}_{ev['seq']}" if prefix else None
