@@ -51,7 +51,7 @@ class Config:
 def empty_state() -> dict[str, Any]:
     return {"problems": {}, "artifacts": {}, "facts": {}, "intents": {}, "requests": {},
             "verdicts": [], "content_keys": {}, "revoked": [], "approvals": {}, "lease_seqs": {},
-            "abandoned": [], "leases": {}, "hints": {}, "costs": [], "now": 0}
+            "abandoned": [], "leases": {}, "hints": {}, "costs": [], "now": 0, "seq": 0}
 
 
 # ---------- 谁可以提交什么（§3.1.2 操作表） ----------
@@ -589,6 +589,7 @@ def apply(state: dict, ev: dict) -> dict:
     """纯函数：返回新状态，不修改入参。只复制被改动的集合。"""
     s = dict(state)
     s["now"] = ev["ts"]
+    s["seq"] = ev["seq"]
     kind, body, pid, seq = ev["kind"], ev["body"], ev["problem_id"], ev["seq"]
     session = ev["actor"].get("session")
     if kind == "open_problem":
