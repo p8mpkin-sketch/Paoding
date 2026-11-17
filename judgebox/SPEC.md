@@ -5,7 +5,7 @@
 ## 实现的契约接口
 
 - 判官注册表 = 配置目录（YAML），领域词只允许出现在判官配置里，不在本目录代码里。
-- 内建判官：`replay`、`exact_match`（M0）；`seal_check`、`lean_check` 留后续里程碑。
+- 内建判官只有领域中立的三个：`replay`、`exact_match`（M0），`seal_check`（M3）。`lean_check` 不是内建判官，M3 以 `judges.d/` 里的配置条目存在（异议报告 001 第 3 项，2026-11-17 裁决）。
 - 洁净重放：从 `baseline_ref` 新建容器；抖动策略与次数上限。
 - 保密库：含密级资产（`VaultRef`）只在判官容器内解引用；`show` 对其返回 `forbidden_op`。
 
