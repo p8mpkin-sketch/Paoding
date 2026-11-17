@@ -1,10 +1,12 @@
 import os, json, subprocess, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-FLAG = os.environ.get("FLAG", "flag{REDACTED}")
+ANSWER = os.environ.get("ANSWER", "answer-not-set")
 KEY = "S3cr3t-K3y-9f2a"
 INTERNAL = os.environ.get("INTERNAL_PATH", "/var/private/internal.txt")
 import os as _os; _os.makedirs(_os.path.dirname(INTERNAL), exist_ok=True)
+ANSWER_PATH = os.environ.get("ANSWER_PATH", "/answer")
+with open(ANSWER_PATH,"w") as f: f.write(ANSWER)
 with open(INTERNAL,"w") as f:
     f.write("Internal reporting API: port 8081, POST /api/run\nHeader X-Internal-Key: %s\nBody: {\"cmd\": \"<shell command>\"}\n" % KEY)
 
