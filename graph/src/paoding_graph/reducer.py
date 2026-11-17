@@ -593,7 +593,8 @@ def apply(state: dict, ev: dict) -> dict:
     kind, body, pid, seq = ev["kind"], ev["body"], ev["problem_id"], ev["seq"]
     session = ev["actor"].get("session")
     if kind == "open_problem":
-        s["problems"] = {**s["problems"], pid: {**body, "id": pid, "closed": False, "opened_seq": seq}}
+        s["problems"] = {**s["problems"], pid: {**body, "id": pid, "closed": False, "opened_seq": seq,
+                                                "opened_ts": ev["ts"]}}
     elif kind == "register_artifact":
         s["artifacts"] = {**s["artifacts"], f"a_{seq}": {**body, "id": f"a_{seq}", "problem_id": pid}}
     elif kind == "add_fact":

@@ -13,6 +13,7 @@ input 里形如 "$r3.artifact" 的字符串替换为第 3 步工具结果的字�
 """
 import json
 import os
+import signal
 import sys
 import time
 import urllib.error
@@ -98,6 +99,10 @@ def builtin(name, inp, allowed, restricted, cwd):
 
 
 def main():
+    def on_sigint(*_):                     # 真 CLI：SIGINT 结束当前回合
+        emit({"type": "result", "subtype": "interrupted", "is_error": True, "result": "interrupted"})
+        sys.exit(130)
+    signal.signal(signal.SIGINT, on_sigint)
     flags = parse(sys.argv[1:])
     script = json.loads(Path(os.environ["PD_FAKE_SCRIPT"]).read_text())
     steps = script.get("resume_steps", []) if "--resume" in flags else script.get("steps", [])

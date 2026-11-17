@@ -10,3 +10,6 @@ class ExecPort(Protocol):
 
     def exec(self, sid: str, cmd: str, pid: str, idem_key: str, timeout_s: int = 60, cwd: str = "/workspace",
              register_as: str = "exec") -> ExecResult: ...
+
+    def destroy(self, sid: str) -> None:
+        """哮天犬叫停任务时销毁该租约的执行容器。"""

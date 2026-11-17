@@ -73,6 +73,28 @@ class SessionRunner:
         self.cfg, self.graph, self.reader, self.blobs = cfg, graph, reader, blobs
         self.issuer, self.proxy, self.endpoint, self.executor = issuer, proxy, endpoint, executor
         self.launcher, self.clock = launcher, clock
+        self.live: dict[str, dict] = {}         # 在途会话：哮天犬经 soft_line / kill 操作它们
+
+    # ---------- 哮天犬的两个动作（watchdog.contract.TaskControl，结构化实现） ----------
+
+    def soft_line(self, lease_id: str) -> None:
+        """越过软线：SIGINT 结束当前回合，运行器随后以 --resume 追加一轮收尾。"""
+        lv = self.live.get(lease_id)
+        if lv is None or lv["closing"]:
+            return
+        lv["closing"] = True
+        _signal(lv.get("proc"), signal.SIGINT)
+
+    def kill(self, lease_id: str, reason: str) -> None:
+        """越过硬顶、题预算耗尽、墙钟用尽或租约已过期：终止进程树，销毁执行容器。"""
+        lv = self.live.get(lease_id)
+        if lv is None:
+            return
+        lv["killed"] = reason
+        if lv.get("proc") is not None:
+            _terminate(lv["proc"])
+        if lv.get("sandbox_id") and self.executor is not None:
+            self.executor.destroy(lv["sandbox_id"])
 
     def run(self, pid: str, lease_id: str, *, statement: str, kits: list | None = None,
             focus: dict | None = None, sandbox_id: str | None = None) -> SessionRecord:
@@ -90,6 +112,7 @@ class SessionRunner:
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
         host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor)
         url = self.endpoint.mount(host)
+        lv = self.live[lease_id] = {"proc": None, "closing": False, "killed": None, "sandbox_id": s.sandbox_id}
         try:
             limits = {"budget": lease["reserve"], "max_turns": self.cfg.max_turns,
                       "ops_quota": {"facts": 20, "intents": 8}, "tools": list(tools)}
@@ -104,12 +127,15 @@ class SessionRunner:
                                  max_budget_usd=lease["reserve"]["usd_milli"] / 1000, max_turns=self.cfg.max_turns)
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
-            if exit_status is None and not s.submitted:
-                plan.resume, plan.user_prompt = True, be.CLOSING_PROMPT        # 容错第二级：收尾轮
+            if exit_status is None and not lv["killed"] and (lv["closing"] or not s.submitted):
+                plan.resume, plan.user_prompt = True, be.CLOSING_PROMPT        # 软线或从未 submit：收尾轮
                 exit_status = self._round(plan, rec, pid, token)
             rec.status = "collecting"
             t = self.proxy.task(task_token)
-            if exit_status:
+            if lv["killed"]:
+                exit_status = "expired" if lv["killed"] == "expired" else f"killed({lv['killed']})"
+                outcome = "failed" if lv["killed"] == "expired" else "budget_exhausted"
+            elif exit_status:
                 outcome = "failed"
             elif t and t.spent_usd_milli >= t.reserve_usd_milli:
                 exit_status, outcome = "killed(budget)", "budget_exhausted"
@@ -133,6 +159,7 @@ class SessionRunner:
             rec.status = final_status
             return rec
         finally:
+            self.live.pop(lease_id, None)
             self.proxy.revoke(task_token)
             self.endpoint.unmount(url)
             self.issuer.revoke(token)
@@ -144,6 +171,10 @@ class SessionRunner:
         rec.rounds += 1
         argv, env = self.cfg.binding.command(plan)
         proc = self.launcher(argv, {**env, **self.cfg.extra_env}, plan.workspace)
+        lv = self.live.get(plan.lease_id, {})
+        lv["proc"] = proc
+        if lv.get("killed"):                            # 起进程前已被叫停
+            _terminate(proc)
         last = [self.clock()]
         turns = [0]
 
@@ -162,6 +193,8 @@ class SessionRunner:
         status = None
         next_renew = self.clock() + self.cfg.renew_s
         while proc.poll() is None:
+            if lv.get("killed"):
+                break
             now = self.clock()
             if now - last[0] > self.cfg.stall_s:
                 status = "failed(stalled)"
@@ -186,6 +219,15 @@ class SessionRunner:
         if not out["ok"]:
             raise RuntimeError(f"登记失败：{out['results']}")
         return out["results"][0]["id"]
+
+
+def _signal(proc: subprocess.Popen | None, sig: int) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, sig)
+    except ProcessLookupError:
+        pass
 
 
 def _terminate(proc: subprocess.Popen) -> None:

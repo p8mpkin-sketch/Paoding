@@ -124,7 +124,10 @@ class FakeExec:
     """ExecPort 的进程内替身：不起容器，按执行层同一形状登记 exec 类 Artifact（执行层令牌）。"""
 
     def __init__(self, graph, blobs):
-        self.graph, self.blobs, self.calls = graph, blobs, []
+        self.graph, self.blobs, self.calls, self.destroyed = graph, blobs, [], []
+
+    def destroy(self, sid):
+        self.destroyed.append(sid)
 
     def exec(self, sid, cmd, pid, idem_key, timeout_s=60, cwd="/workspace", register_as="exec"):
         from paoding_executor.contract import ExecResult
