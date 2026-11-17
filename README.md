@@ -30,7 +30,7 @@
 | [sinan/](sinan/SPEC.md) | 司南（调度，外壳） | §4.1 |
 
 ```
-uv run pytest -q                      # 单元与对抗测试
+uv run pytest -q                      # 单元与异常测试
 python ci/check_domain_words.py       # 红线 3
 python ci/check_deps.py               # 依赖只走契约接口
 ```
@@ -43,7 +43,7 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 | --- | --- |
 | [docs/design/core-innovations.md](docs/design/core-innovations.md) | **核心创新与架构总览（项目名片 / 定盘星）**：信条、骨架一张图、创新账（出处+状态）、方法论出身、未证明清单、动工检查单 |
 | [docs/research/agent-architecture-survey.md](docs/research/agent-architecture-survey.md) | 调研 v1（Claude 会话产出：六场景基准、高星生态、厂商观点、A/B/C 分级制度） |
-| [docs/research/agent-architecture-survey-zcode.md](docs/research/agent-architecture-survey-zcode.md) | 调研 v1（ZCode 会话产出：国内攻防黑板谱系、通用框架演化、五层共识） |
+| [docs/research/agent-architecture-survey-zcode.md](docs/research/agent-architecture-survey-zcode.md) | 调研 v1（ZCode 会话产出：国内安全智能体黑板谱系、通用框架演化、五层共识） |
 | [docs/research/agent-architecture-survey-v2.md](docs/research/agent-architecture-survey-v2.md) | **调研 v2：两路合并版**（两范式 × 五层交叉表与四条张力） |
 | [docs/research/paoding-design-implications.md](docs/research/paoding-design-implications.md) | 调研 → 设计启示（Claude 会话产出） |
 | [docs/design/base-layer-spec-v1.md](docs/design/base-layer-spec-v1.md) | **基座规格 v1.3（当前权威）**：文首两张变更表逐条可否决；约束审计、三层六契约与八条不变量、题界与封存、三个机制与前沿展开（榷场、闲人、子题）、四个走查、M0 清单、M1 目标与审计清单、未证明清单 20 条 |
@@ -53,7 +53,7 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 | [docs/design/hmi-design-v1.md](docs/design/hmi-design-v1.md) | 人机交互设计 v1.1：十条原理逐条落实（四语域、判据卡、审批卡、回放、关题三步）、五场景矩阵、线框、API server 裁决（图服务直出）、模型接入全景；H1–H6 已采纳 |
 | [docs/design/reference-model/](docs/design/reference-model/README.md) | 等级函数与消费门的可执行参考模型（规格的对照，不是实现） |
 | [docs/design/architecture-blueprint-v2.md](docs/design/architecture-blueprint-v2.md) | 总架构蓝图 v2 与创新前沿：定盘审计（F1–F3、I7、I8）、题界与封存、榷场、通鉴、闲人、多节点、Lean 接入、N1–N3（已整体采纳，落地见规格 v1.3） |
-| [docs/reviews/blueprint-v2-review.md](docs/reviews/blueprint-v2-review.md) | 蓝图 v2 对抗评审：P1、P2 附加条件 |
+| [docs/reviews/blueprint-v2-review.md](docs/reviews/blueprint-v2-review.md) | 蓝图 v2 独立评审：P1、P2 附加条件 |
 | [docs/design/blueprint-v2-adjudication.md](docs/design/blueprint-v2-adjudication.md) | 蓝图 v2 裁决书：整体采纳，官的三类化 |
 | [docs/design/architecture-v0.md](docs/design/architecture-v0.md) | 架构 v0 首稿（归档） |
 | [docs/design/architecture-v0.1.md](docs/design/architecture-v0.1.md) | 架构 v0.1（v0 + 七条评审修订，历史桥接文档） |
