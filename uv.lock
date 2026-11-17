@@ -45,6 +45,15 @@ wheels = [
 name = "paoding"
 version = "0.0.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "paoding-adapter" },
+    { name = "paoding-eval" },
+    { name = "paoding-executor" },
+    { name = "paoding-graph" },
+    { name = "paoding-judgebox" },
+    { name = "paoding-pd" },
+    { name = "paoding-watchdog" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -52,6 +61,15 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [
+    { name = "paoding-adapter", editable = "adapter" },
+    { name = "paoding-eval", editable = "eval" },
+    { name = "paoding-executor", editable = "executor" },
+    { name = "paoding-graph", editable = "graph" },
+    { name = "paoding-judgebox", editable = "judgebox" },
+    { name = "paoding-pd", editable = "pd" },
+    { name = "paoding-watchdog", editable = "watchdog" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
