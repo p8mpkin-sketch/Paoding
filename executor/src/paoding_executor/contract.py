@@ -2,7 +2,8 @@
 from typing import Protocol
 
 from .compile import ExecSpec, ScopeError, compile_spec  # noqa: F401
-from .runtime import ECHO_LIMIT, DockerExecutor, ExecResult, sweep_orphans  # noqa: F401
+from .runtime import (ECHO_LIMIT, DockerExecutor, EnvManager, ExecResult, SandboxGone,  # noqa: F401
+                      sweep_orphans)
 
 
 class ExecPort(Protocol):
