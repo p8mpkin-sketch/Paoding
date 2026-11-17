@@ -32,9 +32,17 @@
 - 日志表只追加：SQLite 触发器拒绝 UPDATE 与 DELETE；`(problem_id, idem_key)` 唯一，重放返回首次事件。
 - 状态哈希：`sha256(JCS(state))`，reducer 的状态必须是 JSON 值。
 - Blob 写入后文件权限置只读；range 读取也先校验全文哈希。
+- 新对象 id 由事件 seq 派生：`a_<seq>`、`f_<seq>`、`i_<seq>`、`j_<seq>`。
+- `validate` 返回规范化事件体，含派生字段（画像、判官快照 `judge_snapshot`、`producer`、内容键）；cfg（判官注册表等）只在 validate 时读，重放不依赖它。
+- 判官裁决的 `grade` 取开题时的判官快照，不取裁决方自报。
+- `request_judge` 的判官必须是登记判据时的那一个（I4 判据先行的字面推论）；推断类论断在 M0 没有判据，不能请求判定。
+- `input` 类 Artifact 可以在 `open_problem` 之前登记（Origin 要引用它们）；其它类别要求题目已开。
+- M0 拒绝 `accept=human`、`check.control`、`done.tests` 与 `follows`/`executor`/`rollback`/`delegate`，返回 `schema_error`，待对应里程碑启用。
+- Blob 是否存在由服务层在 validate 之前检查（IO 不进内核）。
 
 ## 进度
 
 | 日 | 内容 | 验收 |
 | --- | --- | --- |
 | D1（预备） | `jcs.py`、`envelope.py`、`eventlog.py`、`replay.py`、`blobs.py` | 3.1.5 的 1；3.2.5 的 1、4；RFC 8785 附录 B 向量 |
+| D2（预备） | `reducer.py`（六种操作）、`levels.py`、`refmodel.py`（逐字节副本）、`tokens.py` | 迟滞（一败回 E0、两败为 X）；3.1.5 的 4（M0 形态）、6、8、9；3.2.5 的 2 前四种 |
