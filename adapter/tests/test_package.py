@@ -61,13 +61,11 @@ def test_golden_package_bytes(graph):
     assert pkg.as_bytes() == _render(graph, lease).as_bytes()          # 同一状态两次渲染逐字节相同
 
 
-@pytest.mark.parametrize("scale,need", [(1, None), (2, None), (4, 0.9)])
-def test_prefix_stable_when_only_nodes_added(graph, scale, need):
-    """3.4.5 的 5：连续两次 Reason 的任务包，只新增节点时公共前缀 ≥ 前一个包的 90%。
+@pytest.mark.parametrize("scale", [1, 2, 4])
+def test_prefix_stable_when_only_nodes_added(graph, scale):
+    """3.4.5 的 5（异议 002 第 3 项裁决后的验收）：只新增节点时，前一个包的①–④逐字节是后一个包的前缀。
 
-    结构保证（每种规模都断言）：后一个包以前一个包的①–④开头，分叉点在④的末尾。
-    比例本身取决于①②的体量：⑤–⑦约 400 字节是固定开销，①–④不足其 9 倍时比例必低于 90%。
-    题面约 0.45 / 0.9 / 1.8 KB 三档实测见 docs/m0/dissent-002-adapter.md 第 3 项；90% 只对 1.8 KB 档断言。"""
+    可变段⑤–⑦不参与断言；整包公共前缀比例只作遥测读数打印，不设阈值。"""
     from adapter_rig import open_problem
     open_problem(graph)
     lease = _reason_lease(graph)
@@ -75,12 +73,11 @@ def test_prefix_stable_when_only_nodes_added(graph, scale, need):
     a = _render(graph, lease, statement=STATEMENT1 * scale)
     _add_intents(graph, 3, start=2)
     b = _render(graph, lease, statement=STATEMENT1 * scale)
-    old_prefix = a.system[:a.system.index("# ⑤")].rstrip("\n")
-    assert b.system.startswith(old_prefix)
+    assert a.prefix and a.system.startswith(a.prefix)
+    assert b.prefix.startswith(a.prefix) and b.prefix != a.prefix          # ①–④ 100% 字节前缀稳定
+    assert b.system.encode().startswith(a.prefix.encode())
     ra = common_prefix_ratio(a.system + a.user, b.system + b.user)
-    print(f"scale={scale} statement={len((STATEMENT1 * scale).encode())}B ratio={ra:.3f}")
-    if need:
-        assert ra >= need, ra
+    print(f"遥测 scale={scale} statement={len((STATEMENT1 * scale).encode())}B ratio={ra:.3f}")
 
 
 def test_concurrent_sessions_share_system_prefix(graph):

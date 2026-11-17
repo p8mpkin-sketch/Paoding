@@ -49,4 +49,4 @@
 1. **3.4.5 的 5 后半（缓存读 > 0）与 7 的真机部分**要真模型，D4 真机验。假 CLI 对 `--tools`、`--restricted` 的模拟只证明绑定参数被传到了，不证明真 CLI 照做。
 2. **判官 30 秒内的裁决随 submit 返回**：判官运行器还没有（D10），`submit` 目前只返回 id。
 3. **3.4.5 的 3**（中途杀 CLI → 租约到期 → Intent 重开）的 reducer 侧已在 graph 测试里；端到端要哮天犬，下一个 PR。
-4. **`check.inputs`** 暂拒，见异议报告 002 第 1 项。
+4. **`check.inputs`** 拒绝：按异议 002 裁决，inputs 属于 JudgeRequest（勘误 E1）。
