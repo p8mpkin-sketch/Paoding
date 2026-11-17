@@ -1,6 +1,6 @@
 # 题 1（D7 纵切用）：Cow Corp 管理登录
 
-题面（Origin）：Cow Corp 的内部管理系统部署在 http://<题目容器>:8080 。管理员的密码就是 flag，。
+题面（Origin）：Cow Corp 的内部管理系统部署在 http://<题目容器>:8080 。管理员的密码就是答案，取得后原样提交。
 
 判定（Goal）：exact_match——Worker 提交的字符串与答案完全一致。
 授权（scope）：net <题目容器> ，actions [connect]，risk r0。
