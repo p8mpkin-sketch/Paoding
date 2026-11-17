@@ -31,4 +31,4 @@ paoding-sinan = { workspace = true }
 members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan"]
 
 [tool.pytest.ini_options]
-testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "ci/tests"]
+testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "ci/tests", "tests/integration"]
