@@ -11,11 +11,14 @@
 """
 from __future__ import annotations
 
+import os
 import shlex
+import socket
 import subprocess
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 from paoding_graph.contract import BlobPort, GraphPort
 
@@ -24,6 +27,32 @@ from .compile import ExecSpec, ScopeError
 ECHO_LIMIT = 8 * 1024                  # 回显上限 8 KB，超过只回头尾（§3.4.2）
 MAX_CAPTURE = 256 * 1024 * 1024        # 单个 Blob 上限；超过保留头尾并置 truncated（§3.2.2）
 LABEL = "paoding.sandbox"
+OWNER = "paoding.owner"                 # 属主：<主机名>:<pid>:<进程启动时刻>，孤儿清扫只清属主已不存活的
+
+
+def _start_time(pid: int) -> str | None:
+    """进程启动时刻（/proc/<pid>/stat 第 22 字段）。和 pid 一起判断存活，防 pid 复用。"""
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    return raw.rsplit(")", 1)[1].split()[19]
+
+
+def owner_id() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}:{_start_time(os.getpid())}"
+
+
+def owner_alive(owner: str) -> bool | None:
+    """True/False：本机属主是否存活；None：不是本机的属主或格式不明，不由本机判断。"""
+    try:
+        host, pid, started = owner.rsplit(":", 2)
+        pid_i = int(pid)
+    except ValueError:
+        return None
+    if host != socket.gethostname():
+        return None
+    return _start_time(pid_i) == started
 
 
 @dataclass
@@ -53,6 +82,7 @@ def echo(data: bytes, limit: int = ECHO_LIMIT) -> tuple[str, bool]:
 class DockerExecutor:
     def __init__(self, graph: GraphPort, blobs: BlobPort, token: str):
         self.graph, self.blobs, self.token = graph, blobs, token
+        self.owner = owner_id()
         self._live: dict[str, dict] = {}
 
     # ---------- 生命周期 ----------
@@ -60,7 +90,7 @@ class DockerExecutor:
     def launch(self, spec: ExecSpec, lease_id: str, mount_workspace: bool = True) -> str:
         sid = f"pd-{spec.id}-{uuid.uuid4().hex[:8]}"
         net = f"{sid}-net"
-        _docker("network", "create", "--internal", "--label", f"{LABEL}={sid}", net)
+        _docker("network", "create", "--internal", "--label", f"{LABEL}={sid}", "--label", f"{OWNER}={self.owner}", net)
         targets = []
         try:
             for addr in spec.egress_allow:
@@ -70,7 +100,8 @@ class DockerExecutor:
                 _docker("network", "connect", "--alias", host, net, host)
                 targets.append(host)
             lim = spec.limits
-            args = ["run", "-d", "--name", sid, "--label", f"{LABEL}={sid}", "--label", f"paoding.lease={lease_id}",
+            args = ["run", "-d", "--name", sid, "--label", f"{LABEL}={sid}", "--label", f"{OWNER}={self.owner}",
+                    "--label", f"paoding.lease={lease_id}",
                     "--network", net, "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                     "--pids-limit", str(lim.pids), "--memory", f"{lim.mem_mb}m", "--cpus", str(lim.cpu),
                     "--env", "HOME=/tmp", "-w", "/workspace"]
@@ -144,12 +175,23 @@ class DockerExecutor:
 
 
 def sweep_orphans() -> list[str]:
-    """哮天犬用：清理带本层标签、但已不在任何执行层实例里的容器与网络。返回清掉的名字。"""
-    out = _docker("ps", "-aq", "--filter", f"label={LABEL}", "--format", "{{.Names}}", check=False)
-    names = out.stdout.decode().split()
+    """哮天犬用：清理带本层标签、且属主进程已不存活的容器与网络。返回清掉的名字。
+
+    只清本机属主确定已死的：属主在别的主机、标签缺失或格式不明的一律不动（宁漏勿误杀活沙箱）。"""
+    def dead(listing: str) -> list[str]:
+        out = []
+        for line in listing.splitlines():
+            name, _, owner = line.partition(" ")
+            if name and owner_alive(owner.strip()) is False:
+                out.append(name)
+        return out
+    ps = _docker("ps", "-a", "--filter", f"label={LABEL}", "--format", f'{{{{.Names}}}} {{{{.Label "{OWNER}"}}}}',
+                 check=False)
+    names = dead(ps.stdout.decode())
     for n in names:
         _docker("rm", "-f", n, check=False)
-    nets = _docker("network", "ls", "-q", "--filter", f"label={LABEL}", "--format", "{{.Name}}", check=False)
-    for n in nets.stdout.decode().split():
+    nets = _docker("network", "ls", "--filter", f"label={LABEL}", "--format",
+                   f'{{{{.Name}}}} {{{{.Label "{OWNER}"}}}}', check=False)
+    for n in dead(nets.stdout.decode()):
         _docker("network", "rm", n, check=False)
     return names

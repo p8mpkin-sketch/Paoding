@@ -42,6 +42,7 @@
 - `validate` 多一个参数 `ts`：这条事件将被赋予的时间戳，由服务层的时钟给出；过期判断（`expire_lease`、`renew`）用它，reducer 仍不读时钟。租约的 `expires_at = ts + ttl_s × 1000` 在 apply 里由事件 ts 算出。
 - Intent 的完整状态 = 参考模型的资格状态（achieved/abandoned/needs_human/blocked/open）叠加租约生命周期（leased、done）。失败（failed、nothing、budget_exhausted、过期；带判据的 Intent 释放后判据未过且无未决判定）累计 2 次即 abandoned（§3.4.4“两次后放弃”）。r2 失败或过期后转 needs_human。
 - 被拒的批次也记下结果：同一 idem_key 重放返回首次结果，无论首次是否被拒。批内用 `"$<下标>"` 引用前一条产生的 id。
+- **调用方惯例：改正后重交必须换新的 idem_key。** 被拒结果同样被缓存，拿原 idem_key 重交改正过的内容，只会原样拿回首次的拒绝，改正不会生效。idem_key 只用于"同一请求的重试"（网络超时、进程重启后重发同一批）。Adapter 的做法：每次工具调用生成新键（`submit:<租约>:<宿主实例号>:<调用序号>:<条目序号>`），会话内改正自然换键；重试同一调用才复用。
 - 图服务自己追加的事件（`budget_mark`、Goal 到 E3 时的自动 `close_problem`）由 `work.followups` 纯函数算出，与触发它的批次在同一事务里落盘。
 - 关题后只接受 `cost` 与 `release`（在途任务交回用量与释放）；关题即视所有租约结束。
 - 四顾清单：r0 且 `accept=judge` 的题恒为空（M0 形态）；r1/r2 题先给一条占位项，阻止自动关题，完整清单随 M4。
