@@ -11,6 +11,7 @@ members = [
     "paoding-graph",
     "paoding-judgebox",
     "paoding-pd",
+    "paoding-sinan",
     "paoding-watchdog",
 ]
 
@@ -52,6 +53,7 @@ dependencies = [
     { name = "paoding-graph" },
     { name = "paoding-judgebox" },
     { name = "paoding-pd" },
+    { name = "paoding-sinan" },
     { name = "paoding-watchdog" },
 ]
 
@@ -68,6 +70,7 @@ requires-dist = [
     { name = "paoding-graph", editable = "graph" },
     { name = "paoding-judgebox", editable = "judgebox" },
     { name = "paoding-pd", editable = "pd" },
+    { name = "paoding-sinan", editable = "sinan" },
     { name = "paoding-watchdog", editable = "watchdog" },
 ]
 
@@ -103,6 +106,11 @@ source = { editable = "judgebox" }
 name = "paoding-pd"
 version = "0.0.0"
 source = { editable = "pd" }
+
+[[package]]
+name = "paoding-sinan"
+version = "0.0.0"
+source = { editable = "sinan" }
 
 [[package]]
 name = "paoding-watchdog"

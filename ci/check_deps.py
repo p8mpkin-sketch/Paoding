@@ -18,6 +18,7 @@ ALLOWED: dict[str, set[str]] = {
     "watchdog": {"graph"},
     "pd": {"graph"},
     "eval": {"graph", "adapter"},
+    "sinan": {"graph", "adapter"},
 }
 
 
