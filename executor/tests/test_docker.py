@@ -6,6 +6,7 @@
 import hashlib
 import os
 import shutil
+import socket
 import subprocess
 import uuid
 
@@ -138,3 +139,23 @@ def test_reset_returns_to_baseline(ex, tmp_path, targets):
     ex.exec(sid, "echo x > /tmp/state", "p1", "a")
     sid2 = ex.reset(sid)
     assert ex.exec(sid2, "test -e /tmp/state", "p1", "b").exit_code != 0
+
+
+def test_sweep_only_dead_owners(ex, tmp_path, targets):
+    """红队 #14 必修 2：孤儿清扫只清属主已死的沙箱；活实例的、别的主机的一律不动。"""
+    from paoding_executor.runtime import LABEL, OWNER, sweep_orphans
+    spec = compile_spec("s1", [], ENV, "r0", False, str(tmp_path))
+    live = ex.launch(spec, "l_1")
+    tag = uuid.uuid4().hex[:6]
+    dead, foreign = f"pd-dead-{tag}", f"pd-foreign-{tag}"
+    for name, owner in [(dead, f"{socket.gethostname()}:999999:1"), (foreign, "other-host:1:1")]:
+        subprocess.run(["docker", "run", "-d", "--name", name, "--label", f"{LABEL}={name}", "--label",
+                        f"{OWNER}={owner}", IMAGE, "sleep", "infinity"], check=True, capture_output=True)
+    try:
+        swept = sweep_orphans()
+        assert dead in swept and live not in swept and foreign not in swept
+        alive = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True).stdout.decode()
+        assert live in alive and foreign in alive and dead not in alive
+    finally:
+        subprocess.run(["docker", "rm", "-f", dead, foreign], capture_output=True)
+        ex.destroy(live)

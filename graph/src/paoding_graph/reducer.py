@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .resources import external_resources
 from . import levels as lv
 from . import refmodel as rm
 from . import work as wk
@@ -41,7 +42,7 @@ class Reject:
 @dataclass(frozen=True)
 class Config:
     judges: dict = field(default_factory=dict)       # judge_id → {version, grade, kind, max_cost}
-    external_resources: frozenset = frozenset()       # 资源插件登记为 external 的资源名
+    external_resources: frozenset = field(default_factory=external_resources)  # 取自 resources.py 登记表
     cheap_judge_max_cost: float = 0.05                # "廉价判官"阈值（美元），配置项
     fact_quota: int = 20                              # 每个任务（会话）的写入配额
     intent_quota: int = 8
