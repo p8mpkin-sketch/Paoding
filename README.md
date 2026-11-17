@@ -10,11 +10,11 @@
 
 > "方今之时，臣以神遇而不以目视，官知止而神欲行。"
 
-感知官——为当前模型的缺陷而建的结构（视图、规划者、复核梯、控制器）——随模型成熟逐步退位；守门官——判官、预算、审批、审计、隔离——长存。系统的成功终态是器官的逐步退位，而非无限增厚。详见 [官知止设计总纲](docs/design/paoding-allegory-mapping.md)。
+感知官——为当前模型的缺陷而建的结构（视图、规划者、复核梯、控制器）——随模型成熟逐步退位；守门官——判官、预算、审批、审计、隔离——长存；量具——预测账、常设留出、归因表——只产生读数，越换代越有用。系统的成功终态是器官的逐步退位，而非无限增厚。详见 [官知止设计总纲](docs/design/paoding-allegory-mapping.md)。
 
 ## 当前状态
 
-调研完成（2026-11）。基座规格 v1.1 已裁决（十条异议全部采纳，附三项补充），参考模型与 M0 实施进行中。
+调研完成（2026-11）。基座规格 v1.3 是当前权威：v1.1 已裁决（十条异议全部采纳，附三项补充），v1.2（三项补充与典故对账 D1 到 D6）、蓝图 v2 的采纳项与评审附加条件、人机界面设计的裁决落地项都已并入。参考模型 88 条测试全绿。下一步是 M0 的 D1 到 D15。
 
 ## 文档
 
@@ -25,12 +25,15 @@
 | [docs/research/agent-architecture-survey-zcode.md](docs/research/agent-architecture-survey-zcode.md) | 调研 v1（ZCode 会话产出：国内攻防黑板谱系、通用框架演化、五层共识） |
 | [docs/research/agent-architecture-survey-v2.md](docs/research/agent-architecture-survey-v2.md) | **调研 v2：两路合并版**（两范式 × 五层交叉表与四条张力） |
 | [docs/research/paoding-design-implications.md](docs/research/paoding-design-implications.md) | 调研 → 设计启示（Claude 会话产出） |
-| [docs/design/base-layer-spec-v1.md](docs/design/base-layer-spec-v1.md) | **基座规格 v1.1（当前权威）**：约束审计、六个契约、三个机制、两个走查、M0 清单与 M1 目标 |
+| [docs/design/base-layer-spec-v1.md](docs/design/base-layer-spec-v1.md) | **基座规格 v1.3（当前权威）**：文首两张变更表逐条可否决；约束审计、三层六契约与八条不变量、题界与封存、三个机制与前沿展开（榷场、闲人、子题）、四个走查、M0 清单、M1 目标与审计清单、未证明清单 20 条 |
 | [docs/design/spec-v1.1-adjudication.md](docs/design/spec-v1.1-adjudication.md) | 规格 v1.1 裁决书：A1–A10 全部采纳，附三项补充（vault 分级、终态三值、基质接口附录）与一项立场撤回 |
-| [docs/design/paoding-allegory-mapping.md](docs/design/paoding-allegory-mapping.md) | **「官知止」设计总纲**：典故-架构全文对应、感知官/守门官两分类、退役条款表、四个新提案 |
+| [docs/design/paoding-allegory-mapping.md](docs/design/paoding-allegory-mapping.md) | **「官知止」设计总纲 v1.2**：典故-架构全文对应、感知官/守门官/量具三分类与启用条件、退役条款表、四个新提案 |
 | [docs/design/paoding-jieniu-principles.md](docs/design/paoding-jieniu-principles.md) | 庖丁解牛逐句对账（Claude 会话产出）：12 条原理 × 规格对账 + D1–D6 设计点 |
 | [docs/design/hmi-design-v1.md](docs/design/hmi-design-v1.md) | 人机交互设计 v1.1：十条原理逐条落实（四语域、判据卡、审批卡、回放、关题三步）、五场景矩阵、线框、API server 裁决（图服务直出）、模型接入全景；H1–H6 已采纳 |
 | [docs/design/reference-model/](docs/design/reference-model/README.md) | 等级函数与消费门的可执行参考模型（规格的对照，不是实现） |
+| [docs/design/architecture-blueprint-v2.md](docs/design/architecture-blueprint-v2.md) | 总架构蓝图 v2 与创新前沿：定盘审计（F1–F3、I7、I8）、题界与封存、榷场、通鉴、闲人、多节点、Lean 接入、N1–N3（已整体采纳，落地见规格 v1.3） |
+| [docs/reviews/blueprint-v2-review.md](docs/reviews/blueprint-v2-review.md) | 蓝图 v2 对抗评审：P1、P2 附加条件 |
+| [docs/design/blueprint-v2-adjudication.md](docs/design/blueprint-v2-adjudication.md) | 蓝图 v2 裁决书：整体采纳，官的三类化 |
 | [docs/design/architecture-v0.md](docs/design/architecture-v0.md) | 架构 v0 首稿（归档） |
 | [docs/design/architecture-v0.1.md](docs/design/architecture-v0.1.md) | 架构 v0.1（v0 + 七条评审修订，历史桥接文档） |
 | [docs/design/greenfield-base-run.md](docs/design/greenfield-base-run.md) | 绿地对照运行：无预设独立推导的基座设计（TaskSpec/Judge/Evidence/Ledger/Executor） |
