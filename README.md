@@ -29,6 +29,7 @@
 | [docs/design/spec-v1.1-adjudication.md](docs/design/spec-v1.1-adjudication.md) | 规格 v1.1 裁决书：A1–A10 全部采纳，附三项补充（vault 分级、终态三值、基质接口附录）与一项立场撤回 |
 | [docs/design/paoding-allegory-mapping.md](docs/design/paoding-allegory-mapping.md) | **「官知止」设计总纲**：典故-架构全文对应、感知官/守门官两分类、退役条款表、四个新提案 |
 | [docs/design/paoding-jieniu-principles.md](docs/design/paoding-jieniu-principles.md) | 庖丁解牛逐句对账（Claude 会话产出）：12 条原理 × 规格对账 + D1–D6 设计点 |
+| [docs/design/hmi-design-v1.md](docs/design/hmi-design-v1.md) | 人机交互设计 v1.1：十条原理逐条落实（四语域、判据卡、审批卡、回放、关题三步）、五场景矩阵、线框、API server 裁决（图服务直出）、模型接入全景；H1–H6 已采纳 |
 | [docs/design/reference-model/](docs/design/reference-model/README.md) | 等级函数与消费门的可执行参考模型（规格的对照，不是实现） |
 | [docs/design/architecture-v0.md](docs/design/architecture-v0.md) | 架构 v0 首稿（归档） |
 | [docs/design/architecture-v0.1.md](docs/design/architecture-v0.1.md) | 架构 v0.1（v0 + 七条评审修订，历史桥接文档） |
