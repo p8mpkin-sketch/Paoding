@@ -212,6 +212,24 @@ class EndpointProxy:
             self.server.server_close()
 
 
+def ledger_diff(proxy: "EndpointProxy", state: dict) -> list[dict]:
+    """对账（3.5.5 的 4、5）：代理自记的逐任务花费与图里 source=proxy 的 cost 事件之和逐项比较。
+    返回不一致的条目；空表示对上。图是账本，代理是计量点，两者独立累计。"""
+    graph_by_task: dict[str, int] = {}
+    for c in state["costs"]:
+        if c["source"] == "proxy":
+            graph_by_task[c["task_id"]] = graph_by_task.get(c["task_id"], 0) + c["usd_milli"]
+    proxy_by_task: dict[str, int] = {}
+    for t in proxy._tasks.values():
+        proxy_by_task[t.lease_id] = proxy_by_task.get(t.lease_id, 0) + t.spent_usd_milli
+    diffs = [{"task_id": k, "proxy": proxy_by_task.get(k, 0), "graph": graph_by_task.get(k, 0)}
+             for k in sorted(set(graph_by_task) | set(proxy_by_task))
+             if proxy_by_task.get(k, 0) != graph_by_task.get(k, 0)]
+    if proxy.global_spent != sum(graph_by_task.values()):
+        diffs.append({"task_id": "*", "proxy": proxy.global_spent, "graph": sum(graph_by_task.values())})
+    return diffs
+
+
 class _Meter:
     """从非流式 JSON 或 SSE 流里取出 model 与 usage。message_start 给输入侧，message_delta 给累计输出。"""
 
