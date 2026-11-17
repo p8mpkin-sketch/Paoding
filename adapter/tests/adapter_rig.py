@@ -189,3 +189,87 @@ def rig(tmp_path, graph, upstream):
     open_problem(graph)
     yield r
     r.close()
+
+
+# ---------- 真执行层的会话测试台：Docker 沙箱 + 题目环境容器 + 假 CLI（需要本机 Docker） ----------
+
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import uuid  # noqa: E402
+
+IMAGE = "python:3.12-slim"
+FETCH = "python -c \"import urllib.request as u;print(u.urlopen('http://{host}:8080/{path}',timeout=5).read().decode().strip())\""
+PROBE = ("python -c \"import socket,sys;s=socket.socket();s.settimeout(3);"
+         "sys.exit(0 if s.connect_ex(('{h}',{p}))==0 else 7)\"")
+
+
+def docker_ok() -> bool:
+    if not shutil.which("docker") or subprocess.run(["docker", "info"], capture_output=True).returncode != 0:
+        return False
+    return subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True).returncode == 0
+
+
+def open_net_problem(svc, pid, targets, usd_milli=5000, expect=None, max_attempts=3):
+    """scope 是真的网络地址：targets = [(容器名, risk), …]。env.base 是基础规格名，由 Adapter 配置映射到镜像。"""
+    st = b"statement " + pid.encode()
+    out = svc.submit("tok-human", pid, f"open-{pid}", [
+        {"op": "register_artifact", "body": {"hash": hashlib.sha256(st).hexdigest(), "size": len(st),
+                                              "media_type": "text/plain", "class": "input"}},
+        {"op": "open_problem", "body": {
+            "title": "取回目标上的取值", "origin": {"statement_ref": "$0", "materials": []},
+            "goal": {"statement": "取回 /value 的内容并原样提交", "check": {"judge_id": "exact_match", "expect": expect or {}},
+                     "max_attempts": max_attempts, "accept": "judge"},
+            "scope": [{"resource": "net", "pattern": f"{name}:8080", "actions": ["connect"], "risk": risk}
+                      for name, risk in targets],
+            "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
+            "env": {"base": "basic", "baseline_ref": "basic@1"}, "judges": ["exact_match", "replay"]}}])
+    assert out["ok"], out
+    return out
+
+
+class DockerRig(Rig):
+    """与 Rig 相同的接线，执行层换成真的：会话自己按租约起沙箱、结束时销毁。"""
+
+    def __init__(self, tmp_path, graph, upstream):
+        from paoding_executor.contract import DockerExecutor, EnvManager
+        super().__init__(tmp_path, graph, upstream)
+        self.executor = DockerExecutor(graph, self.blobs, "tok-exec")
+        self.runner.executor = self.executor
+        self.cfg.bases = {"basic": IMAGE}
+        self.envs = EnvManager()
+        self.scripts = {}
+        self.cfg.env_for = lambda lease: {"PD_FAKE_SCRIPT": str(self.scripts[lease["kind"]])}
+
+    def target(self, files: dict[str, str]) -> str:
+        """一个通用的 HTTP 环境容器，按路径给出固定内容。内容经环境变量传入，不落在宿主上。"""
+        name = f"pdt-{uuid.uuid4().hex[:8]}"
+        boot = "mkdir -p /srv && cd /srv && python -c \"import os,json;[open(k,'w').write(v) for k,v in json.loads(os.environ['FILES']).items()]\" && exec python -m http.server 8080"
+        self.envs.start(name, IMAGE, env={"FILES": json.dumps(files)}, command=["sh", "-c", boot], ready_port=8080)
+        return name
+
+    def script_for(self, role, steps, resume_steps=()):
+        p = self.tmp / f"script-{role}-{len(list(self.tmp.glob('script-*')))}.json"
+        p.write_text(json.dumps({"steps": list(steps), "resume_steps": list(resume_steps)}))
+        self.scripts[role] = p
+        return p
+
+    def run(self, lease_id, pid="p1", **kw):
+        return self.runner.run(pid, lease_id, statement=self.statement, **kw)
+
+    def sandboxes(self):
+        out = subprocess.run(["docker", "ps", "-a", "--filter", "label=paoding.role=sandbox", "--filter",
+                              f"label=paoding.owner={self.executor.owner}", "--format", "{{.Names}}"],
+                             capture_output=True).stdout.decode().split()
+        return sorted(out)
+
+    def close(self):
+        super().close()
+        self.executor.close()
+        self.envs.close()
+
+
+@pytest.fixture
+def drig(tmp_path, graph, upstream):
+    r = DockerRig(tmp_path, graph, upstream)
+    yield r
+    r.close()

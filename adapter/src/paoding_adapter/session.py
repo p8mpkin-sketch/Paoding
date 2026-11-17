@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from paoding_executor.contract import ExecPort
+from paoding_executor.contract import ExecPort, compile_spec
 from paoding_graph.contract import BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import backend as be
@@ -45,6 +45,8 @@ class AdapterConfig:
     binding: be.CliBinding = field(default_factory=be.CliBinding)
     extra_env: dict = field(default_factory=dict)       # 只供假 CLI 的脚本路径等测试用途
     judges_cfg: dict = field(default_factory=dict)
+    bases: dict = field(default_factory=dict)           # Problem.env.base（基础规格名）→ 镜像；没有登记的按原名用
+    env_for: Callable[[dict], dict] | None = None       # 按租约追加 CLI 进程的环境变量（假 CLI 按角色取脚本）
 
 
 @dataclass
@@ -109,10 +111,14 @@ class SessionRunner:
         ws.mkdir(parents=True, exist_ok=True)
         (sdir / "home").mkdir(exist_ok=True)
         tools = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
+        owned = None                                    # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
+        if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
+            sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
         host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor)
         url = self.endpoint.mount(host)
-        lv = self.live[lease_id] = {"proc": None, "closing": False, "killed": None, "sandbox_id": s.sandbox_id}
+        lv = self.live[lease_id] = {"proc": None, "closing": False, "killed": None, "sandbox_id": s.sandbox_id,
+                                    "env": {**self.cfg.extra_env, **(self.cfg.env_for(lease) if self.cfg.env_for else {})}}
         try:
             limits = {"budget": lease["reserve"], "max_turns": self.cfg.max_turns,
                       "ops_quota": {"facts": 20, "intents": 8}, "tools": list(tools)}
@@ -163,6 +169,21 @@ class SessionRunner:
             self.proxy.revoke(task_token)
             self.endpoint.unmount(url)
             self.issuer.revoke(token)
+            if owned is not None:
+                self.executor.destroy(owned)
+
+    def _launch_sandbox(self, pid: str, lease: dict, ws: Path) -> str:
+        """按租约编译授权并起执行容器（§3.6.2）。上限取所服务 Intent 的 risk，Bootstrap 取 r0；
+        r2 规则只在该 Intent 已获批准时编入。reason 会话不走到这里。"""
+        st = self.reader.state
+        p = st["problems"][pid]
+        intent = st["intents"].get(lease.get("target") or "")
+        ceiling = intent["risk"] if intent else "r0"
+        approved = bool(intent and st.get("approvals", {}).get(intent["id"]))
+        env = {**p["env"], "base": self.cfg.bases.get(p["env"]["base"], p["env"]["base"])}
+        ws.chmod(0o777)                                 # 容器内进程丢了全部能力，靠目录权限写工作区
+        spec = compile_spec(lease["id"].replace("_", "-"), p["scope"], env, ceiling, approved, str(ws))
+        return self.executor.launch(spec, lease["id"])
 
     # ---------- 一轮 CLI ----------
 
@@ -170,8 +191,8 @@ class SessionRunner:
         """跑一轮 CLI 到退出。返回 None 表示正常结束，否则是异常出口的状态名。"""
         rec.rounds += 1
         argv, env = self.cfg.binding.command(plan)
-        proc = self.launcher(argv, {**env, **self.cfg.extra_env}, plan.workspace)
         lv = self.live.get(plan.lease_id, {})
+        proc = self.launcher(argv, {**env, **lv.get("env", self.cfg.extra_env)}, plan.workspace)
         lv["proc"] = proc
         if lv.get("killed"):                            # 起进程前已被叫停
             _terminate(proc)
