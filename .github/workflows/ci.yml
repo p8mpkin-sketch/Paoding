@@ -20,5 +20,7 @@ jobs:
         run: python ci/check_domain_words.py
       - name: 依赖方向：只走契约接口
         run: python ci/check_deps.py
+      - name: 执行层测试用的通用镜像（不是靶场）
+        run: docker pull python:3.12-slim
       - name: 单元与对抗测试
         run: uv run --frozen pytest -q
