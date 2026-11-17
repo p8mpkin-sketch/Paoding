@@ -25,3 +25,16 @@
 ## 依赖
 
 不依赖任何其它组件。其它组件经 `paoding_graph.contract` 与本机 socket 访问它。
+
+## 实现取值（规格未定、在此钉死）
+
+- 哈希链创世值：每题第一条事件的 `prev_hash` 为 64 个 `0`。
+- 日志表只追加：SQLite 触发器拒绝 UPDATE 与 DELETE；`(problem_id, idem_key)` 唯一，重放返回首次事件。
+- 状态哈希：`sha256(JCS(state))`，reducer 的状态必须是 JSON 值。
+- Blob 写入后文件权限置只读；range 读取也先校验全文哈希。
+
+## 进度
+
+| 日 | 内容 | 验收 |
+| --- | --- | --- |
+| D1（预备） | `jcs.py`、`envelope.py`、`eventlog.py`、`replay.py`、`blobs.py` | 3.1.5 的 1；3.2.5 的 1、4；RFC 8785 附录 B 向量 |
