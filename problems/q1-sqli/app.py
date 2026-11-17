@@ -1,7 +1,7 @@
 import os, sqlite3, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-FLAG = os.environ.get("FLAG", "flag{REDACTED}")
+ANSWER = os.environ.get("ANSWER", "answer-not-set")
 DB = "/tmp/app.db"
 
 def init():
@@ -9,7 +9,7 @@ def init():
     con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
     con.execute("DELETE FROM users")
     con.execute("INSERT INTO users VALUES (1,'guest','guest123')")
-    con.execute("INSERT INTO users VALUES (2,'admin',?)", (FLAG,))
+    con.execute("INSERT INTO users VALUES (2,'admin',?)", (ANSWER,))
     con.commit(); con.close()
 
 PAGE = """<!doctype html><html><body><h2>Cow Corp Admin Login</h2>
