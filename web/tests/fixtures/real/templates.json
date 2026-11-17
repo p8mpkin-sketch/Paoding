@@ -1,0 +1,7 @@
+{
+ "path": "/v1/templates",
+ "status": 200,
+ "body": {
+  "items": []
+ }
+}

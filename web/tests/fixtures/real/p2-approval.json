@@ -1,0 +1,95 @@
+{
+ "path": "/v1/problems/p2/cards/approval/i_34",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "2d18c9328e6febdd3faccfe288cb6255d328673584f9ef53641e3142d4611215",
+  "card": {
+   "kind": "approval",
+   "target": "i_34",
+   "fields": {
+    "risk": "r1",
+    "budget": 100,
+    "done": "",
+    "tests": [],
+    "needs_scope": true,
+    "rollback": "",
+    "premises": [
+     {
+      "id": "f_29",
+      "level": "E0",
+      "disputed": false,
+      "unstable": false,
+      "stale": false,
+      "controlled": false,
+      "waived": false
+     }
+    ]
+   }
+  },
+  "card_hash": "fbbbee0eca1444352c885997264ebe04c6f111722f31e2ab69bce4cfaa3d0804",
+  "display": {
+   "status": "needs_human",
+   "title": {
+    "src": "title",
+    "register": "叙述",
+    "value": "扩大范围后再读"
+   },
+   "summary": {
+    "src": "summary",
+    "register": "叙述",
+    "value": "需要第二个目标"
+   },
+   "reserve": {
+    "usd_milli": 100,
+    "wall_s": 60
+   },
+   "lease_note": "一次批准只管一次租约",
+   "rollback": null,
+   "predicate": null,
+   "premises": [
+    {
+     "id": "f_29",
+     "type": "fact",
+     "level": "E0",
+     "level_word": "猜想",
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "入口可读"
+     }
+    }
+   ],
+   "disputes": [],
+   "needs_scope": [
+    {
+     "resource": "target",
+     "pattern": "second",
+     "actions": [
+      "read"
+     ],
+     "risk": "r1"
+    }
+   ],
+   "scope": [
+    {
+     "resource": "target",
+     "pattern": "*",
+     "actions": [
+      "read"
+     ],
+     "risk": "r0"
+    }
+   ],
+   "expected_gain": {
+    "src": "estimate",
+    "register": "估",
+    "value": 0.4
+   },
+   "rollback_declared": false,
+   "approve_enabled": true,
+   "decision": null
+  }
+ }
+}

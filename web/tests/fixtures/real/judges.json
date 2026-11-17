@@ -1,0 +1,46 @@
+{
+ "path": "/v1/judges",
+ "status": 200,
+ "body": {
+  "items": [
+   {
+    "judge_id": "advice",
+    "version": "1",
+    "grade": "advisory",
+    "kind": "builtin",
+    "max_cost": 0.0
+   },
+   {
+    "judge_id": "costly",
+    "version": "1",
+    "grade": "decisive",
+    "kind": "container",
+    "max_cost": 2.0
+   },
+   {
+    "judge_id": "exact_match",
+    "version": "1",
+    "grade": "decisive",
+    "kind": "builtin",
+    "max_cost": 0.0
+   },
+   {
+    "judge_id": "replay",
+    "version": "1",
+    "grade": "decisive",
+    "kind": "builtin",
+    "max_cost": 0.01
+   },
+   {
+    "judge_id": "soft",
+    "version": "1",
+    "grade": "consistent",
+    "kind": "container",
+    "max_cost": 0.0
+   }
+  ],
+  "external_resources": [
+   "remote"
+  ]
+ }
+}

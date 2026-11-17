@@ -28,6 +28,7 @@
 | [watchdog/](watchdog/SPEC.md) | 哮天犬 | §3.5 |
 | [eval/](eval/SPEC.md) | 评测台（M0：B1、B1b） | §8 |
 | [sinan/](sinan/SPEC.md) | 司南（调度，外壳） | §4.1 |
+| [web/](web/SPEC.md) | 网页前端（F1）：前沿、检视与下钻、时间轴回放、成本仪表、开题向导、Hint、审批卡 | HMI §3、§4、§10、§11 |
 
 ```
 uv run pytest -q                      # 单元与对抗测试

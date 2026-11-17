@@ -1,0 +1,35 @@
+{
+ "path": "/v1/artifacts/a_21",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "4d2c73f1e870bbade96931c44d5041dd6e7e349a32d7cb4f50c9225119286bc8",
+  "id": "a_21",
+  "problem_id": "p1",
+  "hash": "6fffb0773693441307a3648655e03b104be14c5777ee14d410f39780e6d7ece5",
+  "size": 8,
+  "media_type": "text/plain",
+  "class": "judge",
+  "parents": [],
+  "producer": {
+   "actor": "jr1"
+  },
+  "seq": 21,
+  "src": "artifact:judge",
+  "register": "证据",
+  "exec": {
+   "sandbox_id": "s",
+   "base": "b",
+   "baseline_ref": "r",
+   "tool": "shell",
+   "command": "cat /etc/hostname",
+   "cwd": "/",
+   "exit_code": 0,
+   "touched": [],
+   "started_at": 1,
+   "ended_at": 2,
+   "truncated": false
+  }
+ }
+}

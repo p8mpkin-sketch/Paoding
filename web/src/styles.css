@@ -1,0 +1,144 @@
+/* 四语域靠字体、边框、文字标签三重编码区分，不靠颜色：黑白截图里也分得出（HMI 设计 §3.4）。 */
+:root {
+  --fg: #1c1c1c; --bg: #fbfaf7; --panel: #ffffff; --line: #1c1c1c; --soft: #c9c5bb; --muted: #5d5a53;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --serif: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  --sans: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e8e6e0; --bg: #161615; --panel: #1f1f1d; --line: #e8e6e0; --soft: #4a4843; --muted: #a09c92; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 var(--sans); color: var(--fg); background: var(--bg); }
+h2, h3, h4 { margin: 0 0 6px; }
+h2 { font-size: 17px; } h3 { font-size: 15px; } h4 { font-size: 13px; margin-top: 12px; }
+p { margin: 4px 0; }
+a { color: inherit; }
+code, pre { font-family: var(--mono); font-size: 12.5px; }
+button, select, input, textarea { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 3px 8px; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.45; border-style: dashed; }
+button[aria-pressed="true"], button[aria-current="true"] { outline: 2px solid var(--line); outline-offset: 1px; font-weight: 600; }
+textarea { width: 100%; min-height: 64px; display: block; }
+label { display: block; margin: 6px 0; }
+fieldset { border: 1px solid var(--soft); margin: 6px 0; }
+.muted { color: var(--muted); font-size: 12.5px; }
+.error { border: 2px solid var(--line); padding: 4px 8px; font-weight: 600; }
+.error::before { content: "✗ "; }
+.btn-small { padding: 0 6px; font-size: 12px; margin-left: 6px; }
+.chip { padding: 1px 8px; text-align: left; }
+.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.site-nav { display: flex; gap: 16px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.problems, .readings, .wizard { padding: 14px; max-width: 1100px; }
+
+/* —— 四语域 —— */
+.reg { margin: 6px 0; position: relative; }
+.reg-label { display: inline-block; font: 600 11px/1.4 var(--sans); border: 1px solid var(--line); padding: 0 5px; margin-right: 6px; border-radius: 2px; font-style: normal; }
+.reg-evidence { font-family: var(--mono); font-size: 12.5px; border: 1.5px solid var(--line); background: var(--panel); padding: 6px 8px; }
+.reg-evidence .evidence-first { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; font-weight: 600; }
+.reg-evidence .evidence-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--soft); margin-top: 4px; padding-top: 4px; }
+.reg-narrative { font-family: var(--serif); font-style: italic; border: 0; border-left: 4px solid var(--line); padding: 2px 0 2px 10px; margin-left: 0; margin-right: 0; quotes: "“" "”"; }
+q.reg-narrative { display: inline-block; margin: 2px 0 2px 8px; }
+.reg-narrative-inline { font-family: var(--serif); font-style: italic; }
+.reg-human { border: 1.5px dashed var(--line); padding: 6px 8px; background: var(--panel); }
+.reg-human-head { font-weight: 600; border-bottom: 1px dashed var(--soft); margin-bottom: 4px; padding-bottom: 2px; }
+.reg-estimate { display: inline-block; font-size: 11px; border-bottom: 1px dotted var(--line); padding: 0 2px; }
+.estimates { display: inline-block; font-size: 11px; margin-left: 8px; }
+.hash-badge { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); padding: 0 6px; display: inline-flex; gap: 6px; align-items: center; }
+.output { border-top: 1px solid var(--soft); margin: 6px 0 0; padding-top: 6px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vault { margin: 0; padding-left: 16px; font-family: var(--mono); font-size: 12px; }
+
+.badge { display: inline-block; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font-size: 12px; margin-right: 4px; white-space: nowrap; background: var(--panel); }
+.badge-criterion { border-radius: 2px; border-width: 1.5px; font-family: var(--mono); }
+.badge-criterion::before { content: "⚖ "; }
+.badge-none { border-style: dotted; color: var(--muted); }
+.level { font-weight: 600; }
+.level-X { text-decoration: line-through; }
+.level-E0 { border-style: dotted; font-weight: 400; }
+.level-E3 { border-width: 2px; }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 4px 0; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.expect, .verdicts { margin: 0; padding-left: 18px; }
+.criterion { border: 1.5px solid var(--line); border-radius: 2px; padding: 6px 8px; background: var(--panel); margin: 6px 0; }
+.criterion header { border-bottom: 1px solid var(--soft); padding-bottom: 4px; margin-bottom: 4px; }
+.tree { list-style: none; margin: 4px 0; padding-left: 0; }
+.tree .tree, .nested { margin-left: 14px; }
+.tree li { margin: 3px 0; }
+.no-root { border: 2px dotted var(--line); padding: 4px 8px; font-weight: 600; }
+table.mini { border-collapse: collapse; font-size: 12.5px; margin: 4px 0; }
+table.mini th, table.mini td { border: 1px solid var(--soft); padding: 2px 8px; text-align: left; vertical-align: top; }
+table.wide { width: 100%; }
+
+/* —— 驾驶舱 —— */
+.cockpit { display: grid; grid-template-rows: auto 1fr auto; height: calc(100vh - 36px); }
+.topbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.topbar h2 { margin: 0; }
+.terminal { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.conn { border: 1.5px solid var(--line); padding: 0 8px; font-weight: 600; }
+[data-conn="disconnected"] .conn, [data-conn="replay"] .conn { border-style: dashed; }
+.profile summary { cursor: pointer; list-style: none; }
+.columns { display: grid; grid-template-columns: 230px minmax(0, 1fr) minmax(320px, 34%); min-height: 0; }
+.left, .main, .right { overflow: auto; padding: 10px 12px; min-height: 0; }
+.left { border-right: 1px solid var(--line); } .right { border-left: 1px solid var(--line); }
+.todo ul { list-style: none; padding: 0; margin: 4px 0 10px; } .todo li { margin: 4px 0; }
+.tabs { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.tabs label { display: inline; margin: 0; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.node-row { border-bottom: 1px solid var(--soft); padding: 4px 0; }
+.node-row.selected { outline: 2px solid var(--line); outline-offset: 1px; }
+.row-main { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; width: 100%; text-align: left; border: 0; background: none; padding: 2px 0; }
+.row-id { font-family: var(--mono); font-weight: 600; min-width: 44px; }
+.predicate { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.hint-row { margin: 4px 0; } .hint-row.closed, .hint-trace.closed { opacity: 0.55; }
+.sheet { border: 2px solid var(--line); padding: 8px 10px; margin-bottom: 12px; background: var(--panel); position: relative; }
+.sheet-close { position: absolute; right: 8px; top: 8px; }
+.card header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.card section { border-top: 1px solid var(--soft); margin-top: 6px; }
+.decision { border-top: 2px solid var(--line) !important; }
+.deny { margin-top: 8px; }
+.stale { border: 3px double var(--line); padding: 6px 8px; margin: 6px 0; }
+.scope-diff { border: 1px solid var(--soft); padding: 4px 8px; margin: 4px 0; }
+.trace-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trace-cols ul { padding-left: 16px; margin: 4px 0; }
+.inspector-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+
+/* —— 成本仪表 —— */
+.cost { min-width: 260px; font-size: 12.5px; }
+.cost-line { display: flex; gap: 10px; font-family: var(--mono); }
+.bar { position: relative; height: 12px; border: 1px solid var(--line); background: var(--panel); margin: 2px 0; }
+.bar-spent { position: absolute; left: 0; top: 0; bottom: 0; background: var(--line); }
+.bar-reserved { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--line) 0 2px, transparent 2px 5px); }
+.bar-mark { position: absolute; top: -3px; bottom: -3px; border-left: 1.5px dashed var(--line); }
+.bar-mark.crossed { border-left-style: solid; border-left-width: 2.5px; }
+.cost details summary { cursor: pointer; }
+
+/* —— 时间轴 —— */
+.bottom { border-top: 1px solid var(--line); padding: 6px 14px; }
+.timeline-track { position: relative; padding-top: 18px; }
+.timeline-track input[type="range"] { width: 100%; margin: 0; padding: 0; border: 0; }
+.ticks { position: absolute; left: 8px; right: 8px; top: 0; height: 18px; }
+.tick { position: absolute; transform: translateX(-50%); font: 600 10.5px var(--mono); border: 1px solid var(--line); background: var(--panel); padding: 0 2px; }
+.timeline-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12.5px; }
+.timeline-ctl label, .inline { display: inline-flex; gap: 4px; align-items: center; margin: 0; }
+.seq-input { width: 64px; }
+.legend ul { display: flex; flex-wrap: wrap; gap: 4px 14px; list-style: none; padding: 0; margin: 4px 0; font-size: 12px; }
+
+/* —— 图 —— */
+.graph-wrap { overflow: auto; border: 1px solid var(--soft); background: var(--panel); }
+.gnode rect, .gnode polygon { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.gnode { cursor: pointer; } .gnode text { fill: var(--fg); font-size: 11px; font-family: var(--mono); }
+.gnode .g-title { font-family: var(--serif); font-style: italic; }
+.gnode.selected rect { stroke-width: 3.5; }
+.gnode.level-E0 rect { stroke-dasharray: 2 3; } .gnode.level-X rect { stroke-dasharray: 8 3; } .gnode.level-E3 rect { stroke-width: 2.5; }
+.gnode-hint polygon { stroke-dasharray: 5 3; } .gnode-hint.closed { opacity: 0.5; }
+.edge { stroke: var(--line); stroke-width: 1; } .edge-about { stroke-dasharray: 4 3; }
+
+/* —— 向导 —— */
+.wizard-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; }
+.wizard section { margin: 10px 0; } .wizard input:not([type]) { min-width: 240px; }
+.materials { list-style: none; padding: 0; } .materials li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+.issues { border: 1.5px dashed var(--line); padding: 4px 8px 4px 24px; }
+.wizard-foot { display: flex; gap: 8px; align-items: center; margin-top: 10px; }

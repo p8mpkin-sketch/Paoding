@@ -1,0 +1,19 @@
+{
+ "path": "/v1/problems/p2/work",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "e4a0e725516ded3467822208b8629422f2a7ed44bca357a8c9c5464388970e81",
+  "items": [
+   {
+    "kind": "reason"
+   },
+   {
+    "kind": "human",
+    "target": "i_34",
+    "why": "needs_human"
+   }
+  ]
+ }
+}

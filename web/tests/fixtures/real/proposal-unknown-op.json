@@ -1,0 +1,13 @@
+{
+ "status": 200,
+ "body": {
+  "ok": false,
+  "results": [
+   {
+    "ok": false,
+    "code": "schema_error",
+    "detail": "未知操作 pause"
+   }
+  ]
+ }
+}

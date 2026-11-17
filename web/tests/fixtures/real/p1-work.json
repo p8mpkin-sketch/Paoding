@@ -1,0 +1,10 @@
+{
+ "path": "/v1/problems/p1/work",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "eef46741adfc3a9f76294d3b78f37a45f113092ac9d44ee77c7a038a88ff09a1",
+  "items": []
+ }
+}

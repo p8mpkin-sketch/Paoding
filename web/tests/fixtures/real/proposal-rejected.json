@@ -1,0 +1,13 @@
+{
+ "status": 200,
+ "body": {
+  "ok": false,
+  "results": [
+   {
+    "ok": false,
+    "code": "schema_error",
+    "detail": "拒绝须写理由（§3.2 pd deny --reason）"
+   }
+  ]
+ }
+}

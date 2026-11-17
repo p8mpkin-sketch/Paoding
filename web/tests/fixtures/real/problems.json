@@ -1,0 +1,71 @@
+{
+ "path": "/v1/problems",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "36891e68248a9ed406af6024ad3a25f4e342f8140e209ae789f4ed800e37c9a4",
+  "items": [
+   {
+    "id": "p1",
+    "title": {
+     "src": "title",
+     "register": "叙述",
+     "value": "题 p1"
+    },
+    "closed": true,
+    "terminal": "solved",
+    "terminal_badge": {
+     "judge_id": "exact_match",
+     "version": "1",
+     "grade": "decisive",
+     "kind": "builtin",
+     "label": "exact_match@1"
+    },
+    "profile": {
+     "info": "complete",
+     "judge": "hard",
+     "reversibility": "r0"
+    },
+    "opened_seq": 2,
+    "opened_ts": 1002,
+    "closed_seq": 23,
+    "spent_usd_milli": 70,
+    "cap_usd_milli": 5000
+   },
+   {
+    "id": "p2",
+    "title": {
+     "src": "title",
+     "register": "叙述",
+     "value": "题 p2"
+    },
+    "closed": false,
+    "terminal": null,
+    "terminal_badge": {
+     "judge_id": "exact_match",
+     "version": "1",
+     "grade": "decisive",
+     "kind": "builtin",
+     "label": "exact_match@1"
+    },
+    "profile": {
+     "info": "complete",
+     "judge": "hard",
+     "reversibility": "r0"
+    },
+    "opened_seq": 26,
+    "opened_ts": 1025,
+    "closed_seq": null,
+    "spent_usd_milli": 30,
+    "cap_usd_milli": 5000
+   }
+  ],
+  "totals": {
+   "problems": 2,
+   "solved": 1,
+   "spent_usd_milli": 100,
+   "cost_per_solve_usd_milli": 100
+  }
+ }
+}

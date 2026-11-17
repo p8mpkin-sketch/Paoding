@@ -1,0 +1,9 @@
+{
+ "path": "/v1/problems/p2/cards/extension/p2",
+ "status": 404,
+ "body": {
+  "ok": false,
+  "code": "not_enabled",
+  "detail": "extension 卡随 M1 落地（续期门、争议裁决）"
+ }
+}

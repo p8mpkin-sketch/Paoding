@@ -1,0 +1,35 @@
+{
+ "path": "/v1/problems/p2/cards/closeout/p2",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "01ce7f7b67ad099a2f663764f6d1e5345b2f9f4df448c78513ad18e5394d49d9",
+  "card": {
+   "kind": "closeout",
+   "target": "p2",
+   "fields": {
+    "items": [],
+    "goal_level": "E0",
+    "closed": false,
+    "terminal": null
+   }
+  },
+  "card_hash": "35d366c7197cd2b0ba10e36fd8574574686bb4fa95c5d7160d4499d5bcda4e05",
+  "display": {
+   "steps": [
+    "四顾",
+    "满志",
+    "藏刀"
+   ],
+   "terminal_if_closed_now": "unsolved",
+   "terminal_badge": {
+    "judge_id": "exact_match",
+    "version": "1",
+    "grade": "decisive",
+    "kind": "builtin",
+    "label": "exact_match@1"
+   }
+  }
+ }
+}
