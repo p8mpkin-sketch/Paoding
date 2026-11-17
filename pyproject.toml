@@ -1,0 +1,34 @@
+[project]
+name = "paoding"
+version = "0.0.0"
+description = "庖丁基座 M0（monorepo 根，EDR-001 D-4）"
+requires-python = ">=3.12"
+dependencies = [
+  "paoding-pd",
+  "paoding-graph",
+  "paoding-adapter",
+  "paoding-executor",
+  "paoding-judgebox",
+  "paoding-watchdog",
+  "paoding-eval",
+  "paoding-sinan",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv.sources]
+paoding-pd = { workspace = true }
+paoding-graph = { workspace = true }
+paoding-adapter = { workspace = true }
+paoding-executor = { workspace = true }
+paoding-judgebox = { workspace = true }
+paoding-watchdog = { workspace = true }
+paoding-eval = { workspace = true }
+paoding-sinan = { workspace = true }
+
+[tool.uv.workspace]
+members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan"]
+
+[tool.pytest.ini_options]
+testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "ci/tests"]
