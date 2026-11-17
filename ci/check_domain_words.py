@@ -9,7 +9,7 @@ import pathlib
 import re
 import sys
 
-COMPONENTS = ("pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval")
+COMPONENTS = ("pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan")
 EXCLUDED_PARTS = {"tests", "judges.d", "kits", "__pycache__"}
 SUFFIXES = {".py", ".yaml", ".yml", ".toml", ".json"}
 

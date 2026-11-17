@@ -11,6 +11,7 @@ dependencies = [
   "paoding-judgebox",
   "paoding-watchdog",
   "paoding-eval",
+  "paoding-sinan",
 ]
 
 [dependency-groups]
@@ -24,9 +25,10 @@ paoding-executor = { workspace = true }
 paoding-judgebox = { workspace = true }
 paoding-watchdog = { workspace = true }
 paoding-eval = { workspace = true }
+paoding-sinan = { workspace = true }
 
 [tool.uv.workspace]
-members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval"]
+members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan"]
 
 [tool.pytest.ini_options]
-testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "ci/tests"]
+testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "ci/tests"]
