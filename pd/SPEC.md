@@ -34,9 +34,11 @@
 2. 内建判官表取异议 001 裁决的三个（replay、exact_match、seal_check）；配置判官随 judgebox 落地后从 `judges.d` 读。
 3. `pd hint add` 需要 pid（规格命令表里没写），取 `--pid` 或 `PD_PROBLEM`。
 
-### 已知缺口（内核 M0 未实现的人的操作）
+### 已补齐（异议 003，红队授权）
 
-1. `profile_override`（规格操作表列为 human 操作）：`pd profile --override` 目前直接报未实现。
-2. `deny` 的理由：内核的 `approve` 事件体只有 `intent` 与 `decision`，理由打印在卡上但不入日志。
-3. `--scope-amend`、`--waive-premise`、`pd extend`：内核 M0 没有对应字段或操作（范围修订与豁免、续期门属 M1/M4）。
-4. r2 缺回退时“禁用批准”（HMI H1）：`rollback` 是 M4 字段，M0 卡面只写“未声明回退”，不禁用。
+1. `profile_override`：`pd profile <pid> --override <轴>=<值> --reason`，理由必填，推出值与覆盖留痕。
+2. `deny` 的理由：入日志，`pd status` 以 `[人]` 显示。
+
+### 按里程碑走（不在 M0）
+
+`--scope-amend`、`--waive-premise`、`pd extend`，以及 `rule`、`accept`、`judge_revoke`、`intent_done`（变更 #41）。r2 缺回退时禁用批准（HMI H1）随 M4 的 `rollback` 字段落地，M0 卡面只写“未声明回退”。

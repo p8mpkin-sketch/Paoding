@@ -79,7 +79,7 @@ def _who(actor: dict, kind: str) -> bool:
         return k == "watchdog"
     if kind == "abandon_intent":
         return (k == "adapter" and role == "reason") or k == "human"
-    if kind in ("hint", "approve"):
+    if kind in ("hint", "approve", "profile_override"):
         return k == "human"
     if kind == "cost":
         return k in ("adapter", "judge")
@@ -92,7 +92,7 @@ def _who(actor: dict, kind: str) -> bool:
 
 KINDS = ("open_problem", "register_artifact", "add_fact", "add_intent", "request_judge", "judge_verdict",
          "lease", "renew", "release", "expire_lease", "abandon_intent", "hint", "approve", "cost",
-         "close_problem", "budget_mark")
+         "close_problem", "budget_mark", "profile_override")
 AFTER_CLOSE = ("cost", "release")                  # 关题后在途任务仍可交回用量与释放租约
 
 
@@ -530,7 +530,28 @@ def _v_approve(state, actor, pid, body, cfg):
         return Reject("schema_error", "decision 只取 approve、deny")
     if wk.intent_status(state, pid, iid) != "needs_human":
         return Reject("schema_error", "只有 needs_human 的 Intent 待审批")
-    return Ok({"intent": iid, "decision": body["decision"]})
+    reason = str(body.get("reason") or "").strip()
+    if body["decision"] == "deny" and not reason:
+        return Reject("schema_error", "拒绝须写理由（§3.2 pd deny --reason）")
+    return Ok({"intent": iid, "decision": body["decision"], **({"reason": reason} if reason else {})})
+
+
+PROFILE_AXES = {"info": ("complete", "partial"), "judge": ("hard", "costly", "deferred", "none"),
+                "reversibility": RISKS}
+
+
+def _v_profile_override(state, actor, pid, body, cfg):
+    """画像只能事后覆盖并留痕（裁决 A7）：逐轴覆盖，理由必填，推出值与覆盖值都留在事件体里。"""
+    axis, value = body["axis"], body["value"]
+    if axis not in PROFILE_AXES:
+        return Reject("schema_error", f"轴只取 {sorted(PROFILE_AXES)}")
+    if value not in PROFILE_AXES[axis]:
+        return Reject("schema_error", f"{axis} 只取 {PROFILE_AXES[axis]}")
+    reason = str(body.get("reason") or "").strip()
+    if not reason:
+        return Reject("schema_error", "覆盖须写理由")
+    derived = state["problems"][pid].get("derived_profile", state["problems"][pid]["profile"])
+    return Ok({"axis": axis, "value": value, "reason": reason, "derived": derived[axis]})
 
 
 def _v_hint(state, actor, pid, body, cfg):
@@ -579,6 +600,7 @@ _TIMED = {"lease": _v_lease, "renew": _v_renew, "release": _v_release, "expire_l
 
 _VALIDATORS = {"abandon_intent": _v_abandon_intent, "approve": _v_approve, "hint": _v_hint,
                "cost": _v_cost, "close_problem": _v_close_problem, "budget_mark": _v_budget_mark,
+               "profile_override": _v_profile_override,
                "open_problem": _v_open_problem, "register_artifact": _v_register_artifact,
                "add_fact": _v_add_fact, "add_intent": _v_add_intent,
                "request_judge": _v_request_judge, "judge_verdict": _v_judge_verdict}
@@ -644,7 +666,16 @@ def apply(state: dict, ev: dict) -> dict:
                                                    if body.get("transcript_ref") else {})}}
     elif kind == "abandon_intent":
         s["abandoned"] = s["abandoned"] + [body["intent"]]
+    elif kind == "profile_override":
+        p = s["problems"][pid]
+        s["problems"] = {**s["problems"], pid: {
+            **p, "derived_profile": p.get("derived_profile", p["profile"]),
+            "profile": {**p["profile"], body["axis"]: body["value"]},
+            "profile_overrides": p.get("profile_overrides", []) + [{**body, "seq": seq, "by": ev["actor"]["id"]}]}}
     elif kind == "approve":
+        if body.get("reason"):
+            s["decision_reasons"] = {**s.get("decision_reasons", {}), body["intent"]: {
+                "decision": body["decision"], "reason": body["reason"], "by": ev["actor"]["id"], "seq": seq}}
         if body["decision"] == "approve":
             s["approvals"] = {**s["approvals"], body["intent"]: s["approvals"].get(body["intent"], []) + [seq]}
         else:

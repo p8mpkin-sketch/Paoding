@@ -91,7 +91,8 @@ def status(state: dict, pid: str, budget: dict) -> str:
     o.add("title", f"题名：{p['title']}")
     o.add("predicate", f"目标判据 {judge_badge(state, pid, p['goal']['check']['judge_id'])} "
                        f"expect={p['goal']['check'].get('expect', {})} 候选上限 {p['goal']['max_attempts']}")
-    o.add("profile", "画像 " + " ".join(f"{k}={v}" for k, v in sorted(p["profile"].items())))
+    o.add("profile", "画像 " + " ".join(f"{k}={v}" for k, v in sorted(p["profile"].items()))
+          + ("（含人工覆盖）" if p.get("profile_overrides") else ""))
     o.add("budget", _budget_line(budget))
     o.blank()
     facts = sorted((f for f in state["facts"].values() if f["problem_id"] == pid), key=lambda f: int(f["id"][2:]))
@@ -143,6 +144,9 @@ def _intent(o: Out, state: dict, pid: str, i: dict, level: str | None) -> None:
     o.add("title", f"{i['id']} 标题：{i['title']}")
     if i.get("summary"):
         o.add("summary", f"{i['id']} 摘要：{i['summary']}")
+    dr = state.get("decision_reasons", {}).get(i["id"])
+    if dr:
+        o.add("human_reason", f"{i['id']} {'拒绝' if dr['decision'] == 'deny' else '批准'}，{dr['by']}：{dr['reason']}")
     if "expected_gain" in i:
         o.add("estimate", f"{i['id']} ≈期望增益 {i['expected_gain']}")
 
@@ -170,8 +174,11 @@ def report(state: dict, pid: str, budget: dict) -> str:
 def profile(state: dict, pid: str) -> str:
     p = state["problems"][pid]
     o = Out()
+    derived = p.get("derived_profile", p["profile"])
     for k, v in sorted(p["profile"].items()):
-        o.add("profile", f"{k} = {v}")
+        o.add("profile", f"{k} = {v}" + (f"（推出值 {derived[k]}，已由人覆盖）" if derived.get(k) != v else ""))
+    for ov in p.get("profile_overrides", []):
+        o.add("human_reason", f"覆盖 {ov['axis']}：{ov['derived']} → {ov['value']}，{ov['by']}：{ov['reason']}")
     o.add("structure", "依据：可逆性取授权范围里的最高风险；判官轴取目标判官的等级与代价；信息轴看是否有外部资源")
     for r in p["scope"]:
         o.add("structure", f"范围 {r['resource']} {r['pattern']} {','.join(r['actions'])} {r['risk']}")

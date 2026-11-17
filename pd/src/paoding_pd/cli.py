@@ -115,8 +115,16 @@ def cmd_profile(local: Local, a, w) -> int:
     if not _known(local, pid, w):
         return 1
     if a.override:
-        w("[证据] 画像覆盖（profile_override）在 M0 内核里尚未实现，见 pd/SPEC.md 已知缺口\n")
-        return 2
+        axis, _, value = a.override.partition("=")
+        if not a.reason:
+            w("[证据] 覆盖须写理由：--reason\n")
+            return 2
+        n = len(local.graph.state["problems"][pid].get("profile_overrides", []))
+        out = local.submit(pid, f"pd-override:{pid}:{n}", [{"op": "profile_override", "body": {
+            "axis": axis, "value": value, "reason": a.reason}}])
+        if not out["ok"]:
+            w(f"[证据] 被拒：{_fail(out)}\n")
+            return 1
     w(render.profile(local.graph.state, pid))
     return 0
 
@@ -151,7 +159,7 @@ def cmd_decide(local: Local, a, w, decision: str, read=input) -> int:
             w("[证据] 未确认，未提交\n")
             return 1
     out = local.submit(pid, f"pd-{decision}:{a.intent}:{st['seq']}", [{"op": "approve", "body": {
-        "intent": a.intent, "decision": decision}}])
+        "intent": a.intent, "decision": decision, **({"reason": a.reason} if a.reason else {})}}])
     if not out["ok"]:
         w(f"[证据] 被拒：{_fail(out)}\n")
         return 1

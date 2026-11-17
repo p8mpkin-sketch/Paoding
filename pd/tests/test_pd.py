@@ -60,8 +60,8 @@ def test_no_entry_for_human_filled_profile(home):
     code, out = pd(home, "problem", "open", str(home / "bad.yaml"))
     assert code == 2 and "不接受 profile" in out
     pd(home, "problem", "open", str(home / "p.yaml"))
-    code, out = pd(home, "profile", "p1", "--override", "judge=hard", "--reason", "x")
-    assert code == 2 and "尚未实现" in out
+    code, out = pd(home, "profile", "p1", "--override", "judge=costly")
+    assert code == 2 and "须写理由" in out
     with pytest.raises(SystemExit):
         pd(home, "profile", "p1", "--info", "complete")          # 没有填三轴的参数
 
@@ -145,6 +145,18 @@ def test_every_pass_carries_judge_badge(home, seed):
             assert re.search(r"[a-z_]+@\d", line), line
 
 
+def test_profile_override_after_the_fact(home):
+    """异议 003：画像只能事后覆盖，理由必填，推出值与覆盖理由都留痕并在[人]语域显示。"""
+    pd(home, "problem", "open", str(home / "p.yaml"))
+    code, out = pd(home, "profile", "p1", "--override", "judge=costly", "--reason", "判官要起容器，不算廉价")
+    assert code == 0 and well_formed(out)
+    assert "[证据] judge = costly（推出值 hard，已由人覆盖）" in out
+    assert "[人] 覆盖 judge：hard → costly，human：判官要起容器，不算廉价" in out
+    code, out = pd(home, "profile", "p1", "--override", "judge=easy", "--reason", "x")
+    assert code == 1 and "schema_error" in out
+    assert "（含人工覆盖）" in pd(home, "status", "p1")[1]
+
+
 def test_terminal_phrases_never_say_proved(home):
     pd(home, "problem", "open", str(home / "p.yaml"))
     local = Local(home / "data", {"kind": "human", "id": "cz"})
@@ -211,3 +223,4 @@ def test_deny_requires_reason(home):
     assert code == 0 and "[人] 拒绝理由：回退方案不清楚" in out and f"已拒绝 {iid}" in out
     from paoding_graph.contract import intent_status
     assert intent_status(Local(home / "data", {"kind": "human", "id": "cz"}).graph.state, "p1", iid) == "abandoned"
+    assert f"[人] {iid} 拒绝，human：回退方案不清楚" in pd(home, "status", "p1")[1]           # 理由入日志
