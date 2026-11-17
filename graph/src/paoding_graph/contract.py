@@ -10,3 +10,22 @@ REJECT_CODES = frozenset({
 })
 ARTIFACT_CLASSES = frozenset({"exec", "judge", "input", "authored"})
 ADMISSIBLE_CLASSES = frozenset({"exec", "judge", "input"})   # authored 永不入 grounds（I2）
+
+# ---------- 进程内端口（M0 单机；HTTP/Unix socket 绑定在其上，接口相同） ----------
+from typing import Protocol  # noqa: E402
+
+from .blobs import BlobStore, CorruptBlob  # noqa: E402,F401
+
+
+class GraphPort(Protocol):
+    """POST /v1/problems/{pid}/proposals 的进程内形态：令牌决定身份，整批原子，同 idem_key 恰好一次。"""
+
+    def submit(self, token: str, pid: str, idem_key: str, ops: list[dict]) -> dict: ...
+
+
+class BlobPort(Protocol):
+    """PUT /v1/blobs 与 GET /v1/blobs/{hash}。"""
+
+    def put(self, data: bytes) -> str: ...
+
+    def get(self, h: str, start: int = 0, end: int | None = None) -> bytes: ...
