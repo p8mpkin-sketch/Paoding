@@ -62,7 +62,7 @@
 ## 6. 模型后端与题目材料（落位细节）
 
 - 后端 DeepSeek：端点 `https://api.deepseek.com/anthropic`（Anthropic 兼容已验证）；`prices.yaml` 按官方价目重写（含缓存价，不报缓存的字段记 null 不记 0）；`routing.yaml` family=deepseek；起一次真实对话报实测成本
-- 题目：`problems/q1-login/`（D7 用，单容器 8080）、`problems/q2-twostage/`（D12 用，双端口 8080/8081）；启动 `docker run -e ANSWER=<答案串>`，重置=rm 后重 run；判定与授权见各自 problem.md
+- 题目：`problems/q1-login/`（D7 用，单容器 8080）、`problems/q2-twostage/`（D12 用，双端口 8080/8081）；启动 `docker run -e ANSWER=<答案串传入>`，重置=rm 后重 run；判定与授权见各自 problem.md
 - 标准答案：两道题各一个答案串与核对值（sha256），由引导提示词随本文件传达——存放于本地答案文件（不提交仓库）；判定器比对用核对值；题目容器启动时以 `-e ANSWER=` 传入
 
 ## 7. 术语纪律与降级恢复
