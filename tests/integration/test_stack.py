@@ -253,7 +253,7 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
     assert f":{proc.pid}:" not in leftover, leftover               # 属主是 run.py 进程的容器一个不剩
     # 日志一行一条：时间 组件名 消息
     for line in log.strip().splitlines():
-        assert line.split(" ", 2)[1] in ("graph", "judge", "sinan", "watchdog", "stack"), line
+        assert line.split(" ", 2)[1] in ("graph", "judge", "sinan", "watchdog", "stack", "adapter"), line
     assert "已停" in log
 
     # 重启读回同一份日志：租约以 failed 释放（停机不是花超），没有悬着的租约
