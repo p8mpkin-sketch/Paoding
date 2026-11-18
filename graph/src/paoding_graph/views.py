@@ -19,7 +19,9 @@ from . import levels as lv
 from . import refmodel as rm
 from . import work as wk
 from .parse import BadBody, Obj
-from .reducer import Config, _derive_profile, _rule
+from .reducer import Config
+from .reducer.common import _rule
+from .reducer.problem import _derive_profile
 from .state import Check, Fact, Hint, Intent, Lease, Problem, State
 
 # 出处类别 → 语域（HMI §3.4 的表；pd 的行首标记与网页的样式同源）

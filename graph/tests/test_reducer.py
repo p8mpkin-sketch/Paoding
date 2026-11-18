@@ -49,8 +49,14 @@ def test_reducer_is_pure():
         "shutil",
         "tempfile",
     }
-    for name in ("reducer.py", "levels.py", "refmodel.py", "jcs.py", "envelope.py", "work.py", "views.py", "cards.py"):
-        tree = ast.parse((ROOT / "graph/src/paoding_graph" / name).read_text())
+    pkg = ROOT / "graph/src/paoding_graph"
+    files = sorted((pkg / "reducer").glob("*.py")) + [
+        pkg / n for n in ("levels.py", "refmodel.py", "jcs.py", "envelope.py", "work.py", "views.py", "cards.py")
+    ]
+    assert len(files) > 7, "reducer 子模块没有被纳入纯度检查"
+    for path in files:
+        name = path.relative_to(pkg).as_posix()
+        tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             mods = []
             if isinstance(node, ast.Import):
@@ -465,3 +471,11 @@ def test_inconclusive_request_cannot_be_judged_twice(k):
         == "schema_error"
     )
     assert lv.levels(k.state, "p1")[f] == "E0"
+
+
+def test_reducer_modules_stay_small():
+    """reducer 按事件族拆成子模块（工程项 4）：单个文件不超过约 500 行，校验与应用分开。"""
+    pkg = ROOT / "graph/src/paoding_graph/reducer"
+    for path in pkg.glob("*.py"):
+        n = len(path.read_text().splitlines())
+        assert n <= 500, f"{path.name} 有 {n} 行：按事件族再拆"
