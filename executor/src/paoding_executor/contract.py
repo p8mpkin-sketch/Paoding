@@ -14,3 +14,9 @@ class ExecPort(Protocol):
 
     def destroy(self, sid: str) -> None:
         """哮天犬叫停任务时销毁该租约的执行容器。"""
+
+
+class SandboxPort(ExecPort, Protocol):
+    """会话运行器按租约起执行容器用：launch 之后的 sid 交给 exec，会话结束时 destroy。"""
+
+    def launch(self, spec: ExecSpec, lease_id: str, mount_workspace: bool = True) -> str: ...
