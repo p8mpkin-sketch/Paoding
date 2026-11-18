@@ -18,7 +18,7 @@ ALLOWED: dict[str, set[str]] = {
     "adapter": {"graph", "executor"},
     "watchdog": {"graph"},
     "pd": {"graph"},
-    "eval": {"graph", "adapter"},
+    "eval": {"graph", "adapter", "executor"},
     "sinan": {"graph", "adapter"},
 }
 

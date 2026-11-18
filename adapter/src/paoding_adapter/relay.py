@@ -4,7 +4,9 @@
 中继把每个监听端口的字节流原样转给一个挂载进来的 Unix 套接字，套接字另一头是 Adapter 进程（container.py
 的 UnixBridge），再转到本机回环上的端点。中继不看内容、不持有任何密钥或令牌。
 
-用法（容器内，python -I）：relay.py <端口>=<套接字路径> [<端口>=<套接字路径> …]
+用法（容器内，python -I）：relay.py <端口>=<上游> [<端口>=<上游> …]
+<上游> 是 Unix 套接字路径，或 `tcp:<主机>:<端口>`（Docker Desktop 上 Unix 套接字挂不进容器，
+评测台的 baseline 改走 host.docker.internal；见 eval/SPEC.md）。
 只用标准库；不导入工作区里的任何东西。
 """
 
@@ -63,6 +65,22 @@ def to_unix(path: str) -> Connect:
     return connect
 
 
+def to_tcp(host: str, port: int) -> Connect:
+    def connect() -> socket.socket:
+        s = socket.create_connection((host, port), timeout=10)
+        s.settimeout(None)
+        return s
+
+    return connect
+
+
+def upstream(target: str) -> Connect:
+    if target.startswith("tcp:"):
+        host, _, port = target[4:].rpartition(":")
+        return to_tcp(host, int(port))
+    return to_unix(target)
+
+
 def main(argv: list[str]) -> int:
     threads = []
     for spec in argv:
@@ -71,7 +89,7 @@ def main(argv: list[str]) -> int:
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("0.0.0.0", int(port)))
         srv.listen(64)
-        t = threading.Thread(target=accept_loop, args=(srv, to_unix(path)), daemon=True)
+        t = threading.Thread(target=accept_loop, args=(srv, upstream(path)), daemon=True)
         t.start()
         threads.append(t)
     sys.stdout.write("ready\n")

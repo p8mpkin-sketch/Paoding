@@ -4,9 +4,10 @@ title: 题 1
 statement: |
   （题面原文，交给模型看；见 problems/<题>/problem.md 的“题面”一节，把 <题目容器> 换成实际地址）
 answer: "（启动题目容器时 -e ANSWER= 的值）"
+# 题目容器的容器名要等于 scope 里的主机名（下面写 q1:8080，容器就以 --name q1 起）：两种模式的闸门都按名字找目标
 scope:
   - {resource: net, pattern: "q1:8080", actions: [connect], risk: r0}
 budget: {usd_milli: 5000, wall_s: 3600, verify_share: 0.2, bootstrap_share: 0.3}
 env: {base: basic, baseline_ref: basic@1}
 judges: [exact_match, replay]
-# prompt: B1 直连臂的用户提示；缺省用 statement
+# prompt: B1 直连臂的用户提示；缺省用 statement。两者后面都会自动加一句交付方式（写 answer.txt）

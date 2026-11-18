@@ -34,6 +34,7 @@ WORKSPACE, SESSION, HOME = "/workspace", "/session", "/home/pd"
 # 与执行层同一套标签约定（executor/SPEC.md）：进程异常退出后，哮天犬的孤儿清扫按属主回收容器与网络
 LABEL, OWNER, LEASE, ROLE = "paoding.sandbox", "paoding.owner", "paoding.lease", "paoding.role"
 ISOLATED = "com.docker.network.bridge.gateway_mode_ipv4=isolated"
+RELAY_SCRIPT = Path(__file__).with_name("relay.py")  # 中继脚本；评测台的 baseline 也挂它
 
 
 class LaunchError(RuntimeError):
@@ -207,7 +208,7 @@ class ContainerLauncher:
                 "--mount",
                 f"type=bind,src={self.sock_dir},dst=/run/pd,readonly",
                 "--mount",
-                f"type=bind,src={Path(__file__).with_name('relay.py')},dst=/opt/paoding/relay.py,readonly",
+                f"type=bind,src={RELAY_SCRIPT},dst=/opt/paoding/relay.py,readonly",
                 self.relay_image,
                 "python",
                 "-I",

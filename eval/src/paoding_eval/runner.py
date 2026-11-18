@@ -20,9 +20,20 @@ from pathlib import Path
 
 import yaml
 
-from paoding_adapter.contract import EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, fake_program
+from paoding_adapter.contract import FAKE_CLI, EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, fake_program
 
-from .harness import PRICES, ROOT, MeteringLedger, collect, empty_mcp_config, open_problem, run_cli, wait_terminal
+from .box import PD_DIR, BaselineBox, write_connects
+from .harness import (
+    NATIVE_TOOLS,
+    PRICES,
+    ROOT,
+    MeteringLedger,
+    collect,
+    empty_mcp_config,
+    open_problem,
+    run_cli,
+    wait_terminal,
+)
 from .record import Record, log_dir_field, run_dirname, stamp
 from .spec import ProblemSpec, sha256_hex
 
@@ -39,10 +50,18 @@ def run_baseline(
     usage: dict | None = None,
     fake_steps: list | None = None,
     timeout_s: float = 300,
+    image: str = "",
+    transport: str = "",
+    meta: dict | None = None,
 ) -> Record:
     """baseline 模式（单 CLI 直连）。real_program 为 None 时干跑（假 CLI + 假上游）；否则用真 CLI 直连 upstream_url。
 
-    fake_steps 只用于干跑测试：覆盖假 CLI 的步骤（默认是把 spec.answer 写进 answer.txt）。"""
+    image 给出时 CLI 在沙箱里跑（box.py）：与 full 同一套执行层网络，经闸门只连得到 scope 授权的目标。
+    真题运行必须给 image，否则两臂环境不对等（M1 第一批读数的教训）；只有干跑允许在宿主上跑。
+    fake_steps 只用于干跑测试：覆盖假 CLI 的步骤（默认是把 spec.answer 写进 answer.txt）。
+    meta：写进 log_dir/meta.json 的运行信息（运行器提交号、清单摘要等），不进记录本身。"""
+    if real_program is not None and not image:
+        raise ValueError("真题 baseline 要给沙箱镜像（--image）：CLI 在宿主上连不到题目环境，对照不成立")
     t0 = time.monotonic()
     log_dir = out_root / run_dirname("baseline", spec.id, run_no, stamp())
     workspace = log_dir / "workspace"
@@ -66,14 +85,29 @@ def run_baseline(
     proxy = EndpointProxy(
         ProxyConfig(up_url, key, "eval-baseline", global_cap_usd_milli=1_000_000_000), PriceTable.load(PRICES), ledger
     )
-    proxy.serve()
+    _, proxy_port = proxy.serve()
     proxy_url = proxy.url
     token = secrets.token_urlsafe(16)
     proxy.register_task(
         token, "baseline", spec.id, reserve_usd_milli=max(int(spec.budget.get("usd_milli", 5000)), 1_000_000)
     )
 
+    box: BaselineBox | None = None
+    touched = 0
     try:
+        if image:
+            box = BaselineBox(
+                spec.scope,
+                image,
+                workspace,
+                proxy_port,
+                name=log_dir.name[-24:],
+                wall_s=int(timeout_s) + 120,
+                transport=transport,
+            ).__enter__()
+            if dry:
+                box.copy_in(FAKE_CLI, f"{PD_DIR}/fakecli.py")
+                program = ["python", "-I", f"{PD_DIR}/fakecli.py"]
         res = run_cli(
             program,
             spec.goal_prompt,
@@ -84,8 +118,13 @@ def run_baseline(
             model=cli_model,
             fake_script=script,
             timeout_s=timeout_s,
+            box=box,
         )
+        if box is not None:
+            touched = write_connects(box, log_dir / "gate.jsonl")
     finally:
+        if box is not None:
+            box.close()
         proxy.close()
         if upstream is not None:
             upstream.close()
@@ -112,6 +151,14 @@ def run_baseline(
         log_dir=log_dir_field(out_root, log_dir.name),
     )
     rec.write(log_dir)
+    info = {
+        **(meta or {}),
+        "image": image or None,
+        "sandbox": bool(image),
+        "tools": list(NATIVE_TOOLS),
+        "target_connects": touched if image else None,
+    }
+    (log_dir / "meta.json").write_text(json.dumps(info, ensure_ascii=False, sort_keys=True, indent=1), encoding="utf-8")
     return rec
 
 
@@ -136,6 +183,7 @@ def run_full(
     model: str = "",
     boot_timeout_s: float = 60,
     timeout_s: float = 300,
+    meta: dict | None = None,
 ) -> Record:
     """full 模式（全栈流程）。config 是写给 scripts/run.py 的栈配置（backend/executor/…）。"""
     t0 = time.monotonic()
@@ -196,4 +244,7 @@ def run_full(
         log_dir=log_dir_field(out_root, log_dir.name),
     )
     rec.write(log_dir)
+    (log_dir / "meta.json").write_text(
+        json.dumps({**(meta or {}), "sandbox": True}, ensure_ascii=False, sort_keys=True, indent=1), encoding="utf-8"
+    )
     return rec
