@@ -398,6 +398,7 @@ dependencies = [
     { name = "paoding-pd" },
     { name = "paoding-sinan" },
     { name = "paoding-watchdog" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -418,6 +419,7 @@ requires-dist = [
     { name = "paoding-pd", editable = "pd" },
     { name = "paoding-sinan", editable = "sinan" },
     { name = "paoding-watchdog", editable = "watchdog" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 
 [package.metadata.requires-dev]

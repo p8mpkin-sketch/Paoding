@@ -21,6 +21,7 @@ import urllib.parse
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E = ROOT / "scripts" / "e2e"
@@ -79,7 +80,7 @@ class Watcher(threading.Thread):
 
 
 def config(home: Path, **over) -> StackConfig:
-    return StackConfig.load(home, E2E / "config.json", port=0, static_dir=None, poll_s=0.2, dog_interval_s=0.5, **over)
+    return StackConfig.load(home, E2E / "config.yaml", port=0, static_dir=None, poll_s=0.2, dog_interval_s=0.5, **over)
 
 
 def owned_containers(owner: str) -> list[str]:
@@ -243,9 +244,9 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
             {"steps": [{"tool": "mcp__paoding__exec", "input": {"cmd": "echo hi"}}, {"hang": 300}], "resume_steps": []}
         )
     )
-    cfg = json.loads((E2E / "config.json").read_text())
+    cfg = yaml.safe_load((E2E / "config.yaml").read_text())
     cfg["backend"]["scripts"] = {"bootstrap": str(hang)}
-    (home / "config.json").write_text(json.dumps(cfg))
+    (home / "config.yaml").write_text(yaml.safe_dump(cfg))
     ready = tmp_path / "ready"
     proc = subprocess.Popen(
         [

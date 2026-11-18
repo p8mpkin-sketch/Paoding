@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E = ROOT / "scripts" / "e2e"
@@ -38,9 +39,9 @@ pytestmark = pytest.mark.skipif(not docker_ok(), reason="需要 Docker 与本地
 
 
 def write_config(tmp_path: Path, backend: dict, **top) -> Path:
-    p = tmp_path / "config.json"
+    p = tmp_path / "config.yaml"
     p.write_text(
-        json.dumps(
+        yaml.safe_dump(
             {
                 "backend": backend,
                 "executor": {"kind": "docker", "bases": {"basic": IMAGE}},
@@ -157,7 +158,7 @@ def test_real_backend_defaults_to_the_container_launcher(tmp_path, monkeypatch):
         )
         argv, env = stack.adapter_cfg.binding.command(plan)
         assert env["ANTHROPIC_BASE_URL"] == "http://pd-endpoints:8081" and env["ANTHROPIC_API_KEY"] == "pdt-x"
-        assert key not in json.dumps([argv, env]) and key not in (tmp_path / "config.json").read_text()
+        assert key not in json.dumps([argv, env]) and key not in (tmp_path / "config.yaml").read_text()
     finally:
         stack.stop()
 
