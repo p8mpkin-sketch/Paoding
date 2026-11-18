@@ -23,6 +23,7 @@
 ## M0 实现（预备，2026-11-17）
 
 - `compile.py`：确定性授权编译。资源种类插件 `net`（host:port）与 `workspace`；没有插件解释的 resource 直接报错，不默认放行。
+- `capture.py`：流式采集（P1-2，2026-11-18）。`Capture` 是定长的落盘缓冲（前一半顺序写，其后写进环，磁盘占用不超过上限），`pump` 逐块（64 KB）读子进程输出并在墙钟到点时杀掉它。256 MB 上限在读的过程中生效，本进程内存里只有一个读块；写 Blob 也是逐块。
 - `runtime.py`：Docker 实现。每个沙箱一张 `--internal` 网络，只接入白名单里的本机题目容器；`--cap-drop ALL`、`no-new-privileges`、pids/内存/CPU 上限，不传任何凭据类环境变量。判官的洁净容器不挂 Worker 工作区。exec 合并 stdout 与 stderr（保序），容器外采集，写 Blob，用执行层令牌登记为 exec 类；判官模式只交回出处字段，由判官运行器登记。回显超过 8 KB 只回头尾。
 - 依赖：`paoding_graph.contract` 的 `GraphPort` 与 `BlobPort`。
 
@@ -37,6 +38,17 @@
 | 状态 | `sandboxes()` | 本实例名下的沙箱：sid、租约、目标、是否仍在运行 |
 
 沙箱已停止或不存在时 `exec` 抛 `SandboxGone`，不采集、不登记。
+
+`exec` 的结束方式写在 `ExecResult.ended_by`，回显末尾也有一行说明：
+
+| `ended_by` | `exit_code` | 依据 |
+| --- | --- | --- |
+| `exit` | 命令的退出码 | 正常结束 |
+| `timeout` | `null` | 到了 `timeout_s`：容器内 `timeout -s KILL` 杀掉整个进程组；它没能收场时本进程再等 30 秒杀掉 `docker exec` |
+| `oom` | 137 | 没到点就被 SIGKILL，且 Docker 守护进程在这段时间为该容器报了 oom 事件（不取容器内的任何说法） |
+| `killed` | 137 | 没到点就被 SIGKILL，没有 oom 事件 |
+
+`oom` 只在整条命令以 137 结束时判定：脚本中途某个子进程被内存上限杀掉、脚本自己继续跑完的，按脚本的退出码算。出处字段集合是内核定死的（`reducer.py` 的 `_EXEC_FIELDS`），所以 `ended_by` 不进出处，只在返回值与回显里。
 
 `EnvManager` 管题目环境容器（执行容器的出站目标）：`start(name, image, env, command, ready_port)` 等端口就绪，`reset(name)` 删除后按同一参数重建，`stop(name)` 幂等且只删本层建的。启动参数（含环境变量）只留在本进程内存里，不写日志、不进 Blob、不进任何沙箱。
 

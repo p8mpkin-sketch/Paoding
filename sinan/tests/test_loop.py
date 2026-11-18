@@ -2,9 +2,12 @@
 
 覆盖：/work 驱动的先后（bootstrap → reason → explore）、估值排序及其开关、判定未决时等待及其开关、
 预留的取值、被拒后的停机、I8（司南只提交 lease）、单进程下经 between 驱动判官直到关题。
+并发（审计 P1-3）：不同 Intent 的 Explore 并行、同一 Intent 互斥、Reason 每题互斥、并发上限、max_sessions=1 退回串行。
 """
 import ast
 import hashlib
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -35,10 +38,16 @@ class World:
         self.gains = (0.2, 0.9)
         self.intent_budget = {"usd_milli": 100, "wall_s": 60}
         self.candidate = b"42"
+        self.lock = threading.Lock()
+        self.gate = None                 # 给了就在 explore 会话里等它：测试用来让会话停在半路
+        self.inside = []                 # 当前在会话里的 (kind, target)
+        self.peak = 0                    # 同时在途会话数的最大值
 
     def sub(self, tok, pid, ops):
-        self.n += 1
-        return self.svc.submit(tok, pid, f"w{self.n}", ops)
+        with self.lock:
+            self.n += 1
+            n = self.n
+        return self.svc.submit(tok, pid, f"w{n}", ops)
 
     def one(self, tok, pid, op, body):
         out = self.sub(tok, pid, [{"op": op, "body": body}])
@@ -67,11 +76,24 @@ class World:
 
     def run(self, pid, lease_id, *, statement, kits=None, focus=None, sandbox_id=None):
         lease = self.svc.state["leases"][lease_id]
+        key = (lease["kind"], lease.get("target"))
+        with self.lock:
+            assert key not in self.inside, f"同一目标上有两个会话：{key}"
+            self.inside.append(key)
+            self.peak = max(self.peak, len(self.inside))
+        try:
+            return self._session(pid, lease_id, lease, statement)
+        finally:
+            with self.lock:
+                self.inside.remove(key)
+
+    def _session(self, pid, lease_id, lease, statement):
         kind = lease["kind"]
         tok = f"tok-s-{lease_id}"
         self.reg.issue({"kind": "adapter", "id": "ad1", "session": lease_id, "role": kind}, tok)
-        self.ran.append({"kind": kind, "target": lease.get("target"), "statement": statement,
-                         "reserve": lease["reserve"]})
+        with self.lock:
+            self.ran.append({"kind": kind, "target": lease.get("target"), "statement": statement,
+                             "reserve": lease["reserve"]})
         if kind == "bootstrap":
             ex = self.art("tok-executor", pid, f"out {lease_id}".encode(), "exec", exec=PROV)
             fid = self.one(tok, pid, "add_fact", {"title": "端口开放", "summary": "", "claim_type": "observation",
@@ -83,18 +105,22 @@ class World:
                 self.one(tok, pid, "add_intent", {"title": f"路线 {n} {lease_id}", "summary": "", "premises": [],
                                                   "risk": "r0", "budget": self.intent_budget, "expected_gain": gain})
         else:
-            cand = self.art(tok, pid, self.candidate, "authored")
-            self.sub(tok, pid, [{"op": "request_judge", "body": {      # 候选次数用满后内核会拒，会话照常收尾
-                "target": "goal", "judge_id": "exact_match", "candidate": cand}}])
-        self.one("tok-sinan", pid, "release", {"lease": lease_id, "outcome": "done"})
+            if self.gate is not None:
+                self.gate.wait(10)                                     # Barrier：凑齐人数才放行；Event：等测试放行
+            # 候选次数用满、或并行的另一个会话已把题解掉之后内核会拒，会话照常收尾
+            self.sub(tok, pid, [
+                {"op": "register_artifact", "body": {"hash": self.blobs.put(self.candidate), "class": "authored",
+                                                      "size": len(self.candidate), "media_type": "text/plain"}},
+                {"op": "request_judge", "body": {"target": "goal", "judge_id": "exact_match", "candidate": "$0"}}])
+        self.sub("tok-sinan", pid, [{"op": "release", "body": {"lease": lease_id, "outcome": "done"}}])
         return SessionRecord(lease_id, "released", release={"outcome": "done", "ok": True})
 
     # ---------- 手写的判官：候选等于 42 即通过 ----------
 
     def judge(self, pid="p1"):
-        st = self.svc.state
         for w in self.svc.work(pid):
-            if w["kind"] != "judge":
+            st = self.svc.state
+            if w["kind"] != "judge" or st["problems"][pid].get("closed"):
                 continue
             req = st["requests"][w["target"]]
             lid = self.one("tok-judge", pid, "lease", {"kind": "judge", "target": req["id"], "holder": "jr1",
@@ -192,9 +218,19 @@ def test_explore_reserve_follows_the_intent_budget_up_to_a_cap(w):
 def test_run_drives_to_solved_with_a_judge_between_steps(w):
     w.open()
     out = w.sinan.run("p1", between=w.judge)
-    assert out["stop"] == "closed" and kinds(w) == ["bootstrap", "reason", "explore"]
+    assert out["stop"] == "closed" and kinds(w)[:3] == ["bootstrap", "reason", "explore"]
+    assert len(kinds(w)) in (3, 4)                               # 两条路线可以并行：第二个 Explore 赶得上就也开
     p = w.svc.state["problems"]["p1"]
     assert p["closed"] and p["terminal"] == "solved"
+    w.sinan.collect(None)
+    assert sorted(s["did"]["kind"] for s in w.sinan.history) == sorted(kinds(w))
+
+
+def test_serial_when_max_sessions_is_one(tmp_path):
+    w = World(tmp_path, max_sessions=1)
+    w.open()
+    out = w.sinan.run("p1", between=w.judge)
+    assert out["stop"] == "closed" and kinds(w) == ["bootstrap", "reason", "explore"] and w.peak == 1
     assert [s["did"]["kind"] for s in out["steps"]] == kinds(w)
 
 
@@ -264,3 +300,145 @@ def test_loop_is_deterministic_code():
             [node.module] if isinstance(node, ast.ImportFrom) and node.level == 0 else []
         for m in mods:
             assert m.split(".")[0] not in banned, m
+
+
+# ---------- 并发（审计 P1-3） ----------
+
+def to_explore(w, pid="p1"):
+    """走到两条路线都待探索：bootstrap → 判定 → reason（写下两个 Intent）。"""
+    w.open(pid)
+    w.sinan.step(pid); w.judge(pid); w.sinan.step(pid)
+    return sorted(i["id"] for i in w.svc.state["intents"].values() if i["problem_id"] == pid)
+
+
+def active(w, kind):
+    return [l for l in w.svc.state["leases"].values() if l["active"] and l["kind"] == kind]
+
+
+def test_two_explores_on_different_intents_run_in_parallel(w):
+    """两个会话都得进到会话里才凑得齐 Barrier；串行的话第一个会在门口等到超时。"""
+    intents = to_explore(w)
+    w.gate = threading.Barrier(2)
+    a, b = w.sinan.dispatch("p1"), w.sinan.dispatch("p1")
+    assert {a["started"]["target"], b["started"]["target"]} == set(intents) and a["lease"] != b["lease"]
+    done = []
+    while len(done) < 2:
+        done += w.sinan.collect(5)
+    assert not w.gate.broken and w.peak == 2
+    assert {d["status"] for d in done} == {"released"} and {d["did"]["target"] for d in done} == set(intents)
+    evs = [e for e in w.svc.events("p1", 0, 1000) if e["kind"] in ("lease", "release")
+           and e["body"].get("lease", f"l_{e['seq']}") in (a["lease"], b["lease"])]
+    assert [e["kind"] for e in evs] == ["lease", "lease", "release", "release"]     # 两个租约同时在途
+
+
+def test_same_intent_never_gets_two_sessions(w):
+    intents = to_explore(w)
+    w.gate = threading.Event()
+    assert "started" in w.sinan.dispatch("p1") and "started" in w.sinan.dispatch("p1")
+    # 两个 Intent 都在途：没有第三项可开；内核也拒绝同一目标上的第二个租约
+    assert w.sinan.dispatch("p1") == {"wait": "in_flight"}
+    out = w.sub("tok-sinan", "p1", [{"op": "lease", "body": {
+        "kind": "explore", "target": intents[0], "holder": "sn1", "reserve": {"usd_milli": 1, "wall_s": 1},
+        "ttl_s": 60}}])
+    assert not out["ok"] and out["results"][0]["code"] == "conflict_leased"
+    assert sorted(l["target"] for l in active(w, "explore")) == intents
+    w.gate.set()
+    while w.sinan.in_flight():
+        w.sinan.collect(5)
+    assert sorted(r["target"] for r in w.ran if r["kind"] == "explore") == intents      # 每个 Intent 恰好一个会话
+
+
+def test_finished_but_uncollected_session_still_blocks_its_intent(w):
+    """会话已释放租约、线程还没收回时，这个 Intent 不再开第二个会话（司南自己的在途表）。"""
+    w.candidate = b"41"                                          # 判定失败 → Intent 回到 open，/work 会再给出它
+    w.gains = (0.5,)
+    [iid] = to_explore(w)
+    assert w.sinan.dispatch("p1")["started"] == {"kind": "explore", "target": iid}
+    deadline = time.monotonic() + 5
+    while active(w, "explore") and time.monotonic() < deadline:
+        time.sleep(0.01)
+    w.judge()
+    assert w.sinan.in_flight("p1")                               # 还没 collect
+    r = w.sinan.dispatch("p1")
+    assert r.get("started", {}).get("target") != iid
+
+
+def test_reason_is_exclusive_per_problem_and_holds_back_new_explores(w):
+    intents = to_explore(w)
+    w.gate = threading.Event()
+    a = w.sinan.dispatch("p1")                                   # 一个 Explore 在途
+    w.one("tok-human", "p1", "hint", {"text": "换个角度"})        # Hint 触发下一轮 Reason
+    assert {"kind": "reason"} in w.svc.work("p1")
+    hold = threading.Event()
+    real = w._session
+
+    def slow(pid, lease_id, lease, statement):
+        if lease["kind"] == "reason":
+            hold.wait(10)
+        return real(pid, lease_id, lease, statement)
+    w._session = slow
+    r = w.sinan.dispatch("p1")
+    assert r["started"] == {"kind": "reason"}                    # Reason 先于另一个待探索的 Intent
+    assert w.sinan.dispatch("p1") == {"wait": "reason"}          # Reason 在途：不开第二个 Reason，也不开新 Explore
+    assert len(active(w, "reason")) == 1 and len(active(w, "explore")) == 1
+    w.one("tok-human", "p1", "hint", {"text": "再换一个"})
+    assert {"kind": "reason"} not in w.svc.work("p1")            # 内核同样不再给出 Reason
+    out = w.sub("tok-sinan", "p1", [{"op": "lease", "body": {
+        "kind": "reason", "holder": "sn1", "reserve": {"usd_milli": 1, "wall_s": 1}, "ttl_s": 60}}])
+    assert not out["ok"] and out["results"][0]["code"] == "conflict_leased"
+    hold.set(); w.gate.set()
+    while w.sinan.in_flight():
+        w.sinan.collect(5)
+    assert a["started"]["target"] in intents and kinds(w).count("reason") == 2
+
+
+def test_capacity_caps_sessions_in_flight(tmp_path):
+    w = World(tmp_path, max_sessions=2)
+    w.gains = (0.1, 0.2, 0.3)
+    w.intent_budget = {"usd_milli": 10, "wall_s": 60}
+    to_explore(w)
+    w.gate = threading.Event()
+    assert "started" in w.sinan.dispatch("p1") and "started" in w.sinan.dispatch("p1")
+    assert w.sinan.dispatch("p1") == {"wait": "capacity"} and len(active(w, "explore")) == 2
+    w.gate.set()
+    assert w.sinan.collect(5)
+    while w.sinan.in_flight():
+        w.sinan.collect(5)
+    assert w.peak == 2
+
+
+def test_budget_refusal_waits_while_others_hold_reserves(tmp_path):
+    """别的会话占着预留时，新租约被 over_budget 拒是“等”，不是停机；没有在途会话时才停。"""
+    w = World(tmp_path, reserve={"bootstrap": {"usd_milli": 10, "wall_s": 60}, "reason": {"usd_milli": 10, "wall_s": 60}})
+    w.intent_budget = {"usd_milli": 600, "wall_s": 60}
+    w.open(usd_milli=1000)
+    w.sinan.step("p1"); w.judge(); w.sinan.step("p1")
+    w.gate = threading.Event()
+    assert "started" in w.sinan.dispatch("p1")
+    r = w.sinan.dispatch("p1")
+    assert r["wait"] == "over_budget" and r["item"]["kind"] == "explore"
+    w.gate.set()
+    while w.sinan.in_flight():
+        w.sinan.collect(5)
+
+
+def test_crashed_session_is_reported_not_raised(w):
+    w.open()
+
+    def boom(pid, lease_id, lease, statement):
+        raise RuntimeError("会话线程炸了")
+    w._session = boom
+    out = w.sinan.step("p1")
+    assert out["status"] == "crashed" and out["outcome"] is None and "会话线程炸了" in out["detail"]
+    assert w.sinan.in_flight() == []
+
+
+def test_lease_idem_keys_differ_at_the_same_seq(w):
+    """同一 seq 上接连领两个租约：幂等键带着项本身，后一个不会被当成前一个的重放。"""
+    to_explore(w)
+    w.gate = threading.Event()
+    a, b = w.sinan.dispatch("p1"), w.sinan.dispatch("p1")
+    assert a["lease"] != b["lease"]
+    w.gate.set()
+    while w.sinan.in_flight():
+        w.sinan.collect(5)
