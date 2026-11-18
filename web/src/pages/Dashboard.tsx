@@ -33,7 +33,8 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
     <div className="dashboard" data-page="home">
       <section className="quick" aria-label="快捷入口">
         <Link to={{ page: "new" }} className="btn-link primary">＋ 新建问题</Link>
-        <Link to={{ page: "problems" }} className="btn-link">题库</Link>
+        <Link to={{ page: "import" }} className="btn-link">导入题集</Link>
+        <Link to={{ page: "problems" }} className="btn-link">题库（可克隆）</Link>
         <Link to={{ page: "readings" }} className="btn-link">读数</Link>
         {error && <span className="error">刷新失败，显示的是上一次读到的：<Plain text={error} /></span>}
       </section>

@@ -7,6 +7,7 @@ import { useNow } from "./app/clock";
 import { applyTheme, loadTheme, THEMES, type Theme } from "./app/theme";
 import { Cockpit } from "./pages/Cockpit";
 import { Dashboard } from "./pages/Dashboard";
+import { Import } from "./pages/Import";
 import { Link, Problems } from "./pages/Problems";
 import { Readings } from "./pages/Readings";
 import { Wizard } from "./pages/Wizard";
@@ -64,7 +65,7 @@ export function App({ cfg: initial }: { cfg: ApiConfig }) {
         <strong>庖丁</strong>
         <Link to={{ page: "home" }} className={route.page === "home" ? "on" : undefined}>总览</Link>
         <Link to={{ page: "problems" }} className={route.page === "problems" ? "on" : undefined}>题库</Link>
-        <Link to={{ page: "new" }} className={route.page === "new" ? "on" : undefined}>开题</Link>
+        <Link to={{ page: "new" }} className={route.page === "new" || route.page === "import" ? "on" : undefined}>开题</Link>
         <Link to={{ page: "readings" }} className={route.page === "readings" ? "on" : undefined}>读数</Link>
         <span className="nav-space" />
         <ThemeSwitch />
@@ -72,7 +73,8 @@ export function App({ cfg: initial }: { cfg: ApiConfig }) {
       </nav>
       {route.page === "home" && <Home />}
       {route.page === "problems" && <Problems filter={{ q: route.q ?? "", terminal: route.terminal ?? "", judge: route.judge ?? "" }} />}
-      {route.page === "new" && <Wizard />}
+      {route.page === "new" && <Wizard key={route.from ?? ""} from={route.from} />}
+      {route.page === "import" && <Import />}
       {route.page === "readings" && <Readings />}
       {route.page === "problem" && <Cockpit key={route.pid} pid={route.pid} asOf={route.asOf} node={route.node} />}
     </ServicesContext.Provider>
