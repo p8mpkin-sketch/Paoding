@@ -1,0 +1,64 @@
+{
+ "path": "/v1/nodes/f_5?layer=evidence",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "6febb96679e4e3535bce98c677ea0e232ab122b045899dae6225b95129f51ab1",
+  "problem_id": "p1",
+  "id": "f_5",
+  "type": "fact",
+  "seq": 5,
+  "claim_type": "observation",
+  "level": "E0",
+  "level_word": "猜想",
+  "unstable": false,
+  "disputed": false,
+  "stale": false,
+  "title": {
+   "src": "title",
+   "register": "叙述",
+   "value": "主机名可读"
+  },
+  "summary": {
+   "src": "summary",
+   "register": "叙述",
+   "value": "读取主机名成功"
+  },
+  "premises": [],
+  "yielded_by": null,
+  "session": "l_3",
+  "predicate": {
+   "target": "f_5",
+   "judge_id": "replay",
+   "version": "1",
+   "grade": "decisive",
+   "kind": "builtin",
+   "label": "replay@1",
+   "spec_ref": null,
+   "spec_hash": null,
+   "expect": {
+    "exit_code": 0
+   },
+   "sealed": [],
+   "max_attempts": null,
+   "attempts_used": null,
+   "level": "E0",
+   "level_word": "猜想",
+   "fail_means": "refuted",
+   "verdicts": []
+  },
+  "grounds": [
+   {
+    "id": "a_4",
+    "class": "exec",
+    "src": "artifact:exec",
+    "register": "证据",
+    "hash": "5375a611b7ce4e9fc334c3c2d83d6e507639203866eaabdade48f62283e562ed",
+    "size": 16
+   }
+  ],
+  "no_evidence_root": false,
+  "body_ref": null
+ }
+}

@@ -1,0 +1,39 @@
+{
+ "path": "/v1/hints/h_11/trace",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "39fc34fc78045169a937690bc69b4588a97680386403f3853559f8d63f560b84",
+  "hint": {
+   "id": "h_11",
+   "type": "hint",
+   "seq": 11,
+   "author": "cz",
+   "closed": false,
+   "about": "i_9",
+   "text": {
+    "src": "hint",
+    "register": "人",
+    "value": "先看登录表单"
+   }
+  },
+  "closed_seq": null,
+  "note": "关联，不是因果",
+  "temporal": {
+   "added": [
+    "i_13"
+   ],
+   "abandoned": []
+  },
+  "exposure": {
+   "sessions": [
+    "l_12"
+   ],
+   "added": [
+    "i_13"
+   ],
+   "abandoned": []
+  }
+ }
+}

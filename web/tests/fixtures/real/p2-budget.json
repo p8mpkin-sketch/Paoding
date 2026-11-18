@@ -1,0 +1,52 @@
+{
+ "path": "/v1/problems/p2/budget",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "e9a1e90e435ea7f660f9eb0cf8d751390c3ac7ce679119bab02bf43317b64cb0",
+  "cap": {
+   "usd_milli": 5000,
+   "wall_s": 3600
+  },
+  "spent": {
+   "usd_milli": 30,
+   "tokens": 15,
+   "wall_s": 1
+  },
+  "reserved": {
+   "usd_milli": 0,
+   "tokens": 0,
+   "wall_s": 0
+  },
+  "by_kind": {
+   "bootstrap": {
+    "usd_milli": 30,
+    "tokens": 15,
+    "wall_s": 1
+   }
+  },
+  "verify_spent": {
+   "usd_milli": 0,
+   "tokens": 0,
+   "wall_s": 0
+  },
+  "marks": [],
+  "percent": {
+   "spent": 0,
+   "committed": 0
+  },
+  "mark_lines": [
+   50,
+   80
+  ],
+  "mark_seqs": [],
+  "verify_share": 0.2,
+  "bootstrap_share": 0.3,
+  "wall": {
+   "cap_s": 3600,
+   "elapsed_s": 0
+  },
+  "review": false
+ }
+}

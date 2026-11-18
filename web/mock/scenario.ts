@@ -1,0 +1,179 @@
+// 假服务的剧本：三道题的事件序列。内容是编的，只为让每种界面状态都有数据可看。
+import type { Actor, Event } from "../src/api/types";
+
+export type Api = {
+  append(pid: string, actor: Actor, kind: string, body: Record<string, unknown>): Event;
+  putBlob(data: string): string;
+  stateOf(pid: string): { decisions: Map<string, { decision: string }> };
+  sha256(data: string): string;
+};
+export type Step = { run(api: Api): void; waitFor?: (s: ReturnType<Api["stateOf"]>) => boolean };
+export type Script = { pid: string; steps: Step[]; preload?: number };
+
+const HUMAN: Actor = { kind: "human", id: "local" };
+const SINAN: Actor = { kind: "sinan", id: "sinan" };
+const GRAPH: Actor = { kind: "graph", id: "graph" };
+const EXEC: Actor = { kind: "executor", id: "executor" };
+const JUDGE: Actor = { kind: "judge", id: "judgebox" };
+const WATCHDOG: Actor = { kind: "watchdog", id: "watchdog" };
+/** 会话即租约 id；剧本里用租约的名字，运行时换成真正的 l_<seq>。 */
+const adapter = (lease: string, role: string) => (ids: Record<string, string>): Actor => ({ kind: "adapter", id: "adapter", session: ids[lease], role });
+
+class Builder {
+  steps: Step[] = [];
+  ids: Record<string, string> = {};
+  constructor(readonly pid: string) {}
+  /** 追加一步；name 给出时把新对象的 id（前缀_seq）记下来供后面引用。 */
+  ev(actorIn: Actor | ((ids: Record<string, string>) => Actor), kind: string, body: (ids: Record<string, string>, api: Api) => Record<string, unknown>, name?: string, waitFor?: Step["waitFor"]) {
+    const prefix = { register_artifact: "a", add_fact: "f", add_intent: "i", request_judge: "j", hint: "h", lease: "l" }[kind];
+    this.steps.push({
+      waitFor,
+      run: (api) => {
+        const actor = typeof actorIn === "function" ? actorIn(this.ids) : actorIn;
+        const e = api.append(this.pid, actor, kind, body(this.ids, api));
+        if (name && prefix) this.ids[name] = `${prefix}_${e.seq}`;
+      },
+    });
+    return this;
+  }
+  input(name: string, text: string) {
+    return this.ev(HUMAN, "register_artifact", (_i, api) => ({ hash: api.putBlob(text), size: text.length, media_type: "text/plain", class: "input", producer: { actor: "local" }, parents: [] }), name);
+  }
+  exec(name: string, session: string, tool: string, command: string, output: string, exit = 0, truncated = false) {
+    return this.ev(EXEC, "register_artifact", (_i, api) => ({
+      hash: api.putBlob(output), size: output.length, media_type: "text/plain", class: "exec", producer: { actor: "executor", session: _i[session] },
+      exec: { sandbox_id: `sb-${this.pid}`, base: "default", baseline_ref: "base@1", tool, command, cwd: "/work", exit_code: exit, touched: ["target:8080"], started_at: 0, ended_at: 0, truncated },
+      parents: [],
+    }), name);
+  }
+  authored(name: string, session: string, text: string, media = "text/plain") {
+    return this.ev(adapter(session, "reason"), "register_artifact", (_i, api) => ({ hash: api.putBlob(text), size: text.length, media_type: media, class: "authored", producer: { actor: "adapter", session: _i[session] }, parents: [] }), name);
+  }
+  lease(name: string, kind: string, target?: string, waitFor?: Step["waitFor"]) {
+    return this.ev(SINAN, "lease", (i) => ({ kind, ...(target ? { target: i[target] } : {}), holder: "sinan", reserve: { usd_milli: 400, wall_s: 600 }, ttl_s: 600, attempt: 1 }), name, waitFor);
+  }
+  release(id: string, role: string, usd: number) {
+    this.ev(adapter(id, role), "cost", (i) => ({ task_id: i[id], source: "proxy", model: "model-a", tokens_in: usd * 90, tokens_cached: 0, tokens_out: usd * 12, usd_milli: usd, wall_s: 40 + (usd % 50), price_table: "prices@1" }));
+    return this.ev(SINAN, "release", (i) => ({ lease: i[id], outcome: "done" }));
+  }
+  judge(name: string, target: string, judgeId: string, result: "pass" | "fail" | "inconclusive", output: string, candidate?: string) {
+    this.ev(SINAN, "request_judge", (i) => ({ target: i[target] ?? target, judge_id: judgeId, ...(candidate ? { candidate: i[candidate] } : {}) }), name);
+    this.ev(JUDGE, "lease", (i) => ({ kind: "judge", target: i[name], holder: "judgebox", reserve: { usd_milli: 50, wall_s: 60 }, ttl_s: 120, attempt: 1 }), `${name}_lease`);
+    this.ev(JUDGE, "register_artifact", (i, api) => ({
+      hash: api.putBlob(output), size: output.length, media_type: "text/plain", class: "judge", producer: { actor: "judgebox" },
+      exec: { sandbox_id: "judge-clean", base: "judge", baseline_ref: "base@1", tool: judgeId, command: `${judgeId} --request ${i[name]}`, cwd: "/judge", exit_code: result === "pass" ? 0 : 1, touched: [], started_at: 0, ended_at: 0, truncated: false },
+      parents: [],
+    }), `${name}_out`);
+    this.ev(JUDGE, "cost", (i) => ({ task_id: i[`${name}_lease`], source: "judge", tokens_in: 0, tokens_cached: 0, tokens_out: 0, usd_milli: 10, wall_s: 3, price_table: "prices@1" }));
+    this.ev(JUDGE, "judge_verdict", (i) => ({ request: i[name], result, version: "1", grade: "decisive", evidence: [i[`${name}_out`]] }));
+    return this.ev(JUDGE, "release", (i) => ({ lease: i[`${name}_lease`], outcome: "done" }));
+  }
+  open(title: string, statement: string, extra: Record<string, unknown>) {
+    return this.ev(HUMAN, "open_problem", (i) => ({
+      title, origin: { statement_ref: i.statement, materials: [] },
+      goal: { statement, check: { judge_id: "exact_match", sealed: [{ vault: `answers/${this.pid}`, digest: "9f2c".repeat(16) }] }, max_attempts: 5, accept: "judge" },
+      scope: [{ resource: "net", pattern: "target:8080", actions: ["connect"], risk: "r0" }],
+      budget: { usd_milli: 11500, wall_s: 7200, verify_share: 0.2, bootstrap_share: 0.333 },
+      env: { base: "default", baseline_ref: "base@1" }, judges: ["exact_match", "replay"],
+      profile: { info: "complete", judge: "hard", reversibility: "r0" },
+      ...extra,
+    }));
+  }
+}
+
+const OUT_INDEX = "HTTP/1.1 200 OK\nServer: demo\n\n<html><title>登录</title><form action=/login method=post>…</form>\n<!-- 运维备忘：归档接口在 8081 -->\n";
+const OUT_LOGIN = "HTTP/1.1 401 Unauthorized\n\n{\"error\":\"bad credentials\",\"hint\":\"账号见归档\"}\n";
+const OUT_ARCHIVE = "HTTP/1.1 200 OK\n\naccounts.txt\nreadme.txt\n";
+const OUT_ACCOUNTS = "HTTP/1.1 200 OK\n\nops:winter-harbor-42\n";
+
+export function demoScript(): Script {
+  const b = new Builder("demo-1");
+  b.input("statement", "目标服务在 target:8080。取得登录后页面上显示的答案串并提交。\n授权范围：只许连接 target:8080。\n");
+  b.open("示例题：取得登录后显示的答案串", "提交登录后页面显示的答案串", {});
+  // 第 1 轮：摸底
+  b.lease("L1", "bootstrap");
+  b.exec("x_index", "L1", "http_get", "http_get http://target:8080/", OUT_INDEX);
+  b.ev(adapter("L1", "bootstrap"), "add_fact", (i) => ({ title: "首页是一个登录表单", summary: "GET / 返回 200，页面含指向 /login 的表单。", claim_type: "observation", check: { judge_id: "replay", spec_ref: i.x_index, expect: { status: 200, contains: "form action=/login" } }, premises: [], grounds: [i.x_index] }), "f_index");
+  b.release("L1", "bootstrap", 310);
+  b.judge("j1", "f_index", "replay", "pass", "replay: status=200 contains=ok\nverdict: pass\n");
+  // 第 2 轮：Reason
+  b.lease("L2", "reason");
+  b.ev(adapter("L2", "reason"), "add_intent", (i) => ({ title: "试默认账号登录", summary: "用常见默认账号组合请求 /login，看返回。", premises: [i.f_index], risk: "r0", budget: { usd_milli: 400, wall_s: 600 }, expected_gain: 0.3 }), "i_login");
+  b.ev(adapter("L2", "reason"), "add_intent", (i) => ({ title: "枚举隐藏路径", summary: "按常见路径表逐个请求。", premises: [i.f_index], risk: "r0", budget: { usd_milli: 600, wall_s: 900 }, expected_gain: 0.1 }), "i_enum");
+  b.release("L2", "reason", 520);
+  b.lease("L3", "explore", "i_login");
+  b.exec("x_login", "L3", "shell", "curl -s -i -d 'user=admin&pass=admin' http://target:8080/login", OUT_LOGIN);
+  b.ev(adapter("L3", "explore"), "add_fact", (i) => ({ title: "默认账号被拒，返回里提到归档", summary: "POST /login 返回 401，正文提示账号见归档。", claim_type: "observation", check: { judge_id: "replay", spec_ref: i.x_login, expect: { status: 401 } }, premises: [i.f_index], grounds: [i.x_login] }), "f_401");
+  b.ev(adapter("L3", "explore"), "add_fact", (i) => ({ title: "账号放在 8081 的归档接口里", summary: "首页注释说归档接口在 8081，登录返回又说账号见归档，两者合起来推断。", claim_type: "inference", premises: [i.f_index, i.f_401], grounds: [] }), "f_guess");
+  b.release("L3", "explore", 450);
+  b.judge("j2", "f_401", "replay", "pass", "replay: status=401\nverdict: pass\n");
+  b.ev(HUMAN, "hint", (i) => ({ text: "别在 8080 上枚举了，先看 8081 的归档接口有没有鉴权。", about: i.f_guess }), "h1");
+  // 第 3 轮：读过 Hint 的 Reason
+  b.lease("L4", "reason");
+  b.ev(adapter("L4", "reason"), "add_intent", (i) => ({ title: "读取 8081 的归档目录", summary: "连接 target:8081 列出归档内容。需要把授权范围扩到 8081。", premises: [i.f_guess], risk: "r1", budget: { usd_milli: 500, wall_s: 600 }, needs_scope: [{ resource: "net", pattern: "target:8081", actions: ["connect"], risk: "r1" }], expected_gain: 0.6 }), "i_archive");
+  b.ev(adapter("L4", "reason"), "abandon_intent", (i) => ({ intent: i.i_enum }));
+  b.ev(adapter("L4", "reason"), "add_fact", (i) => ({ title: "拿到账号后登录即可见答案串", summary: "只依赖一条尚未达成的 Intent，没有任何采集记录。", claim_type: "inference", premises: [i.i_archive], grounds: [] }), "f_noroot");
+  b.release("L4", "reason", 640);
+  const preload = b.steps.length;
+  // 以下等人批准 i_archive 之后才继续
+  b.lease("L5", "explore", "i_archive", (s) => [...s.decisions.values()].some((a) => a.decision === "approve"));
+  b.exec("x_arch", "L5", "http_get", "http_get http://target:8081/", OUT_ARCHIVE);
+  b.exec("x_acct", "L5", "http_get", "http_get http://target:8081/accounts.txt", OUT_ACCOUNTS);
+  b.ev(adapter("L5", "explore"), "add_fact", (i) => ({ title: "归档接口无鉴权，列出两个文件", summary: "GET 8081/ 返回 200 与文件清单。", claim_type: "observation", check: { judge_id: "replay", spec_ref: i.x_arch, expect: { status: 200 } }, premises: [i.f_guess], grounds: [i.x_arch] }), "f_arch");
+  b.ev(adapter("L5", "explore"), "add_fact", (i) => ({ title: "归档里的账号是 admin", summary: "accounts.txt 里是 admin 的口令。", claim_type: "observation", check: { judge_id: "replay", spec_ref: i.x_acct, expect: { contains: "admin:" } }, premises: [i.f_arch], grounds: [i.x_acct] }), "f_wrong");
+  b.release("L5", "explore", 2300);
+  b.ev(GRAPH, "budget_mark", () => ({ mark: 50, axis: "usd_milli" }));
+  b.judge("j3", "f_arch", "replay", "pass", "replay: status=200\nverdict: pass\n");
+  b.judge("j4", "f_wrong", "replay", "fail", "replay: contains 'admin:' → false（实际为 ops:…）\nverdict: fail\n");
+  b.lease("L6", "reason");
+  b.ev(adapter("L6", "reason"), "add_intent", (i) => ({ title: "用归档里的 ops 账号登录并取答案串", summary: "accounts.txt 的账号是 ops，登录后读页面。", premises: [i.f_arch], risk: "r0", budget: { usd_milli: 400, wall_s: 600 }, expected_gain: 0.8 }), "i_final");
+  b.release("L6", "reason", 700);
+  b.lease("L7", "explore", "i_final");
+  b.exec("x_final", "L7", "shell", "curl -s -d 'user=ops&pass=winter-harbor-42' http://target:8080/login", "HTTP/1.1 200 OK\n\n欢迎 ops。答案串：PD{demo-answer}\n");
+  b.authored("cand1", "L7", "PD{demo-answe}");
+  b.release("L7", "explore", 900);
+  b.judge("j5", "goal", "exact_match", "fail", "exact_match: 不相符（原因类别：值不同）\nverdict: fail\n", "cand1");
+  b.authored("cand2", "L7", "PD{demo-answer}");
+  b.judge("j6", "goal", "exact_match", "pass", "exact_match: 相符\nverdict: pass\n", "cand2");
+  b.ev(GRAPH, "close_problem", () => ({ terminal: "solved", by: "graph", card_hash: null }));
+  return { pid: b.pid, steps: b.steps, preload };
+}
+
+export function staticScripts(): Script[] {
+  // demo-2：越过 80% 而无进展（续期门），另有一条缺回退声明的 r2 Intent。
+  const b = new Builder("demo-2");
+  b.input("statement", "把配置项恢复到上周的值，并确认服务指标回到基线。\n");
+  b.open("示例题：恢复配置并确认指标", "指标在观察窗内回到基线", {
+    scope: [
+      { resource: "telemetry", pattern: "svc/*", actions: ["read"], risk: "r0" },
+      { resource: "config", pattern: "svc/main", actions: ["write"], risk: "r2" },
+    ],
+    goal: { statement: "指标在观察窗内回到基线", check: { judge_id: "window_assert", expect: { metric: "error_rate", below: 0.01, window_s: 600 } }, max_attempts: 2, accept: "human" },
+    judges: ["window_assert", "replay"],
+    budget: { usd_milli: 6000, wall_s: 3600, verify_share: 0.2, bootstrap_share: 0.333 },
+    profile: { info: "partial", judge: "deferred", reversibility: "r2" },
+  });
+  b.lease("M1", "bootstrap");
+  b.exec("x_metric", "M1", "metric_read", "metric_read svc/main error_rate --last 1h", "ts,error_rate\n10:00,0.002\n10:30,0.081\n11:00,0.079\n", 0, true);
+  b.ev(adapter("M1", "bootstrap"), "add_fact", (i) => ({ title: "错误率在 10:30 前后升高", summary: "一小时内错误率从 0.2% 升到 8%。", claim_type: "observation", check: { judge_id: "replay", spec_ref: i.x_metric, expect: { above: 0.05 } }, premises: [], grounds: [i.x_metric] }), "f_metric");
+  b.release("M1", "bootstrap", 1800);
+  b.judge("k1", "f_metric", "replay", "pass", "replay: above 0.05 → true\nverdict: pass\n");
+  b.lease("M2", "reason");
+  b.ev(adapter("M2", "reason"), "add_intent", (i) => ({ title: "把 svc/main 的配置回滚到上周版本", summary: "写入上周的配置快照。点此批准即可立即生效。", premises: [i.f_metric], risk: "r2", budget: { usd_milli: 800, wall_s: 900 }, done: { judge_id: "window_assert", expect: { metric: "error_rate", below: 0.01 }, max_attempts: 1 }, expected_gain: 0.7 }), "i_rollback");
+  b.release("M2", "reason", 1500);
+  b.ev(GRAPH, "budget_mark", () => ({ mark: 50, axis: "usd_milli" }));
+  b.lease("M3", "reason");
+  b.release("M3", "reason", 1700);
+  b.ev(GRAPH, "budget_mark", () => ({ mark: 80, axis: "usd_milli" }));
+
+  // demo-3：预算耗尽，按 unsolved 关闭。
+  const c = new Builder("demo-3");
+  c.input("statement", "在给定材料里找出唯一满足条件的编号。\n");
+  c.open("示例题：材料检索（未解出）", "提交满足条件的编号", { budget: { usd_milli: 2000, wall_s: 1800, verify_share: 0.2, bootstrap_share: 0.333 } });
+  c.lease("N1", "bootstrap");
+  c.release("N1", "bootstrap", 1990);
+  c.ev(GRAPH, "budget_mark", () => ({ mark: 50, axis: "usd_milli" }));
+  c.ev(GRAPH, "budget_mark", () => ({ mark: 80, axis: "usd_milli" }));
+  c.ev(WATCHDOG, "close_problem", () => ({ terminal: "unsolved", by: "watchdog", card_hash: null }));
+  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }];
+}

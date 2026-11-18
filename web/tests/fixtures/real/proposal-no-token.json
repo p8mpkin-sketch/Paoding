@@ -1,0 +1,8 @@
+{
+ "status": 401,
+ "body": {
+  "ok": false,
+  "code": "forbidden_op",
+  "detail": "写操作须带 Authorization: Bearer <令牌>"
+ }
+}

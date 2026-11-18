@@ -38,6 +38,18 @@ def test_domain_word_allowed_in_judge_config(tmp_path):
     assert check_domain_words.scan(root, check_domain_words.load_words(root / "ci" / "domain-words.txt")) == []
 
 
+def test_domain_word_caught_in_web(tmp_path):
+    root = _tree(tmp_path)
+    (root / "web" / "src").mkdir(parents=True)
+    (root / "web" / "src" / "bad.tsx").write_text("export const mode = 'ctf';\n")
+    (root / "web" / "node_modules" / "dep").mkdir(parents=True)
+    (root / "web" / "node_modules" / "dep" / "index.ts").write_text("// payload\n")
+    (root / "web" / "tests").mkdir()
+    (root / "web" / "tests" / "corpus.ts").write_text("// payload\n")
+    hits = check_domain_words.scan(root, check_domain_words.load_words(root / "ci" / "domain-words.txt"))
+    assert [(h[0], h[2].lower()) for h in hits] == [("web/src/bad.tsx", "ctf")]
+
+
 def test_word_boundary(tmp_path):
     root = _tree(tmp_path)
     (root / "graph" / "src" / "paoding_graph" / "ok.py").write_text("clean = 1  # leaning\n")

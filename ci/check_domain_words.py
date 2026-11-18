@@ -2,6 +2,7 @@
 
 用法：python ci/check_domain_words.py [根目录]
 扫描 COMPONENTS 下的源码（排除 tests/ 与判官配置目录 judges.d/），命中即非零退出。
+web（前端）也在其内：TypeScript、样式与页面同样零领域词（HMI 设计 HT-1）；依赖与构建产物不扫。
 """
 from __future__ import annotations
 
@@ -9,9 +10,10 @@ import pathlib
 import re
 import sys
 
-COMPONENTS = ("pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan")
-EXCLUDED_PARTS = {"tests", "judges.d", "kits", "__pycache__"}
-SUFFIXES = {".py", ".yaml", ".yml", ".toml", ".json"}
+COMPONENTS = ("pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan", "web")
+EXCLUDED_PARTS = {"tests", "judges.d", "kits", "__pycache__", "node_modules", "dist"}
+EXCLUDED_NAMES = {"package-lock.json"}
+SUFFIXES = {".py", ".yaml", ".yml", ".toml", ".json", ".ts", ".tsx", ".css", ".html"}
 
 
 def load_words(path: pathlib.Path) -> list[str]:
@@ -25,7 +27,7 @@ def scan(root: pathlib.Path, words: list[str]) -> list[tuple[str, int, str]]:
     hits = []
     for comp in COMPONENTS:
         for f in sorted((root / comp).rglob("*")):
-            if not f.is_file() or f.suffix not in SUFFIXES:
+            if not f.is_file() or f.suffix not in SUFFIXES or f.name in EXCLUDED_NAMES:
                 continue
             if EXCLUDED_PARTS & set(f.relative_to(root).parts):
                 continue

@@ -1,0 +1,9 @@
+{
+ "path": "/v1/problems/nope/status",
+ "status": 404,
+ "body": {
+  "ok": false,
+  "code": "unknown_ref",
+  "detail": "题目 nope 不存在（或在该序号时尚未开题）"
+ }
+}

@@ -1,0 +1,31 @@
+{
+ "status": 200,
+ "body": {
+  "profile": {
+   "info": "complete",
+   "judge": "hard",
+   "reversibility": "r2"
+  },
+  "basis": {
+   "reversibility": {
+    "rule": "scope 中的最高风险",
+    "scope_index": 1,
+    "risk": "r2",
+    "defaulted": true
+   },
+   "judge": {
+    "judge_id": "exact_match",
+    "version": "1",
+    "rule": "max_cost 与廉价判官阈值比较",
+    "field": "max_cost",
+    "value": 0.0,
+    "threshold": 0.05
+   },
+   "info": {
+    "rule": "scope 中有外部资源即 partial",
+    "scope_indexes": [],
+    "resources": []
+   }
+  }
+ }
+}

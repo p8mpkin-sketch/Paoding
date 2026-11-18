@@ -1,0 +1,24 @@
+{
+ "path": "/v1/artifacts/a_16",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "1afd6abb19d4aa034402a5cbf02b7d2d699f020bb555a8a267a2eac3316bb43a",
+  "id": "a_16",
+  "problem_id": "p1",
+  "hash": "6602db8e933c99b46bab4d6b2273a77c5debbd3eb7d31b52a936aea150125faf",
+  "size": 10,
+  "media_type": "text/plain",
+  "class": "authored",
+  "parents": [],
+  "producer": {
+   "actor": "ad1",
+   "session": "l_15"
+  },
+  "seq": 16,
+  "src": "artifact:authored",
+  "register": "叙述",
+  "exec": null
+ }
+}

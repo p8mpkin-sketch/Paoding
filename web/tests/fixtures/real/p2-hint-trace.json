@@ -1,0 +1,33 @@
+{
+ "path": "/v1/hints/h_36/trace",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "77e58a3f508a4b6726661b837fc0fb385b6d456d888272538ebbb19e399433f7",
+  "hint": {
+   "id": "h_36",
+   "type": "hint",
+   "seq": 36,
+   "author": "cz",
+   "closed": false,
+   "about": "i_34",
+   "text": {
+    "src": "hint",
+    "register": "人",
+    "value": "第二个目标更可能"
+   }
+  },
+  "closed_seq": null,
+  "note": "关联，不是因果",
+  "temporal": {
+   "added": [],
+   "abandoned": []
+  },
+  "exposure": {
+   "sessions": [],
+   "added": [],
+   "abandoned": []
+  }
+ }
+}
