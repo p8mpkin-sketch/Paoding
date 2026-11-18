@@ -91,12 +91,12 @@
 | HT-16 断连重连无缺无重 | `tests/stream` |
 | 契约：类型吃得下真应答；假后端与真图服务同形 | `tests/contract` |
 
-## 实现取值（待裁决，见 `docs/m0/dissent-005-web-f1.md`）
+## 实现取值（异议 005 已于 2026-11-18 裁决，见 `docs/m0/adjudication-004-005.md`）
 
 1. 线格式类型是手写的，靠契约测试对着真应答核；HMI §14 的 JSON Schema 导出就绪后整体替换。
 2. 批准与拒绝都带 `seen {seq, card_hash}`。M0 的图服务不校验它，M1 起不等即 `stale_view`；两种情况下发出的字段相同。
 3. 续期门、争议卡、暂停与恢复随 M1：图服务返回 `not_enabled` 时如实显示“暂不可用”；暂停与恢复没有做按钮。
-4. r2 而没有回退声明时禁用批准（HMI H1 的字面）。比图服务 M0 的现行取值严，这类 Intent 在 M0 只能用 `pd approve`。
-5. “无证据根”按结构沿前提链判断（只走 `premises`，不算等级）；图服务的 `no_evidence_root` 只看直接的 grounds。
-6. 人的令牌存在本机 `localStorage`，只随写请求发出。
-7. 模板目录的 `data` 没有定字段：向导按暂行字段名取预填值，取不到就留空；目录为空时用“不用模板”。
+4. r2 而没有回退声明时禁用批准（HMI H1 的字面）。**裁决：要改**，只听卡面的 `approve_enabled`，与 `pd` 一致，卡面标出“未声明回退”；改动在 P2-2。
+5. “无证据根”按结构沿前提链判断（只走 `premises`，不算等级）；图服务的 `no_evidence_root` 只看直接的 grounds。**裁决：要改**，由图服务给链级字段，前端删掉展开；改动在 P2-1。
+6. 人的令牌存在本机 `localStorage`，只随写请求发出。**裁决**：改为 `sessionStorage` 加过期时间；改动在 P2-2。
+7. 模板目录的 `data`：**裁决**把暂行字段名定为约定，即 `fields.scope`、`fields.goal`、`fields.budget`、`fields.materials`、`judges`；取不到就留空，目录为空时用“不用模板”。

@@ -14,7 +14,7 @@
 
 ## 当前状态
 
-**规格。** 基座规格 v1.4 是当前权威：v1.3（v1.1 的裁决、v1.2 的三项补充与典故对账 D1 到 D6、蓝图 v2 的采纳项与评审附加条件、人机界面设计的裁决落地项）加上 M0 实施中裁决的四条勘误 E1 到 E4。参考模型 88 条测试全绿。
+**规格。** 基座规格 v1.4 是当前权威：v1.3（v1.1 的裁决、v1.2 的三项补充与典故对账 D1 到 D6、蓝图 v2 的采纳项与评审附加条件、人机界面设计的裁决落地项）加上 M0 实施中裁决的五条勘误 E1 到 E5。参考模型 88 条测试全绿。
 
 **代码（2026-11-18）。** M0 的机制层已经写完并合入 `main`：九个组件、图服务的 HTTP 绑定、网页前端 F1、全栈一键启动（`scripts/run.py`）。`uv run pytest` 369 条（含全部 Docker 测试）、`web` 的 `npm test` 53 条全绿。全程只用假 CLI（`adapter/src/paoding_adapter/fakecli.py`），没有调用过真实模型。
 
@@ -63,7 +63,7 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 | [docs/research/agent-architecture-survey-zcode.md](docs/research/agent-architecture-survey-zcode.md) | 调研 v1（ZCode 会话产出：国内攻防黑板谱系、通用框架演化、五层共识） |
 | [docs/research/agent-architecture-survey-v2.md](docs/research/agent-architecture-survey-v2.md) | **调研 v2：两路合并版**（两范式 × 五层交叉表与四条张力） |
 | [docs/research/paoding-design-implications.md](docs/research/paoding-design-implications.md) | 调研 → 设计启示（Claude 会话产出） |
-| [docs/design/base-layer-spec-v1.md](docs/design/base-layer-spec-v1.md) | **基座规格 v1.4（当前权威）**：文首三张变更表逐条可否决（第三张是 M0 勘误 E1 到 E4）；约束审计、三层六契约与八条不变量、题界与封存、三个机制与前沿展开（榷场、闲人、子题）、四个走查、M0 清单、M1 目标与审计清单、未证明清单 20 条 |
+| [docs/design/base-layer-spec-v1.md](docs/design/base-layer-spec-v1.md) | **基座规格 v1.4（当前权威）**：文首三张变更表逐条可否决（第三张是 M0 勘误 E1 到 E5）；约束审计、三层六契约与八条不变量、题界与封存、三个机制与前沿展开（榷场、闲人、子题）、四个走查、M0 清单、M1 目标与审计清单、未证明清单 20 条 |
 | [docs/design/spec-v1.1-adjudication.md](docs/design/spec-v1.1-adjudication.md) | 规格 v1.1 裁决书：A1–A10 全部采纳，附三项补充（答案保密分级、终态三值、基质接口附录）与一项立场撤回 |
 | [docs/design/paoding-allegory-mapping.md](docs/design/paoding-allegory-mapping.md) | **「官知止」设计总纲 v1.2**：典故-架构全文对应、感知官/守门官/量具三分类与启用条件、退役条款表、四个新提案 |
 | [docs/design/paoding-jieniu-principles.md](docs/design/paoding-jieniu-principles.md) | 庖丁解牛逐句对账（Claude 会话产出）：12 条原理 × 规格对账 + D1–D6 设计点 |
@@ -87,13 +87,13 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 | --- | --- |
 | [docs/m0/kickoff.md](docs/m0/kickoff.md) | M0 开工指令：新会话读它恢复上下文 |
 | [docs/m0/status.md](docs/m0/status.md) | 进度日志：逐日的落地内容、验收条目与测试数 |
-| [docs/m0/errata-v1.4.md](docs/m0/errata-v1.4.md) | 勘误 E1 到 E4 的原清单（已并入规格 v1.4） |
+| [docs/m0/errata-v1.4.md](docs/m0/errata-v1.4.md) | 勘误 E1 到 E5 的原清单（已并入规格 v1.4） |
 | [docs/m0/dissent-001-skeleton.md](docs/m0/dissent-001-skeleton.md) | 异议 001：仓库骨架（已裁决，三项采纳） |
 | [docs/m0/dissent-002-adapter.md](docs/m0/dissent-002-adapter.md) | 异议 002：Adapter（已裁决，四项采纳，即 E1 到 E4） |
 | [docs/m0/dissent-003-human-ops.md](docs/m0/dissent-003-human-ops.md) | 异议 003：内核补齐两项人的操作（已落实） |
-| [docs/m0/dissent-004-http-api.md](docs/m0/dissent-004-http-api.md) | 异议 004：HTTP 绑定的九处缝隙（待裁决） |
-| [docs/m0/dissent-005-web-f1.md](docs/m0/dissent-005-web-f1.md) | 异议 005：网页前端 F1 的十二处缝隙（待裁决） |
-| [docs/m0/adjudication-004-005.md](docs/m0/adjudication-004-005.md) | 异议 004、005 的逐条裁决（建议稿，待确认） |
+| [docs/m0/dissent-004-http-api.md](docs/m0/dissent-004-http-api.md) | 异议 004：HTTP 绑定的九处缝隙（已裁决） |
+| [docs/m0/dissent-005-web-f1.md](docs/m0/dissent-005-web-f1.md) | 异议 005：网页前端 F1 的十二处缝隙（已裁决） |
+| [docs/m0/adjudication-004-005.md](docs/m0/adjudication-004-005.md) | 异议 004、005 的逐条裁决（2026-11-18，21 条） |
 | 各组件的 `SPEC.md` | 该组件实现了哪些契约、官的声明、与规格的偏差和进度（见上文代码表） |
 
 ## 命名体系
