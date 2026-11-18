@@ -62,6 +62,12 @@ class SessionRecord:
 
 
 def local_launcher(argv: list[str], env: dict, cwd: Path) -> subprocess.Popen:
+    """宿主机子进程：只给假 CLI 的测试台与空配置的组装根用。真实后端走 container.py 的 ContainerLauncher。
+
+    launcher 的约定：调用返回与 Popen 同形的对象（stdout、poll、wait）。它还可以带三样可选的东西，
+    会话运行器有就用：属性 proxy_url 与 mcp_base（CLI 所在位置看到的端点代理与工具端点地址，缺省即本机回环上的
+    真实地址）；方法 release(lease_id)（会话结束时收回它为这个会话建的东西）。返回的对象可以带
+    interrupt() 与 terminate()，缺省用进程组信号。"""
     return subprocess.Popen(argv, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             stdin=subprocess.DEVNULL, start_new_session=True)
 
@@ -126,10 +132,13 @@ class SessionRunner:
                          budget=self.reader.budget(pid), kits=kits, focus=focus, limits=limits)
             rec.package_ref = self._register(token, pid, f"package:{lease_id}", pkg.as_bytes(), MEDIA_TYPE)
             (sdir / "system.md").write_text(pkg.system, encoding="utf-8")
-            (sdir / "mcp.json").write_text(be.mcp_config(url), encoding="utf-8")
+            # CLI 在模型容器里时，它看到的端点是内部网络上的中继，不是本机回环
+            seen_url = url.replace(self.endpoint.base, getattr(self.launcher, "mcp_base", None) or self.endpoint.base, 1)
+            (sdir / "mcp.json").write_text(be.mcp_config(seen_url), encoding="utf-8")
             self.proxy.register_task(task_token, lease_id, pid, lease["reserve"]["usd_milli"])
             plan = be.LaunchPlan(lease_id, ws, sdir / "system.md", pkg.user, sdir / "mcp.json",
-                                 proxy_tools=tools, proxy_url=self.proxy.url, task_token=task_token,
+                                 proxy_tools=tools, proxy_url=getattr(self.launcher, "proxy_url", None) or self.proxy.url,
+                                 task_token=task_token,
                                  max_budget_usd=lease["reserve"]["usd_milli"] / 1000, max_turns=self.cfg.max_turns)
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
@@ -175,6 +184,9 @@ class SessionRunner:
             return rec
         finally:
             self.live.pop(lease_id, None)
+            release = getattr(self.launcher, "release", None)
+            if release is not None:                     # 模型容器、端点中继与它们的内部网络
+                release(lease_id)
             self.proxy.revoke(task_token)
             self.endpoint.unmount(url)
             self.issuer.revoke(token)
@@ -258,6 +270,9 @@ class RegisterRefused(RuntimeError):
 def _signal(proc: subprocess.Popen | None, sig: int) -> None:
     if proc is None or proc.poll() is not None:
         return
+    if sig == signal.SIGINT and hasattr(proc, "interrupt"):      # 模型容器：信号要送进容器
+        proc.interrupt()
+        return
     try:
         os.killpg(proc.pid, sig)
     except ProcessLookupError:
@@ -266,6 +281,9 @@ def _signal(proc: subprocess.Popen | None, sig: int) -> None:
 
 def _terminate(proc: subprocess.Popen) -> None:
     """终止：SIGTERM 终止进程树（真 CLI 退出码 143），5 秒不退再 SIGKILL。"""
+    if hasattr(proc, "terminate") and not isinstance(proc, subprocess.Popen):   # 模型容器：停容器，不只是停客户端
+        proc.terminate()
+        return
     try:
         os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=5)

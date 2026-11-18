@@ -1,11 +1,12 @@
 """对外契约接口。其它组件只许 import 本模块（ci/check_deps.py 强制）。"""
 from typing import Protocol
 
-from .backend import CliBinding, fake_program  # noqa: F401
+from .backend import FAKE_CLI, CliBinding, fake_program  # noqa: F401
+from .container import ContainerLauncher, LaunchError  # noqa: F401
 from .fakeupstream import FakeUpstream  # noqa: F401
 from .mcp import ToolEndpoint  # noqa: F401
 from .proxy import EndpointProxy, PriceTable, ProxyConfig  # noqa: F401
-from .session import AdapterConfig, SessionRecord, SessionRunner  # noqa: F401
+from .session import AdapterConfig, SessionRecord, SessionRunner, local_launcher  # noqa: F401
 
 
 class SessionPort(Protocol):
