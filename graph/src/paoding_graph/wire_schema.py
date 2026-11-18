@@ -627,7 +627,24 @@ define("JudgeEntry", obj({"judge_id": STR, "version": STR, "grade": ref("Grade")
 define("JudgesResponse", obj({"items": arr(ref("JudgeEntry")), "external_resources": arr(STR)}))
 define("CatalogItem", obj({"name": STR, "hash": STR, "size": INT, "signature": null(STR), "data": ANY, "text": STR}))
 define("Catalog", obj({"items": arr(ref("CatalogItem"))}))
-define("ProblemItem", both(ref("ProblemHead"), obj({"spent_usd_milli": INT, "cap_usd_milli": null(INT)})))
+define(
+    "ProblemItem",
+    both(
+        ref("ProblemHead"),
+        obj(
+            {
+                "spent_usd_milli": INT,
+                "cap_usd_milli": null(INT),
+                "closed_ts": null(INT),
+                "goal_level": null(ref("Level")),
+                "active": arr(obj({"kind": STR}, {"target": STR})),
+                "human_todo": INT,
+                "wall": obj({"cap_s": INT, "elapsed_s": INT}),
+            },
+            doc="题目列表的一行。closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。",
+        ),
+    ),
+)
 define(
     "ProblemsView",
     env(

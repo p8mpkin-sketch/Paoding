@@ -136,7 +136,7 @@ class GraphHttp:
         self.routes: list[tuple[str, re.Pattern[str], Route]] = [
             ("GET", R(r"/v1/health"), self.r_health),
             ("GET", R(r"/healthz"), self.r_healthz),
-            ("GET", R(r"/v1/problems"), g(lambda st, m, q: views.problems(st))),
+            ("GET", R(r"/v1/problems"), g(lambda st, m, q: views.problems(st, self._ts_of))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/status"), g(lambda st, m, q: views.status(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/view"), g(self.v_view)),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget"), g(lambda st, m, q: views.budget(st, m["pid"]))),
@@ -358,6 +358,11 @@ class GraphHttp:
             self._json(h, 200, out)
 
         return handler
+
+    def _ts_of(self, pid: str, seq: int) -> int | None:
+        """某题第 seq 条事件的 ts（题目列表的 closed_ts 用；状态里不存关题时刻）。"""
+        evs = self.svc.events(pid, seq - 1, limit=1, upto=seq)
+        return evs[0]["ts"] if evs and evs[0]["seq"] == seq else None
 
     def v_view(self, st: State, m: Params, q: Params) -> Doc:
         return views.view(
