@@ -30,7 +30,9 @@
 | `tools.py` | `exec` / `submit` / `show` 三个代理工具与 Op 翻译；`*_path` 登记为 authored；`claim_done` = 登记候选 + `request_judge`；`tmp_id`；同一操作连拒 3 次不再转发 |
 | `mcp.py` | 工具端点：MCP 的 HTTP 传输最小子集；每会话一个随机路径，一个进程并行托管多个会话 |
 | `package.py` | 任务包①–⑦渲染与留档；黄金文件 `tests/golden/reason_package.txt` |
-| `backend.py` | 十项绑定的命令构造、`--mcp-config` 内容、模型容器的 `docker run` 命令；都不运行 |
+| `backend.py` | 十项绑定的命令构造、`--mcp-config` 内容、模型容器的 `docker run` 命令（由 `container.py` 执行） |
+| `container.py` | 模型容器启动器 `ContainerLauncher`：每个会话一张内部网络、一个端点中继、一个模型容器；`UnixBridge`（Unix 套接字 → 本机回环上的端点） |
+| `relay.py` | 端点中继：跑在中继容器里，把两个端口的字节流原样转给挂载进来的 Unix 套接字；只用标准库 |
 | `fakeupstream.py` | 假模型端点：本机回环上的 `/v1/messages`，usage 定值，不生成内容；测试台与组装根（`scripts/run.py` 的空配置）共用 |
 | `fakecli.py` | 脚本化假 CLI：接受同一组参数，经代理发请求、经工具端点调工具、输出 stream-json |
 | `session.py` | 会话运行器：状态机、续租、停滞判定、回合上限、收尾轮、`failed(no_output)`、会话记录留档、释放与令牌作废 |
@@ -39,9 +41,27 @@
 
 `SessionRunner.run` 在带 `exec` 的会话（bootstrap、explore）开始时按租约编译授权并起执行容器，结束时销毁；reason 会话不起容器。上限取所服务 Intent 的 `risk`，Bootstrap 取 r0，r2 规则只在该 Intent 已获批准时编入（规格 §3.6.2）。调用方显式给 `sandbox_id` 时沿用旧行为（测试台的假执行层）。`Problem.env.base` 是基础规格名，经 `AdapterConfig.bases` 映射到镜像。
 
-对外契约（`contract.py`）：`SessionPort`（司南按租约启动会话的入口）、`SessionRunner`、`AdapterConfig`、`SessionRecord`、`EndpointProxy`、`ProxyConfig`、`PriceTable`、`ToolEndpoint`、`CliBinding`、`fake_program`。
+对外契约（`contract.py`）：`SessionPort`（司南按租约启动会话的入口）、`SessionRunner`、`AdapterConfig`、`SessionRecord`、`EndpointProxy`、`ProxyConfig`、`PriceTable`、`ToolEndpoint`、`CliBinding`、`fake_program`、`ContainerLauncher`、`local_launcher`。
 
-集成测试 `tests/test_integration.py`（需要 Docker）：假 CLI 经端点代理与工具端点，落到真的执行层与真的图服务。
+集成测试 `tests/test_integration.py`（需要 Docker）：假 CLI 经端点代理与工具端点，落到真的执行层与真的图服务。`tests/test_container.py`（需要 Docker）：假 CLI 跑在模型容器里，验容器内到得了工具端点与端点代理、到不了外网、宿主、题目容器。
+
+### 模型容器（审计 P0-2）
+
+真实后端（`backend.kind == "real"`）的 CLI 缺省在模型容器里起；假 CLI 也可以走同一条路径（配置 `"launcher": "container"`），集成测试就是这么跑的。`local_launcher`（宿主子进程）只留给假 CLI 的测试台与空配置。
+
+每个会话三样东西，会话结束（`launcher.release`）一并拆掉：
+
+| 名字 | 是什么 | 要点 |
+| --- | --- | --- |
+| `pd-model-<租约>-net` | 内部网络 | `--internal` 加隔离网关（`gateway_mode_ipv4=isolated`，Docker 27.1 起）：没有出站路由，也到不了宿主；老版本退回普通 `--internal` |
+| `pd-model-<租约>-ep` | 端点中继 | 网络别名 `pd-endpoints`；8081 → 端点代理，8082 → 工具端点。经只读挂载的 Unix 套接字连回 Adapter 进程，不持有任何密钥 |
+| `pd-model-<租约>` | 模型容器 | CLI 镜像；`--read-only`、`--cap-drop ALL`、`no-new-privileges`、`--init`、与 Adapter 同一 uid；只挂工作区、会话目录（只读）、HOME |
+
+- 容器内环境变量：`ANTHROPIC_BASE_URL=http://pd-endpoints:8081`、`ANTHROPIC_API_KEY=任务令牌`。`--mcp-config` 里的地址是 `http://pd-endpoints:8082/mcp/<会话路径>`。真实密钥只在端点代理进程里。
+- 模型容器不在执行容器的网络上：连不到授权范围内的目标；执行容器不在模型网络上：连不到中继，也就连不到模型端点（3.6.4 的 4）。端点代理与工具端点仍只监听本机回环。
+- 软线与终止送进容器：`docker kill --signal INT` 与 `docker stop`，不是只给宿主上的 docker 客户端发信号。收尾轮在同一张网络上另起一个容器，HOME 与工作区沿用。
+- 容器与网络带执行层的属主标签（`paoding.sandbox`、`paoding.owner`、`paoding.lease`，`paoding.role` 取 `model` / `endpoints`），进程异常退出后由哮天犬的孤儿清扫回收。
+- 取值上的缝隙记在 `docs/m0/dissent-p0-2-model-container.md`。
 
 ### 实现取值（待评审方确认）
 
@@ -56,7 +76,7 @@
 
 ### 已知缺口
 
-1. **3.4.5 的 5 后半（缓存读 > 0）与 7 的真机部分**要真模型，D4 真机验。假 CLI 对 `--tools`、`--restricted` 的模拟只证明绑定参数被传到了，不证明真 CLI 照做。
+1. **3.4.5 的 5 后半（缓存读 > 0）与 7 的真机部分**要真模型，D4 真机验。假 CLI 对 `--tools`、`--restricted` 的模拟只证明绑定参数被传到了，不证明真 CLI 照做。模型容器路径同理：容器、网络、中继都用假 CLI 验过，真 CLI 镜像（HOME 布局、只读根文件系统下它还要写哪里）没有验过。
 2. **判官 30 秒内的裁决随 submit 返回**：判官运行器还没有（D10），`submit` 目前只返回 id。
 3. **3.4.5 的 3**（中途杀 CLI → 租约到期 → Intent 重开）的 reducer 侧已在 graph 测试里；端到端要哮天犬，下一个 PR。
 4. **`check.inputs`** 拒绝：按异议 002 裁决，inputs 属于 JudgeRequest（勘误 E1）。
