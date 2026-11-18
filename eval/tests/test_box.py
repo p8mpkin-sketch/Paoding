@@ -117,6 +117,14 @@ def test_baseline_cannot_reach_beyond_scope(tmp_path: Path, target: str) -> None
     assert got == ["blocked", "blocked", "blocked"]
 
 
+def test_relative_out_root(tmp_path: Path, target: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--out 缺省是相对路径 runs/：工作区要先解析成绝对路径再挂进沙箱（cz 真机验收时撞上）。"""
+    monkeypatch.chdir(tmp_path)
+    steps = [{"tool": "Bash", "input": {"command": fetch(f"http://{target}:8000/") + " > answer.txt"}}]
+    rec = run_baseline(spec_for(target), 1, out_root=Path("runs"), fake_steps=steps, image=IMAGE)
+    assert rec.terminal == "solved" and rec.log_dir.startswith("runs/")
+
+
 def test_real_baseline_requires_sandbox(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="--image"):
         run_baseline(DRYRUN, 1, out_root=tmp_path, real_program=["claude"], upstream_url="http://x", api_key="k")

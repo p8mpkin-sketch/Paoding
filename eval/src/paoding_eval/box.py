@@ -72,7 +72,11 @@ class BaselineBox:
     ):
         if not shutil.which("docker"):
             raise RuntimeError("baseline 的真题运行要 Docker（CLI 在沙箱里跑），但找不到 docker 命令")
-        self.scope, self.image, self.workspace = scope, image, Path(workspace)
+        self.scope, self.image, self.workspace = (
+            scope,
+            image,
+            Path(workspace).resolve(),
+        )  # docker 的绑定挂载只认绝对路径；--out 缺省是相对的 runs/
         self.proxy_port, self.wall_s, self.relay_image = proxy_port, wall_s, relay_image
         self.transport = transport or default_transport()
         if self.transport not in ("unix", "tcp"):
