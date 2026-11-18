@@ -45,6 +45,21 @@ test("驾驶舱：顶栏分主次，事件到来时视图跟着走，一条事�
   expect(snaps.slice(before).every((u) => u.includes("parts="))).toBe(true);
 });
 
+test("工作区：会话流列出 status 里的会话，按 H 打开“给出指导”并聚焦输入框，Esc 收起", async ({ page }) => {
+  await openCockpit(page, "demo-2");
+  await expect(page.locator("[data-sessions]")).toBeVisible();
+  const done = page.locator(".sess-done");
+  if (await done.count()) { await done.locator("summary").click(); await expect(done.locator("[data-lease]").first()).toBeVisible(); }
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("h");
+  await expect(page.locator('[data-card="hint-inject"] textarea')).toBeFocused();
+  await page.keyboard.type("hh");                                       // 输入框里按 H 不再触发快捷键
+  await expect(page.locator('[data-card="hint-inject"] textarea')).toHaveValue("hh");
+  await page.locator('[data-card="hint-inject"] textarea').blur();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-card="hint-inject"]')).toHaveCount(0);
+});
+
 test("审批卡：r2 缺回退时卡面标出，批准后待办消失", async ({ page }) => {
   await openCockpit(page, "demo-2");
   const item = page.locator("[data-todo-item]").filter({ hasText: "审批" }).first();
