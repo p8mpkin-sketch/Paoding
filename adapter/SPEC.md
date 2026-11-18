@@ -26,7 +26,7 @@
 
 | 模块 | 内容 |
 | --- | --- |
-| `proxy.py` | 端点代理：任务令牌换真实密钥（`x-api-key` 或 `Bearer` 都收，转发时只带真实密钥）；非流式 JSON 与 SSE 两种计量；`cost` 事件 `source=proxy`，幂等键 `cost:<租约>:<第几个请求>`；三道 429（任务预留、题上限、全局上限，默认 500 美元）；作废令牌 401；先入账再写响应结束块 |
+| `proxy.py` | 端点代理：任务令牌换真实密钥（`x-api-key` 或 `Bearer` 都收，转发时只带真实密钥）；非流式 JSON 与 SSE 两种计量；`cost` 事件 `source=proxy`，幂等键 `cost:<租约>:<代理实例号>:<第几个请求>`；三道 429（任务预留、题上限、全局上限，默认 500 美元）；启动时从账本投影（`/budget`）恢复全局与按题的累计花费（`restore`），重启后硬顶不归零；作废令牌 401；先入账再写响应结束块 |
 | `tools.py` | `exec` / `submit` / `show` 三个代理工具与 Op 翻译；`*_path` 登记为 authored；`claim_done` = 登记候选 + `request_judge`；`tmp_id`；同一操作连拒 3 次不再转发 |
 | `mcp.py` | 工具端点：MCP 的 HTTP 传输最小子集；每会话一个随机路径，一个进程并行托管多个会话 |
 | `package.py` | 任务包①–⑦渲染与留档；黄金文件 `tests/golden/reason_package.txt` |

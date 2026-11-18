@@ -149,8 +149,9 @@ class SessionRunner:
             t = self.proxy.task(task_token)
             if lv["killed"]:
                 exit_status = "expired" if lv["killed"] == "expired" else f"killed({lv['killed']})"
-                # 过期与停机（组装根退出时收掉在途会话）不是花超了：记 failed，不记 budget_exhausted
-                outcome = "failed" if lv["killed"] in ("expired", "shutdown") else "budget_exhausted"
+                # 过期、停机（组装根退出时收掉在途会话）与关题（并行的另一个会话已把题解掉）不是花超了：
+                # 记 failed，不记 budget_exhausted
+                outcome = "failed" if lv["killed"] in ("expired", "shutdown", "problem_closed") else "budget_exhausted"
             elif exit_status:
                 outcome = "failed"
             elif t and t.spent_usd_milli >= t.reserve_usd_milli:
