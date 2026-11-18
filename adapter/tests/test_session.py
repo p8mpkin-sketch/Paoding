@@ -279,3 +279,21 @@ def test_tokens_revoked_after_release(rig):
     rig.run(lid)
     assert all(t.revoked for t in rig.proxy._tasks.values())
     assert rig.endpoint._hosts == {}
+
+
+def test_problem_closed_mid_session_still_releases(rig):
+    """并行的另一个会话（或判官）在本会话跑着的时候把题关了：关题后内核不收登记、只收释放。
+    会话不该在登记会话记录时炸掉而留下没人释放的租约（审计 P1-3 的并发形态下才会遇到）。"""
+    import threading
+    lid = lease_bootstrap(rig.graph)
+    rig.script([{"hang": 1.0}, sub(final={"outcome": "nothing"})], resume_steps=[sub(final={"outcome": "nothing"})])
+    t = threading.Timer(0.3, lambda: rig.graph.submit("tok-human", "p1", "close-mid", [
+        {"op": "close_problem", "body": {}}]))
+    t.start()
+    rec = rig.run(lid)
+    t.join()
+    assert rig.graph.state["problems"]["p1"]["closed"]
+    assert rec.release and rec.release["ok"] and rec.transcript_ref is None
+    lease = lease_of(rig, lid)
+    assert not lease["active"] and lease["outcome"] == "closed"
+    assert rig.runner.live == {}
