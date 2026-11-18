@@ -10,6 +10,7 @@ dialect 模拟别家 Anthropic 兼容端点（真实测试报告 P0-C，DeepSeek
 - no_usage：响应里不带 usage
 usage 原样回报：可以用 OpenAI 式或 DeepSeek 式的字段名，也可以带 null。
 """
+
 from __future__ import annotations
 
 import gzip
@@ -17,15 +18,20 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-DEFAULT_USAGE = {"input_tokens": 1000, "output_tokens": 200,
-                 "cache_read_input_tokens": 5000, "cache_creation_input_tokens": 100}
+DEFAULT_USAGE = {
+    "input_tokens": 1000,
+    "output_tokens": 200,
+    "cache_read_input_tokens": 5000,
+    "cache_creation_input_tokens": 100,
+}
 
 
 class FakeUpstream:
     """记录收到的请求头，按请求体 stream 字段回 JSON 或 SSE。"""
 
-    def __init__(self, usage: dict | None = None, model: str = "claude-sonnet-5-5", port: int = 0,
-                 dialect: dict | None = None):
+    def __init__(
+        self, usage: dict | None = None, model: str = "claude-sonnet-5-5", port: int = 0, dialect: dict | None = None
+    ):
         self.seen: list[dict] = []
         self.usage = dict(usage or DEFAULT_USAGE)
         self.model = model
@@ -52,20 +58,35 @@ class FakeUpstream:
                     start_msg = {"id": "m1", "model": up.model, **({} if dl.get("no_usage") else {"usage": u_start})}
                     events = [
                         ("message_start", {"type": "message_start", "message": start_msg}),
-                        ("content_block_delta", {"type": "content_block_delta", "index": 0,
-                                                 "delta": {"type": "text_delta", "text": "hi"}}),
-                        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
-                                           **({} if dl.get("no_usage") else {"usage": u_delta})}),
+                        (
+                            "content_block_delta",
+                            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+                        ),
+                        (
+                            "message_delta",
+                            {
+                                "type": "message_delta",
+                                "delta": {"stop_reason": "end_turn"},
+                                **({} if dl.get("no_usage") else {"usage": u_delta}),
+                            },
+                        ),
                         ("message_stop", {"type": "message_stop"}),
                     ]
                     nl = b"\r\n" if dl.get("crlf") else b"\n"
-                    data = b"".join(b"event: %s%sdata: %s%s%s" % (n.encode(), nl, json.dumps(d).encode(), nl, nl)
-                                    for n, d in events)
+                    data = b"".join(
+                        b"event: %s%sdata: %s%s%s" % (n.encode(), nl, json.dumps(d).encode(), nl, nl) for n, d in events
+                    )
                     ctype = "text/event-stream"
                 else:
-                    data = json.dumps({"id": "m1", "type": "message", "model": up.model,
-                                       "content": [{"type": "text", "text": "hi"}],
-                                       **({} if dl.get("no_usage") else {"usage": up.usage})}).encode()
+                    data = json.dumps(
+                        {
+                            "id": "m1",
+                            "type": "message",
+                            "model": up.model,
+                            "content": [{"type": "text", "text": "hi"}],
+                            **({} if dl.get("no_usage") else {"usage": up.usage}),
+                        }
+                    ).encode()
                     ctype = "application/json"
                 if dl.get("gzip"):
                     data = gzip.compress(data)

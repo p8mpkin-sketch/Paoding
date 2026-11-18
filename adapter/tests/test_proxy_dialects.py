@@ -4,6 +4,7 @@
 usage 全在 message_delta、OpenAI/DeepSeek 式字段名、值为 null 的缓存字段、完全不给 usage。
 验收：每种情形的预算读数都非零；取不到 usage 时按字节估算并在 cost 事件上标明。
 """
+
 import http.client
 import json
 import logging
@@ -14,11 +15,19 @@ from adapter_rig import PRICES, graph, lease_bootstrap, open_problem  # noqa: F4
 from paoding_adapter.fakeupstream import FakeUpstream
 from paoding_adapter.proxy import EndpointProxy, PriceTable, ProxyConfig, ledger_diff, normalize_usage
 
-DEEPSEEK = "deepseek-chat"          # 价目表里没有：按最贵档计
-ANTHROPIC_STYLE = {"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": None,
-                   "cache_creation_input_tokens": None}        # 不报缓存的字段给 null
-DEEPSEEK_STYLE = {"prompt_tokens": 6000, "completion_tokens": 200, "prompt_cache_hit_tokens": 5000,
-                  "prompt_cache_miss_tokens": 1000}
+DEEPSEEK = "deepseek-chat"  # 价目表里没有：按最贵档计
+ANTHROPIC_STYLE = {
+    "input_tokens": 1000,
+    "output_tokens": 200,
+    "cache_read_input_tokens": None,
+    "cache_creation_input_tokens": None,
+}  # 不报缓存的字段给 null
+DEEPSEEK_STYLE = {
+    "prompt_tokens": 6000,
+    "completion_tokens": 200,
+    "prompt_cache_hit_tokens": 5000,
+    "prompt_cache_miss_tokens": 1000,
+}
 
 
 def _run(graph, usage, dialect, stream, model=DEEPSEEK):
@@ -30,10 +39,19 @@ def _run(graph, usage, dialect, stream, model=DEEPSEEK):
         lid = lease_bootstrap(graph)
         p.register_task("t", lid, "p1", 100_000)
         c = http.client.HTTPConnection(host, port, timeout=10)
-        c.request("POST", "/v1/messages", headers={"x-api-key": "t", "content-type": "application/json",
-                                                   "accept-encoding": "gzip, deflate, br"},
-                  body=json.dumps({"model": model, "max_tokens": 10, "stream": stream,
-                                   "messages": [{"role": "user", "content": "你好" * 50}]}))
+        c.request(
+            "POST",
+            "/v1/messages",
+            headers={"x-api-key": "t", "content-type": "application/json", "accept-encoding": "gzip, deflate, br"},
+            body=json.dumps(
+                {
+                    "model": model,
+                    "max_tokens": 10,
+                    "stream": stream,
+                    "messages": [{"role": "user", "content": "你好" * 50}],
+                }
+            ),
+        )
         r = c.getresponse()
         data = r.read()
         c.close()
@@ -67,9 +85,10 @@ def test_nonzero_reading_across_dialects(graph, case, stream):
     assert (c["tokens_in"], c["tokens_out"], c["tokens_cached"]) == (t_in, t_out, t_cached)
     assert c["model"] == DEEPSEEK and c["price_table"] == PriceTable.load(PRICES).version
     assert p.task("t").spent_usd_milli == c["usd_milli"] and ledger_diff(p, graph.state) == []
-    assert up.seen[0]["headers"].get("accept-encoding") == "identity"       # 向上游只要未压缩的
-    if dialect.get("gzip"):                                                  # 转发的字节不动：客户端照样拿到 gzip
+    assert up.seen[0]["headers"].get("accept-encoding") == "identity"  # 向上游只要未压缩的
+    if dialect.get("gzip"):  # 转发的字节不动：客户端照样拿到 gzip
         import gzip
+
         assert gzip.decompress(data)
 
 
@@ -91,12 +110,12 @@ def test_raw_usage_is_logged(graph, caplog):
 
 
 def test_normalize_usage_shapes():
-    assert normalize_usage({"input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 5,
-                            "cache_creation_input_tokens": 6}) == {
-        "input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 5, "cache_creation_input_tokens": 6}
-    assert normalize_usage({"prompt_tokens": 10, "completion_tokens": 2,
-                            "prompt_tokens_details": {"cached_tokens": 7}}) == {
-        "input_tokens": 3, "output_tokens": 2, "cache_read_input_tokens": 7}
+    assert normalize_usage(
+        {"input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 5, "cache_creation_input_tokens": 6}
+    ) == {"input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 5, "cache_creation_input_tokens": 6}
+    assert normalize_usage(
+        {"prompt_tokens": 10, "completion_tokens": 2, "prompt_tokens_details": {"cached_tokens": 7}}
+    ) == {"input_tokens": 3, "output_tokens": 2, "cache_read_input_tokens": 7}
     assert normalize_usage({"prompt_tokens": 10, "completion_tokens": 2}) == {"input_tokens": 10, "output_tokens": 2}
     assert normalize_usage({"input_tokens": None, "output_tokens": True, "x": "y"}) == {}
     assert normalize_usage({}) == {}

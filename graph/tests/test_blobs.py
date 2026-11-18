@@ -1,4 +1,5 @@
 """D1：Blob 仓库。3.2.5 的 1、4。"""
+
 import io
 
 import pytest

@@ -6,6 +6,7 @@
 3. 字符串只转义 JCS 规定的字符，其余原样输出 UTF-8。
 NaN 与 Infinity 不是合法 JSON，直接拒绝。
 """
+
 from __future__ import annotations
 
 import math
@@ -51,7 +52,7 @@ def _number(x: float | int) -> str:
     mant, _, exp = r.partition("e")
     digits = mant.replace(".", "")
     point = mant.index(".") if "." in mant else len(mant)
-    e10 = int(exp or 0) + point          # 小数点位置：value = 0.digits × 10^e10
+    e10 = int(exp or 0) + point  # 小数点位置：value = 0.digits × 10^e10
     stripped = digits.lstrip("0")
     e10 -= len(digits) - len(stripped)
     digits = stripped.rstrip("0") or "0"

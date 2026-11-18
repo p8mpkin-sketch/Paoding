@@ -20,6 +20,7 @@
   cost 事件的 price_table 带 “+estimated” 后缀，并记一条警告。
 - 每个请求记一行日志（logger “adapter”）：任务、模型、上游给的原始 usage、折算的毫美元。
 """
+
 from __future__ import annotations
 
 import http.client
@@ -41,10 +42,23 @@ from paoding_graph.contract import GraphPort, GraphReader
 
 LOG = logging.getLogger("adapter")
 ESTIMATED = "+estimated"
-BYTES_PER_TOKEN = 3                     # 估算用：英文约 4 字节一个 token，中文约 3 字节；取小的，估多不估少
+BYTES_PER_TOKEN = 3  # 估算用：英文约 4 字节一个 token，中文约 3 字节；取小的，估多不估少
 
-HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization",
-       "proxy-authenticate", "host", "content-length", "x-api-key", "authorization", "accept-encoding"}
+HOP = {
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "te",
+    "trailer",
+    "upgrade",
+    "proxy-authorization",
+    "proxy-authenticate",
+    "host",
+    "content-length",
+    "x-api-key",
+    "authorization",
+    "accept-encoding",
+}
 
 
 @dataclass
@@ -53,18 +67,21 @@ class PriceTable:
     models: dict
 
     @classmethod
-    def load(cls, path: str | Path) -> "PriceTable":
+    def load(cls, path: str | Path) -> PriceTable:
         d = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         return cls(d["version"], d["models"])
 
     def usd_milli(self, model: str, u: dict) -> int:
         p = self.models.get(model)
-        if p is None:                                   # 未知模型按最贵档计，宁多勿少
+        if p is None:  # 未知模型按最贵档计，宁多勿少
             p = max(self.models.values(), key=lambda x: x["output"])
-        micro = (u.get("input_tokens", 0) * p["input"] + u.get("output_tokens", 0) * p["output"]
-                 + u.get("cache_read_input_tokens", 0) * p["cache_read"]
-                 + u.get("cache_creation_input_tokens", 0) * p["cache_write"])   # 美元×1e6/1e6 token
-        return -(-int(round(micro * 1000)) // 1_000_000)                          # 毫美元，向上取整
+        micro = (
+            u.get("input_tokens", 0) * p["input"]
+            + u.get("output_tokens", 0) * p["output"]
+            + u.get("cache_read_input_tokens", 0) * p["cache_read"]
+            + u.get("cache_creation_input_tokens", 0) * p["cache_write"]
+        )  # 美元×1e6/1e6 token
+        return -(-int(round(micro * 1000)) // 1_000_000)  # 毫美元，向上取整
 
 
 @dataclass
@@ -80,20 +97,19 @@ class Task:
 
 @dataclass
 class ProxyConfig:
-    upstream: str                       # 例如 https://api.anthropic.com
-    api_key: str                        # 真实密钥，只在本进程
-    adapter_token: str                  # 向图服务提交 cost 事件用的组件令牌
+    upstream: str  # 例如 https://api.anthropic.com
+    api_key: str  # 真实密钥，只在本进程
+    adapter_token: str  # 向图服务提交 cost 事件用的组件令牌
     global_cap_usd_milli: int = 500_000  # M0 总额上限，暂定 500 美元
-    problem_caps: dict = field(default_factory=dict)   # pid → usd_milli
+    problem_caps: dict = field(default_factory=dict)  # pid → usd_milli
 
 
 class EndpointProxy:
-    def __init__(self, cfg: ProxyConfig, prices: PriceTable, graph: GraphPort,
-                 reader: GraphReader | None = None):
+    def __init__(self, cfg: ProxyConfig, prices: PriceTable, graph: GraphPort, reader: GraphReader | None = None):
         self.cfg, self.prices, self.graph = cfg, prices, graph
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
-        self.boot = secrets.token_hex(4)        # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
+        self.boot = secrets.token_hex(4)  # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
         self.global_spent = 0
         self.problem_spent: dict[str, int] = {}
         # 启动时从账本恢复的基线：seq 是恢复时的链头，对账只比它之后的事件
@@ -156,13 +172,27 @@ class EndpointProxy:
             t.spent_usd_milli += usd
             self.global_spent += usd
             self.problem_spent[t.pid] = self.problem_spent.get(t.pid, 0) + usd
-        self.graph.submit(self.cfg.adapter_token, t.pid, f"cost:{t.lease_id}:{self.boot}:{n}", [{"op": "cost", "body": {
-            "task_id": t.lease_id, "source": "proxy", "model": model,
-            "tokens_in": usage.get("input_tokens", 0),
-            "tokens_cached": usage.get("cache_read_input_tokens", 0),
-            "tokens_out": usage.get("output_tokens", 0),
-            "usd_milli": usd, "wall_s": 0,
-            "price_table": self.prices.version + (ESTIMATED if estimated else "")}}])
+        self.graph.submit(
+            self.cfg.adapter_token,
+            t.pid,
+            f"cost:{t.lease_id}:{self.boot}:{n}",
+            [
+                {
+                    "op": "cost",
+                    "body": {
+                        "task_id": t.lease_id,
+                        "source": "proxy",
+                        "model": model,
+                        "tokens_in": usage.get("input_tokens", 0),
+                        "tokens_cached": usage.get("cache_read_input_tokens", 0),
+                        "tokens_out": usage.get("output_tokens", 0),
+                        "usd_milli": usd,
+                        "wall_s": 0,
+                        "price_table": self.prices.version + (ESTIMATED if estimated else ""),
+                    },
+                }
+            ],
+        )
         return usd
 
     # ---------- HTTP ----------
@@ -173,7 +203,7 @@ class EndpointProxy:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
-            def log_message(self, *a):          # 不把请求打到 stderr
+            def log_message(self, *a):  # 不把请求打到 stderr
                 pass
 
             def _token(self) -> str | None:
@@ -206,7 +236,7 @@ class EndpointProxy:
                 conn = conn_cls(up.netloc, timeout=600)
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
                 headers["x-api-key"] = proxy.cfg.api_key
-                headers["accept-encoding"] = "identity"      # 压缩的响应没法边转边计量
+                headers["accept-encoding"] = "identity"  # 压缩的响应没法边转边计量
                 path = (up.path.rstrip("/") + self.path) if up.path else self.path
                 try:
                     conn.request(self.command, path, body=body, headers=headers)
@@ -228,7 +258,7 @@ class EndpointProxy:
                         if not client_gone:
                             try:
                                 self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
-                            except OSError:          # 客户端断开：继续读完上游，用量照记
+                            except OSError:  # 客户端断开：继续读完上游，用量照记
                                 client_gone = True
                 except OSError:
                     pass
@@ -237,16 +267,33 @@ class EndpointProxy:
                     model, raw = meter.result()
                     model = model or _req_model(body)
                     usage, estimated = normalize_usage(raw), False
-                    if not usage and resp.status == 200 and self.command == "POST" \
-                            and urllib.parse.urlsplit(self.path).path.endswith("/v1/messages"):
+                    if (
+                        not usage
+                        and resp.status == 200
+                        and self.command == "POST"
+                        and urllib.parse.urlsplit(self.path).path.endswith("/v1/messages")
+                    ):
                         usage, estimated = estimate_usage(body, meter.size), True
-                        LOG.warning("计量：%s 第 %d 个请求的响应里没有可用的 usage（content-type=%s，"
-                                    "content-encoding=%s），按字节数估算 %s", task.lease_id, n, ctype,
-                                    resp.getheader("content-encoding", "") or "-", usage)
-                    if usage:                        # 先入账再收尾：客户端见到响应结束时 cost 事件已落盘
+                        LOG.warning(
+                            "计量：%s 第 %d 个请求的响应里没有可用的 usage（content-type=%s，"
+                            "content-encoding=%s），按字节数估算 %s",
+                            task.lease_id,
+                            n,
+                            ctype,
+                            resp.getheader("content-encoding", "") or "-",
+                            usage,
+                        )
+                    if usage:  # 先入账再收尾：客户端见到响应结束时 cost 事件已落盘
                         usd = proxy.charge(task, n, model, usage, estimated)
-                        LOG.info("计量：%s 第 %d 个请求 model=%s 上游 usage=%s → %d 毫美元%s", task.lease_id, n,
-                                 model or "?", json.dumps(raw, sort_keys=True), usd, "（估算）" if estimated else "")
+                        LOG.info(
+                            "计量：%s 第 %d 个请求 model=%s 上游 usage=%s → %d 毫美元%s",
+                            task.lease_id,
+                            n,
+                            model or "?",
+                            json.dumps(raw, sort_keys=True),
+                            usd,
+                            "（估算）" if estimated else "",
+                        )
                 if not client_gone:
                     try:
                         self.wfile.write(b"0\r\n\r\n")
@@ -265,7 +312,7 @@ class EndpointProxy:
             self.server.server_close()
 
 
-def ledger_diff(proxy: "EndpointProxy", state: dict) -> list[dict]:
+def ledger_diff(proxy: EndpointProxy, state: dict) -> list[dict]:
     """对账（3.5.5 的 4、5）：代理自记的逐任务花费与图里 source=proxy 的 cost 事件之和逐项比较。
     返回不一致的条目；空表示对上。图是账本，代理是计量点，两者独立累计。
     代理启动时从账本恢复过基线的，只对恢复之后（seq 大于恢复时链头）的事件逐任务比较，合计加上基线。"""
@@ -277,9 +324,11 @@ def ledger_diff(proxy: "EndpointProxy", state: dict) -> list[dict]:
     proxy_by_task: dict[str, int] = {}
     for t in proxy._tasks.values():
         proxy_by_task[t.lease_id] = proxy_by_task.get(t.lease_id, 0) + t.spent_usd_milli
-    diffs = [{"task_id": k, "proxy": proxy_by_task.get(k, 0), "graph": graph_by_task.get(k, 0)}
-             for k in sorted(set(graph_by_task) | set(proxy_by_task))
-             if proxy_by_task.get(k, 0) != graph_by_task.get(k, 0)]
+    diffs = [
+        {"task_id": k, "proxy": proxy_by_task.get(k, 0), "graph": graph_by_task.get(k, 0)}
+        for k in sorted(set(graph_by_task) | set(proxy_by_task))
+        if proxy_by_task.get(k, 0) != graph_by_task.get(k, 0)
+    ]
     total = base["global"] + sum(graph_by_task.values())
     if proxy.global_spent != total:
         diffs.append({"task_id": "*", "proxy": proxy.global_spent, "graph": total})
@@ -293,30 +342,47 @@ def normalize_usage(raw: dict) -> dict[str, int]:
     - OpenAI 式：prompt_tokens（含缓存命中）、completion_tokens、prompt_tokens_details.cached_tokens
     - DeepSeek：prompt_cache_hit_tokens（命中）、prompt_cache_miss_tokens（未命中）
     """
+
     def num(k: str) -> int | None:
         v = raw.get(k)
         return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
 
     details = raw.get("prompt_tokens_details")
     cached_openai = details.get("cached_tokens") if isinstance(details, dict) else None
-    hit = next((v for v in (num("cache_read_input_tokens"), num("prompt_cache_hit_tokens"),
-                            cached_openai if isinstance(cached_openai, int) else None) if v is not None), None)
+    hit = next(
+        (
+            v
+            for v in (
+                num("cache_read_input_tokens"),
+                num("prompt_cache_hit_tokens"),
+                cached_openai if isinstance(cached_openai, int) else None,
+            )
+            if v is not None
+        ),
+        None,
+    )
     inp = num("input_tokens")
     if inp is None:
         inp = num("prompt_cache_miss_tokens")
     if inp is None and num("prompt_tokens") is not None:
-        inp = max(0, num("prompt_tokens") - (hit or 0))      # prompt_tokens 含命中部分，命中另按缓存价计
+        inp = max(0, num("prompt_tokens") - (hit or 0))  # prompt_tokens 含命中部分，命中另按缓存价计
     outs = [v for v in (num("output_tokens"), num("completion_tokens")) if v is not None]
-    out = max(outs) if outs else None                   # 两种名字都出现（各在一个事件里）时取大的，宁多勿少
-    u = {"input_tokens": inp, "output_tokens": out, "cache_read_input_tokens": hit,
-         "cache_creation_input_tokens": num("cache_creation_input_tokens")}
+    out = max(outs) if outs else None  # 两种名字都出现（各在一个事件里）时取大的，宁多勿少
+    u = {
+        "input_tokens": inp,
+        "output_tokens": out,
+        "cache_read_input_tokens": hit,
+        "cache_creation_input_tokens": num("cache_creation_input_tokens"),
+    }
     return {k: v for k, v in u.items() if v is not None}
 
 
 def estimate_usage(request: bytes | None, response_bytes: int) -> dict[str, int]:
     """上游没给 usage 时的兜底：请求体字节数估输入，解压后的响应字节数估输出，都向上取整。"""
-    return {"input_tokens": math.ceil(len(request or b"") / BYTES_PER_TOKEN),
-            "output_tokens": math.ceil(response_bytes / BYTES_PER_TOKEN)}
+    return {
+        "input_tokens": math.ceil(len(request or b"") / BYTES_PER_TOKEN),
+        "output_tokens": math.ceil(response_bytes / BYTES_PER_TOKEN),
+    }
 
 
 def _req_model(body: bytes | None) -> str:
@@ -333,11 +399,16 @@ class _Meter:
 
     def __init__(self, sse: bool, encoding: str = ""):
         self.sse, self.buf, self.model, self.usage = sse, b"", "", {}
-        self.size = 0                                       # 解压后的响应字节数，估算用
+        self.size = 0  # 解压后的响应字节数，估算用
         enc = encoding.strip().lower()
-        self._z = (zlib.decompressobj(32 + zlib.MAX_WBITS) if enc in ("gzip", "x-gzip")
-                   else zlib.decompressobj() if enc == "deflate" else None)
-        self._opaque = enc not in ("", "identity", "gzip", "x-gzip", "deflate")   # 例如 br：标准库解不了
+        self._z = (
+            zlib.decompressobj(32 + zlib.MAX_WBITS)
+            if enc in ("gzip", "x-gzip")
+            else zlib.decompressobj()
+            if enc == "deflate"
+            else None
+        )
+        self._opaque = enc not in ("", "identity", "gzip", "x-gzip", "deflate")  # 例如 br：标准库解不了
 
     def feed(self, chunk: bytes) -> None:
         if self._opaque:
@@ -375,8 +446,8 @@ class _Meter:
             self.model = m["model"]
         elif isinstance(d.get("model"), str):
             self.model = d["model"]
-        self._merge(m.get("usage"))                         # message_start
-        self._merge(d.get("usage"))                         # message_delta（及把 usage 放在顶层的方言）
+        self._merge(m.get("usage"))  # message_start
+        self._merge(d.get("usage"))  # message_delta（及把 usage 放在顶层的方言）
 
     def result(self) -> tuple[str, dict[str, Any]]:
         if self._opaque:
@@ -390,7 +461,7 @@ class _Meter:
                 return "", {}
             self._merge(d.get("usage"))
             return (d["model"] if isinstance(d.get("model"), str) else ""), self.usage
-        if self.buf.strip():                                # 末尾没有空行收口的最后一个事件
+        if self.buf.strip():  # 末尾没有空行收口的最后一个事件
             for line in self.buf.split(b"\n"):
                 if line.startswith(b"data:"):
                     self._take(line[5:].strip())
