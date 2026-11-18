@@ -9,15 +9,29 @@
    全局与按题的累计花费在启动时从图服务的账本投影（/budget）恢复：进程重启后不归零，硬顶继续有效。
 
 只用标准库：ThreadingHTTPServer 收，http.client 转发。不调用模型 SDK：代理是透明转发，客户端是 CLI。
+
+计量要兼容 Anthropic 兼容端点的方言（真实测试报告 P0-C：DeepSeek 上全程记 $0.000）：
+- 向上游只要未压缩的响应（accept-encoding: identity）；上游仍压缩的（gzip、deflate）边转发边解压来计量，
+  转给客户端的字节不变。
+- SSE 的事件分隔认 \n\n、\r\n\r\n 与 \r\r；usage 在 message_start、message_delta 任一处或两处都行，
+  值为 null 的字段不算。
+- 字段名认 Anthropic 的 input/output/cache_read_input/cache_creation_input_tokens，也认 OpenAI 式的
+  prompt/completion_tokens 与 DeepSeek 的 prompt_cache_hit/miss_tokens（见 normalize_usage）。
+- 成功的 /v1/messages 响应里一个用量字段都取不到时，按字节数估 token（宁多勿少）再乘价目表，
+  cost 事件的 price_table 带 “+estimated” 后缀，并记一条警告。
+- 每个请求记一行日志（logger “adapter”）：任务、模型、上游给的原始 usage、折算的毫美元。
 """
 
 from __future__ import annotations
 
 import http.client
 import json
+import logging
+import math
 import secrets
 import threading
 import urllib.parse
+import zlib
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +40,10 @@ from typing import Any
 import yaml
 
 from paoding_graph.contract import GraphPort, GraphReader
+
+LOG = logging.getLogger("adapter")
+ESTIMATED = "+estimated"
+BYTES_PER_TOKEN = 3  # 估算用：英文约 4 字节一个 token，中文约 3 字节；取小的，估多不估少
 
 HOP = {
     "connection",
@@ -40,6 +58,7 @@ HOP = {
     "content-length",
     "x-api-key",
     "authorization",
+    "accept-encoding",
 }
 
 
@@ -91,7 +110,8 @@ class EndpointProxy:
         self.cfg, self.prices, self.graph = cfg, prices, graph
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
-        self.boot = secrets.token_hex(4)  # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
+        # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
+        self.boot = secrets.token_hex(4)
         self.global_spent = 0
         self.problem_spent: dict[str, int] = {}
         # 启动时从账本恢复的基线：seq 是恢复时的链头，对账只比它之后的事件
@@ -147,8 +167,8 @@ class EndpointProxy:
             t.requests += 1
             return 200, "ok", t, t.requests
 
-    def charge(self, t: Task, n: int, model: str, usage: dict) -> int:
-        """n 取自 admit，做幂等键：同一请求重复上报只记一次。"""
+    def charge(self, t: Task, n: int, model: str, usage: dict, estimated: bool = False) -> int:
+        """n 取自 admit，做幂等键：同一请求重复上报只记一次。usage 是 normalize_usage 之后的形状。"""
         usd = self.prices.usd_milli(model, usage)
         with self._lock:
             t.spent_usd_milli += usd
@@ -170,7 +190,7 @@ class EndpointProxy:
                         "tokens_out": usage.get("output_tokens", 0),
                         "usd_milli": usd,
                         "wall_s": 0,
-                        "price_table": self.prices.version,
+                        "price_table": self.prices.version + (ESTIMATED if estimated else ""),
                     },
                 }
             ],
@@ -218,6 +238,7 @@ class EndpointProxy:
                 conn = conn_cls(up.netloc, timeout=600)
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
                 headers["x-api-key"] = proxy.cfg.api_key
+                headers["accept-encoding"] = "identity"  # 压缩的响应没法边转边计量
                 path = (up.path.rstrip("/") + self.path) if up.path else self.path
                 try:
                     conn.request(self.command, path, body=body, headers=headers)
@@ -231,7 +252,7 @@ class EndpointProxy:
                         self.send_header(k, v)
                 self.send_header("transfer-encoding", "chunked")
                 self.end_headers()
-                meter = _Meter(ctype.startswith("text/event-stream"))
+                meter = _Meter(ctype.startswith("text/event-stream"), resp.getheader("content-encoding", ""))
                 client_gone = False
                 try:
                     while chunk := resp.read1(65536):
@@ -245,9 +266,36 @@ class EndpointProxy:
                     pass
                 finally:
                     conn.close()
-                    model, usage = meter.result()
+                    model, raw = meter.result()
+                    model = model or _req_model(body)
+                    usage, estimated = normalize_usage(raw), False
+                    if (
+                        not usage
+                        and resp.status == 200
+                        and self.command == "POST"
+                        and urllib.parse.urlsplit(self.path).path.endswith("/v1/messages")
+                    ):
+                        usage, estimated = estimate_usage(body, meter.size), True
+                        LOG.warning(
+                            "计量：%s 第 %d 个请求的响应里没有可用的 usage（content-type=%s，"
+                            "content-encoding=%s），按字节数估算 %s",
+                            task.lease_id,
+                            n,
+                            ctype,
+                            resp.getheader("content-encoding", "") or "-",
+                            usage,
+                        )
                     if usage:  # 先入账再收尾：客户端见到响应结束时 cost 事件已落盘
-                        proxy.charge(task, n, model, usage)
+                        usd = proxy.charge(task, n, model, usage, estimated)
+                        LOG.info(
+                            "计量：%s 第 %d 个请求 model=%s 上游 usage=%s → %d 毫美元%s",
+                            task.lease_id,
+                            n,
+                            model or "?",
+                            json.dumps(raw, sort_keys=True),
+                            usd,
+                            "（估算）" if estimated else "",
+                        )
                 if not client_gone:
                     try:
                         self.wfile.write(b"0\r\n\r\n")
@@ -289,39 +337,135 @@ def ledger_diff(proxy: EndpointProxy, state: dict) -> list[dict]:
     return diffs
 
 
-class _Meter:
-    """从非流式 JSON 或 SSE 流里取出 model 与 usage。message_start 给输入侧，message_delta 给累计输出。"""
+def normalize_usage(raw: dict) -> dict[str, int]:
+    """把各家 Anthropic 兼容端点的 usage 折成代理计价用的四个字段；取不到的字段不出现。
 
-    def __init__(self, sse: bool):
+    - Anthropic：input_tokens（不含缓存命中）、output_tokens、cache_read_input_tokens、cache_creation_input_tokens
+    - OpenAI 式：prompt_tokens（含缓存命中）、completion_tokens、prompt_tokens_details.cached_tokens
+    - DeepSeek：prompt_cache_hit_tokens（命中）、prompt_cache_miss_tokens（未命中）
+    """
+
+    def num(k: str) -> int | None:
+        v = raw.get(k)
+        return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+    details = raw.get("prompt_tokens_details")
+    cached_openai = details.get("cached_tokens") if isinstance(details, dict) else None
+    hit = next(
+        (
+            v
+            for v in (
+                num("cache_read_input_tokens"),
+                num("prompt_cache_hit_tokens"),
+                cached_openai if isinstance(cached_openai, int) else None,
+            )
+            if v is not None
+        ),
+        None,
+    )
+    inp = num("input_tokens")
+    if inp is None:
+        inp = num("prompt_cache_miss_tokens")
+    if inp is None and num("prompt_tokens") is not None:
+        inp = max(0, num("prompt_tokens") - (hit or 0))  # prompt_tokens 含命中部分，命中另按缓存价计
+    outs = [v for v in (num("output_tokens"), num("completion_tokens")) if v is not None]
+    out = max(outs) if outs else None  # 两种名字都出现（各在一个事件里）时取大的，宁多勿少
+    u = {
+        "input_tokens": inp,
+        "output_tokens": out,
+        "cache_read_input_tokens": hit,
+        "cache_creation_input_tokens": num("cache_creation_input_tokens"),
+    }
+    return {k: v for k, v in u.items() if v is not None}
+
+
+def estimate_usage(request: bytes | None, response_bytes: int) -> dict[str, int]:
+    """上游没给 usage 时的兜底：请求体字节数估输入，解压后的响应字节数估输出，都向上取整。"""
+    return {
+        "input_tokens": math.ceil(len(request or b"") / BYTES_PER_TOKEN),
+        "output_tokens": math.ceil(response_bytes / BYTES_PER_TOKEN),
+    }
+
+
+def _req_model(body: bytes | None) -> str:
+    try:
+        m = json.loads(body or b"{}").get("model", "")
+    except (ValueError, AttributeError):
+        return ""
+    return m if isinstance(m, str) else ""
+
+
+class _Meter:
+    """从非流式 JSON 或 SSE 流里取出 model 与原始 usage（未归一）。message_start 给输入侧，message_delta 给累计输出；
+    哪边给了什么字段都收，值为 null 的不覆盖已有的数。上游压缩了的先解压（只用于计量，转发的字节不动）。"""
+
+    def __init__(self, sse: bool, encoding: str = ""):
         self.sse, self.buf, self.model, self.usage = sse, b"", "", {}
+        self.size = 0  # 解压后的响应字节数，估算用
+        enc = encoding.strip().lower()
+        self._z = (
+            zlib.decompressobj(32 + zlib.MAX_WBITS)
+            if enc in ("gzip", "x-gzip")
+            else zlib.decompressobj()
+            if enc == "deflate"
+            else None
+        )
+        self._opaque = enc not in ("", "identity", "gzip", "x-gzip", "deflate")  # 例如 br：标准库解不了
 
     def feed(self, chunk: bytes) -> None:
+        if self._opaque:
+            return
+        if self._z is not None:
+            try:
+                chunk = self._z.decompress(chunk)
+            except zlib.error:
+                self._opaque = True
+                return
+        self.size += len(chunk)
         self.buf += chunk
         if not self.sse:
             return
+        self.buf = self.buf.replace(b"\r\n", b"\n").replace(b"\r", b"\n") if b"\r" in self.buf else self.buf
         while b"\n\n" in self.buf:
             event, self.buf = self.buf.split(b"\n\n", 1)
             for line in event.split(b"\n"):
                 if line.startswith(b"data:"):
                     self._take(line[5:].strip())
 
+    def _merge(self, u: object) -> None:
+        if isinstance(u, dict):
+            self.usage.update({k: v for k, v in u.items() if v is not None})
+
     def _take(self, raw: bytes) -> None:
         try:
             d = json.loads(raw)
         except ValueError:
             return
-        if d.get("type") == "message_start":
-            m = d.get("message", {})
-            self.model = m.get("model", self.model)
-            self.usage.update({k: v for k, v in (m.get("usage") or {}).items() if isinstance(v, int)})
-        elif d.get("type") == "message_delta":
-            self.usage.update({k: v for k, v in (d.get("usage") or {}).items() if isinstance(v, int)})
+        if not isinstance(d, dict):
+            return
+        m = d.get("message") if isinstance(d.get("message"), dict) else {}
+        if isinstance(m.get("model"), str):
+            self.model = m["model"]
+        elif isinstance(d.get("model"), str):
+            self.model = d["model"]
+        self._merge(m.get("usage"))  # message_start
+        self._merge(d.get("usage"))  # message_delta（及把 usage 放在顶层的方言）
 
     def result(self) -> tuple[str, dict[str, Any]]:
+        if self._opaque:
+            return "", {}
         if not self.sse:
             try:
                 d = json.loads(self.buf)
-                return d.get("model", ""), {k: v for k, v in (d.get("usage") or {}).items() if isinstance(v, int)}
             except ValueError:
                 return "", {}
+            if not isinstance(d, dict):
+                return "", {}
+            self._merge(d.get("usage"))
+            return (d["model"] if isinstance(d.get("model"), str) else ""), self.usage
+        if self.buf.strip():  # 末尾没有空行收口的最后一个事件
+            for line in self.buf.split(b"\n"):
+                if line.startswith(b"data:"):
+                    self._take(line[5:].strip())
+            self.buf = b""
         return self.model, self.usage
