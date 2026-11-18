@@ -294,3 +294,24 @@ def test_ledger_replays(k):
 def test_cost_requires_task(k):
     k.open()
     assert cost(k, "l_999", 1) == "unknown_ref"
+
+
+def test_in_flight_session_hands_back_its_transcript_after_close(k):
+    """题目被会话自己提交的候选关掉时，会话还在途：它仍能登记留档并带着留档释放租约。
+
+    全栈测试里的竞态（判官先一步关题，会话登记留档被拒，租约永不释放）就是这一条。"""
+    k.open(); boot(k)
+    i = add_intent(k)
+    lid = lease(k, "explore", i)
+    session = explore(lid)
+    assert k.submit(HUMAN, "p1", "close_problem", {"reason": "判官已通过"}) == "ok"
+    body = {"hash": "0" * 64, "size": 0, "media_type": "application/json", "class": "authored"}
+    assert k.submit(explore("someone-else"), "p1", "register_artifact", body) == "schema_error"   # 不在途的会话
+    assert k.submit(reason(), "p1", "add_intent", {"title": "x", "premises": [], "risk": "r0",
+                                                  "budget": R}) == "schema_error"               # 别的操作照旧被拒
+    tr = k.submit(session, "p1", "register_artifact", body)
+    assert tr.startswith("a_") and k.state["artifacts"][tr]["class"] == "authored"
+    assert k.submit(session, "p1", "release", {"lease": lid, "outcome": "done", "transcript_ref": tr}) == "ok"
+    l = k.state["leases"][lid]
+    assert (l["active"], l["outcome"], l["transcript_ref"]) == (False, "closed", tr)
+    assert k.submit(session, "p1", "register_artifact", body) == "schema_error"                   # 租约已交回
