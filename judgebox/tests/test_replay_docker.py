@@ -140,3 +140,20 @@ def test_a_spec_that_really_reads_the_target_reaches_e3(dj, target):
     assert done["result"] == "pass", done
     assert dj.level("p1", fid) == "E3" and containers(dj) == [target]
     assert dj.state["artifacts"][done["evidence"]]["exec"]["touched"] == [f"net:{target}:8080"]
+
+
+def test_control_separates_a_spec_that_reads_its_input_from_a_constant(dj):
+    """对照判据（§3.3.3）落在真容器上：读输入的规格主运行通过、对照不通过；打印常量的规格对照也通过。"""
+    dj.open(scope=QUIET)
+    lid, tok = dj.session()
+    bogus = dj.art(b"7\n", cls="authored", who=tok)
+    reads = "n=$(cat /workspace/inputs/1 2>/dev/null || echo 6); echo value-$((n*7))"
+    check = {"judge_id": "replay", "spec_ref": dj.spec(reads), "expect": {"stdout_contains": "value-42"}}
+    good, _ = dj.fact(tok, {**check, "control": {"inputs": [bogus]}}, title="读输入")
+    const = {"judge_id": "replay", "spec_ref": dj.spec("echo value-42"), "expect": {"stdout_contains": "value-42"}}
+    flat, _ = dj.fact(tok, {**const, "control": {"inputs": [bogus]}}, title="常量")
+    done = {d["request"]: d for d in dj.runner.tick()}
+    by_target = {dj.state["requests"][rid]["target"]: d for rid, d in done.items()}
+    assert by_target[good]["result"] == "pass" and dj.level("p1", good) == "E3"
+    assert (by_target[flat]["result"], by_target[flat]["reason"]) == ("inconclusive", "no_contrast")
+    assert dj.level("p1", flat) != "E3" and containers(dj) == []

@@ -13,7 +13,14 @@ from .state import State
 
 def to_refstate(state: State, pid: str) -> rm.State:
     facts = {
-        fid: rm.Fact(fid, f["claim_type"], tuple(f["premises"]), f.get("session") or "", f.get("body_ref"))
+        fid: rm.Fact(
+            fid,
+            f["claim_type"],
+            tuple(f["premises"]),
+            f.get("session") or "",
+            f.get("body_ref"),
+            control="control" in f.get("check", {}),  # 判据带对照（§3.3.3）：续期门与 r2 前提读它
+        )
         for fid, f in state["facts"].items()
         if f["problem_id"] == pid
     }

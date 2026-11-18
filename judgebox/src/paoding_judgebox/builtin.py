@@ -29,6 +29,7 @@ class Outcome:
     output: bytes = b""  # 判官输出：登记为 judge 类 Artifact 的正文
     provenance: dict[str, Any] = field(default_factory=dict)
     wall_s: int = 0
+    control_end: str | None = None  # 判据带对照时：对照运行的结束类别（§3.3.3），见 replay
 
 
 @dataclass
@@ -49,6 +50,7 @@ class Ctx:
     bases: dict[str, Any]
     now_ms: int
     grounded: tuple[Any, ...] = ()  # 挂入洁净容器、且自身有出处的 Artifact（见 runner._grounded）
+    control_inputs: tuple[bytes, ...] | None = None  # check.control.inputs 的字节（判据带对照时）
 
 
 def _prov(tool: str, command: str, exit_code: int | None, now: int, touched: list[str] | None = None) -> dict[str, Any]:
@@ -140,7 +142,9 @@ def _put(name: str, data: bytes) -> str:
     return f"printf %s {base64.b64encode(data).decode()} | base64 -d > /workspace/{name}"
 
 
-def _replay_once(c: Ctx, n: int) -> Outcome:
+def _replay_once(c: Ctx, n: int, inputs: tuple[bytes, ...] = (), tag: str = "") -> Outcome:
+    """一次洁净重放。inputs 按序写到 /workspace/inputs/1、2、…（主运行没有，对照运行是 control.inputs）；
+    目录两次都建，规格看到的环境只差在输入上。tag 区分主运行与对照运行的容器名和幂等键。"""
     script = c.spec_bytes if c.spec_bytes is not None else c.candidate
     if script is None:
         return Outcome("inconclusive", "unsupported", b"no spec and no candidate")
@@ -148,7 +152,7 @@ def _replay_once(c: Ctx, n: int) -> Outcome:
     env = {**p["env"], "base": c.bases.get(p["env"]["base"], p["env"]["base"])}
     ceiling = c.target_risk if RISK_RANK[c.target_risk] <= 1 else "r1"  # 不可逆动作从不重放
     try:
-        spec = compile_spec(f"{c.lease_id.replace('_', '-')}-{n}", p["scope"], env, ceiling, False, "")
+        spec = compile_spec(f"{c.lease_id.replace('_', '-')}-{tag}{n}", p["scope"], env, ceiling, False, "")
         sid = c.executor.launch(spec, c.lease_id, mount_workspace=False)  # 洁净容器：不挂 Worker 的工作区
     except (ScopeError, OSError, subprocess.SubprocessError, RuntimeError) as e:  # 起不来是环境错误（无结论）
         return Outcome("inconclusive", "env_error", f"launch failed: {type(e).__name__}: {e}".encode())
@@ -156,8 +160,12 @@ def _replay_once(c: Ctx, n: int) -> Outcome:
         setup = _put("spec", script)
         if c.candidate is not None and c.spec_bytes is not None:
             setup += " && " + _put("candidate", c.candidate)
+        if c.control_inputs is not None:
+            setup += " && mkdir -p /workspace/inputs"
+            for i, data in enumerate(inputs, 1):
+                setup += " && " + _put(f"inputs/{i}", data)
         pre = c.executor.exec(
-            sid, setup, p["id"], f"judge-setup:{c.request_id}:{c.lease_id}:{n}", timeout_s=30, register_as="judge"
+            sid, setup, p["id"], f"judge-setup:{c.request_id}:{c.lease_id}:{tag}{n}", timeout_s=30, register_as="judge"
         )
         if pre.exit_code != 0:
             return Outcome("inconclusive", "env_error", pre.output.encode(), pre.provenance)
@@ -165,7 +173,7 @@ def _replay_once(c: Ctx, n: int) -> Outcome:
             sid,
             "sh /workspace/spec",
             p["id"],
-            f"judge-run:{c.request_id}:{c.lease_id}:{n}",
+            f"judge-run:{c.request_id}:{c.lease_id}:{tag}{n}",
             timeout_s=int(c.spec.get("timeout_s", 60)),
             register_as="judge",
         )
@@ -210,11 +218,34 @@ def _blob(c: Ctx, r: Any) -> bytes:
 
 def replay(c: Ctx) -> Outcome:
     """在洁净容器里重新执行规格（没有规格时执行候选本身），按 expect 比对。
-    一次请求内连续运行 1 + flake.reruns 次：按 require 全部或多数一致给出结论，否则 flaky（§3.3.4）。"""
+    一次请求内连续运行 1 + flake.reruns 次：按 require 全部或多数一致给出结论，否则 flaky（§3.3.4）。
+
+    判据带对照（§3.3.3）时，主运行通过后再用 control.inputs 跑同一份规格（同样按抖动策略）：
+    对照不通过才给 pass；对照也通过或抖动是 inconclusive(no_contrast)，结果不依赖输入；
+    对照超时、环境错误或 untouched 是 inconclusive，原因码照旧。主运行没通过时对照不跑，control_end=not_run。"""
     if c.executor is None:
         return Outcome("inconclusive", "env_error", b"no executor")
+    main = _replay_series(c)
+    if c.control_inputs is None:
+        return main
+    if main.result != "pass":
+        main.control_end = "not_run"
+        return main
+    ctl = _replay_series(c, c.control_inputs, "c")
+    end = ctl.reason if ctl.result == "inconclusive" else ctl.result
+    if ctl.result == "fail":
+        result, reason = "pass", "ok"
+    elif ctl.result in ("pass", "flaky"):
+        result, reason = "inconclusive", "no_contrast"
+    else:
+        result, reason = "inconclusive", ctl.reason
+    output = main.output + b"\n--- control ---\n" + ctl.output
+    return Outcome(result, reason, output, main.provenance, main.wall_s + ctl.wall_s, end)
+
+
+def _replay_series(c: Ctx, inputs: tuple[bytes, ...] = (), tag: str = "") -> Outcome:
     flake = c.spec.get("flake") or {}
-    runs = [_replay_once(c, n) for n in range(1 + int(flake.get("reruns", 0)))]
+    runs = [_replay_once(c, n, inputs, tag) for n in range(1 + int(flake.get("reruns", 0)))]
     hard = [o for o in runs if o.result == "inconclusive"]
     if hard:
         return hard[0]

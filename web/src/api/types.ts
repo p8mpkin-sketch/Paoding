@@ -29,7 +29,15 @@ export type Profile = { info: "complete" | "partial"; judge: "hard" | "costly" |
 export type ProfileAxis = "info" | "judge" | "reversibility";
 export type Budget = { usd_milli: number; wall_s: number; tokens?: number };
 export type VaultRef = { vault: string; digest: string };
-export type Check = { judge_id: string; spec_ref?: ArtifactId; expect?: Record<string, unknown>; sealed?: VaultRef[] };
+/** 对照判据（§3.3.3）：同规格、异输入，只用于观察类论断。 */
+export type Control = { inputs: ArtifactId[] };
+export type Check = {
+  judge_id: string;
+  spec_ref?: ArtifactId;
+  expect?: Record<string, unknown>;
+  sealed?: VaultRef[];
+  control?: Control;
+};
 export type ScopeRule = { resource: string; pattern: string; actions: string[]; risk: Risk };
 export type Origin = { statement_ref: ArtifactId; materials: ArtifactId[] };
 export type Env = { base: string; baseline_ref: string };

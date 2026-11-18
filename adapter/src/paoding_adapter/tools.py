@@ -202,9 +202,15 @@ class ToolHost:
                     check["spec_ref"] = authored(c.string("spec_path"))
                 if "inputs" in c:  # 规格缝隙，见 docs/m0/dissent-002-adapter.md
                     return _err("schema_error", "check.inputs 在 M0 内核的判据里没有对应字段，暂不接受")
-                extra = c.keys() - {"judge_id", "expect", "spec_path"}
+                extra = c.keys() - {"judge_id", "expect", "spec_path", "control"}
                 if extra:
                     raise BadBody(f"check 多余字段 {sorted(extra)}")
+                if c.get("control") is not None:  # 对照判据（§3.3.3）：工作区文件登记为 authored，或直接给 ArtifactId
+                    ctl = c.child("control")
+                    if ctl.keys() - {"input_paths", "inputs"}:
+                        raise BadBody("control 只有 input_paths 与 inputs")
+                    paths = [authored(x) for x in ctl.strings("input_paths", [])]
+                    check["control"] = {"inputs": paths + subl(ctl.array("inputs", []))}
                 body["check"] = check
             batch.append({"op": "add_fact", "body": body})
         elif kind == "add_intent":

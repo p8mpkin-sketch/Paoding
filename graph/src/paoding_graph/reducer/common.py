@@ -74,13 +74,25 @@ def _rule(r: Obj) -> ScopeRule:
     return {"resource": r.text("resource"), "pattern": r.text("pattern"), "actions": r.texts("actions"), "risk": risk}
 
 
-def _check(c: Obj) -> Check:
+MAX_CONTROL_INPUTS = 8
+
+
+def _check(c: Obj, observation: bool = False) -> Check:
+    """判据。observation：这是观察类论断的判据，才接受对照 `control`（§3.3.3，N1 提前）。"""
     extra = c.keys() - {"judge_id", "spec_ref", "expect", "sealed", "control"}
     if extra:
         raise BadBody(f"check 多余字段 {sorted(extra)}")
-    if "control" in c:
-        raise BadBody("check.control 是 M1 的对照判据，M0 未启用")
     out: Check = {"judge_id": c.string("judge_id")}
+    if "control" in c:
+        if not observation:
+            raise BadBody("check.control 只用于观察类论断的判据")
+        ctl = c.child("control")
+        if ctl.keys() != {"inputs"}:
+            raise BadBody("check.control 只有 inputs 一个字段（对象形式的对照参数未启用）")
+        inputs = ctl.strings("inputs")
+        if not 1 <= len(inputs) <= MAX_CONTROL_INPUTS or len(set(inputs)) != len(inputs):
+            raise BadBody(f"control.inputs 须为 1 到 {MAX_CONTROL_INPUTS} 个互不相同的 ArtifactId")
+        out["control"] = {"inputs": inputs}
     if "spec_ref" in c:
         out["spec_ref"] = c.string("spec_ref")
     if "expect" in c:

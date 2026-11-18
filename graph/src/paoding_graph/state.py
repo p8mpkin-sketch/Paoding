@@ -65,6 +65,12 @@ class VaultRef(TypedDict):
     digest: str
 
 
+class Control(TypedDict):
+    """对照判据（§3.3.3，N1）：同一份规格换这组输入再跑一次，结果必须相反。只用于观察类论断。"""
+
+    inputs: list[str]  # ArtifactId；对照运行时按序写到 /workspace/inputs/1、2、…
+
+
 class Check(TypedDict):
     """判据（I4 判据先行）：创建时登记，判官只能是这一个。"""
 
@@ -72,6 +78,7 @@ class Check(TypedDict):
     spec_ref: NotRequired[str]
     expect: NotRequired[Any]
     sealed: NotRequired[list[VaultRef]]
+    control: NotRequired[Control]
 
 
 class Done(Check):
@@ -202,6 +209,7 @@ class Request(TypedDict):
     candidate: str | None
     verdict_seq: NotRequired[int]
     inconclusive: NotRequired[str]
+    control_end: NotRequired[str]
 
 
 class Verdict(TypedDict):
@@ -217,6 +225,8 @@ class Verdict(TypedDict):
     candidate: str | None
     request: str
     evidence: list[str]
+    controlled: NotRequired[bool]  # 判据带对照且主运行通过、对照不通过
+    control_end: NotRequired[str]  # 对照运行的结束类别，供 §8.5 的对照质量抽样
 
 
 Support = Verdict  # M0 的支持记录只有判官裁决一种
