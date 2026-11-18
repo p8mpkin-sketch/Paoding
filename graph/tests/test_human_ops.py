@@ -42,21 +42,21 @@ def _needs_human(k):
 
 def test_deny_requires_reason_and_keeps_it(k):
     iid = _needs_human(k)
-    assert k.submit(HUMAN, "p1", "approve", {"intent": iid, "decision": "deny"}) == "schema_error"
-    assert k.submit(HUMAN, "p1", "approve", {"intent": iid, "decision": "deny", "reason": "  "}) == "schema_error"
-    assert k.submit(HUMAN, "p1", "approve", {"intent": iid, "decision": "deny", "reason": "回退不清楚"}) == "ok"
+    assert k.decide("p1", iid, "deny") == "schema_error"
+    assert k.decide("p1", iid, "deny", reason="  ") == "schema_error"
+    assert k.decide("p1", iid, "deny", reason="回退不清楚") == "ok"
     assert wk.intent_status(k.state, "p1", iid) == "abandoned"
     assert k.state["decision_reasons"][iid]["reason"] == "回退不清楚"
 
 
 def test_approve_reason_optional(k):
     iid = _needs_human(k)
-    assert k.submit(HUMAN, "p1", "approve", {"intent": iid, "decision": "approve"}) == "ok"
+    assert k.decide("p1", iid) == "ok"
     assert iid not in k.state.get("decision_reasons", {})
 
 
 def test_replay_stable(k):
     iid = _needs_human(k)
     k.submit(HUMAN, "p1", "profile_override", {"axis": "judge", "value": "costly", "reason": "判官要起容器"})
-    k.submit(HUMAN, "p1", "approve", {"intent": iid, "decision": "deny", "reason": "r"})
+    assert k.decide("p1", iid, "deny", reason="r") == "ok"
     assert state_hash(replay(k.events, apply, empty_state())) == state_hash(k.state)

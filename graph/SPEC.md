@@ -49,7 +49,7 @@
 | `GET /v1/problems/{pid}/invalidations?node=` | `invalidated[]`（参考模型的搬运函数） |
 | `GET /v1/problems/{pid}/events?after=&limit=&wait=` | 审计日志。有新事件立刻返回，否则最多等 `wait` 秒（上限 30）；带 `as_of` 时只读到该序号、不等 |
 | `GET /v1/problems/{pid}/stream` | SSE。每帧 `id: <seq>`、`data: <事件>`（无 `event` 名，`onmessage` 直接收）；游标取 `Last-Event-ID` 或 `?after=`，都没有则从链头之后；落后超过 5000 条先发一帧 `event: snapshot`（`{as_of, status, budget}`）再续流；空闲时发注释心跳 |
-| `GET /v1/problems/{pid}/cards/{kind}/{id}` | `{card, card_hash, display}`。`approval`（id 为 Intent）与 `closeout`（id 为题目 id）；`extension`、`dispute` 随 M1。`card` 与 `card_hash` 出自参考模型，估值不在卡面里 |
+| `GET /v1/problems/{pid}/cards/{kind}/{id}` | `{card, card_hash, display}`。人的决策操作带的 `seen.card_hash` 取自这里（不带 `as_of`）。`approval`（id 为 Intent）与 `closeout`（id 为题目 id）；`extension`、`dispute` 随 M1。`card` 与 `card_hash` 出自参考模型，估值不在卡面里 |
 | `GET /v1/hints/{hid}/trace` | `temporal{added, abandoned}` 与 `exposure{sessions, added, abandoned}` 两列 |
 | `GET /v1/artifacts/{id}`、`GET /v1/blobs/{hash}[?range=起-止]` | 登记记录（带 `register`）；字节一律 `attachment` + `nosniff`，读取时校验哈希，坏了返回 500 `corrupt` |
 | `GET /v1/judges`、`/v1/templates`、`/v1/renderers` | 判官注册表；配置目录里的条目（带内容哈希，纯数据） |
@@ -93,6 +93,7 @@
 - 跨题隔离（I7 的推广）：凡是带引用的操作，引用指向别题的对象一律 `scope_mismatch`（引用不存在才是 `unknown_ref`）。这包括 `renew`/`release` 的租约（关题前后都查归属、持有者与在途）、`hint.about`、任务令牌的会话（会话即租约 id，只在租约所属的题内有效）。Goal 的候选次数按题计数。`graph/tests/test_isolation.py` 的性质测试常驻 CI：两题事件随机交错，每题的切片与派生视图等于只重放本题事件的结果。
 - 判官运行器的令牌按身份种类放行续租与释放，但只限 judge 租约；任务租约只认持有者或该租约的会话令牌。
 - 服务层（`service.py`）用一把可重入锁串行化提交与日志读取；新事件落盘后唤醒长轮询与事件流。`state_at(seq)` 的回放缓存永不失效（日志只追加、apply 纯函数）。
+- 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`、`rule`、`extend` 三个操作内核还没有，见异议报告 `docs/m0/dissent-p0-5-seen-binding.md`。
 - 目标陈述（`goal.statement`）的语域取“人”（开题人写下的文字）；规格的四语域表没有列这一项，见异议报告 004。
 - 四顾清单：r0 且 `accept=judge` 的题恒为空（M0 形态）；r1/r2 题先给一条占位项，阻止自动关题，完整清单随 M4。
 
