@@ -186,8 +186,16 @@ class BaselineBox:
         return f"http://{RELAY_ALIAS}:{PROXY_PORT}"
 
     def copy_in(self, src: Path, dst: str) -> None:
-        _docker("cp", str(src), f"{self.sid}:{dst}")
-        _docker("exec", "-u", "0", self.sid, "chmod", "a+r", dst)
+        """以 CLI 的同一用户把文件写进沙箱。不用 docker cp：它保留宿主上的属主，而沙箱 cap-drop ALL，
+        容器里的 root 改不了别人文件的权限（CI 上宿主 uid 是 1001）。"""
+        p = subprocess.run(
+            ["docker", "exec", "-i", "-u", self.user, self.sid, "sh", "-c", 'cat > "$0"', dst],
+            input=Path(src).read_bytes(),
+            capture_output=True,
+            timeout=60,
+        )
+        if p.returncode != 0:
+            raise RuntimeError(f"拷进沙箱失败：{p.stderr.decode('utf-8', 'replace').strip()[-400:]}")
 
     def exec_argv(self, argv: list[str], env: dict[str, str]) -> list[str]:
         out = ["docker", "exec", "-u", self.user, "-w", WORKSPACE]
