@@ -21,6 +21,7 @@ import urllib.parse
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E = ROOT / "scripts" / "e2e"
@@ -82,7 +83,7 @@ class Watcher(threading.Thread):
 
 
 def config(home: Path, **over) -> StackConfig:
-    return StackConfig.load(home, E2E / "config.json", port=0, static_dir=None, poll_s=0.2, dog_interval_s=0.5, **over)
+    return StackConfig.load(home, E2E / "config.yaml", port=0, static_dir=None, poll_s=0.2, dog_interval_s=0.5, **over)
 
 
 def owned_containers(owner: str) -> list[str]:
@@ -122,6 +123,12 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         assert opened["ok"], opened
         watcher = Watcher(url, PID)
         watcher.start()
+        hz = call(url, "/healthz")  # 题在跑的时候各组件都报正常
+        assert hz["ok"] and hz["status"] == "ok", hz
+        assert {"graph", "blobs", "events", "judge", "sinan", "watchdog", "adapter", "executor"} <= set(
+            hz["components"]
+        )
+        assert all(c["ok"] for c in hz["components"].values()), hz
         final = wait_terminal(url, PID, 120)
         assert watcher.closed.wait(10)
         evs = call(url, f"/v1/problems/{PID}/events?after=0&limit=5000")["events"]
@@ -245,9 +252,9 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
             {"steps": [{"tool": "mcp__paoding__exec", "input": {"cmd": "echo hi"}}, {"hang": 300}], "resume_steps": []}
         )
     )
-    cfg = json.loads((E2E / "config.json").read_text())
+    cfg = yaml.safe_load((E2E / "config.yaml").read_text())
     cfg["backend"]["scripts"] = {"bootstrap": str(hang)}
-    (home / "config.json").write_text(json.dumps(cfg))
+    (home / "config.yaml").write_text(yaml.safe_dump(cfg))
     ready = tmp_path / "ready"
     proc = subprocess.Popen(
         [
@@ -299,10 +306,18 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
         capture_output=True,
     ).stdout.decode()
     assert f":{proc.pid}:" not in leftover, leftover  # 属主是 run.py 进程的容器一个不剩
-    # 日志一行一条：时间 组件名 消息
-    for line in log.strip().splitlines():
-        assert line.split(" ", 2)[1] in ("graph", "judge", "sinan", "watchdog", "stack"), line
-    assert "已停" in log
+    # 日志结构化：stderr 一行一个 JSON 对象（时间、级别、组件名、消息），文件里是同样的行
+    recs = [json.loads(line) for line in log.strip().splitlines()]
+    for r in recs:
+        assert {"ts", "level", "component", "msg"} <= set(r), r
+        assert r["component"] in ("graph", "judge", "sinan", "adapter", "watchdog", "stack"), r
+        assert r["level"] in ("info", "warning", "error"), r
+    assert any("已停" in r["msg"] for r in recs)
+    lease_lines = [r for r in recs if r["component"] == "graph" and r.get("kind") == "lease"]
+    assert lease_lines and all(r["problem_id"] and r["lease_id"] and r["seq"] for r in lease_lines), lease_lines
+    filed = [json.loads(line) for line in (home / "logs" / "stack.log").read_text().splitlines()]
+    assert [r["msg"] for r in filed] == [r["msg"] for r in recs if r["msg"] in {f["msg"] for f in filed}]
+    assert any("已停" in r["msg"] for r in filed)
 
     # 重启读回同一份日志：租约以 failed 释放（停机不是花超），没有悬着的租约
     from paoding_graph.contract import Config, GraphService, TokenRegistry
@@ -310,6 +325,7 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
     st = GraphService(home / "g.sqlite", Config(), TokenRegistry()).state
     [boot] = [l for l in st["leases"].values() if l["kind"] == "bootstrap"]
     assert not boot["active"] and boot["outcome"] == "failed"
+    assert {r["lease_id"] for r in lease_lines} == set(st["leases"])  # 日志里的租约 id 就是图里的租约 id
 
 
 def test_component_thread_defect_is_recorded_not_swallowed(tmp_path):

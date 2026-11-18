@@ -1,13 +1,13 @@
 # graph/：契约 1 解牛图服务 + 契约 2 Artifact 仓库 + 契约 5 预算账本投影
 
-规格：v1.3 §3.1、§3.2、§3.5；不变量 I1、I3、I4、I7、I8。
+规格：v1.4 §3.1、§3.2、§3.5；不变量 I1、I3、I4、I7、I8。
 
 ## 实现的契约接口
 
 - 事件信封 `Event`（§3.1.2），JCS（RFC 8785）规范化，按题哈希链 `prev_hash → hash`。
 - 内核函数 `validate(state, actor, op)` 与 `apply(state, event)`：纯函数，不读时钟、不做 IO、不调用模型（I1）。
 - 等级函数、消费门、Intent 状态：**从参考模型搬运，不重写**（`src/paoding_graph/refmodel.py` 是 `docs/design/reference-model/kernel.py` 的逐字节副本，CI 比对）。参考模型与规格不一致时以规格为准，并写异议报告。
-- 端点（M0 走本机 Unix socket）：§3.1.2 端点表与 §3.2.2 Blob/Artifact 端点。
+- 端点：HTTP/1.1 + JSON，只监听 `127.0.0.1`（HMI §11 方案 A，图服务直出；没有 Unix socket 绑定）。覆盖 §3.1.2 端点表与 §3.2.2 Blob/Artifact 端点，实时推送走 SSE；形状见下文“HTTP 绑定”。同进程的组件（判官运行器、司南、哮天犬）经 `paoding_graph.contract` 的进程内端口调用，与 HTTP 写入落到同一个 `GraphService.submit`。
 - Blob 仓库：本地目录按 sha256 寻址，写入不可变，读取校验哈希（`corrupt`）。
 - 对外契约（`paoding_graph.contract`）：事件信封、拒绝码、Artifact/Check/VaultRef 类型、客户端。
 
@@ -36,12 +36,14 @@
 - 只对本机：`Host` 不是回环名拒绝；带 `Origin` 且非同源的请求一律 403，除非在 `--allow-origin` 白名单。读端点不要令牌（M1 本机单用户；`EventSource` 也带不了头）。
 - 排序只用创建 seq；时间只取事件 `ts`。
 - 线格式的唯一事实源是 `wire_schema.py`（JSON Schema 2020-12）。网页的 `web/src/api/types.ts` 由 `scripts/gen-types.py` 生成，CI 带 `--check`；`tests/test_wire_schema.py` 用同一份 schema 严格校验每个读端点的真应答（缺键、多键、类型不符都失败）。改应答形状先改 schema。
+- 访问日志缺省关（`HttpConfig.access_log`）。打开后每个请求向 `logging` 的 `http` 记一条：方法、路径、状态码、耗时、字节数、对端地址；不记查询串、请求头与请求体。
 
 **端点。**
 
 | 端点 | 说明 |
 | --- | --- |
 | `GET /v1/health` | `{ok, head, api}` |
+| `GET /healthz` | 运维探针（不带版本前缀）：`{ok, status: ok｜degraded, api, components{名: {ok, …}}}`，全部正常 200，否则 503。`graph`（链头、题数）与 `blobs`（目录可写）由本组件给；其余组件的状态由组装根经 `HttpConfig.health` 给。不要令牌，不含题目内容；说明见 `docs/ops.md` |
 | `GET /v1/problems` | `items[]`：`id、title、closed、terminal、terminal_badge、profile、opened_seq、opened_ts、closed_seq、spent_usd_milli、cap_usd_milli`；`totals`：题数、solved 数、总花费、每解成本 |
 | `GET /v1/problems/{pid}/status` | `problem`（画像、推出值与覆盖、scope、env、终态）、`goal{statement, accept, predicate}`、`facts[]`、`intents[]`、`hints[]`、`leases[]`、`requests[]`、`review`、`closeout` |
 | `GET /v1/problems/{pid}/view?layer=title｜summary&after_seq=&limit=` | 按创建顺序的节点清单，`next_after_seq` 为游标；`frontier`（活跃 Hint、待人处理、未结束 Intent 及其前提、未到终态的论断）。`layer=full` 需服务端开 `view_full_dump` |
