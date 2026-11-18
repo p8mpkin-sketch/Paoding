@@ -1,7 +1,7 @@
 // 检视与下钻（HMI 设计 §3.4、§10.2 右栏）。自上而下按证据、叙述、估值排列，人的判断以作者行插入。
 // 任何论断三次点击内到达证据根（H6 的四种终点）：
 //   节点行 → 支持记录或前提链条目 → Artifact 卡（命令行、退出码、哈希、本地校验）
-//   推断类沿前提链展开；链上没有任何登记过的 Artifact 时显式标"无证据根"。
+//   推断类沿前提链展开；链上没有任何登记过的 Artifact 时显式标"无证据根"（由图服务判定，字段 no_evidence_root）。
 import { useEffect, useState } from "react";
 import type { GroundRef, NodeEvidence } from "../api/types";
 import { useServices } from "../app/context";
@@ -31,14 +31,6 @@ function PremiseChain({ rows, id, seq }: { rows: ReadonlyMap<string, NodeRow>; i
   );
 }
 
-/** 整条链上有没有登记过的 Artifact：自己的 grounds、判据卡里裁决的证据、上游论断的 grounds。只看结构。 */
-export function hasEvidenceRoot(rows: ReadonlyMap<string, NodeRow>, id: string): boolean {
-  const self = rows.get(id);
-  if (!self) return false;
-  if (self.grounds.length > 0 || (self.predicate?.verdicts.some((v) => v.evidence.length > 0) ?? false)) return true;
-  return premiseChain(rows, id).some(({ row }) => row.grounds.length > 0);
-}
-
 function NodeView({ ev, vm }: { ev: NodeEvidence; vm: ViewModel }) {
   const rows = new Map(vm.rows.map((r) => [r.id, r]));
   const seq = vm.seq;
@@ -53,7 +45,8 @@ function NodeView({ ev, vm }: { ev: NodeEvidence; vm: ViewModel }) {
   }
   const row = rows.get(ev.id);
   const grounds: GroundRef[] = ev.type === "fact" ? ev.grounds : [];
-  const rooted = hasEvidenceRoot(rows, ev.id);
+  // 整条链有没有证据根由图服务判定（裁决 005-4）；前提链的展开只用来摆出下钻的入口
+  const rooted = !ev.no_evidence_root;
   return (
     <div className="inspector" data-node={ev.id}>
       <header className="inspector-head">

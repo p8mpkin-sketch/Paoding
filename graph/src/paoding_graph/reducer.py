@@ -707,7 +707,7 @@ def apply(state: dict, ev: dict) -> dict:
             s["hints"] = {**s["hints"], h["id"]: {**h, "closed": True}}
         else:
             hid = f"h_{seq}"
-            s["hints"] = {**s["hints"], hid: {**body, "id": hid, "problem_id": pid, "seq": seq,
+            s["hints"] = {**s["hints"], hid: {**body, "id": hid, "problem_id": pid, "seq": seq, "ts": ev["ts"],
                                               "author": ev["actor"]["id"], "closed": False}}
     elif kind == "cost":
         lk = s["leases"][body["task_id"]]["kind"]

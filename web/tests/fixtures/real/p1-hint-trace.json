@@ -4,11 +4,12 @@
  "body": {
   "as_of": 36,
   "head": 36,
-  "view_hash": "39fc34fc78045169a937690bc69b4588a97680386403f3853559f8d63f560b84",
+  "view_hash": "cd1908e06bbd39d972c581938600e91e9a366c367f543ac58ee645abf042fc35",
   "hint": {
    "id": "h_11",
    "type": "hint",
    "seq": 11,
+   "ts": 1011,
    "author": "cz",
    "closed": false,
    "about": "i_9",

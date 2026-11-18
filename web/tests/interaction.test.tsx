@@ -9,7 +9,7 @@ import { Wizard } from "../src/pages/Wizard";
 import { ApprovalCard } from "../src/ui/ApprovalCard";
 import { ExtensionDialog } from "../src/ui/ExtensionDialog";
 import { aboutCandidates, HintInject, HintTraceCard } from "../src/ui/Hints";
-import { hasEvidenceRoot, Inspector } from "../src/ui/Inspector";
+import { Inspector } from "../src/ui/Inspector";
 import { liveSession, pendingIntent, playToEnd, renderWith, rig, until, type Rig } from "./helpers";
 
 afterEach(cleanup);
@@ -83,11 +83,11 @@ describe("HT-6 下钻", () => {
     r.mock.append(r.mock.demoPid, { kind: "adapter", id: "ad1", session: "l_x", role: "reason" }, "add_fact", { title: "答案串大概是八位", summary: "没有依据的猜测。", claim_type: "inference", premises: [], grounds: [] });
     const vm = await vmOf(r);
     const none = byTitle(vm, "答案串大概是八位");
-    // 经过一条未达成的 Intent 也算链：它的上游有采集记录，所以不是无证据根
-    expect(hasEvidenceRoot(new Map(vm.rows.map((x) => [x.id, x])), byTitle(vm, "拿到账号后登录即可见答案串").id)).toBe(true);
-    const rows = new Map(vm.rows.map((x) => [x.id, x]));
-    expect(hasEvidenceRoot(rows, none.id)).toBe(false);
-    expect(hasEvidenceRoot(rows, byTitle(vm, "账号放在 8081").id)).toBe(true);
+    // 链级判定在服务端（裁决 005-4）：经过一条未达成的 Intent 也算链，它的上游有采集记录，所以不是无证据根
+    const root = async (title: string) => (await r.api.node(byTitle(vm, title).id)) as { no_evidence_root?: boolean };
+    expect((await root("拿到账号后登录即可见答案串")).no_evidence_root).toBe(false);
+    expect((await root("答案串大概是八位")).no_evidence_root).toBe(true);
+    expect((await root("账号放在 8081")).no_evidence_root).toBe(false);
     const { container } = renderWith(r, <Inspector vm={vm} nodeId={none.id} />);
     await waitFor(() => expect(container.querySelector('[data-evidence-root="none"]')).not.toBeNull());
     expect(container.querySelector('[data-register="evidence"]')).toBeNull();

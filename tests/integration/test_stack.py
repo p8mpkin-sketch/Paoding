@@ -51,6 +51,7 @@ class Watcher(threading.Thread):
         u = urllib.parse.urlsplit(url)
         self.conn = http.client.HTTPConnection(u.hostname, u.port, timeout=60)
         self.path, self.frames, self.closed = f"/v1/problems/{pid}/stream?after=0", [], threading.Event()
+        self.views: list[dict] = []
 
     def run(self):
         self.conn.request("GET", self.path, headers={"Accept": "text/event-stream"})
@@ -64,7 +65,9 @@ class Watcher(threading.Thread):
             if line.startswith(":"):
                 continue
             if line == "":
-                if "data" in f:
+                if "data" in f and f.get("event") == "view":   # P2-1：一批事件之后的 view 帧
+                    self.views.append({"id": int(f["id"]), **json.loads(f["data"])})
+                elif "data" in f and "event" not in f:
                     ev = json.loads(f["data"])
                     self.frames.append({"id": int(f["id"]), **ev})
                     if ev.get("kind") == "close_problem":
@@ -188,6 +191,11 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         # —— 网页一侧：SSE 帧逐条等于日志 ——
         upto = [e for e in evs if e["seq"] <= close["seq"]]
         assert [(f["id"], f["kind"]) for f in watcher.frames][:len(upto)] == [(e["seq"], e["kind"]) for e in upto]
+        # view 帧：每帧的序号是此前最后一条事件的序号，各份哈希等于该序号上 snapshot 的 parts_hash
+        seqs = {f["id"] for f in watcher.frames}
+        assert watcher.views and all(v["id"] in seqs and v["as_of"] == v["id"] for v in watcher.views)
+        v = watcher.views[-1]
+        assert call(url, f"/v1/problems/{PID}/snapshot?as_of={v['id']}&parts=work")["parts_hash"] == v["parts_hash"]
 
         stack.stop()
         # —— 停机之后：没有在途会话、没有本进程起的容器 ——

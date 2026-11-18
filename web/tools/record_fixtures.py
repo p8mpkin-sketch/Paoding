@@ -33,6 +33,8 @@ for pid in ("p1", "p2"):
         save(f"{pid}-{v}", f"/v1/problems/{pid}/{v}")
     save(f"{pid}-view", f"/v1/problems/{pid}/view?layer=summary")
     save(f"{pid}-events", f"/v1/problems/{pid}/events?after=0")
+    save(f"{pid}-ticks", f"/v1/problems/{pid}/ticks")
+    save(f"{pid}-snapshot", f"/v1/problems/{pid}/snapshot?state_hash=1")
     save(f"{pid}-closeout", f"/v1/problems/{pid}/cards/closeout/{pid}")
 save("p1-status-asof", f"/v1/problems/p1/status?as_of={ids['verdict_seq']-3}&state_hash=1")
 save("p1-fact-evidence", f"/v1/nodes/{ids['fact']}?layer=evidence")

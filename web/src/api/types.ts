@@ -141,12 +141,14 @@ export type IntentNode = {
   expected_gain: Tagged<number> | null;
   leases?: string[];
 };
-export type HintNode = { id: string; type: "hint"; seq: number; author: string; closed: boolean; about: string | null; text: Tagged };
+export type HintNode = { id: string; type: "hint"; seq: number; ts: number | null; author: string; closed: boolean; about: string | null; text: Tagged };
 export type GraphNode = FactNode | IntentNode;
 
 export type GroundRef = { id: ArtifactId; class: ArtifactClass; src: string; register: RegisterName; hash: string; size: number };
 export type FactEvidence = Omit<FactNode, "grounds"> & { problem_id: string; grounds: GroundRef[]; no_evidence_root: boolean; body_ref: ArtifactId | null };
-export type NodeEvidence = Envelope & (FactEvidence | (IntentNode & { problem_id: string }) | (HintNode & { problem_id: string }));
+/** no_evidence_root 是整条前提链上的“无证据根”（H6，裁决 005-4），由图服务算。 */
+export type IntentEvidence = IntentNode & { problem_id: string; leases: string[]; no_evidence_root: boolean };
+export type NodeEvidence = Envelope & (FactEvidence | IntentEvidence | (HintNode & { problem_id: string }));
 
 export type LeaseRow = {
   id: string;
@@ -304,6 +306,22 @@ export type ProblemsView = Envelope & {
   totals: { problems: number; solved: number; spent_usd_milli: number; cost_per_solve_usd_milli: number | null };
 };
 export type EventsResponse = { events: Event[]; head: number; next_after: number };
+
+// ---------- 合并读与刻度（P2-1） ----------
+
+export type SnapshotPart = "status" | "view" | "budget" | "work";
+/** 四份投影各自的 view_hash。事件流的 view 帧与 snapshot 应答都带它。 */
+export type PartsHash = Record<SnapshotPart, string>;
+/** GET /v1/problems/{pid}/snapshot：四份投影与单独的端点同形；`parts=` 只要其中几份。 */
+export type SnapshotResponse = {
+  as_of: number; head: number; view_hash: string; parts_hash: PartsHash;
+  status?: StatusView; view?: GraphView; budget?: BudgetResponse; work?: WorkView;
+};
+/** 时间轴的一格：每条事件只有 seq、ts、种类；判官裁决另带 result，预算标记另带 mark。 */
+export type WireTick = { seq: number; ts: number; kind: string; result?: "pass" | "fail" | "inconclusive"; mark?: number };
+export type TicksResponse = { as_of: number; head: number; ticks: WireTick[]; last_seq: number; head_hash: string | null };
+/** 事件流里一批事件之后的具名帧。 */
+export type ViewFrame = { as_of: number; parts_hash: PartsHash };
 
 // ---------- 写 ----------
 

@@ -1,0 +1,133 @@
+{
+ "path": "/v1/problems/p1/ticks",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "ticks": [
+   {
+    "seq": 1,
+    "ts": 1001,
+    "kind": "register_artifact"
+   },
+   {
+    "seq": 2,
+    "ts": 1002,
+    "kind": "open_problem"
+   },
+   {
+    "seq": 3,
+    "ts": 1003,
+    "kind": "lease"
+   },
+   {
+    "seq": 4,
+    "ts": 1004,
+    "kind": "register_artifact"
+   },
+   {
+    "seq": 5,
+    "ts": 1005,
+    "kind": "add_fact"
+   },
+   {
+    "seq": 6,
+    "ts": 1006,
+    "kind": "cost"
+   },
+   {
+    "seq": 7,
+    "ts": 1007,
+    "kind": "release"
+   },
+   {
+    "seq": 8,
+    "ts": 1008,
+    "kind": "lease"
+   },
+   {
+    "seq": 9,
+    "ts": 1009,
+    "kind": "add_intent"
+   },
+   {
+    "seq": 10,
+    "ts": 1010,
+    "kind": "release"
+   },
+   {
+    "seq": 11,
+    "ts": 1011,
+    "kind": "hint"
+   },
+   {
+    "seq": 12,
+    "ts": 1012,
+    "kind": "lease"
+   },
+   {
+    "seq": 13,
+    "ts": 1013,
+    "kind": "add_intent"
+   },
+   {
+    "seq": 14,
+    "ts": 1014,
+    "kind": "release"
+   },
+   {
+    "seq": 15,
+    "ts": 1015,
+    "kind": "lease"
+   },
+   {
+    "seq": 16,
+    "ts": 1016,
+    "kind": "register_artifact"
+   },
+   {
+    "seq": 17,
+    "ts": 1017,
+    "kind": "request_judge"
+   },
+   {
+    "seq": 18,
+    "ts": 1018,
+    "kind": "cost"
+   },
+   {
+    "seq": 19,
+    "ts": 1019,
+    "kind": "release"
+   },
+   {
+    "seq": 20,
+    "ts": 1020,
+    "kind": "lease"
+   },
+   {
+    "seq": 21,
+    "ts": 1021,
+    "kind": "register_artifact"
+   },
+   {
+    "seq": 22,
+    "ts": 1022,
+    "kind": "judge_verdict",
+    "result": "pass"
+   },
+   {
+    "seq": 23,
+    "ts": 1022,
+    "kind": "close_problem"
+   },
+   {
+    "seq": 24,
+    "ts": 1023,
+    "kind": "release"
+   }
+  ],
+  "last_seq": 24,
+  "head_hash": "8e4e9b93a27a1fed98b4c82cf8212b48e4ead52aa1fa0ebd05979c3e07976796"
+ }
+}

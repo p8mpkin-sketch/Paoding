@@ -2,7 +2,7 @@
 // 契约是 graph/SPEC.md 的「HTTP 绑定」：读用 GET；写只有 POST /v1/problems、POST …/proposals 与 PUT /v1/blobs，
 // 都带人的令牌，与 pd 是同一条提议通道。
 import type {
-  ArtifactView, BudgetResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
+  ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
   NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, WorkView,
 } from "./types";
 import { HUMAN_OPS } from "./ops";
@@ -77,6 +77,13 @@ export function createApi(cfg: ApiConfig) {
     view: (pid: string, asOf?: number) => get<GraphView>(withAsOf(`/v1/problems/${enc(pid)}/view`, asOf, { layer: "title" })),
     budget: (pid: string, asOf?: number) => get<BudgetResponse>(withAsOf(`/v1/problems/${enc(pid)}/budget`, asOf)),
     work: (pid: string, asOf?: number) => get<WorkView>(withAsOf(`/v1/problems/${enc(pid)}/work`, asOf)),
+    /** 合并读：一次取 status（带 state_hash）、view（layer=title）、budget、work；parts 只要其中几份。 */
+    snapshot: (pid: string, asOf?: number, parts?: readonly SnapshotPart[]) =>
+      get<SnapshotResponse>(withAsOf(`/v1/problems/${enc(pid)}/snapshot`, asOf, {
+        state_hash: "1", ...(parts ? { parts: parts.join(",") } : {}),
+      })),
+    /** 时间轴刻度：每条事件只有 seq、ts、种类，外加链尾哈希。冷启动用它，不再分页读全部事件。 */
+    ticks: (pid: string, asOf?: number) => get<TicksResponse>(withAsOf(`/v1/problems/${enc(pid)}/ticks`, asOf)),
     /** 审计日志的一段。不带 wait：有就返回，没有也立刻返回。 */
     events: (pid: string, after: number) => get<EventsResponse>(`/v1/problems/${enc(pid)}/events?after=${after}&limit=1000`),
     node: (id: string, asOf?: number) => get<NodeEvidence>(withAsOf(`/v1/nodes/${enc(id)}`, asOf, { layer: "evidence" })),

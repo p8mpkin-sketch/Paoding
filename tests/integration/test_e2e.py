@@ -86,7 +86,7 @@ class Watcher(threading.Thread):
             if line.startswith(":"):
                 continue
             if line == "":
-                if "data" in f:
+                if "data" in f and "event" not in f:           # 具名帧（view、snapshot）不是事件
                     ev = json.loads(f["data"])
                     self.frames.append({"id": int(f["id"]), **ev})
                     if ev.get("kind") == "close_problem":
