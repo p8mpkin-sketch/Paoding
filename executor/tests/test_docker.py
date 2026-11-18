@@ -210,6 +210,27 @@ def test_gate_enforces_actions(ex, tmp_path, duo):
     assert [(e["dst"], e["ok"]) for e in log if e["event"] == "connect"] == [(f"{duo}:8081", True)]
 
 
+def test_touched_comes_from_the_gate(ex, tmp_path, duo):
+    """P0-3：访问摘要是闸门记下的真实连接，逐次运行各算各的；命令自己说连过不算。"""
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"},
+             {"resource": "net", "pattern": f"{duo}:8081", "actions": ["connect"], "risk": "r0"}]
+    sid = ex.launch(compile_spec("tc", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    said = ex.exec(sid, f"echo connected to {duo}:8080; echo ok", "p1", "a")
+    assert said.provenance["touched"] == [] and ex.graph.calls[-1][3][0]["body"]["exec"]["touched"] == []
+    one = ex.exec(sid, GET.format(h=duo, p=8080), "p1", "b")
+    assert one.provenance["touched"] == [f"net:{duo}:8080"]
+    assert ex.graph.calls[-1][3][0]["body"]["exec"]["touched"] == [f"net:{duo}:8080"]      # 登记进了出处
+    both = ex.exec(sid, GET.format(h=duo, p=8081) + "; " + GET.format(h=duo, p=8080) + "; " + GET.format(h=duo, p=8080),
+                   "p1", "c")
+    assert both.provenance["touched"] == [f"net:{duo}:8080", f"net:{duo}:8081"]            # 去重、排序
+    assert ex.exec(sid, "echo quiet", "p1", "d").provenance["touched"] == []               # 上一次的连接不算到这一次
+    off = ex.exec(sid, PROBE.format(h="1.1.1.1", p=443) + "; " + PROBE.format(h=duo, p=9), "p1", "e")
+    assert off.provenance["touched"] == []                                                 # 白名单外的连接到不了闸门
+    judge = ex.launch(compile_spec("tcj", scope, ENV, "r0", False, ""), "l_j", mount_workspace=False)
+    r = ex.exec(judge, GET.format(h=duo, p=8080), "p1", "f", register_as="judge")
+    assert r.provenance["touched"] == [f"net:{duo}:8080"]                                  # 判官的洁净容器同样有
+
+
 def test_gate_only_serves_the_sandbox(ex, tmp_path, duo):
     """闸门只认执行容器的源地址：别的容器即使接进沙箱网络，也拿不到目标的内容（3.6.4 的 4 的网络一侧）。"""
     from paoding_executor.runtime import gate_log

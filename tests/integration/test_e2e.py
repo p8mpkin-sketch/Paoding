@@ -44,6 +44,7 @@ class CannedExec:
     def launch(self, spec, lease_id, mount_workspace=True):
         sid = f"sb-{lease_id}-{len(self.launched)}"
         self.launched.append({"sid": sid, "lease": lease_id, "egress": spec.egress_allow, "mount": mount_workspace})
+        self.egress = {**getattr(self, "egress", {}), sid: spec.egress_allow}
         return sid
 
     def destroy(self, sid):
@@ -51,10 +52,12 @@ class CannedExec:
 
     def exec(self, sid, cmd, pid, idem_key, timeout_s=60, cwd="/workspace", register_as="exec"):
         text = next((v for k, v in self.answers.items() if k in cmd), "")
+        # 替身里的每条命令都是去读目标（判官重放的规格也是同一条探测）：访问摘要按沙箱的出站白名单给
+        touched = [] if cmd.startswith("printf") else [f"net:{a}" for a in self.egress.get(sid, ())]
         data = text.encode()
         h = self.blobs.put(data)
         prov = {"sandbox_id": sid, "base": "basic", "baseline_ref": "basic@1", "tool": "shell", "command": cmd,
-                "cwd": cwd, "exit_code": 0, "touched": [], "started_at": 1000, "ended_at": 3000, "truncated": False}
+                "cwd": cwd, "exit_code": 0, "touched": touched, "started_at": 1000, "ended_at": 3000, "truncated": False}
         aid = None
         if register_as == "exec":
             out = self.graph.submit("tok-exec", pid, idem_key, [{"op": "register_artifact", "body": {

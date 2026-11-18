@@ -243,6 +243,18 @@ class DockerExecutor:
 
     # ---------- exec ----------
 
+    def _touched(self, info: dict, started_ms: int, ended_ms: int) -> list[str]:
+        """访问摘要（§3.2.2）：这次运行期间经闸门连到过的授权目标，形如 net:host:port，去重排序。
+
+        来源是闸门在容器之外的逐连接记录，不取命令输出里的任何说法。目标端口没开、上游没接通的连接也算：
+        它确实去碰了授权范围内的地址。白名单外的连接到不了闸门，不会出现在这里。"""
+        seen = set()
+        for gate in info.get("gates", []):
+            for rec in gate_log(gate, since_ms=started_ms):
+                if rec.get("event") == "connect" and started_ms <= rec.get("t", 0) <= ended_ms:
+                    seen.add(f"net:{rec['dst']}")
+        return sorted(seen)
+
     def exec(self, sid: str, cmd: str, pid: str, idem_key: str, timeout_s: int = 60, cwd: str = "/workspace",
              register_as: str = "exec") -> ExecResult:
         """register_as：Worker 租约下为 "exec"（本层登记）；判官租约下为 "judge"（交回判官运行器登记）。"""
@@ -271,7 +283,7 @@ class DockerExecutor:
             text += f"\n[执行层：超过内存上限 {spec.limits.mem_mb} MB，已被终止]"
         prov = {"sandbox_id": sid, "base": spec.image, "baseline_ref": spec.baseline_ref, "tool": "shell",
                 "command": cmd, "cwd": cwd, "exit_code": code,
-                "touched": [],                               # 见 SPEC.md 已知缺口：M0 没有逐连接的访问摘要
+                "touched": self._touched(info, started, int(time.time() * 1000)),
                 "started_at": started, "ended_at": ended, "truncated": captured_trunc}
         aid = None
         if register_as == "exec":
@@ -304,10 +316,12 @@ def _ip(name: str, net: str) -> str:
     return ip
 
 
-def gate_log(gate: str) -> list[dict]:
-    """闸门的逐连接记录（它的标准输出，由本进程在容器之外读）。不是 JSON 的行忽略。"""
+def gate_log(gate: str, since_ms: int | None = None) -> list[dict]:
+    """闸门的逐连接记录（它的标准输出，由本进程在容器之外读）。不是 JSON 的行忽略。
+    since_ms：只读这个时刻（留一秒余量）之后的记录，长会话里不必每次读全量。"""
+    since = [] if since_ms is None else ["--since", f"{since_ms / 1000 - 1:.3f}"]
     out = []
-    for line in _docker("logs", gate, check=False).stdout.decode("utf-8", "replace").splitlines():
+    for line in _docker("logs", *since, gate, check=False).stdout.decode("utf-8", "replace").splitlines():
         try:
             rec = json.loads(line)
         except ValueError:
