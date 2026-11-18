@@ -7,6 +7,7 @@ import "./index.css";
 import "./kit/kit.css";
 import "./shell/shell.css";
 import "./styles.css";
+import "./pages/pages.css";
 
 applyTheme(loadTheme()); // 先于首帧，免得闪一下
 

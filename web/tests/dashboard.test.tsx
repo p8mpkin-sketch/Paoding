@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ProblemItem } from "../src/api/types";
 import { applyTheme, loadTheme } from "../src/app/theme";
 import { dailySeries, dayStart, leaseKinds, recentOf, solvedToday, terminalCounts } from "../src/model/dashboard";
+import { Inbox } from "../src/pages/Inbox";
 import { Dashboard } from "../src/pages/Dashboard";
 import { filterBank, Problems } from "../src/pages/Problems";
 import { playToEnd, renderWith, rig, until } from "./helpers";
@@ -78,8 +79,22 @@ describe("总览页（假后端）", () => {
   it("题库按 URL 里的条件筛选", async () => {
     const r = rig();
     const { container } = renderWith(r, <Problems filter={{ q: "", terminal: "solved", judge: "" }} />);
-    await until(() => container.querySelector("[data-page=bank] table, [data-page=bank] p.muted") !== null, "题库");
+    await until(() => container.querySelector("[data-page=bank] table, [data-page=bank] .k-empty") !== null, "题库");
     for (const row of container.querySelectorAll("tr[data-problem] td[data-terminal]")) expect(row.getAttribute("data-terminal")).toBe("solved");
+  });
+});
+
+describe("待办页（假后端）", () => {
+  it("按任务列出等人处理的事，每件带去处理链接，指向工作区的对应节点", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Inbox />);
+    const pid = r.mock.demoPid;
+    await until(() => container.querySelector(`[data-inbox-problem="${pid}"] [data-inbox-item]`) !== null, "待办项");
+    const item = container.querySelector(`[data-inbox-problem="${pid}"] [data-inbox-item]`)!;
+    const target = item.getAttribute("data-inbox-item")!.split(":").slice(1).join(":");
+    const href = new URL(item.querySelector("a")!.getAttribute("href")!, "http://x");
+    expect(href.pathname).toBe(`/p/${pid}`);
+    expect(href.searchParams.get("node")).toBe(target);
   });
 });
 

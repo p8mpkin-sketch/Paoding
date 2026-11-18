@@ -11,7 +11,7 @@
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ma-shan-zheng/400.css";
-@import "@fontsource/lxgw-wenkai/500.css";
+@import "lxgw-wenkai-webfont/lxgwwenkai-regular.css";
 
 /* 宣：纸本（亮色） */
 :root, :root[data-theme="light"] {
@@ -72,7 +72,7 @@
   --sans: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --brush: "Ma Shan Zheng", "Kaiti SC", "STKaiti", cursive;
-  /* 拉丁字母交给 Plex Sans（霞鹜文楷的拉丁分片有 7 MB，排在后面就不会被下载），汉字用文楷 */
+  /* 霞鹜文楷用按 unicode-range 分片的包（只下载页面用到的字）；拉丁字母仍交给 Plex Sans */
   --kai: "IBM Plex Sans", "LXGW WenKai", "Kaiti SC", "STKaiti", serif;
   --side-w: 216px;
 }

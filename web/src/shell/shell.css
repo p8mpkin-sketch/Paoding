@@ -21,6 +21,7 @@ body { overflow: hidden; }
 .shell-nav-item.on .no, .shell-nav-item:hover .no { color: var(--ink-2); }
 .shell-nav-item.on::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; background: var(--zhu); }
 .shell-nav-item .ct { margin-left: auto; font: 11px var(--mono); color: var(--ink-3); }
+.shell-nav-item .ct.hot { color: var(--zhu); font-weight: 600; }
 .shell-narrow .shell-nav-item { justify-content: center; padding: 9px 0; }
 .shell-narrow .shell-nav-item .no { font: 400 12.5px var(--sans); color: inherit; width: auto; }
 .shell-group { padding: 20px 18px 6px; }
@@ -80,6 +81,7 @@ body { overflow: hidden; }
 .k-cmdk [cmdk-item][data-selected="true"] { background: var(--sel); box-shadow: inset 2px 0 0 var(--zhu); }
 .k-cmdk [cmdk-empty] { padding: 16px; color: var(--ink-3); }
 .ink3 { color: var(--ink-3); }
+.k-cmdk .ink3, .k-cmdk .k-kbd { color: var(--ink-2); }
 
 /* 提示条（sonner，自带样式关掉） */
 .k-toast { display: flex; gap: 10px; align-items: flex-start; width: 340px; padding: 12px 14px; background: var(--sheet); border: 1px solid var(--rule-3); border-left: 3px solid var(--ink); border-radius: 3px; box-shadow: 0 18px 40px -16px rgba(27,25,22,.35); color: var(--ink); font: 13px var(--sans); }
@@ -104,7 +106,7 @@ body { overflow: hidden; }
 }
 @media (max-width: 599.98px) {
   body { overflow: auto; }
-  .shell { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100vh; }
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; align-content: start; height: auto; min-height: 100vh; }
   .shell-side { flex-direction: row; align-items: center; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--rule); overflow: visible; }
   .shell-brand { padding: 0; }
   .shell-nav { flex-direction: row; }
