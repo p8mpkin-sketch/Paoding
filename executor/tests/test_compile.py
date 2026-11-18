@@ -26,6 +26,28 @@ def test_deterministic():
     assert a == b
 
 
+def test_actions_decide_what_opens():
+    """P0-4：只有 actions 含 connect（或 *）的规则进 egress_allow；规则连同动作原样交给闸门。"""
+    scope = [{"resource": "net", "pattern": "t0:80", "actions": ["connect"], "risk": "r0"},
+             {"resource": "net", "pattern": "t0:81", "actions": ["read"], "risk": "r0"},
+             {"resource": "net", "pattern": "t0:82", "actions": [], "risk": "r0"},
+             {"resource": "net", "pattern": "t0:83", "actions": ["read"], "risk": "r0"},
+             {"resource": "net", "pattern": "t0:83", "actions": ["connect"], "risk": "r1"}]
+    r0 = compile_spec("s", scope, ENV, "r0", False, "/w")
+    assert r0.egress_allow == ("t0:80",)
+    assert r0.egress_rules == (("t0:80", ("connect",)), ("t0:81", ("read",)), ("t0:82", ()), ("t0:83", ("read",)))
+    r1 = compile_spec("s", scope, ENV, "r1", False, "/w")
+    assert r1.egress_allow == ("t0:80", "t0:83") and dict(r1.egress_rules)["t0:83"] == ("connect", "read")
+
+
+@pytest.mark.parametrize("pattern", ["t0", "t0:", ":80", "t0:http", "t0:0", "t0:70000", ""])
+def test_net_pattern_needs_a_port(pattern):
+    """出站放行到端口为止：没写端口的 net 规则不默认成"整台主机"，直接拒绝（异议报告 006 第 1 项）。"""
+    with pytest.raises(ScopeError):
+        compile_spec("s", [{"resource": "net", "pattern": pattern, "actions": ["connect"], "risk": "r0"}],
+                     ENV, "r0", False, "/w")
+
+
 def test_unknown_resource_kind():
     with pytest.raises(ScopeError):
         compile_spec("s", [{"resource": "mystery", "pattern": "x", "actions": [], "risk": "r0"}], ENV, "r0", False, "/w")
