@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import re
 import threading
+import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
@@ -30,6 +33,7 @@ from .service import GraphService
 MAX_BODY = 8 * 1024 * 1024            # JSON 请求体上限
 MAX_BLOB = 256 * 1024 * 1024          # 单个 Blob 上限（§3.2.2）
 LOOPBACK = ("127.0.0.1", "localhost", "[::1]")
+_ACCESS = logging.getLogger("http")   # 访问日志；格式由组装根决定，这里只给字段
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -46,6 +50,8 @@ class HttpConfig:
     templates_dir: Path | None = None               # 开题模板（随锦囊发布的数据，前端只解释字段映射）
     renderers_dir: Path | None = None
     extra_hosts: tuple = field(default_factory=tuple)
+    health: Callable[[], dict] | None = None        # 组装根给出的其它组件状态：{组件名: {ok, …}}（/healthz）
+    access_log: bool = False                        # HTTP 访问日志（logging 的 "http"），缺省关
 
 
 class HttpError(Exception):
@@ -76,6 +82,7 @@ class GraphHttp:
         R = re.compile
         self.routes: list[tuple[str, re.Pattern, Callable]] = [
             ("GET", R(r"/v1/health"), self.r_health),
+            ("GET", R(r"/healthz"), self.r_healthz),
             ("GET", R(r"/v1/problems"), g(lambda st, m, q: views.problems(st))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/status"), g(lambda st, m, q: views.status(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/view"), g(self.v_view)),
@@ -114,6 +121,10 @@ class GraphHttp:
             def log_message(self, *a):
                 pass
 
+            def send_response(self, code, message=None):
+                self.sent_status = code                 # 给访问日志看
+                super().send_response(code, message)
+
             def do_GET(self):
                 app.dispatch(self, "GET")
 
@@ -145,6 +156,21 @@ class GraphHttp:
     # ---------- 分发、来源检查 ----------
 
     def dispatch(self, h: BaseHTTPRequestHandler, method: str) -> None:
+        if not self.cfg.access_log:
+            return self._dispatch(h, method)
+        t0 = time.monotonic()
+        h.sent_status, h.sent_bytes = None, 0
+        try:
+            self._dispatch(h, method)
+        finally:
+            # 只记方法、路径（不含查询串）、状态、耗时、字节数。请求头与请求体不进日志：令牌在头里。
+            # 长连接（SSE、长轮询）在连接结束时记一条，耗时就是连接时长。
+            _ACCESS.info("%s %s → %s", method, h.path.split("?", 1)[0], h.sent_status or "-",
+                         extra={"method": method, "path": h.path.split("?", 1)[0], "status": h.sent_status,
+                                "duration_ms": round((time.monotonic() - t0) * 1000, 1), "bytes": h.sent_bytes,
+                                "remote": h.client_address[0]})
+
+    def _dispatch(self, h: BaseHTTPRequestHandler, method: str) -> None:
         try:
             self._guard(h)
             if method == "OPTIONS":
@@ -200,6 +226,7 @@ class GraphHttp:
         for k, v in (extra or {}).items():
             h.send_header(k, v)
         h.end_headers()
+        h.sent_bytes = len(data)
         h.wfile.write(data)
 
     def _cors(self, h) -> None:
@@ -269,6 +296,30 @@ class GraphHttp:
 
     def r_health(self, h, m, q):
         self._json(h, 200, {"ok": True, "head": self.svc.head(), "api": "v1"})
+
+    def r_healthz(self, h, m, q):
+        """各组件的状态。全部正常 200，任何一项不正常 503；应答体形状相同，所以探针只看状态码也行。
+        图服务的一项在这里算（日志读得到、Blob 目录写得进）；其余由组装根的 health() 给，没有组装根就只有图服务。"""
+        comps: dict = {}
+        try:
+            head = self.svc.head()
+            problems = self.svc.state["problems"]
+            comps["graph"] = {"ok": True, "head": head, "problems": len(problems),
+                              "open": sum(1 for p in problems.values() if not p.get("closed"))}
+        except Exception as e:                           # 探针不能因为被探的东西坏了而自己抛
+            comps["graph"] = {"ok": False, "last_error": f"{type(e).__name__}: {e}"[:300]}
+        root = getattr(self.blobs, "root", None)
+        if root is not None:
+            comps["blobs"] = {"ok": os.path.isdir(root) and os.access(root, os.W_OK)}
+        if self.cfg.health is not None:
+            try:
+                for name, st in self.cfg.health().items():
+                    comps.setdefault(name, st)
+            except Exception as e:
+                comps["stack"] = {"ok": False, "last_error": f"{type(e).__name__}: {e}"[:300]}
+        ok = all(bool(c.get("ok")) for c in comps.values())
+        self._json(h, 200 if ok else 503, {"ok": ok, "status": "ok" if ok else "degraded", "api": "v1",
+                                            "components": comps})
 
     def _known(self, pid: str, state: dict | None = None) -> None:
         if pid not in (state or self.svc.state)["problems"]:
