@@ -122,7 +122,7 @@ def test_r2_never_in_explore_without_approve(k):
     i = add_intent(k, risk="r2", rollback=None) if False else add_intent(k, risk="r2")
     assert wk.intent_status(k.state, "p1", i) == "needs_human"
     assert ("explore", i) not in kinds(k) and ("human", i) in kinds(k)
-    assert k.submit(HUMAN, "p1", "approve", {"intent": i, "decision": "approve"}) == "ok"
+    assert k.decide("p1", i) == "ok"
     assert ("explore", i) in kinds(k)
     lid = lease(k, "explore", i, ttl=1)
     k.ts += 2000
@@ -134,7 +134,7 @@ def test_r2_never_in_explore_without_approve(k):
 def test_deny_abandons(k):
     k.open("p1", scope_risks=("r2",)); boot(k)
     i = add_intent(k, risk="r2")
-    k.submit(HUMAN, "p1", "approve", {"intent": i, "decision": "deny", "reason": "不放行"})
+    assert k.decide("p1", i, "deny", reason="不放行") == "ok"
     assert wk.intent_status(k.state, "p1", i) == "abandoned"
 
 
@@ -294,3 +294,24 @@ def test_ledger_replays(k):
 def test_cost_requires_task(k):
     k.open()
     assert cost(k, "l_999", 1) == "unknown_ref"
+
+
+def test_in_flight_session_hands_back_its_transcript_after_close(k):
+    """题目被会话自己提交的候选关掉时，会话还在途：它仍能登记留档并带着留档释放租约。
+
+    全栈测试里的竞态（判官先一步关题，会话登记留档被拒，租约永不释放）就是这一条。"""
+    k.open(); boot(k)
+    i = add_intent(k)
+    lid = lease(k, "explore", i)
+    session = explore(lid)
+    assert k.submit(HUMAN, "p1", "close_problem", {"reason": "判官已通过"}) == "ok"
+    body = {"hash": "0" * 64, "size": 0, "media_type": "application/json", "class": "authored"}
+    assert k.submit(explore("someone-else"), "p1", "register_artifact", body) == "schema_error"   # 不在途的会话
+    assert k.submit(reason(), "p1", "add_intent", {"title": "x", "premises": [], "risk": "r0",
+                                                  "budget": R}) == "schema_error"               # 别的操作照旧被拒
+    tr = k.submit(session, "p1", "register_artifact", body)
+    assert tr.startswith("a_") and k.state["artifacts"][tr]["class"] == "authored"
+    assert k.submit(session, "p1", "release", {"lease": lid, "outcome": "done", "transcript_ref": tr}) == "ok"
+    l = k.state["leases"][lid]
+    assert (l["active"], l["outcome"], l["transcript_ref"]) == (False, "closed", tr)
+    assert k.submit(session, "p1", "register_artifact", body) == "schema_error"                   # 租约已交回

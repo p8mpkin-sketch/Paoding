@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry
+from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, seen_card
 
 from . import render
 
@@ -159,9 +159,13 @@ def cmd_decide(local: Local, a, w, decision: str, read=input) -> int:
             w("[证据] 未确认，未提交\n")
             return 1
     out = local.submit(pid, f"pd-{decision}:{a.intent}:{st['seq']}", [{"op": "approve", "body": {
-        "intent": a.intent, "decision": decision, **({"reason": a.reason} if a.reason else {})}}])
+        "intent": a.intent, "decision": decision, "seen": seen_card(st, pid, "approval", a.intent),
+        **({"reason": a.reason} if a.reason else {})}}])       # seen 取自上面打印的那份快照（H2）
     if not out["ok"]:
         w(f"[证据] 被拒：{_fail(out)}\n")
+        if any(r.get("code") == "stale_view" for r in out["results"]):
+            w("[证据] 卡片在你查看之后已变化，未提交。最新的卡：\n")
+            w(render.approval_card(local.graph.state, pid, a.intent))
         return 1
     w(f"[证据] 已{'批准' if decision == 'approve' else '拒绝'} {a.intent}\n")
     return 0

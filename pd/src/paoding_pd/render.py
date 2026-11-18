@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from paoding_graph.contract import LEVEL_WORDS, REGISTER, intent_status, node_levels
+from paoding_graph.contract import LEVEL_WORDS, REGISTER, intent_status, node_levels, seen_card
 
 # 出处类别 → 语域的表与等级词表在图服务一侧（views.py）：pd 的文本与网页的卡片读同一张表（一卡多端）。
 
@@ -173,7 +173,7 @@ def profile(state: dict, pid: str) -> str:
 
 
 def approval_card(state: dict, pid: str, iid: str) -> str:
-    """审批卡（HMI 3.5）的文本形态。字段来自图里校验过的数据；M0 无 card_hash（M1 加）。"""
+    """审批卡（HMI 3.5）的文本形态。字段来自图里校验过的数据；末行是这张卡的 card_hash（H2），与网页卡相同。"""
     i = state["intents"][iid]
     lv = node_levels(state, pid)
     o = Out()
@@ -193,4 +193,6 @@ def approval_card(state: dict, pid: str, iid: str) -> str:
     for r in i.get("needs_scope", []):
         o.add("structure", f"需要范围 {r['resource']} {r['pattern']} {','.join(r['actions'])} {r['risk']}")
     o.add("structure", "争议：无未决反证（M0 无反证操作）")
+    seen = seen_card(state, pid, "approval", iid)
+    o.add("structure", f"card_hash {seen['card_hash'][:12]} · 所见 seq {seen['seq']}")
     return o.text()

@@ -203,7 +203,10 @@ def test_env_start_reset_stop(envs, ex, tmp_path):
     envs.stop(name)                                       # 沙箱网络还接着它，也删得掉
     assert name not in names() and envs.names() == []
     envs.stop(name)                                       # 幂等
-    assert ex.exec(sid, PROBE.format(h=name, p=8080), "p1", "f").exit_code != 0
+    # 目标没了：闸门接不通上游，立刻重置连接，取不到任何内容。闸门仍在监听，所以只看 connect 的探测
+    # 会以为端口开着（SPEC.md 已知缺口 5）
+    gone = ex.exec(sid, fetch % "seed", "p1", "f")
+    assert gone.exit_code != 0 and "s3cr3t-seed" not in gone.output
 
 
 def test_env_not_ready_is_cleaned_up(envs):

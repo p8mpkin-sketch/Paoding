@@ -44,6 +44,7 @@ class CannedExec:
     def launch(self, spec, lease_id, mount_workspace=True):
         sid = f"sb-{lease_id}-{len(self.launched)}"
         self.launched.append({"sid": sid, "lease": lease_id, "egress": spec.egress_allow, "mount": mount_workspace})
+        self.egress = {**getattr(self, "egress", {}), sid: spec.egress_allow}
         return sid
 
     def destroy(self, sid):
@@ -51,10 +52,12 @@ class CannedExec:
 
     def exec(self, sid, cmd, pid, idem_key, timeout_s=60, cwd="/workspace", register_as="exec"):
         text = next((v for k, v in self.answers.items() if k in cmd), "")
+        # 替身里的每条命令都是去读目标（判官重放的规格也是同一条探测）：访问摘要按沙箱的出站白名单给
+        touched = [] if cmd.startswith("printf") else [f"net:{a}" for a in self.egress.get(sid, ())]
         data = text.encode()
         h = self.blobs.put(data)
         prov = {"sandbox_id": sid, "base": "basic", "baseline_ref": "basic@1", "tool": "shell", "command": cmd,
-                "cwd": cwd, "exit_code": 0, "touched": [], "started_at": 1000, "ended_at": 3000, "truncated": False}
+                "cwd": cwd, "exit_code": 0, "touched": touched, "started_at": 1000, "ended_at": 3000, "truncated": False}
         aid = None
         if register_as == "exec":
             out = self.graph.submit("tok-exec", pid, idem_key, [{"op": "register_artifact", "body": {
@@ -195,7 +198,8 @@ def check_chain(rig, r):
     kinds = [e["kind"] for e in r["events"]]
     order = [kinds.index(k) for k in ("open_problem", "add_fact", "add_intent", "close_problem")]
     assert order == sorted(order)
-    assert set(kinds[kinds.index("close_problem") + 1:]) <= {"cost", "release"}       # 关题后只剩判官的记账与释放
+    # 关题后只剩交回：记账、释放，以及在途会话的留档登记
+    assert set(kinds[kinds.index("close_problem") + 1:]) <= {"cost", "release", "register_artifact"}
     close = next(e for e in r["events"] if e["kind"] == "close_problem")
     assert close["actor"]["kind"] == "graph" and close["body"]["terminal"] == "solved"   # 没有人、没有 Worker 关题
 

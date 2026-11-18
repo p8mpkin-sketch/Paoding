@@ -18,7 +18,6 @@ import re
 import threading
 import time
 import urllib.parse
-import uuid
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -481,7 +480,7 @@ class GraphHttp:
         return 200, out                                            # 被拒也是 200：结果逐条在 results 里
 
     def w_lease(self, token, m, body, h):
-        idem = body.get("idem_key") or h.headers.get("Idempotency-Key") or f"lease:{uuid.uuid4().hex}"
+        idem = self._idem(body, h)                                 # 缺幂等键即拒：自动生成的键让重试不再幂等
         lease = {k: body[k] for k in ("kind", "target", "holder", "reserve", "ttl_s") if k in body}
         out = self.svc.submit(token, m["pid"], idem, [{"op": "lease", "body": lease}])
         r = out["results"][0]
@@ -495,7 +494,7 @@ class GraphHttp:
         lease = self.svc.state["leases"].get(m["id"])
         if lease is None:
             raise views.NotFound(f"没有租约 {m['id']}")
-        idem = body.get("idem_key") or h.headers.get("Idempotency-Key") or f"{m['verb']}:{m['id']}:{uuid.uuid4().hex}"
+        idem = self._idem(body, h)
         keys = ("ttl_s",) if m["verb"] == "renew" else ("outcome", "transcript_ref", "suggestions")
         op = {"op": m["verb"], "body": {"lease": m["id"], **{k: body[k] for k in keys if k in body}}}
         out = self.svc.submit(token, lease["problem_id"], idem, [op])
