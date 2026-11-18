@@ -95,3 +95,30 @@ describe("视图模型是 view(as_of) 的纯函数", () => {
     expect(a.nodes.find((n) => n.id === "f_4")!.col).toBe(2);
   });
 });
+
+describe("前沿列表去重", () => {
+  it("每个节点在前沿各组与“其余节点”里合起来只出现一次，且一个不少", async () => {
+    const r = rig();
+    const pid = r.mock.demoPid;
+    const live = await liveSession(r, pid);
+    await playToEnd(r);
+    await until(() => live.getState().vm?.seq === r.mock.head(pid), "实时追到链头");
+    for (const vm of [live.getState().vm!]) {
+      const listed = [...vm.frontier.flatMap((g) => g.ids), ...vm.rest].filter((id) => vm.rows.some((row) => row.id === id));
+      expect(new Set(listed).size).toBe(listed.length);
+      expect(new Set(listed)).toEqual(new Set(vm.rows.map((row) => row.id)));
+    }
+    live.close();
+  });
+
+  it("同属几组的节点放在优先级最高的那组：待人处理的 Intent 不再在“未结束的 Intent”里重复", async () => {
+    const r = rig();
+    const live = await liveSession(r, r.mock.demoPid);
+    const vm = live.getState().vm!;
+    const human = vm.frontier.find((g) => g.key === "human")!.ids;
+    const intents = vm.frontier.find((g) => g.key === "intents")!.ids;
+    expect(human.length).toBeGreaterThan(0);
+    expect(human.filter((id) => intents.includes(id))).toEqual([]);
+    live.close();
+  });
+});

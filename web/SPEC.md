@@ -84,6 +84,7 @@
 - `mock/`：开发与测试用的假后端，线格式与图服务相同；多出来的只有 M1 的续期门。`stale_view` 校验两边都有：图服务在内核里校验 `seen.card_hash`，拒绝时在结果的 `card` 里附上最新卡片。
 - `tests/fixtures/real/`：真图服务录下的应答（`tools/record_fixtures.py`）。
 - `e2e/`：Playwright 浏览器测试与它用的服务（构建产物加不自动播放的假后端，测试自己推进剧本）。
+- 前沿列表每个节点只出现一次：图服务的前沿各组可以重叠，视图模型按组的优先级（Hint、争议、待人处理、未结束的 Intent、其前提、未到终态的论断）去重，不在任何组里的节点列在"其余节点"。
 - `e2e-real/`：连真实图服务的浏览器测试（`playwright.real.config.ts` 起 `scripts/run.py`，执行层 none、没有会话脚本，事件由测试以人的身份经 HTTP 写入）：总览列出题目、驾驶舱渲染、Intent 与 Hint 经 SSE 推到页面且不刷新、图视图画出节点。
 - `lint/`：ESLint 单独一个包。typescript-eslint 的解析器要 TypeScript 的 JS 接口，`web/` 用的 TypeScript 7 没有，这里固定 5.9 只供解析。
 - `tools/live_demo.py`：起一个真图服务，按固定脚本经 HTTP 提交事件，给网页一份实时数据。

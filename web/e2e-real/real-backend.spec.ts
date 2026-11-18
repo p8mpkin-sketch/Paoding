@@ -51,7 +51,7 @@ async function openProblem(request: APIRequestContext) {
   expect(out.ok, JSON.stringify(out)).toBe(true);
 }
 
-const row = (page: Page, id: string | undefined) => page.locator(`[data-frontier="all"] [data-node-row="${id}"]`);
+const row = (page: Page, id: string | undefined) => page.locator(`[data-node-row="${id}"]`);
 
 async function seq(page: Page) {
   return Number(await page.locator(".cockpit").getAttribute("data-seq"));
@@ -93,6 +93,7 @@ test("真实图服务：开题后驾驶舱渲染，人写入的 Intent 经 SSE �
     { op: "add_intent", body: { title: "再核对一次结果", summary: "", premises: [], risk: "r0", budget: { usd_milli: 100 } } },
   ]);
   await expect(row(page, i2)).toBeVisible();
+  await expect(page.locator(".frontier [data-node-row]")).toHaveCount(2);   // 前沿列表去重：每个节点只出现一次
   expect(await seq(page)).toBeGreaterThan(seq1);
 
   // Hint 也经推送到达

@@ -1,4 +1,5 @@
 // 前沿列表（规格 3.1.4 的摘要层；HMI 设计 §10.2 中栏）。主区默认是它，不是图。
+// 每个节点只出现一次：前沿各组按优先级去重（viewmodel），其余节点另列一组。
 // 节点行的固定格式：[等级徽章] [判据徽章] 谓词摘要 ｜ 叙述标题（引文样式）｜ [估值，折叠]
 import { INTENT_STATE_WORD } from "../model/levels";
 import type { HintRow, NodeRow, ViewModel } from "../model/viewmodel";
@@ -55,11 +56,13 @@ export function Frontier({ vm, selected, onSelect, onOpenHint }: { vm: ViewModel
           )}
         </section>
       ))}
-      <section data-frontier="all">
-        <h4>全部节点 <span className="muted">{vm.rows.length}，按创建序号倒序</span></h4>
-        <ul className="rows">
-          {[...vm.rows].reverse().map((r) => <NodeRowView key={r.id} row={r} selected={selected === r.id} onSelect={onSelect} />)}
-        </ul>
+      <section data-frontier="rest">
+        <h4>其余节点 <span className="muted">{vm.rest.length}，按创建序号倒序</span></h4>
+        {vm.rest.length === 0 ? <p className="muted">无</p> : (
+          <ul className="rows">
+            {vm.rest.map((id) => { const r = rows.get(id); return r ? <NodeRowView key={id} row={r} selected={selected === id} onSelect={onSelect} /> : null; })}
+          </ul>
+        )}
         {vm.hints.some((h) => h.closed) && (
           <>
             <h4>已关闭的 Hint</h4>

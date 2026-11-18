@@ -60,6 +60,8 @@ export type ViewModel = {
   rows: NodeRow[];
   hints: HintRow[];
   frontier: FrontierGroup[];
+  /** 不在任何前沿组里的节点（已到终态的论断、已结束的 Intent 等），按创建序号倒序。与前沿各组不重叠。 */
+  rest: string[];
   todo: TodoItem[];
   budget: BudgetVM;
   ticks: Tick[];
@@ -122,11 +124,17 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
 
   const seqOf = new Map<string, number>([...rows.map((r) => [r.id, r.created_seq] as const), ...hints.map((h) => [h.id, h.created_seq] as const)]);
   const idsOf = (key: FrontierGroup["key"]): string[] => (key === "human" ? view.frontier.human.map((w) => w.target) : view.frontier[key]);
-  const frontier: FrontierGroup[] = FRONTIER_ORDER.map((key) => ({
-    key,
-    title: FRONTIER_TITLES[key],
-    ids: [...new Set(idsOf(key))].filter((id) => seqOf.has(id)).sort((a, b) => seqOf.get(a)! - seqOf.get(b)! || cmp(a, b)),
-  }));
+  // 去重：图服务的前沿各组是独立的集合，同一节点可以同时属于几组（待人处理的 Intent 也是未结束的 Intent）。
+  // 列表里每个节点只出现一次，放在 FRONTIER_ORDER 里最靠前的那一组；其余各组的计数也只算放进来的。
+  const placed = new Set<string>();
+  const frontier: FrontierGroup[] = FRONTIER_ORDER.map((key) => {
+    const ids = [...new Set(idsOf(key))]
+      .filter((id) => seqOf.has(id) && !placed.has(id))
+      .sort((a, b) => seqOf.get(a)! - seqOf.get(b)! || cmp(a, b));
+    ids.forEach((id) => placed.add(id));
+    return { key, title: FRONTIER_TITLES[key], ids };
+  });
+  const rest = rows.filter((r) => !placed.has(r.id)).map((r) => r.id).reverse();
 
   const todo = work.items
     .filter((w): w is TodoItem => w.kind === "human")
@@ -152,7 +160,7 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     profile: status.problem.profile, derivedProfile: status.problem.derived_profile, profileOverrides: status.problem.profile_overrides,
     scope: status.problem.scope,
     goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept },
-    rows, hints, frontier, todo, budget: budgetVM,
+    rows, hints, frontier, rest, todo, budget: budgetVM,
     ticks: ticksOf(ticks, seq),
     layout: layout({
       nodes: rows.map((r) => ({ id: r.id, kind: r.kind, created_seq: r.created_seq, premises: r.premises })),
