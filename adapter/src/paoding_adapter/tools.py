@@ -10,18 +10,32 @@ Op 到内核操作的翻译：
   候选可以是工作区里的文件（candidate_path），也可以直接是答案字符串（candidate）；两样都给时以文件为准。
 - `tmp_id`：本次 submit 内，后一条可用前一条的 tmp_id 指代它的 id。
 - 同一操作连续被拒 3 次后不再转发（3.4.4），直接返回上次的拒绝码。
+
+工具入参是模型写的、未经校验的 JSON：只经解析层的 `Obj` 读，形状不对抛 `BadBody`，`call` 与 `_one`
+只接这一种异常并转成 `schema_error`。其余异常（KeyError、TypeError 等）是本组件或下游的缺陷，原样抛出，
+由会话层按任务失败处理，不说成是模型的输入错误。
 """
+
 from __future__ import annotations
 
 import hashlib
-import secrets
 import json
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from paoding_executor.contract import ExecPort
-from paoding_graph.contract import BlobPort, GraphPort, GraphReader, canonicalize, node_levels
+from paoding_graph.contract import (
+    BadBody,
+    BlobPort,
+    GraphPort,
+    GraphReader,
+    JCSError,
+    Obj,
+    canonicalize,
+    node_levels,
+)
 
 MAX_SAME_REJECT = 3
 SHOW_RANGE_MAX = 8 * 1024
@@ -32,14 +46,15 @@ FINAL_OUTCOMES = ("found", "nothing", "failed", "unsolved")
 @dataclass
 class Session:
     """一个会话的身份与边界。token 是图服务签给该租约的会话令牌，只在容器外。"""
+
     pid: str
     lease_id: str
-    role: str                        # bootstrap | reason | explore
+    role: str  # bootstrap | reason | explore
     token: str
     workspace: Path
     tools: tuple = ("exec", "submit", "show")
-    sandbox_id: str | None = None    # 执行容器；reason 不起执行容器（§3.4.2）
-    calls: list = field(default_factory=list)       # 会话记录：每次工具调用的入参与结果
+    sandbox_id: str | None = None  # 执行容器；reason 不起执行容器（§3.4.2）
+    calls: list = field(default_factory=list)  # 会话记录：每次工具调用的入参与结果
     final: dict | None = None
     submitted: bool = False
 
@@ -49,11 +64,12 @@ def _err(code: str, detail: str) -> dict:
 
 
 class ToolHost:
-    def __init__(self, s: Session, graph: GraphPort, reader: GraphReader, blobs: BlobPort,
-                 executor: ExecPort | None = None):
+    def __init__(
+        self, s: Session, graph: GraphPort, reader: GraphReader, blobs: BlobPort, executor: ExecPort | None = None
+    ):
         self.s, self.graph, self.reader, self.blobs, self.executor = s, graph, reader, blobs, executor
         self._n = 0
-        self._nonce = secrets.token_hex(4)      # 幂等键带宿主实例号：同一租约换了宿主也不会撞上旧结果
+        self._nonce = secrets.token_hex(4)  # 幂等键带宿主实例号：同一租约换了宿主也不会撞上旧结果
         self._rejects: dict[str, tuple[int, dict]] = {}
 
     # ---------- 入口 ----------
@@ -64,54 +80,65 @@ class ToolHost:
             out = _err("forbidden_op", f"本会话没有工具 {name}")
         else:
             try:
-                out = getattr(self, "_" + name)(args if isinstance(args, dict) else {})
-            except (KeyError, TypeError, ValueError) as e:
-                out = _err("schema_error", f"{type(e).__name__}: {e}")
+                out = self._TOOLS[name](self, Obj(args if isinstance(args, dict) else {}, "args"))
+            except BadBody as e:
+                out = _err("schema_error", str(e))
         self.s.calls.append({"n": self._n, "tool": name, "args": args, "result": out})
         return out
 
     # ---------- exec ----------
 
-    def _exec(self, a: dict) -> dict:
+    def _exec(self, a: Obj) -> dict:
         if self.executor is None or self.s.sandbox_id is None:
             return _err("forbidden_op", "本会话没有执行容器")
-        cmd = a["cmd"]
-        if not isinstance(cmd, str) or not cmd:
-            raise ValueError("cmd 须为非空字符串")
-        r = self.executor.exec(self.s.sandbox_id, cmd, self.s.pid, f"exec:{self.s.lease_id}:{self._nonce}:{self._n}",
-                               timeout_s=int(a.get("timeout_s", 60)), cwd=str(a.get("cwd", "/workspace")))
+        cmd = a.string("cmd")
+        if not cmd:
+            raise BadBody("cmd 须为非空字符串")
+        r = self.executor.exec(
+            self.s.sandbox_id,
+            cmd,
+            self.s.pid,
+            f"exec:{self.s.lease_id}:{self._nonce}:{self._n}",
+            timeout_s=a.integer("timeout_s", 60),
+            cwd=a.text("cwd", "/workspace"),
+        )
         return {"artifact": r.artifact, "exit_code": r.exit_code, "output": r.output, "truncated": r.truncated}
 
     # ---------- submit ----------
 
-    def _submit(self, a: dict) -> dict:
-        ops = a.get("ops", [])
-        if not isinstance(ops, list):
-            raise ValueError("ops 须为数组")
+    def _submit(self, a: Obj) -> dict:
+        ops = a.array("ops", [])
         self.s.submitted = True
         tmp: dict[str, str] = {}
         results = []
         for i, op in enumerate(ops):
             results.append(self._one(op, i, tmp))
         if a.get("final") is not None:
-            f = a["final"]
-            if not isinstance(f, dict) or f.get("outcome") not in FINAL_OUTCOMES:
-                results.append(_err("schema_error", f"final.outcome 只取 {FINAL_OUTCOMES}"))
-            else:
-                self.s.final = {"outcome": f["outcome"],
-                                "excluded_paths": [str(x) for x in f.get("excluded_paths", [])],
-                                "suggestions": [str(x) for x in f.get("suggestions", [])]}
+            try:
+                f = a.child("final")
+                if f.get("outcome") not in FINAL_OUTCOMES:
+                    raise BadBody(f"final.outcome 只取 {FINAL_OUTCOMES}")
+                self.s.final = {
+                    "outcome": f.string("outcome"),
+                    "excluded_paths": f.texts("excluded_paths", []),
+                    "suggestions": f.texts("suggestions", []),
+                }
+            except BadBody as e:  # final 不合形状不连累前面已经提交的 ops
+                results.append(_err("schema_error", str(e)))
         return {"results": results}
 
     def _one(self, op: Any, i: int, tmp: dict) -> dict:
-        key = hashlib.sha256(canonicalize(op if isinstance(op, dict) else {"_": repr(op)})).hexdigest()
+        try:
+            key = hashlib.sha256(canonicalize(op if isinstance(op, dict) else {"_": repr(op)})).hexdigest()
+        except JCSError as e:  # 例如超出双精度的整数：这条 op 进不了事件日志
+            return _err("schema_error", str(e))
         n, last = self._rejects.get(key, (0, None))
         if n >= MAX_SAME_REJECT:
             return {**last, "detail": f"同一操作已连续被拒 {n} 次，不再转发。上次：{last['detail']}"}
         try:
             out = self._translate_and_submit(op, i, tmp)
-        except (KeyError, TypeError, ValueError) as e:
-            out = _err("schema_error", f"{type(e).__name__}: {e}")
+        except BadBody as e:
+            out = _err("schema_error", str(e))
         if out["ok"]:
             self._rejects.pop(key, None)
             if isinstance(op, dict) and op.get("tmp_id"):
@@ -120,82 +147,107 @@ class ToolHost:
             self._rejects[key] = (n + 1, out)
         return out
 
-    def _translate_and_submit(self, op: dict, i: int, tmp: dict) -> dict:
-        if not isinstance(op, dict) or not isinstance(op.get("op"), str):
-            raise ValueError("每条 op 须为带 op 字段的对象")
-        kind = op["op"]
+    def _translate_and_submit(self, raw: Any, i: int, tmp: dict) -> dict:
+        if not isinstance(raw, dict) or not isinstance(raw.get("op"), str):
+            raise BadBody("每条 op 须为带 op 字段的对象")
+        op = Obj(raw, "op")
+        kind = op.string("op")
         if kind in LATER_OPS:
             return _err("schema_error", f"{kind} 属于{LATER_OPS[kind]}，M0 未启用")
-        sub = lambda v: tmp.get(v, v) if isinstance(v, str) else v          # noqa: E731
-        subl = lambda vs: [sub(v) for v in (vs or [])]                      # noqa: E731
+        sub = lambda v: tmp.get(v, v) if isinstance(v, str) else v  # noqa: E731
+        subl = lambda vs: [sub(v) for v in (vs or [])]  # noqa: E731
         batch: list[dict] = []
 
         def authored(rel: str | None, inline: str | None = None) -> str:
             data = self._read_ws(rel) if inline is None else inline.encode("utf-8")
             h = self.blobs.put(data)
-            batch.append({"op": "register_artifact", "body": {"hash": h, "size": len(data),
-                                                               "media_type": "text/plain; charset=utf-8",
-                                                               "class": "authored"}})
+            batch.append(
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": h,
+                        "size": len(data),
+                        "media_type": "text/plain; charset=utf-8",
+                        "class": "authored",
+                    },
+                }
+            )
             return f"${len(batch) - 1}"
 
         if kind == "add_fact":
-            body = {"title": op["title"], "summary": op.get("summary", ""), "claim_type": op["claim_type"],
-                    "premises": subl(op.get("premises")), "grounds": subl(op.get("grounds"))}
+            body = {
+                "title": op.req("title"),
+                "summary": op.get("summary", ""),
+                "claim_type": op.req("claim_type"),
+                "premises": subl(op.array("premises", [])),
+                "grounds": subl(op.array("grounds", [])),
+            }
             if op.get("body_path"):
-                body["body_ref"] = authored(op["body_path"])
+                body["body_ref"] = authored(op.string("body_path"))
             if op.get("check") is not None:
-                c = dict(op["check"])
-                check = {"judge_id": c.pop("judge_id"), "expect": c.pop("expect", {})}
+                c = op.child("check")
+                check = {"judge_id": c.req("judge_id"), "expect": c.get("expect", {})}
                 if c.get("spec_path"):
-                    check["spec_ref"] = authored(c.pop("spec_path"))
-                c.pop("spec_path", None)
-                if "inputs" in c:                               # 规格缝隙，见 docs/m0/dissent-002-adapter.md
+                    check["spec_ref"] = authored(c.string("spec_path"))
+                if "inputs" in c:  # 规格缝隙，见 docs/m0/dissent-002-adapter.md
                     return _err("schema_error", "check.inputs 在 M0 内核的判据里没有对应字段，暂不接受")
-                if c:
-                    raise ValueError(f"check 多余字段 {sorted(c)}")
+                extra = c.keys() - {"judge_id", "expect", "spec_path"}
+                if extra:
+                    raise BadBody(f"check 多余字段 {sorted(extra)}")
                 body["check"] = check
             batch.append({"op": "add_fact", "body": body})
         elif kind == "add_intent":
-            body = {"title": op["title"], "summary": op.get("summary", ""), "premises": subl(op.get("premises")),
-                    "risk": op["risk"], "budget": op.get("budget_hint") or {"usd_milli": 500, "wall_s": 600}}
+            body = {
+                "title": op.req("title"),
+                "summary": op.get("summary", ""),
+                "premises": subl(op.array("premises", [])),
+                "risk": op.req("risk"),
+                "budget": op.get("budget_hint") or {"usd_milli": 500, "wall_s": 600},
+            }
             for k in ("expected_gain", "needs_scope"):
                 if op.get(k) is not None:
-                    body[k] = op[k]
+                    body[k] = op.get(k)
             for k in ("follows", "rollback"):
                 if op.get(k) is not None:
-                    body[k] = op[k]                         # 交内核按里程碑拒绝，不在此替它判断
+                    body[k] = op.get(k)  # 交内核按里程碑拒绝，不在此替它判断
             if op.get("done") is not None:
-                d = dict(op["done"])
-                done = {"judge_id": d.pop("judge_id"), "expect": d.pop("expect", {}),
-                        "max_attempts": int(d.pop("max_attempts", 2))}
+                d = op.child("done")
+                done = {
+                    "judge_id": d.req("judge_id"),
+                    "expect": d.get("expect", {}),
+                    "max_attempts": d.integer("max_attempts", 2),
+                }
                 if d.get("spec_path"):
-                    done["spec_ref"] = authored(d.pop("spec_path"))
-                d.pop("spec_path", None)
-                if d:
-                    done.update(d)                          # 例如 tests：交内核拒绝
+                    done["spec_ref"] = authored(d.string("spec_path"))
+                for k in d.keys() - {"judge_id", "expect", "max_attempts", "spec_path"}:
+                    done[k] = d.get(k)  # 例如 tests：交内核拒绝
                 body["done"] = done
             batch.append({"op": "add_intent", "body": body})
         elif kind == "abandon_intent":
-            batch.append({"op": "abandon_intent", "body": {"intent": sub(op["intent"]), "reason": op["reason"]}})
+            batch.append(
+                {"op": "abandon_intent", "body": {"intent": sub(op.req("intent")), "reason": op.req("reason")}}
+            )
         elif kind == "claim_done":
-            target = sub(op["target"])
-            if isinstance(op.get("candidate"), str) and "candidate_path" not in op:
-                cand = authored(None, op["candidate"])      # 答案字符串直接给（提示词的写法），同样登记为 authored
+            target = sub(op.string("target"))
+            if "candidate_path" not in op and op.opt_string("candidate") is not None:
+                cand = authored(None, op.string("candidate"))  # 答案字符串直接给（提示词的写法），同样登记为 authored
             else:
-                cand = authored(op["candidate_path"])
+                cand = authored(op.string("candidate_path"))
             judge = self._registered_judge(target)
             if judge is None:
                 return _err("unknown_ref", f"{target} 不是本题带判据的对象")
             batch.append({"op": "request_judge", "body": {"target": target, "judge_id": judge, "candidate": cand}})
         elif kind == "request_judge":
-            target = sub(op["target"])
+            target = sub(op.string("target"))
             judge = op.get("judge_id") or self._registered_judge(target)
             if judge is None:
                 return _err("unknown_ref", f"{target} 不是本题带判据的对象")
             batch.append({"op": "request_judge", "body": {"target": target, "judge_id": judge}})
         else:
             return _err("schema_error", f"未知操作 {kind}")
-        out = self.graph.submit(self.s.token, self.s.pid, f"submit:{self.s.lease_id}:{self._nonce}:{self._n}:{i}", batch)
+        out = self.graph.submit(
+            self.s.token, self.s.pid, f"submit:{self.s.lease_id}:{self._nonce}:{self._n}:{i}", batch
+        )
         last = out["results"][-1] if out["ok"] else next(r for r in out["results"] if not r.get("ok"))
         if not out["ok"]:
             return _err(last.get("code", "schema_error"), last.get("detail", ""))
@@ -217,31 +269,46 @@ class ToolHost:
     def _read_ws(self, rel: str) -> bytes:
         """工作区内的文件。解析符号链接后仍须落在工作区里（与 CLI 的 --restricted 同一条边界）。"""
         root = self.s.workspace.resolve()
-        p = (root / rel).resolve()
-        if p != root and root not in p.parents:
-            raise ValueError(f"路径 {rel} 越出工作区")
-        if not p.is_file():
-            raise ValueError(f"工作区里没有文件 {rel}")
+        try:
+            p = (root / rel).resolve()
+            inside = p == root or root in p.parents
+            is_file = inside and p.is_file()
+        except (ValueError, OSError):  # 路径里有 NUL、过长、成环的符号链接
+            raise BadBody(f"路径 {rel!r} 不合法") from None
+        if not inside:
+            raise BadBody(f"路径 {rel} 越出工作区")
+        if not is_file:
+            raise BadBody(f"工作区里没有文件 {rel}")
         return p.read_bytes()
 
     # ---------- show ----------
 
-    def _show(self, a: dict) -> dict:
+    def _show(self, a: Obj) -> dict:
         st, pid = self.reader.state, self.s.pid
-        if a.get("artifact"):
-            art = st["artifacts"].get(a["artifact"])
+        aid, nid = a.opt_string("artifact"), a.opt_string("id")
+        if aid:
+            art = st["artifacts"].get(aid)
             if art is None or art["problem_id"] != pid:
                 return _err("unknown_ref", "没有这个 Artifact")
-            if art["class"] == "judge" and any(str(t).startswith("vault:") for t in art.get("exec", {}).get("touched", [])):
+            if art["class"] == "judge" and any(
+                str(t).startswith("vault:") for t in art.get("exec", {}).get("touched", [])
+            ):
                 return _err("forbidden_op", "读过保密库的判官输出不向会话开放")
-            lo, hi = (a.get("range") or [0, SHOW_RANGE_MAX])
-            lo, hi = max(0, int(lo)), min(int(hi), int(lo) + SHOW_RANGE_MAX)
+            rng = a.array("range", [0, SHOW_RANGE_MAX]) or [0, SHOW_RANGE_MAX]
+            if len(rng) != 2 or not all(isinstance(x, int) and not isinstance(x, bool) for x in rng):
+                raise BadBody("range 须为两个整数 [起, 止]")
+            lo = max(0, rng[0])
+            hi = min(rng[1], lo + SHOW_RANGE_MAX)
             data = self.blobs.get(art["hash"], lo, hi)
-            return {"artifact": a["artifact"], "range": [lo, lo + len(data)], "size": art["size"],
-                    "class": art["class"], "text": data.decode("utf-8", "replace")}
+            return {
+                "artifact": aid,
+                "range": [lo, lo + len(data)],
+                "size": art["size"],
+                "class": art["class"],
+                "text": data.decode("utf-8", "replace"),
+            }
         lv = node_levels(st, pid)
-        if a.get("id"):
-            nid = a["id"]
+        if nid:
             node = st["facts"].get(nid) or st["intents"].get(nid)
             if node is None or node["problem_id"] != pid:
                 return _err("unknown_ref", f"本题没有 {nid}")
@@ -249,49 +316,84 @@ class ToolHost:
             out = {k: node[k] for k in keep if k in node}
             out["level"] = lv.get(nid)
             if a.get("layer") == "evidence":
-                out["grounds"] = [{"id": g, "class": st["artifacts"][g]["class"], "size": st["artifacts"][g]["size"]}
-                                  for g in node.get("grounds", [])]
+                out["grounds"] = [
+                    {"id": g, "class": st["artifacts"][g]["class"], "size": st["artifacts"][g]["size"]}
+                    for g in node.get("grounds", [])
+                ]
                 if node.get("body_ref"):
                     out["body_ref"] = node["body_ref"]
             return out
-        lst = a.get("list", "frontier")
+        lst = a.string("list", "frontier")
+        if lst not in ("frontier", "all", "hints", "budget"):
+            raise BadBody("list 只取 frontier|all|hints|budget")
         if lst == "budget":
             return self.reader.budget(pid)
         if lst == "hints":
-            return {"hints": [{"id": h["id"], "text": h["text"]} for h in st["hints"].values()
-                              if h["problem_id"] == pid and not h.get("closed")]}
+            return {
+                "hints": [
+                    {"id": h["id"], "text": h["text"]}
+                    for h in st["hints"].values()
+                    if h["problem_id"] == pid and not h.get("closed")
+                ]
+            }
         nodes = [n for c in ("facts", "intents") for n in st[c].values() if n["problem_id"] == pid]
-        nodes.sort(key=lambda n: int(n["id"][2:]))           # id 带 seq，按创建顺序
+        nodes.sort(key=lambda n: int(n["id"][2:]))  # id 带 seq，按创建顺序
         items = [{"id": n["id"], "title": n["title"], "level": lv.get(n["id"])} for n in nodes]
         if lst == "frontier":
             items = [x for x in items if x["level"] not in ("E3", "X")]
-        elif lst != "all":
-            raise ValueError("list 只取 frontier|all|hints|budget")
         return {"list": lst, "items": items}
+
+    _TOOLS = {"exec": _exec, "submit": _submit, "show": _show}
 
 
 def tool_schemas(tools: tuple) -> list[dict]:
     """MCP tools/list 的条目。参数 Schema 由工具定义强制（3.4.4）。"""
     s = {
-        "exec": {"description": "在执行容器里运行一条命令。返回 ArtifactId、退出码与回显；回显超过 8 KB 只给头尾，"
-                                "全文用 show 按区间读。这是取得可采信证据的唯一途径。",
-                 "inputSchema": {"type": "object", "required": ["cmd"], "additionalProperties": False,
-                                 "properties": {"cmd": {"type": "string"}, "timeout_s": {"type": "integer"},
-                                                "cwd": {"type": "string"}}}},
-        "submit": {"description": "把论断、Intent、候选提交给图服务。逐条返回 id 或拒绝码；被拒的在本会话内改正后重交。"
-                                  "后一条可用前一条的 tmp_id 指代它。final 声明本任务的结局。",
-                   "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
-                       "ops": {"type": "array", "items": {"type": "object", "required": ["op"]}},
-                       "final": {"type": "object", "required": ["outcome"], "properties": {
-                           "outcome": {"enum": list(FINAL_OUTCOMES)},
-                           "excluded_paths": {"type": "array", "items": {"type": "string"}},
-                           "suggestions": {"type": "array", "items": {"type": "string"}}}}}}},
-        "show": {"description": "只读：按 id 看节点（layer=summary|evidence），列清单（list=frontier|all|hints|budget），"
-                                "或按区间读 Artifact 正文（artifact + range）。",
-                 "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
-                     "id": {"type": "string"}, "layer": {"enum": ["summary", "evidence"]},
-                     "list": {"enum": ["frontier", "all", "hints", "budget"]}, "artifact": {"type": "string"},
-                     "range": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}}}},
+        "exec": {
+            "description": "在执行容器里运行一条命令。返回 ArtifactId、退出码与回显；回显超过 8 KB 只给头尾，"
+            "全文用 show 按区间读。这是取得可采信证据的唯一途径。",
+            "inputSchema": {
+                "type": "object",
+                "required": ["cmd"],
+                "additionalProperties": False,
+                "properties": {"cmd": {"type": "string"}, "timeout_s": {"type": "integer"}, "cwd": {"type": "string"}},
+            },
+        },
+        "submit": {
+            "description": "把论断、Intent、候选提交给图服务。逐条返回 id 或拒绝码；被拒的在本会话内改正后重交。"
+            "后一条可用前一条的 tmp_id 指代它。final 声明本任务的结局。",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "ops": {"type": "array", "items": {"type": "object", "required": ["op"]}},
+                    "final": {
+                        "type": "object",
+                        "required": ["outcome"],
+                        "properties": {
+                            "outcome": {"enum": list(FINAL_OUTCOMES)},
+                            "excluded_paths": {"type": "array", "items": {"type": "string"}},
+                            "suggestions": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+        },
+        "show": {
+            "description": "只读：按 id 看节点（layer=summary|evidence），列清单（list=frontier|all|hints|budget），"
+            "或按区间读 Artifact 正文（artifact + range）。",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "id": {"type": "string"},
+                    "layer": {"enum": ["summary", "evidence"]},
+                    "list": {"enum": ["frontier", "all", "hints", "budget"]},
+                    "artifact": {"type": "string"},
+                    "range": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                },
+            },
+        },
     }
     return [{"name": n, **s[n]} for n in ("exec", "submit", "show") if n in tools]
 

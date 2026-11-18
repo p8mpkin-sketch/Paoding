@@ -4,6 +4,7 @@
 1. 组件 A 只能 import 组件 B 的 `paoding_B.contract`（或其子模块），不得 import B 的内部模块。
 2. A → B 必须在 ALLOWED 表里。graph 不依赖任何组件。
 """
+
 from __future__ import annotations
 
 import ast

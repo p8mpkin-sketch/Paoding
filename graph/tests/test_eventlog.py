@@ -1,4 +1,5 @@
 """D1：事件信封、哈希链、SQLite 日志、重放测试台。3.1.5 的 1。"""
+
 import random
 import sqlite3
 
@@ -29,8 +30,14 @@ def _toy_apply(state, ev):
 def _random_log(log, rng, n=200):
     for i in range(n):
         pid = rng.choice(["p1", "p2", "p3"])
-        log.append(problem_id=pid, actor=HUMAN, kind=rng.choice(["a", "b", "c"]),
-                   body={"x": rng.randint(-5, 5), "f": rng.random()}, idem_key=f"k{i}", ts=1000 + i)
+        log.append(
+            problem_id=pid,
+            actor=HUMAN,
+            kind=rng.choice(["a", "b", "c"]),
+            body={"x": rng.randint(-5, 5), "f": rng.random()},
+            idem_key=f"k{i}",
+            ts=1000 + i,
+        )
 
 
 def test_chain_per_problem(tmp_path):
@@ -41,7 +48,8 @@ def test_chain_per_problem(tmp_path):
     assert e1["prev_hash"] == GENESIS and e2["prev_hash"] == GENESIS
     assert e3["prev_hash"] == e1["hash"]
     assert [e["seq"] for e in (e1, e2, e3)] == [1, 2, 3]
-    log.verify("p1"); log.verify("p2")
+    log.verify("p1")
+    log.verify("p2")
 
 
 def test_idempotent_append(tmp_path):
@@ -82,9 +90,15 @@ def test_dropped_event_detected(tmp_path):
         verify_chain([evs[0], evs[2]])
 
 
-@pytest.mark.parametrize("actor", [{"kind": "model", "id": "x"}, {"kind": "human"},
-                                   {"kind": "adapter", "id": "a", "role": "boss"},
-                                   {"kind": "adapter", "id": "a", "class": "exec"}])
+@pytest.mark.parametrize(
+    "actor",
+    [
+        {"kind": "model", "id": "x"},
+        {"kind": "human"},
+        {"kind": "adapter", "id": "a", "role": "boss"},
+        {"kind": "adapter", "id": "a", "class": "exec"},
+    ],
+)
 def test_bad_actor_rejected(tmp_path, actor):
     with pytest.raises(EnvelopeError):
         _log(tmp_path).append(problem_id="p", actor=actor, kind="hint", body={}, idem_key="k", ts=1)
@@ -107,7 +121,7 @@ def test_replay_detects_tamper_in_db(tmp_path):
     _random_log(log, random.Random(1), n=20)
     log.close()
     db = sqlite3.connect(tmp_path / "log.sqlite")
-    db.execute("DROP TRIGGER events_no_update")   # 模拟绕过应用层直接改库
+    db.execute("DROP TRIGGER events_no_update")  # 模拟绕过应用层直接改库
     db.execute("UPDATE events SET doc=replace(doc, '\"ts\": 1005', '\"ts\": 1') WHERE seq=6")
     db.commit()
     with pytest.raises(ChainError):
