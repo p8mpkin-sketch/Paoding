@@ -49,11 +49,17 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            web/lint/package-lock.json
       - run: npm ci
+      - name: ESLint（单独的包，见 web/lint/package.json）
+        run: npm ci --prefix lint && npm run lint
       - name: 类型检查
         run: npm run typecheck
       - name: 前端测试（HT 验收、契约、边界）
         run: npm test
       - name: 构建
         run: npm run build
+      - name: 浏览器测试（Playwright：驾驶舱、审批卡、时间轴回放、窄屏、图的键盘操作）
+        run: npx playwright install --with-deps chromium && npx playwright test

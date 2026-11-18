@@ -1,6 +1,6 @@
 # web/：网页前端（F1）
 
-规格：HMI v1.1 §2 五条禁令、§3 各原理的强制点、§4 信息架构、§10 线框、§11 端点表、§13 安全；基座规格 v1.3 §3.1.2 人的操作。
+规格：HMI v1.1 §2 五条禁令、§3 各原理的强制点、§4 信息架构、§10 线框、§11 端点表、§13 安全；基座规格 v1.4 §3.1.2 人的操作。
 契约：`graph/SPEC.md` 的「HTTP 绑定」。前端是图服务 API 的又一个客户端，与 `pd` 同级，不持有任何权威状态。
 
 ## 实现的契约接口
@@ -62,6 +62,17 @@
 
 只依赖图服务的 HTTP 接口。运行时依赖只有 React；路由、布局、SSE 解析都是手写的小模块。`src/` 不引用 `mock/`。
 
+## 界面（P2-2）
+
+- 顶栏分主次：主栏只放题名、终态与判官徽章、连接状态、花费仪表；Goal 尝试次数、画像、状态哈希收在“详情”里。
+- 窄屏（宽度 < 1024px）：三栏改为一栏，顶部一排按钮切换“待办、前沿与图、检视”；选中节点自动切到检视，打开待办自动切到主区。
+- 图：滚轮或 + − 缩放（以指针或视口中心为不动点），拖动或方向键平移，0 复原，“适合窗口”。视口获得焦点后可用键盘操作；每个论断与 Intent 节点都能 Tab 聚焦，Enter 或空格检视，读屏器读到类型、id、等级与标题。视口只是本机的看法，不改布局坐标。
+- 徽章：等级、终态、裁决结果各带一个形状记号（○◔◑◕●✕、✓◇✕…、✓✕？），与文字并排，不靠颜色与线宽区分；记号对读屏器隐藏。
+
+## 检查
+
+`npm run lint`（先 `npm ci --prefix lint`）、`npm run typecheck`、`npm test`、`npm run build`、`npm run e2e`（构建后跑 Playwright；本机已有浏览器时直接用，CI 里先 `npx playwright install --with-deps chromium`）。
+
 ## 目录
 
 - `src/api/`：线格式类型（生成物）、客户端、人的操作的事件体、SSE。
@@ -72,6 +83,8 @@
 - `src/ui/`、`src/pages/`：组件与页面。
 - `mock/`：开发与测试用的假后端，线格式与图服务相同；多出来的只有 M1 的续期门。`stale_view` 校验两边都有：图服务在内核里校验 `seen.card_hash`，拒绝时在结果的 `card` 里附上最新卡片。
 - `tests/fixtures/real/`：真图服务录下的应答（`tools/record_fixtures.py`）。
+- `e2e/`：Playwright 浏览器测试与它用的服务（构建产物加不自动播放的假后端，测试自己推进剧本）。
+- `lint/`：ESLint 单独一个包。typescript-eslint 的解析器要 TypeScript 的 JS 接口，`web/` 用的 TypeScript 7 没有，这里固定 5.9 只供解析。
 - `tools/live_demo.py`：起一个真图服务，按固定脚本经 HTTP 提交事件，给网页一份实时数据。
 
 ## 验收对应
@@ -92,13 +105,17 @@
 | HT-15 注入语料 | `tests/registers` |
 | HT-16 断连重连无缺无重 | `tests/stream` |
 | 契约：类型吃得下真应答；假后端与真图服务同形 | `tests/contract` |
+| 徽章不靠颜色区分（形状记号加文字） | `tests/registers` |
+| 令牌只在本标签页、到期即失效 | `tests/config` |
+| 图的缩放、平移、键盘焦点 | `tests/graph`；`e2e/cockpit.spec.ts` |
+| 驾驶舱、审批卡、时间轴回放、窄屏（浏览器里） | `e2e/cockpit.spec.ts` |
 
 ## 实现取值（异议 005 已于 2026-11-18 裁决，见 `docs/m0/adjudication-004-005.md`）
 
 1. 线格式类型由图服务的 JSON Schema 生成（`graph/src/paoding_graph/wire_schema.py` → `scripts/gen-types.py` → `src/api/types.ts`，不手改；CI 带 `--check`）。契约测试照旧对着真应答核。
 2. 批准与拒绝都带 `seen {seq, card_hash}`。图服务在链头重算卡片哈希，不等即 `stale_view` 并附最新卡片；前端的差异高亮只是便利，判定以服务端为准。
 3. 续期门、争议卡、暂停与恢复随 M1：图服务返回 `not_enabled` 时如实显示“暂不可用”；暂停与恢复没有做按钮。
-4. r2 而没有回退声明时禁用批准（HMI H1 的字面）。**裁决：要改**，只听卡面的 `approve_enabled`，与 `pd` 一致，卡面标出“未声明回退”；改动在 P2-2。
+4. 能否批准只听卡面的 `approve_enabled`，与 `pd` 一致；r2 而没有回退声明时，卡头另挂“r2 · 未声明回退”的徽章，回退一节醒目提示，但不自己再加一道禁用。**裁决（004-8、005-3）已落实**（P2-2）。
 5. “无证据根”由图服务按整条前提链给出（`no_evidence_root`）；检视只读这个字段，不自己算。**裁决（005-4）已落实**（P2-1）。
-6. 人的令牌存在本机 `localStorage`，只随写请求发出。**裁决**：改为 `sessionStorage` 加过期时间；改动在 P2-2。
+6. 人的令牌只存在本标签页的 `sessionStorage`，带到期时间（缺省 8 小时），只随写请求发出；到期即清，界面回到只读。旧版本留在 `localStorage` 里的令牌读一次就删，不再沿用。**裁决（005-6）已落实**（P2-2）。
 7. 模板目录的 `data`：**裁决**把暂行字段名定为约定，即 `fields.scope`、`fields.goal`、`fields.budget`、`fields.materials`、`judges`；取不到就留空，目录为空时用“不用模板”。

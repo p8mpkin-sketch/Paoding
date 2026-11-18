@@ -1,4 +1,4 @@
-// HT-2（提交体没有画像）、HT-6（三次点击到证据根）、HT-7（卡片过期与 r2 缺回退时不能批准）、HT-8（Hint 进不了前提与 about）。
+// HT-2（提交体没有画像）、HT-6（三次点击到证据根）、HT-7（卡片过期时不能批准；r2 缺回退时卡面标出，能否批准听服务端）、HT-8（Hint 进不了前提与 about）。
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ApiError, newIdemKey } from "../src/api/client";
@@ -185,18 +185,37 @@ describe("HT-7 审批卡", () => {
     expect((await r.api.work(pid)).items.some((x) => x.kind === "human")).toBe(true); // 没有被批准
   });
 
-  it("r2 而没有回退声明：批准禁用", async () => {
+  it("r2 而没有回退声明：卡面标出未声明回退，能否批准只听 approve_enabled（裁决 004-8、005-3）", async () => {
     const r = rig();
     const intent = await pendingIntent(r, "demo-2");
     const { container } = renderWith(r, <ApprovalCard pid="demo-2" intentId={intent} head={r.mock.head("demo-2")} canWrite />);
     await waitFor(() => expect(container.querySelector('[data-action="approve"]')).not.toBeNull());
     expect(container.querySelector("[data-no-rollback]")!.textContent).toContain("r2");
-    expect(container.querySelector<HTMLButtonElement>('[data-action="approve"]')!.disabled).toBe(true);
+    expect(container.querySelector('[data-flag="no-rollback"]')!.textContent).toContain("未声明回退");
+    expect(container.querySelector<HTMLButtonElement>('[data-action="approve"]')!.disabled).toBe(false);
     // 拒绝要写理由
     const deny = container.querySelector<HTMLButtonElement>('[data-action="deny"]')!;
     expect(deny.disabled).toBe(true);
     fireEvent.change(container.querySelector(".deny textarea")!, { target: { value: "没有回退方案" } });
     expect(deny.disabled).toBe(false);
+  });
+
+  it("图服务说 approve_enabled=false：批准禁用并说明", async () => {
+    const r = rig();
+    const intent = await pendingIntent(r, "demo-2");
+    const closed: typeof fetch = async (input, init) => {
+      const res = await r.fetch(input, init);
+      if (!String(input).includes("/cards/approval/")) return res;
+      const c = (await res.json()) as CardResponse<ApprovalFields, ApprovalDisplay>;
+      c.display.approve_enabled = false;
+      return new Response(JSON.stringify(c), { status: 200 });
+    };
+    const { createApi } = await import("../src/api/client");
+    const cfg = { ...r.cfg, fetch: closed };
+    const { container } = renderWith({ ...r, cfg, api: createApi(cfg) }, <ApprovalCard pid="demo-2" intentId={intent} head={r.mock.head("demo-2")} canWrite />);
+    await waitFor(() => expect(container.querySelector('[data-action="approve"]')).not.toBeNull());
+    expect(container.querySelector<HTMLButtonElement>('[data-action="approve"]')!.disabled).toBe(true);
+    expect(container.querySelector("[data-approve-disabled]")).not.toBeNull();
   });
 
   it("不在链头或不是实时：两个按钮都禁用", async () => {
