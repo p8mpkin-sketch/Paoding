@@ -96,6 +96,17 @@ KINDS = ("open_problem", "register_artifact", "add_fact", "add_intent", "request
 AFTER_CLOSE = ("cost", "release")                  # 关题后在途任务仍可交回用量与释放租约
 
 
+def _handback(state: dict, actor: dict, pid: str, kind: str, body: dict) -> bool:
+    """关题那一刻还在途的会话，可以把自己的留档（authored 类）登记进来再释放租约。
+
+    题目常常是被会话自己提交的候选关掉的：判官一通过，图服务立刻关题，而会话还没来得及交回留档。
+    只认"令牌的会话是本题一条仍在途的租约"；authored 类永不入 grounds（I2），不影响任何等级。"""
+    if kind != "register_artifact" or body.get("class") != "authored":
+        return False
+    held = state["leases"].get(actor.get("session") or "")
+    return held is not None and held["problem_id"] == pid and held["active"]
+
+
 def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Config,
              ts: int | None = None) -> Ok | Reject:
     """ts：这条事件将被赋予的时间戳（服务层的时钟，作为参数传入）；缺省取 state["now"]。"""
@@ -109,8 +120,11 @@ def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Con
         p = state["problems"].get(pid)
         if p is None:
             return Reject("unknown_ref", f"题目 {pid} 未开")
-        if p.get("closed") and kind not in AFTER_CLOSE:
+        if p.get("closed") and kind not in AFTER_CLOSE and not _handback(state, actor, pid, kind, body):
             return Reject("schema_error", "题目已关闭")
+        held = state["leases"].get(actor.get("session") or "")
+        if held is not None and held["problem_id"] != pid:      # 任务令牌随租约签发，只在租约所属的题内有效
+            return Reject("scope_mismatch", f"令牌的会话 {held['id']} 属于别题")
     try:
         if kind in _TIMED:
             return _TIMED[kind](state, actor, pid, body, cfg, state["now"] if ts is None else ts)
@@ -384,7 +398,8 @@ def _v_request_judge(state, actor, pid, body, cfg):
             return Reject("unknown_ref", f"候选 {candidate} 不存在")
         if a["problem_id"] != pid:
             return Reject("scope_mismatch", "候选属于别题")
-        tried = {r["candidate"] for r in state["requests"].values() if r["target"] == target}
+        tried = {r["candidate"] for r in state["requests"].values()
+                 if r["problem_id"] == pid and r["target"] == target}     # 每题都有名为 goal 的目标，须按题计数
         if candidate not in tried and len(tried) >= max_attempts:
             return Reject("quota_exceeded", f"{target} 已用满 {max_attempts} 个候选")
     elif candidate is not None:
@@ -464,10 +479,17 @@ def _v_lease(state, actor, pid, body, cfg, ts):
 
 
 def _own_lease(state, actor, pid, body):
+    """续租与释放的共同前置：租约存在、属于提交所指的这道题、提交方是持有者、租约在途。
+
+    四条在关题前后都查（关题只放宽 outcome 的取值，不放宽归属）。判官运行器的令牌不带会话，
+    按身份种类放行，但只限 judge 租约。"""
     l = state["leases"].get(body["lease"])
-    if l is None or l["problem_id"] != pid:
+    if l is None:
         return None, Reject("unknown_ref", "租约不存在")
-    if actor["kind"] != "judge" and actor["id"] != l["holder"] and actor.get("session") != l["id"]:
+    if l["problem_id"] != pid:
+        return None, Reject("scope_mismatch", f"租约 {l['id']} 属于别题")
+    by_judge = actor["kind"] == "judge" and l["kind"] == "judge"
+    if not by_judge and actor["id"] != l["holder"] and actor.get("session") != l["id"]:
         return None, Reject("forbidden_op", "续租与释放限持有者")
     if not l["active"]:
         return None, Reject("schema_error", "租约已结束")
@@ -487,11 +509,14 @@ RELEASE_OUTCOMES = ("done", "failed", "nothing", "budget_exhausted")
 
 
 def _v_release(state, actor, pid, body, cfg, ts):
-    if state["problems"][pid].get("closed") and body["lease"] in state["leases"]:
-        return Ok({"lease": body["lease"], "outcome": "closed", "after_close": True})
     l, err = _own_lease(state, actor, pid, body)
     if err:
         return err
+    if state["problems"][pid].get("closed"):          # 关题后在途任务交回租约：结局一律记 closed
+        tr = body.get("transcript_ref")                # 关题后交回的留档照样挂到租约上
+        keep = tr is not None and state["artifacts"].get(tr, {}).get("problem_id") == pid
+        return Ok({"lease": l["id"], "outcome": "closed", "after_close": True,
+                   **({"transcript_ref": tr} if keep else {})})
     if body["outcome"] not in RELEASE_OUTCOMES:
         return Reject("schema_error", f"outcome 只取 {RELEASE_OUTCOMES}")
     tr = body.get("transcript_ref")
@@ -566,8 +591,12 @@ def _v_hint(state, actor, pid, body, cfg):
             return Reject("unknown_ref", "Hint 不存在")
         return Ok({"close": h["id"]})
     about = body.get("about")
-    if about is not None and about not in state["facts"] and about not in state["intents"] and about != "goal":
-        return Reject("unknown_ref", "about 所指节点不存在")
+    if about is not None and about != "goal":
+        node = state["facts"].get(about) or state["intents"].get(about)
+        if node is None:
+            return Reject("unknown_ref", "about 所指节点不存在")
+        if node["problem_id"] != pid:
+            return Reject("scope_mismatch", f"about 所指节点 {about} 属于别题")
     return Ok({"text": str(body["text"]), **({"about": about} if about else {})})
 
 
