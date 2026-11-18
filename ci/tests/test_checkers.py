@@ -108,3 +108,26 @@ def test_coverage_summary_groups_files_by_component(tmp_path, capsys, monkeypatc
     assert cbc.main([str(p)]) == 0
     assert "graph" in capsys.readouterr().out and "| graph | 2 | 200 | 80.0% | 50.0% |" in summary.read_text()
     assert cbc.main([str(tmp_path / "missing.json")]) == 2
+
+
+def test_docker_skip_caught(tmp_path):
+    import check_no_skips
+
+    xml = tmp_path / "j.xml"
+    xml.write_text(
+        '<testsuites><testsuite><testcase classname="a" name="ok"/>'
+        '<testcase classname="a" name="iso"><skipped message="需要 Docker（全栈）"/></testcase>'
+        '<testcase classname="a" name="bash"><skipped message="需要 bash"/></testcase>'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    assert [h.split(" ")[0] for h in check_no_skips.docker_skips(str(xml))] == ["a::iso"]
+    assert check_no_skips.main(["x", str(xml)]) == 1
+
+
+def test_no_docker_skip_passes(tmp_path):
+    import check_no_skips
+
+    xml = tmp_path / "j.xml"
+    xml.write_text('<testsuites><testsuite><testcase classname="a" name="ok"/></testsuite></testsuites>')
+    assert check_no_skips.main(["x", str(xml)]) == 0

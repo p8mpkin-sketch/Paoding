@@ -30,9 +30,12 @@ jobs:
         run: uv run --frozen mypy
       - name: 执行层测试用的通用镜像（不是题目容器）
         run: docker pull python:3.12-slim
-      - name: 单元与对抗测试（带覆盖率）
-        run: uv run --frozen pytest -q --cov --cov-report=json:coverage.json --cov-report=
-      - name: 覆盖率（按组件；只显示，不设门槛）
+      - name: 单元与对抗测试（带覆盖率；总覆盖率低于 85% 即失败，2026-11-18 实测 86.06%）
+        run: uv run --frozen pytest -q --junitxml=pytest.xml --cov --cov-report=json:coverage.json --cov-report= --cov-fail-under=85
+      - name: Docker 测试不许跳过（CI 里一定有 Docker；跳过即失败）
+        if: always()
+        run: python ci/check_no_skips.py pytest.xml
+      - name: 覆盖率（按组件显示；总门槛在上一步）
         if: always()
         run: python ci/coverage_by_component.py coverage.json
       - name: 全栈冒烟（假 CLI，起全栈 → 开题 → solved → 清理）

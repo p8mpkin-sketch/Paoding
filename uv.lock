@@ -445,6 +445,12 @@ requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
 name = "paoding-eval"
 version = "0.0.0"
 source = { editable = "eval" }
+dependencies = [
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
 
 [[package]]
 name = "paoding-executor"
