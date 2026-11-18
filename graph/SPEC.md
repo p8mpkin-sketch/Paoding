@@ -91,7 +91,7 @@
 - 图服务自己追加的事件（`budget_mark`、Goal 到 E3 时的自动 `close_problem`）由 `work.followups` 纯函数算出，与触发它的批次在同一事务里落盘。
 - 关题后只接受 `cost` 与 `release`（在途任务交回用量与释放）；关题即视所有租约结束。
 - 服务层（`service.py`）用一把可重入锁串行化提交与日志读取；新事件落盘后唤醒长轮询与事件流。`state_at(seq)` 的回放缓存永不失效（日志只追加、apply 纯函数）。
-- 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`、`rule`、`extend` 三个操作内核还没有，见异议报告 006。
+- 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`、`rule`、`extend` 三个操作内核还没有，见异议报告 `docs/m0/dissent-p0-5-seen-binding.md`。
 - 目标陈述（`goal.statement`）的语域取“人”（开题人写下的文字）；规格的四语域表没有列这一项，见异议报告 004。
 - 四顾清单：r0 且 `accept=judge` 的题恒为空（M0 形态）；r1/r2 题先给一条占位项，阻止自动关题，完整清单随 M4。
 
