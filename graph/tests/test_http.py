@@ -1253,13 +1253,17 @@ def test_access_log_is_off_by_default_and_never_carries_tokens_or_queries(tmp_pa
         b.get("/v1/problems?as_of=0")
         b.req("POST", "/v1/problems/p1/proposals", body={"idem_key": "k", "ops": []}, token="tok-human")
         b.req("GET", "/v1/nope")
-        recs = [r for r in caplog.records if r.name == "http"]
+        # 访问日志在应答写出之后、由服务线程记下，客户端拿到应答时上一条未必已入日志：等齐了再按路径比
+        deadline = time.monotonic() + 5
+        while len(recs := [r for r in caplog.records if r.name == "http"]) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        recs.sort(key=lambda r: r.path)
         assert [(r.method, r.path, r.status) for r in recs] == [
-            ("GET", "/v1/problems", 200),
-            ("POST", "/v1/problems/p1/proposals", recs[1].status),
             ("GET", "/v1/nope", 404),
+            ("GET", "/v1/problems", 200),
+            ("POST", "/v1/problems/p1/proposals", recs[2].status),
         ]
-        assert all(r.duration_ms >= 0 and r.remote == "127.0.0.1" for r in recs) and recs[0].bytes > 0
+        assert all(r.duration_ms >= 0 and r.remote == "127.0.0.1" for r in recs) and recs[1].bytes > 0
         text = " ".join(r.getMessage() + repr(sorted(r.__dict__.items())) for r in recs)
         assert "tok-human" not in text and "as_of" not in text and "idem_key" not in text
     finally:
