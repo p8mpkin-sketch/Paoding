@@ -77,6 +77,7 @@ class StackConfig:
     poll_s: float = 0.5                             # 司南与判官的轮询间隔
     dog_interval_s: float = 2.0
     ttl_s: int = 600
+    max_sessions: int = 3                           # 每道题同时在途的会话上限（司南的线程池大小）；1 即串行
     renew_s: float = 60.0
     stall_s: float = 120.0
 
@@ -101,7 +102,7 @@ class StackConfig:
                   usage=be.get("usage"),
                   executor=ex.get("kind", "docker"),
                   **({"bases": ex["bases"]} if "bases" in ex else {}),
-                  **{k: raw[k] for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s") if k in raw})
+                  **{k: raw[k] for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s", "max_sessions") if k in raw})
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
@@ -255,35 +256,54 @@ class Stack:
             self.stop_event.wait(self.cfg.poll_s)
 
     def _sinan_loop(self, pid: str) -> None:
+        """一道题一个司南实例：调度在本线程，会话在它的线程池里并行（至多 max_sessions 个）。"""
         L = log("sinan")
-        sinan = Sinan(SinanConfig(token=self.tok["sinan"], ttl_s=self.cfg.ttl_s), self.graph, self.graph,
-                      self.blobs, self.runner)
+        sinan = Sinan(SinanConfig(token=self.tok["sinan"], ttl_s=self.cfg.ttl_s, max_sessions=self.cfg.max_sessions),
+                      self.graph, self.graph, self.blobs, self.runner)
         last = None
-        L.info("%s 开始调度", pid)
-        while not self.stop_event.is_set():
-            choice = sinan.pick(pid)
-            if choice.get("stop") == "closed":
-                p = self.graph.state["problems"][pid]
-                L.info("%s 已关题，终态 %s", pid, p.get("terminal"))
-                return
-            if "do" in choice:
-                kind = choice["do"]["kind"]
-                if not self.cfg.scripts.get(kind):
-                    note = f"没有 {kind} 的会话后端（假 CLI 脚本），等配置"
+        L.info("%s 开始调度（并发上限 %d）", pid, self.cfg.max_sessions)
+        try:
+            while not self.stop_event.is_set():
+                for r in sinan.collect(0):
+                    L.info("%s %s 会话结束：租约 %s，%s，release=%s%s", pid, r["did"]["kind"], r["lease"], r["status"],
+                           r["outcome"], f"（{r['detail']}）" if r.get("detail") else "")
+                    last = None
+                choice = sinan.pick(pid)
+                if choice.get("stop") == "closed":
+                    p = self.graph.state["problems"][pid]
+                    L.info("%s 已关题，终态 %s", pid, p.get("terminal"))
+                    return
+                if "do" in choice and not self.cfg.scripts.get(choice["do"]["kind"]):
+                    note = f"没有 {choice['do']['kind']} 的会话后端（假 CLI 脚本），等配置"
                 else:
-                    r = sinan.step(pid)
-                    if "did" in r:
-                        L.info("%s %s 会话结束：租约 %s，%s，release=%s", pid, r["did"]["kind"], r["lease"],
-                               r["status"], r["outcome"])
+                    r = sinan.dispatch(pid) if "do" in choice else choice
+                    if "started" in r:
+                        w = r["started"]
+                        L.info("%s %s 会话开始：租约 %s%s（在途 %d）", pid, w["kind"], r["lease"],
+                               f" → {w['target']}" if w.get("target") else "", len(sinan.in_flight()))
                         last = None
-                        continue
+                        continue                        # 还有空位就接着开下一项
                     note = _note(r)
-            else:
-                note = _note(choice)
-            if note != last:
-                L.info("%s %s", pid, note)
-                last = note
-            self.stop_event.wait(self.cfg.poll_s)
+                if note != last:
+                    L.info("%s %s", pid, note)
+                    last = note
+                if sinan.in_flight():
+                    sinan.collect(self.cfg.poll_s)      # 有会话跑完就立刻醒
+                else:
+                    self.stop_event.wait(self.cfg.poll_s)
+        finally:
+            # 关题时还在途的会话（并行的另一条路线已把题解掉）：叫停，不让它在已关的题上继续花钱。
+            # 停机时 stop() 已经叫停过。两种情况都等它们收尾并各记一行，最多等 30 秒。
+            if not self.stop_event.is_set():
+                for f in sinan.in_flight():
+                    L.info("%s 已关题，叫停在途会话：租约 %s", pid, f["lease"])
+                    self.runner.kill(f["lease"], "problem_closed")
+            deadline = time.monotonic() + 30
+            while sinan.in_flight() and time.monotonic() < deadline:
+                for r in sinan.collect(self.cfg.poll_s):
+                    L.info("%s %s 会话结束：租约 %s，%s，release=%s", pid, r["did"]["kind"], r["lease"], r["status"],
+                           r["outcome"])
+            sinan.close()
 
     # ---------- 哮天犬 ----------
 
@@ -354,7 +374,7 @@ def _gist(ev: dict) -> str:
 
 def _note(r: dict) -> str:
     if "wait" in r:
-        return f"等待：{r['wait']}"
+        return f"等待：{r['wait']}" + ("（并发上限已满）" if r["wait"] == "capacity" else "")
     why = r.get("stop")
     if why == "needs_human":
         return f"需要人：{[i.get('target') for i in r.get('items', [])]}"

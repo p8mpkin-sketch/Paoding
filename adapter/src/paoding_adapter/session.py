@@ -140,8 +140,9 @@ class SessionRunner:
             t = self.proxy.task(task_token)
             if lv["killed"]:
                 exit_status = "expired" if lv["killed"] == "expired" else f"killed({lv['killed']})"
-                # 过期与停机（组装根退出时收掉在途会话）不是花超了：记 failed，不记 budget_exhausted
-                outcome = "failed" if lv["killed"] in ("expired", "shutdown") else "budget_exhausted"
+                # 过期、停机（组装根退出时收掉在途会话）与关题（并行的另一个会话已把题解掉）不是花超了：
+                # 记 failed，不记 budget_exhausted
+                outcome = "failed" if lv["killed"] in ("expired", "shutdown", "problem_closed") else "budget_exhausted"
             elif exit_status:
                 outcome = "failed"
             elif t and t.spent_usd_milli >= t.reserve_usd_milli:
@@ -155,16 +156,16 @@ class SessionRunner:
                           "exit_codes": rec.exit_codes, "events": rec.events, "tool_calls": s.calls,
                           "final": s.final, "package_ref": rec.package_ref,
                           "proxy": {"requests": t.requests if t else 0, "usd_milli": t.spent_usd_milli if t else 0}}
+            data = json.dumps(transcript, ensure_ascii=False, sort_keys=True).encode()
             body = {"lease": lease_id, "outcome": outcome}
             try:
-                rec.transcript_ref = body["transcript_ref"] = self._register(
-                    token, pid, f"transcript:{lease_id}",
-                    json.dumps(transcript, ensure_ascii=False, sort_keys=True).encode(),
-                    "application/vnd.paoding.session-record+json")
-            except RuntimeError:
-                # 会话收尾时题目可能刚被判官的裁决关掉（候选通过即关题）：关题后不再接受登记，但租约仍要释放，
-                # 否则预留悬着、调度线程带着异常退出。会话记录的 Blob 已写入，只是没有登记。
-                if not self.reader.state["problems"].get(pid, {}).get("closed"):
+                rec.transcript_ref = self._register(token, pid, f"transcript:{lease_id}", data,
+                                                    "application/vnd.paoding.session-record+json")
+                body["transcript_ref"] = rec.transcript_ref
+            except RegisterRefused:
+                # 会话收尾时题目已关（判官或并行的另一个会话先把题解掉了）：关题后内核不再收登记，
+                # 但收释放。记录已在 Blob 仓库里，租约照常释放，不留悬着的租约。
+                if not self.reader.state["problems"][pid].get("closed"):
                     raise
             if s.final and s.final.get("suggestions"):
                 body["suggestions"] = s.final["suggestions"]
@@ -246,8 +247,12 @@ class SessionRunner:
         out = self.graph.submit(token, pid, idem, [{"op": "register_artifact", "body": {
             "hash": h, "size": len(data), "media_type": media_type, "class": "authored"}}])
         if not out["ok"]:
-            raise RuntimeError(f"登记失败：{out['results']}")
+            raise RegisterRefused(f"登记失败：{out['results']}")
         return out["results"][0]["id"]
+
+
+class RegisterRefused(RuntimeError):
+    pass
 
 
 def _signal(proc: subprocess.Popen | None, sig: int) -> None:
