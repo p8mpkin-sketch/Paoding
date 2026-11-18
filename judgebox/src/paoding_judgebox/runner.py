@@ -6,6 +6,7 @@
 判官不读 Worker 的叙述：输入只有登记在目标上的判据、候选的字节、按哈希挂入的规格与保密库。
 注册表版本与开题时的快照不一致时拒绝运行（判官被换过）。这里没有模型调用。
 """
+
 from __future__ import annotations
 
 import time
@@ -18,24 +19,31 @@ from paoding_graph.contract import BlobPort, GraphPort, GraphReader
 from .builtin import BUILTINS, Ctx, Outcome
 from .vault import Vault
 
-MAX_TRIES = 3                           # 同一请求领租约的次数上限：环境一直坏时不空转，留给人看
+MAX_TRIES = 3  # 同一请求领租约的次数上限：环境一直坏时不空转，留给人看
 
 
 @dataclass
 class JudgeConfig:
-    token: str                          # judge 组件令牌
+    token: str  # judge 组件令牌
     holder: str = "jr1"
     registry: dict = field(default_factory=dict)
     reserve_usd_milli: int = 1
     ttl_s: int = 300
-    bases: dict = field(default_factory=dict)       # Problem.env.base → 镜像
-    judges: dict = field(default_factory=lambda: dict(BUILTINS))   # judge_id → 函数；配置判官的插件位
+    bases: dict = field(default_factory=dict)  # Problem.env.base → 镜像
+    judges: dict = field(default_factory=lambda: dict(BUILTINS))  # judge_id → 函数；配置判官的插件位
 
 
 class JudgeRunner:
-    def __init__(self, cfg: JudgeConfig, graph: GraphPort, reader: GraphReader, blobs: BlobPort,
-                 vault: Vault | None = None, executor: Any = None,
-                 clock: Callable[[], int] = lambda: int(time.time() * 1000)):
+    def __init__(
+        self,
+        cfg: JudgeConfig,
+        graph: GraphPort,
+        reader: GraphReader,
+        blobs: BlobPort,
+        vault: Vault | None = None,
+        executor: Any = None,
+        clock: Callable[[], int] = lambda: int(time.time() * 1000),
+    ):
         self.cfg, self.graph, self.reader, self.blobs = cfg, graph, reader, blobs
         self.vault, self.executor, self.clock = vault, executor, clock
 
@@ -48,9 +56,21 @@ class JudgeRunner:
         for p in sorted(st["problems"]) if pid is None else [pid]:
             for item in self.reader.work(p):
                 if item["kind"] == "rejudge":
-                    out = self.graph.submit(self.cfg.token, p, f"rejudge:{item['target']}:{self.reader.state['seq']}", [
-                        {"op": "request_judge", "body": {"target": item["target"], "judge_id": item["judge"],
-                                                         **({"candidate": item["candidate"]} if item.get("candidate") else {})}}])
+                    out = self.graph.submit(
+                        self.cfg.token,
+                        p,
+                        f"rejudge:{item['target']}:{self.reader.state['seq']}",
+                        [
+                            {
+                                "op": "request_judge",
+                                "body": {
+                                    "target": item["target"],
+                                    "judge_id": item["judge"],
+                                    **({"candidate": item["candidate"]} if item.get("candidate") else {}),
+                                },
+                            }
+                        ],
+                    )
                     if out["ok"]:
                         done.append(self.run(p, out["results"][0]["id"]))
                 elif item["kind"] == "judge":
@@ -67,9 +87,23 @@ class JudgeRunner:
         tries = sum(1 for l in st["leases"].values() if l["kind"] == "judge" and l.get("target") == rid)
         if tries >= MAX_TRIES:
             return None
-        out = self.graph.submit(self.cfg.token, pid, f"judge-lease:{rid}:{tries}", [{"op": "lease", "body": {
-            "kind": "judge", "target": rid, "holder": self.cfg.holder,
-            "reserve": {"usd_milli": self.cfg.reserve_usd_milli, "wall_s": self.cfg.ttl_s}, "ttl_s": self.cfg.ttl_s}}])
+        out = self.graph.submit(
+            self.cfg.token,
+            pid,
+            f"judge-lease:{rid}:{tries}",
+            [
+                {
+                    "op": "lease",
+                    "body": {
+                        "kind": "judge",
+                        "target": rid,
+                        "holder": self.cfg.holder,
+                        "reserve": {"usd_milli": self.cfg.reserve_usd_milli, "wall_s": self.cfg.ttl_s},
+                        "ttl_s": self.cfg.ttl_s,
+                    },
+                }
+            ],
+        )
         if not out["ok"]:
             return {"request": rid, "status": "not_leased", **out["results"][0]}
         lid = out["results"][0]["id"]
@@ -78,22 +112,66 @@ class JudgeRunner:
         try:
             o = self._judge(pid, rid, lid)
             aid = self._register(pid, rid, lid, o)
-            v = self.graph.submit(self.cfg.token, pid, f"verdict:{rid}:{lid}", [{"op": "judge_verdict", "body": {
-                "request": rid, "result": o.result, "version": self._spec(st, pid, req)["version"],
-                "evidence": [aid], "reason": o.reason}}])
+            v = self.graph.submit(
+                self.cfg.token,
+                pid,
+                f"verdict:{rid}:{lid}",
+                [
+                    {
+                        "op": "judge_verdict",
+                        "body": {
+                            "request": rid,
+                            "result": o.result,
+                            "version": self._spec(st, pid, req)["version"],
+                            "evidence": [aid],
+                            "reason": o.reason,
+                        },
+                    }
+                ],
+            )
             verdict_ok = v["ok"]
-            return {"request": rid, "lease": lid, "result": o.result, "reason": o.reason, "evidence": aid,
-                    "status": "judged" if verdict_ok else "rejected", **({} if verdict_ok else v["results"][0])}
+            return {
+                "request": rid,
+                "lease": lid,
+                "result": o.result,
+                "reason": o.reason,
+                "evidence": aid,
+                "status": "judged" if verdict_ok else "rejected",
+                **({} if verdict_ok else v["results"][0]),
+            }
         finally:
             wall = max(o.wall_s if o else 0, (self.clock() - t0) // 1000)
-            self.graph.submit(self.cfg.token, pid, f"judge-cost:{lid}", [{"op": "cost", "body": {
-                "task_id": lid, "source": "judge", "tokens_in": 0, "tokens_cached": 0, "tokens_out": 0,
-                "usd_milli": 0, "wall_s": int(wall), "price_table": "judge@0"}}])      # 程序化判官不耗 token，只记墙钟
-            self.graph.submit(self.cfg.token, pid, f"judge-release:{lid}", [{"op": "release", "body": {
-                "lease": lid, "outcome": "done" if verdict_ok else "failed"}}])
+            self.graph.submit(
+                self.cfg.token,
+                pid,
+                f"judge-cost:{lid}",
+                [
+                    {
+                        "op": "cost",
+                        "body": {
+                            "task_id": lid,
+                            "source": "judge",
+                            "tokens_in": 0,
+                            "tokens_cached": 0,
+                            "tokens_out": 0,
+                            "usd_milli": 0,
+                            "wall_s": int(wall),
+                            "price_table": "judge@0",
+                        },
+                    }
+                ],
+            )  # 程序化判官不耗 token，只记墙钟
+            self.graph.submit(
+                self.cfg.token,
+                pid,
+                f"judge-release:{lid}",
+                [{"op": "release", "body": {"lease": lid, "outcome": "done" if verdict_ok else "failed"}}],
+            )
 
     def _spec(self, st: dict, pid: str, req: dict) -> dict:
-        return self.cfg.registry.get(req["judge_id"]) or {"version": st["problems"][pid]["judge_snapshot"][req["judge_id"]]["version"]}
+        return self.cfg.registry.get(req["judge_id"]) or {
+            "version": st["problems"][pid]["judge_snapshot"][req["judge_id"]]["version"]
+        }
 
     def _judge(self, pid: str, rid: str, lid: str) -> Outcome:
         st = self.reader.state
@@ -104,8 +182,12 @@ class JudgeRunner:
         if spec is None or fn is None:
             return Outcome("inconclusive", "unsupported", f"判官 {jid} 没有运行器".encode(), _builtin_prov(jid, now))
         if str(spec["version"]) != str(p["judge_snapshot"][jid]["version"]):
-            return Outcome("inconclusive", "env_error", f"判官 {jid} 的版本与开题时的快照不一致，拒绝运行".encode(),
-                           _builtin_prov(jid, now))
+            return Outcome(
+                "inconclusive",
+                "env_error",
+                f"判官 {jid} 的版本与开题时的快照不一致，拒绝运行".encode(),
+                _builtin_prov(jid, now),
+            )
         target = req["target"]
         if target == "goal":
             check, risk = p["goal"]["check"], p["profile"]["reversibility"]
@@ -118,13 +200,28 @@ class JudgeRunner:
         try:
             cand = self._bytes(st, req.get("candidate"))
             spec_art = st["artifacts"].get(check.get("spec_ref") or "")
-            spec_bytes = self.blobs.get(spec_art["hash"]) if spec_art else None       # 读取时校验哈希：被改过即拒
+            spec_bytes = self.blobs.get(spec_art["hash"]) if spec_art else None  # 读取时校验哈希：被改过即拒
         except Exception as e:  # noqa: BLE001  读不到输入一律是环境错误（无结论，不进裁决序列）
-            return Outcome("inconclusive", "env_error", f"判官输入读取失败：{type(e).__name__}".encode(),
-                           _builtin_prov(jid, now))
-        ctx = Ctx(spec=spec, check=check, problem=p, target=target, target_risk=risk, candidate=cand,
-                  candidate_ref=req.get("candidate"), spec_bytes=spec_bytes, spec_hash=spec_art["hash"] if spec_art else None,
-                  vault=self.vault, executor=self.executor, request_id=rid, lease_id=lid, bases=self.cfg.bases, now_ms=now)
+            return Outcome(
+                "inconclusive", "env_error", f"判官输入读取失败：{type(e).__name__}".encode(), _builtin_prov(jid, now)
+            )
+        ctx = Ctx(
+            spec=spec,
+            check=check,
+            problem=p,
+            target=target,
+            target_risk=risk,
+            candidate=cand,
+            candidate_ref=req.get("candidate"),
+            spec_bytes=spec_bytes,
+            spec_hash=spec_art["hash"] if spec_art else None,
+            vault=self.vault,
+            executor=self.executor,
+            request_id=rid,
+            lease_id=lid,
+            bases=self.cfg.bases,
+            now_ms=now,
+        )
         o = fn(ctx)
         if not o.provenance:
             o.provenance = _builtin_prov(jid, now)
@@ -135,14 +232,39 @@ class JudgeRunner:
 
     def _register(self, pid: str, rid: str, lid: str, o: Outcome) -> str:
         h = self.blobs.put(o.output)
-        out = self.graph.submit(self.cfg.token, pid, f"judge-out:{rid}:{lid}", [{"op": "register_artifact", "body": {
-            "hash": h, "size": len(o.output), "media_type": "text/plain; charset=utf-8", "class": "judge",
-            "exec": o.provenance}}])
+        out = self.graph.submit(
+            self.cfg.token,
+            pid,
+            f"judge-out:{rid}:{lid}",
+            [
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": h,
+                        "size": len(o.output),
+                        "media_type": "text/plain; charset=utf-8",
+                        "class": "judge",
+                        "exec": o.provenance,
+                    },
+                }
+            ],
+        )
         if not out["ok"]:
             raise RuntimeError(f"判官输出登记失败：{out['results']}")
         return out["results"][0]["id"]
 
 
 def _builtin_prov(jid: str, now: int) -> dict:
-    return {"sandbox_id": "builtin", "base": "builtin", "baseline_ref": "builtin", "tool": jid, "command": jid,
-            "cwd": "", "exit_code": None, "touched": [], "started_at": now, "ended_at": now, "truncated": False}
+    return {
+        "sandbox_id": "builtin",
+        "base": "builtin",
+        "baseline_ref": "builtin",
+        "tool": jid,
+        "command": jid,
+        "cwd": "",
+        "exit_code": None,
+        "touched": [],
+        "started_at": now,
+        "ended_at": now,
+        "truncated": False,
+    }

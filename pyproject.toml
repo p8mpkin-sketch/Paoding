@@ -67,7 +67,7 @@ ignore = ["E741", "UP031"]
 
 [tool.ruff.lint.per-file-ignores]
 # pytest 的 fixture 靠导入生效、靠同名参数取用，在 ruff 看来是“未使用”与“重定义”
-"**/tests/**" = ["F401", "F811"]
+"**/tests/**" = ["F401", "F811", "E731"]
 "**/contract.py" = ["F401", "E402"]         # 契约模块就是再导出
 
 [tool.ruff.lint.isort]

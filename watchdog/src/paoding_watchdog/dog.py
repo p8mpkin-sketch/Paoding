@@ -10,6 +10,7 @@
 依赖方向只到 graph.contract（ci/check_deps.py）。对会话与容器的动作经注入的 TaskControl 完成，
 由组装根把 Adapter 的会话运行器接进来；哮天犬不 import 任何其它组件。
 """
+
 from __future__ import annotations
 
 import time
@@ -26,11 +27,11 @@ FAIL_OUTCOMES = ("failed", "expired")
 
 @dataclass
 class DogConfig:
-    token: str                              # 哮天犬的组件令牌（actor.kind = watchdog）
+    token: str  # 哮天犬的组件令牌（actor.kind = watchdog）
     interval_s: float = 10.0
-    health_window: int = 10                 # 最近多少个已结束任务
-    health_threshold: float = 0.5           # 失败占比超过它就告警
-    health_min: int = 4                     # 样本不足不告警
+    health_window: int = 10  # 最近多少个已结束任务
+    health_threshold: float = 0.5  # 失败占比超过它就告警
+    health_min: int = 4  # 样本不足不告警
 
 
 @dataclass
@@ -44,9 +45,23 @@ class TickReport:
 
 
 class Watchdog:
-    def __init__(self, cfg: DogConfig, graph: GraphPort, reader: GraphReader, control: TaskControl | None = None,
-                 sweep: Callable[[], list] | None = None, clock: Callable[[], int] = lambda: int(time.time() * 1000)):
-        self.cfg, self.graph, self.reader, self.control, self.sweep, self.clock = cfg, graph, reader, control, sweep, clock
+    def __init__(
+        self,
+        cfg: DogConfig,
+        graph: GraphPort,
+        reader: GraphReader,
+        control: TaskControl | None = None,
+        sweep: Callable[[], list] | None = None,
+        clock: Callable[[], int] = lambda: int(time.time() * 1000),
+    ):
+        self.cfg, self.graph, self.reader, self.control, self.sweep, self.clock = (
+            cfg,
+            graph,
+            reader,
+            control,
+            sweep,
+            clock,
+        )
         self._soft_sent: set[str] = set()
         self._killed: set[str] = set()
         self._alerted: set[str] = set()
@@ -70,11 +85,12 @@ class Watchdog:
     def _expire(self, pid: str, now: int, r: TickReport) -> None:
         for l in self._active(pid):
             if now >= l["expires_at"]:
-                out = self.graph.submit(self.cfg.token, pid, f"expire:{l['id']}", [{"op": "expire_lease",
-                                                                                     "body": {"lease": l["id"]}}])
+                out = self.graph.submit(
+                    self.cfg.token, pid, f"expire:{l['id']}", [{"op": "expire_lease", "body": {"lease": l["id"]}}]
+                )
                 if out["ok"]:
                     r.expired.append(l["id"])
-                    self._halt(l["id"], "expired", r, record=False)    # 会话若还活着，一并收掉容器
+                    self._halt(l["id"], "expired", r, record=False)  # 会话若还活着，一并收掉容器
 
     # ---------- 2. 超预算终止 ----------
 
@@ -99,13 +115,16 @@ class Watchdog:
         p = st["problems"][pid]
         cap = view["cap"].get("usd_milli")
         over_cap = cap is not None and view["spent"]["usd_milli"] >= cap
-        over_wall = "wall_s" in p["budget"] and "opened_ts" in p and now - p["opened_ts"] >= p["budget"]["wall_s"] * 1000
+        over_wall = (
+            "wall_s" in p["budget"] and "opened_ts" in p and now - p["opened_ts"] >= p["budget"]["wall_s"] * 1000
+        )
         if over_cap or over_wall:
             why = "problem_budget" if over_cap else "wall_s"
             for l in self._active(pid):
                 self._halt(l["id"], why, r)
-            out = self.graph.submit(self.cfg.token, pid, f"close:{pid}:{why}", [{"op": "close_problem", "body": {
-                "reason": why}}])
+            out = self.graph.submit(
+                self.cfg.token, pid, f"close:{pid}:{why}", [{"op": "close_problem", "body": {"reason": why}}]
+            )
             if out["ok"]:
                 r.closed.append(pid)
 
@@ -128,15 +147,16 @@ class Watchdog:
             by_backend.setdefault(l.get("backend", "default"), []).append(l)
         alerts = []
         for b, ls in sorted(by_backend.items()):
-            recent = ls[-self.cfg.health_window:]
+            recent = ls[-self.cfg.health_window :]
             if len(recent) < self.cfg.health_min:
                 continue
             rate = sum(1 for l in recent if l["outcome"] in FAIL_OUTCOMES) / len(recent)
             key = f"{b}:{recent[-1]['id']}"
             if rate > self.cfg.health_threshold and key not in self._alerted:
                 self._alerted.add(key)
-                alerts.append({"alert": "backend_unhealthy", "backend": b, "fail_rate": round(rate, 3),
-                               "window": len(recent)})
+                alerts.append(
+                    {"alert": "backend_unhealthy", "backend": b, "fail_rate": round(rate, 3), "window": len(recent)}
+                )
         return alerts
 
     def _active(self, pid: str) -> list:

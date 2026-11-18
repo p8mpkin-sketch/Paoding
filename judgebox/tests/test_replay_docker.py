@@ -2,6 +2,7 @@
 
 验收：3.3.5 的 3（伪造的工作区文件过不了重放）、3.2.5 的洁净重放、3.6.4 的 3（判官容器看不到任务容器的东西）。
 """
+
 import subprocess
 
 import pytest
@@ -23,8 +24,14 @@ def dj(tmp_path):
 
 
 def containers(r):
-    out = subprocess.run(["docker", "ps", "-a", "--filter", f"label=paoding.owner={r.box.owner}", "--format",
-                          "{{.Names}}"], capture_output=True).stdout.decode().split()
+    out = (
+        subprocess.run(
+            ["docker", "ps", "-a", "--filter", f"label=paoding.owner={r.box.owner}", "--format", "{{.Names}}"],
+            capture_output=True,
+        )
+        .stdout.decode()
+        .split()
+    )
     return sorted(out)
 
 
@@ -54,17 +61,18 @@ def test_forged_workspace_file_does_not_survive_replay(dj, tmp_path):
     env = {"base": IMAGE, "baseline_ref": "basic@1"}
     sid = dj.box.launch(compile_spec("task", dj.state["problems"]["p1"]["scope"], env, "r0", False, str(ws)), "l-task")
     seen = dj.box.exec(sid, "cat /workspace/proof.txt", "p1", "task-cat")
-    assert seen.exit_code == 0 and "open" in seen.output              # 任务容器里确实看得到
+    assert seen.exit_code == 0 and "open" in seen.output  # 任务容器里确实看得到
     fid, rid = fact(dj, "cat /workspace/proof.txt", {"stdout_contains": "open", "exit_code": 0})
     before = dj.level("p1", fid)
     [done] = dj.runner.tick()
     assert done["result"] == "fail", done
-    assert before == "E0" and dj.level("p1", fid) == "X"                # 判定性 fail：论断被证伪
-    assert containers(dj) == [sid]                                     # 判官容器拆了，任务容器不受影响
+    assert before == "E0" and dj.level("p1", fid) == "X"  # 判定性 fail：论断被证伪
+    assert containers(dj) == [sid]  # 判官容器拆了，任务容器不受影响
 
 
 def test_replay_timeout_kills_the_container(tmp_path):
     from judge_rig import REG, with_flake
+
     r = JRig(tmp_path, registry=with_flake(REG, "replay", timeout_s=1), executor="pending")
     r.box = r.runner.executor = DockerExecutor(r.svc, r.blobs, "tok-exec")
     try:

@@ -7,6 +7,7 @@
 就返回，`collect` 收回跑完的。互斥有两层：内核的租约（同一目标上已有在途租约则 `conflict_leased`，Reason
 每题至多一个在途）与司南自己记的在途表（同一 Intent 的上一个会话线程没收尾之前不再开）。
 """
+
 from __future__ import annotations
 
 import threading
@@ -26,25 +27,28 @@ class SinanConfig:
     token: str
     holder: str = "sn1"
     ttl_s: int = 600
-    reserve: dict = field(default_factory=lambda: {"bootstrap": {"usd_milli": 500, "wall_s": 600},
-                                                   "reason": {"usd_milli": 300, "wall_s": 300}})
+    reserve: dict = field(
+        default_factory=lambda: {
+            "bootstrap": {"usd_milli": 500, "wall_s": 600},
+            "reason": {"usd_milli": 300, "wall_s": 300},
+        }
+    )
     explore_cap: dict = field(default_factory=lambda: {"usd_milli": 1000, "wall_s": 900})
-    max_sessions: int = 3               # 本实例同时在途的会话上限；1 即退回串行
+    max_sessions: int = 3  # 本实例同时在途的会话上限；1 即退回串行
     # —— T-1 结构的开关（附录 B）：关掉后退化为按 /work 给出的顺序 ——
-    order_by_gain: bool = True          # explore 之间按 expected_gain 从高到低（估值类字段，只读）
-    wait_for_judges: bool = True        # 判定未决时不开新任务：让下一轮 Reason 看到裁决后的图
-    thin_bootstrap: bool = True         # Bootstrap 先瘦：预留不超过 bootstrap_share × cap
+    order_by_gain: bool = True  # explore 之间按 expected_gain 从高到低（估值类字段，只读）
+    wait_for_judges: bool = True  # 判定未决时不开新任务：让下一轮 Reason 看到裁决后的图
+    thin_bootstrap: bool = True  # Bootstrap 先瘦：预留不超过 bootstrap_share × cap
 
 
 class Sinan:
-    def __init__(self, cfg: SinanConfig, graph: GraphPort, reader: GraphReader, blobs: BlobPort,
-                 sessions: SessionPort):
+    def __init__(self, cfg: SinanConfig, graph: GraphPort, reader: GraphReader, blobs: BlobPort, sessions: SessionPort):
         if cfg.max_sessions < 1:
             raise ValueError("max_sessions 至少为 1")
         self.cfg, self.graph, self.reader, self.blobs, self.sessions = cfg, graph, reader, blobs, sessions
         self.history: list[dict] = []
-        self._pool: ThreadPoolExecutor | None = None    # 用到时才建：只读的用法（pick）不起线程
-        self._flying: dict[Future, dict] = {}           # 在途会话：{"pid", "item", "lease"}
+        self._pool: ThreadPoolExecutor | None = None  # 用到时才建：只读的用法（pick）不起线程
+        self._flying: dict[Future, dict] = {}  # 在途会话：{"pid", "item", "lease"}
         self._lock = threading.Lock()
 
     # ---------- 在途 ----------
@@ -124,9 +128,23 @@ class Sinan:
         w, st = choice["do"], self.reader.state
         # 幂等键带上项本身：同一 seq 上接连领两个租约时，后一个不能被当成前一个的重放
         idem = f"sinan-lease:{pid}:{st['seq']}:{w['kind']}:{w.get('target') or '-'}"
-        out = self.graph.submit(self.cfg.token, pid, idem, [{"op": "lease", "body": {
-            "kind": w["kind"], **({"target": w["target"]} if w.get("target") else {}), "holder": self.cfg.holder,
-            "reserve": self._reserve(st, pid, w), "ttl_s": self.cfg.ttl_s}}])
+        out = self.graph.submit(
+            self.cfg.token,
+            pid,
+            idem,
+            [
+                {
+                    "op": "lease",
+                    "body": {
+                        "kind": w["kind"],
+                        **({"target": w["target"]} if w.get("target") else {}),
+                        "holder": self.cfg.holder,
+                        "reserve": self._reserve(st, pid, w),
+                        "ttl_s": self.cfg.ttl_s,
+                    },
+                }
+            ],
+        )
         if not out["ok"]:
             r = out["results"][0]
             code = r.get("code", "rejected")
@@ -163,11 +181,20 @@ class Sinan:
     def _done(info: dict, fut: Future) -> dict:
         err = fut.exception()
         if err is not None:
-            return {"did": info["item"], "lease": info["lease"], "status": "crashed", "outcome": None,
-                    "detail": f"{type(err).__name__}: {err}"}
+            return {
+                "did": info["item"],
+                "lease": info["lease"],
+                "status": "crashed",
+                "outcome": None,
+                "detail": f"{type(err).__name__}: {err}",
+            }
         rec = fut.result()
-        return {"did": info["item"], "lease": info["lease"], "status": rec.status,
-                "outcome": (rec.release or {}).get("outcome")}
+        return {
+            "did": info["item"],
+            "lease": info["lease"],
+            "status": rec.status,
+            "outcome": (rec.release or {}).get("outcome"),
+        }
 
     # ---------- 一步（串行：开一个会话并等它跑完） ----------
 
@@ -212,6 +239,6 @@ class Sinan:
             if "stop" in r:
                 return {**r, "steps": list(self.history)}
             waits += 1
-            if between is None or waits > 3:            # 没有人会来推进：交回调用方
+            if between is None or waits > 3:  # 没有人会来推进：交回调用方
                 return {"stop": f"waiting_{r['wait']}", "steps": list(self.history)}
         return {"stop": "max_steps", "steps": list(self.history)}

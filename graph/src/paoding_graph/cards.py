@@ -5,6 +5,7 @@
 审批卡与哈希的语义出自参考模型（refmodel 的 `approval_card`、`card_hash`），这里只做数据形状的转换。
 排版用的附带信息（题名、判据卡、估值）在 views.card 里，不进哈希。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,8 +15,8 @@ from . import refmodel as rm
 from . import work as wk
 from .state import State
 
-Card = dict[str, Any]            # {kind, target, fields}：进 card_hash 的部分
-CARD_KINDS = ("approval", "closeout", "extension", "dispute")     # 后两种随 M1
+Card = dict[str, Any]  # {kind, target, fields}：进 card_hash 的部分
+CARD_KINDS = ("approval", "closeout", "extension", "dispute")  # 后两种随 M1
 
 
 def card_object(state: State, pid: str, kind: str, target: str, ref: tuple[Any, Any] | None = None) -> Card | None:
@@ -33,10 +34,16 @@ def card_object(state: State, pid: str, kind: str, target: str, ref: tuple[Any, 
         if target != pid:
             return None
         p = state["problems"][pid]
-        return {"kind": "closeout", "target": pid,
-                "fields": {"items": wk.closeout_items(state, pid), "goal_level": res.levels.get("goal"),
-                           "closed": bool(p.get("closed")),
-                           "terminal": p.get("terminal", "unsolved") if p.get("closed") else None}}
+        return {
+            "kind": "closeout",
+            "target": pid,
+            "fields": {
+                "items": wk.closeout_items(state, pid),
+                "goal_level": res.levels.get("goal"),
+                "closed": bool(p.get("closed")),
+                "terminal": p.get("terminal", "unsolved") if p.get("closed") else None,
+            },
+        }
     return None
 
 

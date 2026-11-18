@@ -8,19 +8,20 @@
 - 规格里的 Support（支持记录）在 M0 只有一种来源：判官裁决。所以 `Support` 就是 `Verdict`；
   复审与反证带来的其它支持记录随 M1 加进来。
 """
+
 from __future__ import annotations
 
 from typing import Any, NotRequired, TypedDict
 
-Body = dict[str, Any]           # 未经校验的提议体，或规范化后的事件体
-Level = str                     # E0 | E1 | E2 | E3 | E3d | X（等级不存储，每次读时重算，I3）
+Body = dict[str, Any]  # 未经校验的提议体，或规范化后的事件体
+Level = str  # E0 | E1 | E2 | E3 | E3d | X（等级不存储，每次读时重算，I3）
 
 
 class Actor(TypedDict):
-    kind: str                   # human | sinan | adapter | judge | executor | watchdog | graph
+    kind: str  # human | sinan | adapter | judge | executor | watchdog | graph
     id: str
-    session: NotRequired[str]   # 任务令牌才有：会话即租约 id
-    role: NotRequired[str]      # bootstrap | reason | explore | verify | idler
+    session: NotRequired[str]  # 任务令牌才有：会话即租约 id
+    role: NotRequired[str]  # bootstrap | reason | explore | verify | idler
 
 
 class Event(TypedDict):
@@ -38,6 +39,7 @@ class Event(TypedDict):
 
 class Amount(TypedDict):
     """预算的三条轨：金额（毫美元）、token、墙钟秒。"""
+
     usd_milli: int
     wall_s: int
     tokens: NotRequired[int]
@@ -55,7 +57,7 @@ class ScopeRule(TypedDict):
     resource: str
     pattern: str
     actions: list[str]
-    risk: str                   # r0 | r1 | r2
+    risk: str  # r0 | r1 | r2
 
 
 class VaultRef(TypedDict):
@@ -65,6 +67,7 @@ class VaultRef(TypedDict):
 
 class Check(TypedDict):
     """判据（I4 判据先行）：创建时登记，判官只能是这一个。"""
+
     judge_id: str
     spec_ref: NotRequired[str]
     expect: NotRequired[Any]
@@ -73,6 +76,7 @@ class Check(TypedDict):
 
 class Done(Check):
     """Intent 的完成判据：判据加候选次数上限。"""
+
     max_attempts: int
 
 
@@ -80,7 +84,7 @@ class Goal(TypedDict):
     statement: NotRequired[str]
     check: Check
     max_attempts: int
-    accept: str                 # M0 只有 judge
+    accept: str  # M0 只有 judge
 
 
 class Origin(TypedDict):
@@ -89,15 +93,15 @@ class Origin(TypedDict):
 
 
 class Profile(TypedDict):
-    info: str                   # complete | partial
-    judge: str                  # hard | costly | deferred | none
-    reversibility: str          # r0 | r1 | r2
+    info: str  # complete | partial
+    judge: str  # hard | costly | deferred | none
+    reversibility: str  # r0 | r1 | r2
 
 
 class JudgeEntry(TypedDict):
     version: str
-    grade: str                  # decisive | consistent | advisory
-    kind: str                   # builtin | container | deferred
+    grade: str  # decisive | consistent | advisory
+    kind: str  # builtin | container | deferred
     max_cost: float
 
 
@@ -124,9 +128,9 @@ class Problem(TypedDict):
     closed: bool
     opened_seq: int
     opened_ts: int
-    terminal: NotRequired[str]              # solved | accepted | unsolved，关题时写入
+    terminal: NotRequired[str]  # solved | accepted | unsolved，关题时写入
     closed_seq: NotRequired[int]
-    accepted: NotRequired[bool]             # 人的验收（M4 的 accept）；M0 没有写入方
+    accepted: NotRequired[bool]  # 人的验收（M4 的 accept）；M0 没有写入方
     marks: NotRequired[list[int]]
     mark_seqs: NotRequired[list[int]]
     derived_profile: NotRequired[Profile]
@@ -138,17 +142,20 @@ class Producer(TypedDict):
     session: NotRequired[str]
 
 
-Artifact = TypedDict("Artifact", {           # "class" 是关键字，只能用函数式写法
-    "id": str,
-    "problem_id": str,
-    "hash": str,
-    "size": int,
-    "media_type": str,
-    "class": str,                           # exec | judge | input | authored
-    "parents": list[str],
-    "producer": Producer,
-    "exec": NotRequired[Body],              # exec 与 judge 类的出处字段
-})
+Artifact = TypedDict(
+    "Artifact",
+    {  # "class" 是关键字，只能用函数式写法
+        "id": str,
+        "problem_id": str,
+        "hash": str,
+        "size": int,
+        "media_type": str,
+        "class": str,  # exec | judge | input | authored
+        "parents": list[str],
+        "producer": Producer,
+        "exec": NotRequired[Body],  # exec 与 judge 类的出处字段
+    },
+)
 
 
 class Fact(TypedDict):
@@ -156,13 +163,13 @@ class Fact(TypedDict):
     problem_id: str
     title: str
     summary: str
-    claim_type: str                         # observation | inference
+    claim_type: str  # observation | inference
     premises: list[str]
     grounds: list[str]
     session: str | None
     check: NotRequired[Check]
     body_ref: NotRequired[str]
-    yielded_by: NotRequired[str]            # 由租约推出，不由提议方填写
+    yielded_by: NotRequired[str]  # 由租约推出，不由提议方填写
 
 
 class Rollback(TypedDict):
@@ -181,12 +188,13 @@ class Intent(TypedDict):
     session: str | None
     done: NotRequired[Done]
     needs_scope: NotRequired[list[ScopeRule]]
-    expected_gain: NotRequired[float]       # 估值，只供司南排序（I8）
-    rollback: NotRequired[Rollback]         # M4；M0 的内核不接受
+    expected_gain: NotRequired[float]  # 估值，只供司南排序（I8）
+    rollback: NotRequired[Rollback]  # M4；M0 的内核不接受
 
 
 class Request(TypedDict):
     """判官请求。"""
+
     id: str
     problem_id: str
     target: str
@@ -198,25 +206,26 @@ class Request(TypedDict):
 
 class Verdict(TypedDict):
     """进裁决序列的判官裁决（无结论的不进）。等级只由它重算。"""
+
     seq: int
     problem_id: str
     target: str
     judge: str
     version: str
     grade: str
-    result: str                             # pass | fail | flaky
+    result: str  # pass | fail | flaky
     candidate: str | None
     request: str
     evidence: list[str]
 
 
-Support = Verdict                           # M0 的支持记录只有判官裁决一种
+Support = Verdict  # M0 的支持记录只有判官裁决一种
 
 
 class Lease(TypedDict):
     id: str
     problem_id: str
-    kind: str                               # bootstrap | reason | explore | judge
+    kind: str  # bootstrap | reason | explore | judge
     holder: str
     reserve: Amount
     ttl_s: int
@@ -246,7 +255,7 @@ class Cost(TypedDict):
     seq: int
     task_id: str
     lease_kind: str
-    source: str                             # proxy | judge | cli_reported
+    source: str  # proxy | judge | cli_reported
     tokens_in: int
     tokens_cached: int
     tokens_out: int
@@ -271,14 +280,14 @@ class State(TypedDict):
     intents: dict[str, Intent]
     requests: dict[str, Request]
     verdicts: list[Verdict]
-    content_keys: dict[str, dict[str, str]]         # 题 → 内容键 → 论断 id
-    revoked: list[list[str]]                        # 被撤销的 (判官, 版本)；M0 没有写入方
-    approvals: dict[str, list[int]]                 # Intent → 批准事件的 seq
-    lease_seqs: dict[str, list[int]]                # Intent → explore 租约签发的 seq
+    content_keys: dict[str, dict[str, str]]  # 题 → 内容键 → 论断 id
+    revoked: list[list[str]]  # 被撤销的 (判官, 版本)；M0 没有写入方
+    approvals: dict[str, list[int]]  # Intent → 批准事件的 seq
+    lease_seqs: dict[str, list[int]]  # Intent → explore 租约签发的 seq
     abandoned: list[str]
     leases: dict[str, Lease]
     hints: dict[str, Hint]
     costs: list[Cost]
-    now: int                                        # 最后一条事件的 ts
+    now: int  # 最后一条事件的 ts
     seq: int
     decision_reasons: NotRequired[dict[str, DecisionReason]]

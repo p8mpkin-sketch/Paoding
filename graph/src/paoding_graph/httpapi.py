@@ -14,6 +14,7 @@
 
 只用标准库。这里做 IO、读时钟（只用于长轮询与心跳的等待，不进任何视图）；reducer 与 views 仍是纯函数。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -38,8 +39,8 @@ from .service import GraphService
 from .state import Actor, Body, JudgeEntry, State
 from .tokens import UnknownToken
 
-MAX_BODY = 8 * 1024 * 1024            # JSON 请求体上限
-MAX_BLOB = 256 * 1024 * 1024          # 单个 Blob 上限（§3.2.2）
+MAX_BODY = 8 * 1024 * 1024  # JSON 请求体上限
+MAX_BLOB = 256 * 1024 * 1024  # 单个 Blob 上限（§3.2.2）
 LOOPBACK = ("127.0.0.1", "localhost", "[::1]")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -47,14 +48,14 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 @dataclass
 class HttpConfig:
     host: str = "127.0.0.1"
-    port: int = 0                                   # 0：由系统分配，测试用
-    allowed_origins: tuple[str, ...] = ()                    # 显式放行的跨源来源（开发服务器）；默认一个不放
-    view_full_dump: bool = False                    # T-1 开关：三层视图的满量导出（graph/SPEC.md）
-    replay_window: int = 5000                       # SSE 补发窗口；超过则先发快照（§13.2）
+    port: int = 0  # 0：由系统分配，测试用
+    allowed_origins: tuple[str, ...] = ()  # 显式放行的跨源来源（开发服务器）；默认一个不放
+    view_full_dump: bool = False  # T-1 开关：三层视图的满量导出（graph/SPEC.md）
+    replay_window: int = 5000  # SSE 补发窗口；超过则先发快照（§13.2）
     heartbeat_s: float = 15.0
     longpoll_max_s: float = 30.0
-    static_dir: Path | None = None                  # 前端构建产物；与 API 同源，不需要跨源
-    templates_dir: Path | None = None               # 开题模板（随锦囊发布的数据，前端只解释字段映射）
+    static_dir: Path | None = None  # 前端构建产物；与 API 同源，不需要跨源
+    templates_dir: Path | None = None  # 开题模板（随锦囊发布的数据，前端只解释字段映射）
     renderers_dir: Path | None = None
     extra_hosts: tuple[str, ...] = field(default_factory=tuple)
 
@@ -67,16 +68,17 @@ class HttpError(Exception):
 
 class Handler(BaseHTTPRequestHandler):
     """一次请求。cors_origin 由来源检查写入：放行的跨源来源，同源或无 Origin 时为 None。"""
+
     protocol_version = "HTTP/1.1"
     cors_origin: str | None = None
-    started = False                                     # 应答头是否已经发出
+    started = False  # 应答头是否已经发出
 
     def log_message(self, format: str, *args: Any) -> None:
         pass
 
 
-Params = dict[str, str]                                 # 路径参数或查询参数
-Doc = dict[str, Any]                                    # 应答的 JSON 对象
+Params = dict[str, str]  # 路径参数或查询参数
+Doc = dict[str, Any]  # 应答的 JSON 对象
 Route = Callable[[Handler, Params, Params], None]
 ViewFn = Callable[[State, Params, Params], Doc]
 WriteFn = Callable[[str, Params, Body, Handler], tuple[int, Doc]]
@@ -123,12 +125,18 @@ class GraphHttp:
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget"), g(lambda st, m, q: views.budget(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/work"), g(lambda st, m, q: views.work(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/invalidations"), g(self.v_invalidations)),
-            ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/cards/(?P<kind>[^/]+)/(?P<id>[^/]+)"),
-             g(lambda st, m, q: views.card(st, m["pid"], m["kind"], m["id"]))),
+            (
+                "GET",
+                R(r"/v1/problems/(?P<pid>[^/]+)/cards/(?P<kind>[^/]+)/(?P<id>[^/]+)"),
+                g(lambda st, m, q: views.card(st, m["pid"], m["kind"], m["id"])),
+            ),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/events"), self.r_events),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/stream"), self.r_stream),
-            ("GET", R(r"/v1/nodes/(?P<id>[^/]+)"),
-             g(lambda st, m, q: views.node(st, m["id"], q.get("layer", "summary")))),
+            (
+                "GET",
+                R(r"/v1/nodes/(?P<id>[^/]+)"),
+                g(lambda st, m, q: views.node(st, m["id"], q.get("layer", "summary"))),
+            ),
             ("GET", R(r"/v1/hints/(?P<id>[^/]+)/trace"), g(self.v_hint_trace)),
             ("GET", R(r"/v1/artifacts/(?P<id>[^/]+)"), g(lambda st, m, q: views.artifact(st, m["id"]))),
             ("GET", R(r"/v1/blobs/(?P<hash>[^/]+)"), self.r_blob_get),
@@ -290,19 +298,31 @@ class GraphHttp:
 
     def _get(self, fn: ViewFn) -> Route:
         """视图端点的统一外壳：{as_of, head, view_hash, …视图}。view_hash 是视图模型的规范化哈希（HT-10）。"""
+
         def handler(h: Handler, m: Params, q: Params) -> None:
             state, head = self._state(q)
             doc = fn(state, m, q)
-            out = {"as_of": state["seq"], "head": head,
-                   "view_hash": hashlib.sha256(canonicalize(doc)).hexdigest(), **doc}
+            out = {
+                "as_of": state["seq"],
+                "head": head,
+                "view_hash": hashlib.sha256(canonicalize(doc)).hexdigest(),
+                **doc,
+            }
             if q.get("state_hash") in ("1", "true"):
                 out["state_hash"] = state_hash(state)
             self._json(h, 200, out)
+
         return handler
 
     def v_view(self, st: State, m: Params, q: Params) -> Doc:
-        return views.view(st, m["pid"], q.get("layer", "title"), _int(q, "after_seq", 0) or 0,
-                          _int(q, "limit", None, 1), self.cfg.view_full_dump)
+        return views.view(
+            st,
+            m["pid"],
+            q.get("layer", "title"),
+            _int(q, "after_seq", 0) or 0,
+            _int(q, "limit", None, 1),
+            self.cfg.view_full_dump,
+        )
 
     def v_invalidations(self, st: State, m: Params, q: Params) -> Doc:
         if not q.get("node"):
@@ -335,7 +355,11 @@ class GraphHttp:
             except ValueError:
                 raise HttpError(400, "schema_error", "wait 须为秒数") from None
             wait = min(wait, self.cfg.longpoll_max_s) if wait == wait else 0.0
-            evs = self.svc.wait_events(m["pid"], after, wait, limit) if wait > 0 else self.svc.events(m["pid"], after, limit)
+            evs = (
+                self.svc.wait_events(m["pid"], after, wait, limit)
+                if wait > 0
+                else self.svc.events(m["pid"], after, limit)
+            )
             head = self.svc.head()
         self._json(h, 200, {"events": evs, "head": head, "next_after": evs[-1]["seq"] if evs else after})
 
@@ -360,10 +384,14 @@ class GraphHttp:
         try:
             h.wfile.write(b"retry: 1000\n\n")
             backlog = self.svc.events(pid, after, self.cfg.replay_window + 1)
-            if len(backlog) > self.cfg.replay_window:              # 落后太多：给一个 as_of 快照，再从快照处续流
+            if len(backlog) > self.cfg.replay_window:  # 落后太多：给一个 as_of 快照，再从快照处续流
                 state = self.svc.state
-                snap = {"as_of": state["seq"], "skipped_after": after, "status": views.status(state, pid),
-                        "budget": views.budget(state, pid)}
+                snap = {
+                    "as_of": state["seq"],
+                    "skipped_after": after,
+                    "status": views.status(state, pid),
+                    "budget": views.budget(state, pid),
+                }
                 after = state["seq"]
                 self._frame(h, snap, after, "snapshot")
             while not self._closing.is_set():
@@ -381,7 +409,7 @@ class GraphHttp:
 
     @staticmethod
     def _frame(h: Handler, obj: Any, seq: int, event: str | None = None) -> None:
-        data = json.dumps(obj, ensure_ascii=False)                 # JSON 不含裸换行，一帧一行 data
+        data = json.dumps(obj, ensure_ascii=False)  # JSON 不含裸换行，一帧一行 data
         head = f"id: {seq}\n" + (f"event: {event}\n" if event else "")
         h.wfile.write((head + f"data: {data}\n\n").encode())
         h.wfile.flush()
@@ -406,9 +434,17 @@ class GraphHttp:
         except BlobNotFound:
             raise HttpError(404, "unknown_ref", "没有这个 Blob") from None
         # 一律当作不可执行的下载：不在页面内解释（§13.1 第 5 条）
-        self._send(h, 200, data, "application/octet-stream",
-                   {"Content-Disposition": f'attachment; filename="{bh[:16]}.bin"', "X-Blob-Hash": bh,
-                    "X-Blob-Size": str(len(data))})
+        self._send(
+            h,
+            200,
+            data,
+            "application/octet-stream",
+            {
+                "Content-Disposition": f'attachment; filename="{bh[:16]}.bin"',
+                "X-Blob-Hash": bh,
+                "X-Blob-Size": str(len(data)),
+            },
+        )
 
     def r_blob_put(self, h: Handler, m: Params, q: Params) -> None:
         actor = self._actor(h)
@@ -435,9 +471,10 @@ class GraphHttp:
     def _post(self, fn: WriteFn) -> Route:
         def handler(h: Handler, m: Params, q: Params) -> None:
             token, body = self._token(h), self._body(h)
-            self._actor(h)                                         # 未知令牌：403，不进日志
+            self._actor(h)  # 未知令牌：403，不进日志
             status, out = fn(token, m, body, h)
             self._json(h, status, out)
+
         return handler
 
     @staticmethod
@@ -451,9 +488,14 @@ class GraphHttp:
     def _ops(body: Body) -> list[Body]:
         """每条提议是 {op: 字符串, body: 对象}；body 可缺。形状在这里验一次，后面按这个形状用。"""
         ops = body.get("ops")
-        if not isinstance(ops, list) or not ops or not all(
+        if (
+            not isinstance(ops, list)
+            or not ops
+            or not all(
                 isinstance(o, dict) and isinstance(o.get("op"), str) and isinstance(o.get("body", {}), dict)
-                for o in ops):
+                for o in ops
+            )
+        ):
             raise HttpError(400, "schema_error", "ops 须为非空数组，每条带 op；body 须为对象")
         return ops
 
@@ -472,7 +514,8 @@ class GraphHttp:
         if not isinstance(pid, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", pid):
             raise HttpError(400, "schema_error", "id 须为 1–64 位的字母、数字、点、横线、下划线")
         if ops[-1]["op"] != "open_problem" or any(
-                o["op"] != "register_artifact" or o.get("body", {}).get("class") != "input" for o in ops[:-1]):
+            o["op"] != "register_artifact" or o.get("body", {}).get("class") != "input" for o in ops[:-1]
+        ):
             raise HttpError(400, "schema_error", "ops 只能是若干条 input 类 register_artifact 加最后一条 open_problem")
         self._blobs_exist(ops)
         out = self.svc.submit(token, pid, self._idem(body, h), ops)
@@ -482,18 +525,24 @@ class GraphHttp:
         ops = self._ops(body)
         self._blobs_exist(ops)
         out = self.svc.submit(token, m["pid"], self._idem(body, h), ops)
-        return 200, out                                            # 被拒也是 200：结果逐条在 results 里
+        return 200, out  # 被拒也是 200：结果逐条在 results 里
 
     def w_lease(self, token: str, m: Params, body: Body, h: Handler) -> tuple[int, Doc]:
-        idem = self._idem(body, h)                                 # 缺幂等键即拒：自动生成的键让重试不再幂等
+        idem = self._idem(body, h)  # 缺幂等键即拒：自动生成的键让重试不再幂等
         lease = {k: body[k] for k in ("kind", "target", "holder", "reserve", "ttl_s") if k in body}
         out = self.svc.submit(token, m["pid"], idem, [{"op": "lease", "body": lease}])
         r = out["results"][0]
         if out["ok"]:
             return 201, {"ok": True, "lease": self.svc.state["leases"].get(r["id"], {"id": r["id"]})}
-        return (409 if r.get("code") in ("conflict_leased", "over_budget") else 400
-                if r.get("code") == "schema_error" else 403 if r.get("code") == "forbidden_op" else 409), \
-            {"ok": False, **r}
+        return (
+            409
+            if r.get("code") in ("conflict_leased", "over_budget")
+            else 400
+            if r.get("code") == "schema_error"
+            else 403
+            if r.get("code") == "forbidden_op"
+            else 409
+        ), {"ok": False, **r}
 
     def w_lease_verb(self, token: str, m: Params, body: Body, h: Handler) -> tuple[int, Doc]:
         lease = self.svc.state["leases"].get(m["id"])
@@ -503,8 +552,11 @@ class GraphHttp:
         keys = ("ttl_s",) if m["verb"] == "renew" else ("outcome", "transcript_ref", "suggestions")
         op = {"op": m["verb"], "body": {"lease": m["id"], **{k: body[k] for k in keys if k in body}}}
         out = self.svc.submit(token, lease["problem_id"], idem, [op])
-        return (200 if out["ok"] else 409), ({"ok": True, "lease": self.svc.state["leases"][m["id"]]}
-                                             if out["ok"] else {"ok": False, **out["results"][0]})
+        return (200 if out["ok"] else 409), (
+            {"ok": True, "lease": self.svc.state["leases"][m["id"]]}
+            if out["ok"]
+            else {"ok": False, **out["results"][0]}
+        )
 
     def w_artifact(self, token: str, m: Params, body: Body, h: Handler) -> tuple[int, Doc]:
         """POST /v1/artifacts：登记（register_artifact）。类别与令牌的匹配由内核判定。"""
@@ -515,8 +567,9 @@ class GraphHttp:
         self._blobs_exist([{"op": "register_artifact", "body": art}])
         out = self.svc.submit(token, pid, self._idem(body, h), [{"op": "register_artifact", "body": art}])
         r = out["results"][0]
-        return (201 if out["ok"] else 200), ({"ok": True, "id": r["id"], "seq": r["seq"]} if out["ok"]
-                                             else {"ok": False, **r})
+        return (201 if out["ok"] else 200), (
+            {"ok": True, "id": r["id"], "seq": r["seq"]} if out["ok"] else {"ok": False, **r}
+        )
 
     def r_profile_preview(self, h: Handler, m: Params, q: Params) -> None:
         self._json(h, 200, views.profile_preview(self._body(h), self.svc.cfg))
@@ -530,15 +583,27 @@ class GraphHttp:
         if p != root and root not in p.parents:
             raise HttpError(404, "unknown_ref", "没有这个文件")
         if not p.is_file():
-            p = root / "index.html"                                # 单页应用：其余路径回到入口
+            p = root / "index.html"  # 单页应用：其余路径回到入口
             if not p.is_file():
                 raise HttpError(404, "unknown_ref", "没有这个文件")
-        ctype = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-                 ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
-                 ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2",
-                 ".map": "application/json"}.get(p.suffix, "application/octet-stream")
-        self._send(h, 200, p.read_bytes(), ctype, {
-            "Content-Security-Policy": "default-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'"})
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".json": "application/json",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".ico": "image/x-icon",
+            ".woff2": "font/woff2",
+            ".map": "application/json",
+        }.get(p.suffix, "application/octet-stream")
+        self._send(
+            h,
+            200,
+            p.read_bytes(),
+            ctype,
+            {"Content-Security-Policy": "default-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'"},
+        )
 
 
 def _catalog(d: Path | None) -> Doc:
@@ -550,23 +615,33 @@ def _catalog(d: Path | None) -> Doc:
                 continue
             raw = f.read_bytes()
             data: Any = None
-            try:                                                   # 解析不了就只给原文：条目是数据，坏条目不该拖垮目录
+            try:  # 解析不了就只给原文：条目是数据，坏条目不该拖垮目录
                 if f.suffix == ".json":
                     data = json.loads(raw)
                 else:
                     import yaml  # 可选依赖：没有就只给原文
+
                     try:
                         data = yaml.safe_load(raw)
                     except yaml.YAMLError:
                         data = None
-            except (ValueError, ImportError):                      # JSON 不合法（含编码错误），或没装 yaml
+            except (ValueError, ImportError):  # JSON 不合法（含编码错误），或没装 yaml
                 data = None
-            items.append({"name": f.stem, "hash": hashlib.sha256(raw).hexdigest(), "size": len(raw),
-                          "signature": None, "data": data, "text": raw.decode("utf-8", "replace")})
+            items.append(
+                {
+                    "name": f.stem,
+                    "hash": hashlib.sha256(raw).hexdigest(),
+                    "size": len(raw),
+                    "signature": None,
+                    "data": data,
+                    "text": raw.decode("utf-8", "replace"),
+                }
+            )
     return {"items": items}
 
 
 # ---------- 进程入口：python -m paoding_graph.httpapi ----------
+
 
 def main(argv: list[str] | None = None) -> int:
     import argparse
@@ -588,9 +663,14 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     home = Path(a.home)
     home.mkdir(parents=True, exist_ok=True)
-    judges: dict[str, JudgeEntry] = json.loads(Path(a.judges).read_text(encoding="utf-8")) if a.judges else {
-        "replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
-        "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0}}
+    judges: dict[str, JudgeEntry] = (
+        json.loads(Path(a.judges).read_text(encoding="utf-8"))
+        if a.judges
+        else {
+            "replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
+            "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
+        }
+    )
     tf = Path(a.token_file) if a.token_file else home / "human.token"
     if not tf.exists():
         tf.write_text(secrets.token_urlsafe(32), encoding="utf-8")
@@ -598,10 +678,17 @@ def main(argv: list[str] | None = None) -> int:
     reg = TokenRegistry()
     reg.issue({"kind": "human", "id": a.human}, tf.read_text(encoding="utf-8").strip())
     svc = GraphService(home / "g.sqlite", Config(judges=judges), reg)
-    app = GraphHttp(svc, BlobStore(home / "blobs"), HttpConfig(
-        port=a.port, allowed_origins=tuple(a.allow_origin), static_dir=Path(a.static) if a.static else None,
-        templates_dir=Path(a.templates) if a.templates else None,
-        renderers_dir=Path(a.renderers) if a.renderers else None))
+    app = GraphHttp(
+        svc,
+        BlobStore(home / "blobs"),
+        HttpConfig(
+            port=a.port,
+            allowed_origins=tuple(a.allow_origin),
+            static_dir=Path(a.static) if a.static else None,
+            templates_dir=Path(a.templates) if a.templates else None,
+            renderers_dir=Path(a.renderers) if a.renderers else None,
+        ),
+    )
     print(f"图服务 {app.serve()}（链头 seq={svc.head()}；人的令牌在 {tf}）", flush=True)
     try:
         threading.Event().wait()
@@ -612,4 +699,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

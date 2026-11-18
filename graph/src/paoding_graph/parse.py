@@ -6,6 +6,7 @@
 
 纯函数，不做 IO。
 """
+
 from __future__ import annotations
 
 from typing import Any

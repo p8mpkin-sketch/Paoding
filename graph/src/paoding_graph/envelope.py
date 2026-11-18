@@ -3,6 +3,7 @@
 hash = sha256(JCS(除 hash 外的全部字段))；prev_hash 指同题上一条事件的 hash。
 每题的第一条事件 prev_hash 取 GENESIS（64 个 0）。规格没有规定创世值，此处取定值并记入 SPEC.md。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,14 +42,24 @@ def check_actor(actor: Any) -> None:
         raise EnvelopeError(f"role 非法：{actor['role']!r}")
 
 
-def seal(*, seq: int, problem_id: str, ts: int, actor: Any, kind: str, body: dict[str, Any],
-         idem_key: str, prev_hash: str) -> Event:
+def seal(
+    *, seq: int, problem_id: str, ts: int, actor: Any, kind: str, body: dict[str, Any], idem_key: str, prev_hash: str
+) -> Event:
     """组装一条事件并算出 hash。只由图服务调用；ts 由图服务在追加时写入。"""
     check_actor(actor)
     if not isinstance(body, dict) or not kind or not idem_key:
         raise EnvelopeError("kind、idem_key 必填，body 必须是对象")
-    ev = {"v": SCHEMA_VERSION, "seq": seq, "problem_id": problem_id, "ts": ts, "actor": actor,
-          "kind": kind, "body": body, "idem_key": idem_key, "prev_hash": prev_hash}
+    ev = {
+        "v": SCHEMA_VERSION,
+        "seq": seq,
+        "problem_id": problem_id,
+        "ts": ts,
+        "actor": actor,
+        "kind": kind,
+        "body": body,
+        "idem_key": idem_key,
+        "prev_hash": prev_hash,
+    }
     ev["hash"] = event_hash(ev)
     return cast(Event, ev)
 

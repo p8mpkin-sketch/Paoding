@@ -3,6 +3,7 @@
 能力按风险注入：只取 risk 不高于上限的规则；r2 规则另须该 Intent 已获批准。
 内核不理解 resource，由资源种类插件解释（RESOURCE_KINDS）。M0 只有网络地址一种，外加 workspace（M3）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -65,9 +66,16 @@ class ScopeError(ValueError):
     pass
 
 
-def compile_spec(spec_id: str, scope: list[dict], env: dict, ceiling: str, approved_r2: bool,
-                 workspace: str, limits: Limits = Limits(),
-                 kinds: dict[str, ResourceKind] = RESOURCE_KINDS) -> ExecSpec:
+def compile_spec(
+    spec_id: str,
+    scope: list[dict],
+    env: dict,
+    ceiling: str,
+    approved_r2: bool,
+    workspace: str,
+    limits: Limits = Limits(),
+    kinds: dict[str, ResourceKind] = RESOURCE_KINDS,
+) -> ExecSpec:
     """ceiling：所服务 Intent 的 risk（Bootstrap 取 r0；判官容器取被判对象的风险但不超过 r1）。"""
     if ceiling not in RISK_RANK:
         raise ScopeError(f"上限非法：{ceiling}")
@@ -84,6 +92,12 @@ def compile_spec(spec_id: str, scope: list[dict], env: dict, ceiling: str, appro
         out = kind.compile(rule)
         egress += out.get("egress", [])
         creds += out.get("credentials", [])
-    return ExecSpec(id=spec_id, image=env["base"], baseline_ref=env["baseline_ref"], workspace=workspace,
-                    egress_allow=tuple(sorted(set(egress))), credentials=tuple(sorted(set(creds))),
-                    limits=limits)
+    return ExecSpec(
+        id=spec_id,
+        image=env["base"],
+        baseline_ref=env["baseline_ref"],
+        workspace=workspace,
+        egress_allow=tuple(sorted(set(egress))),
+        credentials=tuple(sorted(set(creds))),
+        limits=limits,
+    )

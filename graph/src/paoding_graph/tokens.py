@@ -4,6 +4,7 @@
 解析出的 actor 带 session 与 role，role 由租约决定，非模型自报。本模块是有状态的服务端对象，
 不在 reducer 里；reducer 只看解析后的 actor。
 """
+
 from __future__ import annotations
 
 import hmac

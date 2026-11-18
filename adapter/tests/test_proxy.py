@@ -2,6 +2,7 @@
 
 全部走本机假上游：不需要真密钥、真模型。
 """
+
 import http.client
 import json
 
@@ -27,8 +28,12 @@ def call(p, token, stream=False, auth="x-api-key"):
     c = http.client.HTTPConnection(*p.addr, timeout=10)
     hdr = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
     hdr.update({"x-api-key": token} if auth == "x-api-key" else {"authorization": f"Bearer {token}"})
-    c.request("POST", "/v1/messages", body=json.dumps({"model": "claude-sonnet-5-5", "max_tokens": 10,
-                                                       "stream": stream, "messages": []}), headers=hdr)
+    c.request(
+        "POST",
+        "/v1/messages",
+        body=json.dumps({"model": "claude-sonnet-5-5", "max_tokens": 10, "stream": stream, "messages": []}),
+        headers=hdr,
+    )
     r = c.getresponse()
     data = r.read()
     c.close()
@@ -75,8 +80,8 @@ def test_unknown_model_billed_at_highest_tier():
 def test_reserve_exhausted_429(proxy, graph, upstream):
     lid = lease_bootstrap(graph)
     proxy.register_task("t", lid, "p1", 8)
-    assert call(proxy, "t")[0] == 200          # 5
-    assert call(proxy, "t")[0] == 200          # 10，越过预留（单请求事后计量，至多超一个请求）
+    assert call(proxy, "t")[0] == 200  # 5
+    assert call(proxy, "t")[0] == 200  # 10，越过预留（单请求事后计量，至多超一个请求）
     st, body = call(proxy, "t")
     assert st == 429 and json.loads(body)["error"]["type"] == "task_reserve_exhausted"
     assert len(upstream.seen) == 2
@@ -86,8 +91,11 @@ def test_problem_and_global_caps(graph, upstream):
     open_problem(graph)
     lid = lease_bootstrap(graph)
     pt = PriceTable.load(PRICES)
-    p = EndpointProxy(ProxyConfig(upstream.url, REAL_KEY, "tok-adapter", global_cap_usd_milli=10**9,
-                                  problem_caps={"p1": 4}), pt, graph)
+    p = EndpointProxy(
+        ProxyConfig(upstream.url, REAL_KEY, "tok-adapter", global_cap_usd_milli=10**9, problem_caps={"p1": 4}),
+        pt,
+        graph,
+    )
     p.addr = p.serve()
     try:
         p.register_task("t", lid, "p1", 1000)
@@ -129,10 +137,12 @@ def test_proxy_ledger_reconciles_with_graph(proxy, graph, upstream):
 
 # ---------- P1-1：重启后累计花费从账本投影（/budget）恢复 ----------
 
+
 def _restart(graph, upstream, **cfg):
     """旧代理进程没了：新起一个，只凭图服务的账本恢复。"""
-    p = EndpointProxy(ProxyConfig(upstream.url, REAL_KEY, "tok-adapter", **cfg), PriceTable.load(PRICES), graph,
-                      reader=graph)
+    p = EndpointProxy(
+        ProxyConfig(upstream.url, REAL_KEY, "tok-adapter", **cfg), PriceTable.load(PRICES), graph, reader=graph
+    )
     p.addr = p.serve()
     return p
 
@@ -143,19 +153,19 @@ def test_restart_restores_spend_from_ledger(proxy, graph, upstream):
     proxy.register_task("t1", lid1, "p1", 1000)
     proxy.register_task("t2", lid2, "p2", 1000)
     for tok in ("t1", "t1", "t2"):
-        assert call(proxy, tok)[0] == 200                       # 每个请求 5 毫美元
+        assert call(proxy, tok)[0] == 200  # 每个请求 5 毫美元
     assert (proxy.global_spent, proxy.problem_spent) == (15, {"p1": 10, "p2": 5})
     proxy.close()
 
     cold = EndpointProxy(ProxyConfig(upstream.url, REAL_KEY, "tok-adapter"), PriceTable.load(PRICES), graph)
-    assert (cold.global_spent, cold.problem_spent) == (0, {})   # 修复前的行为：不给账本就从零起
+    assert (cold.global_spent, cold.problem_spent) == (0, {})  # 修复前的行为：不给账本就从零起
     p2 = _restart(graph, upstream)
     try:
         assert (p2.global_spent, p2.problem_spent) == (15, {"p1": 10, "p2": 5})
         assert p2.global_spent == sum(graph.budget(pid)["spent"]["usd_milli"] for pid in ("p1", "p2"))
-        assert ledger_diff(p2, graph.state) == []               # 恢复后的基线与账本对得上
+        assert ledger_diff(p2, graph.state) == []  # 恢复后的基线与账本对得上
         p2.register_task("t3", lid1, "p1", 1000)
-        assert call(p2, "t3")[0] == 200                         # 重启后的新花费接着累计
+        assert call(p2, "t3")[0] == 200  # 重启后的新花费接着累计
         assert (p2.global_spent, p2.problem_spent["p1"]) == (20, 15)
         assert ledger_diff(p2, graph.state) == []
     finally:
@@ -166,7 +176,7 @@ def test_global_cap_still_holds_after_restart(proxy, graph, upstream):
     """审计 P1-1：全局硬顶不因进程重启失效。"""
     lid = lease_bootstrap(graph)
     proxy.register_task("t", lid, "p1", 1000)
-    assert call(proxy, "t")[0] == 200 and call(proxy, "t")[0] == 200      # 账本里已有 10
+    assert call(proxy, "t")[0] == 200 and call(proxy, "t")[0] == 200  # 账本里已有 10
     proxy.close()
     seen = len(upstream.seen)
     p2 = _restart(graph, upstream, global_cap_usd_milli=10)
@@ -174,7 +184,7 @@ def test_global_cap_still_holds_after_restart(proxy, graph, upstream):
         p2.register_task("t2", lid, "p1", 1000)
         st, body = call(p2, "t2")
         assert st == 429 and json.loads(body)["error"]["type"] == "global_cap_exhausted"
-        assert len(upstream.seen) == seen                       # 没有转发上游
+        assert len(upstream.seen) == seen  # 没有转发上游
     finally:
         p2.close()
 
@@ -198,6 +208,7 @@ def test_restore_counts_closed_problems_and_survives_log_replay(proxy, graph, up
     from adapter_rig import CFG
 
     from paoding_graph.contract import GraphService
+
     lid = lease_bootstrap(graph)
     proxy.register_task("t", lid, "p1", 1000)
     assert call(proxy, "t")[0] == 200

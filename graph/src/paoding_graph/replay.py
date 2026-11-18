@@ -3,6 +3,7 @@
 apply 不读时钟、不做 IO、不调用模型；唯一的时钟是事件里的 ts。
 状态哈希 = sha256(JCS(state))，所以状态必须是 JSON 值。
 """
+
 from __future__ import annotations
 
 import copy

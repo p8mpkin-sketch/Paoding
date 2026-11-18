@@ -8,6 +8,7 @@
 
 所有文本按纯文本输出：模型撰写的内容里的换行被压成空格，行首标记不会被内容伪造。
 """
+
 from __future__ import annotations
 
 from paoding_graph.contract import LEVEL_WORDS, REGISTER, intent_status, node_levels, seen_card
@@ -34,6 +35,7 @@ class Out:
 
 
 # ---------- 判据徽章与等级 ----------
+
 
 def judge_badge(state: dict, pid: str, judge_id: str) -> str:
     snap = state["problems"][pid].get("judge_snapshot", {}).get(judge_id, {})
@@ -70,16 +72,27 @@ def terminal_phrase(state: dict, pid: str) -> str:
 
 # ---------- 视图 ----------
 
+
 def status(state: dict, pid: str, budget: dict) -> str:
     p = state["problems"][pid]
     lv = node_levels(state, pid)
     o = Out()
-    o.add("terminal", f"题 {pid} 终态 {terminal_phrase(state, pid)}；目标等级 {level_phrase(state, pid, 'goal', lv.get('goal'))}")
+    o.add(
+        "terminal",
+        f"题 {pid} 终态 {terminal_phrase(state, pid)}；目标等级 {level_phrase(state, pid, 'goal', lv.get('goal'))}",
+    )
     o.add("title", f"题名：{p['title']}")
-    o.add("predicate", f"目标判据 {judge_badge(state, pid, p['goal']['check']['judge_id'])} "
-                       f"expect={p['goal']['check'].get('expect', {})} 候选上限 {p['goal']['max_attempts']}")
-    o.add("profile", "画像 " + " ".join(f"{k}={v}" for k, v in sorted(p["profile"].items()))
-          + ("（含人工覆盖）" if p.get("profile_overrides") else ""))
+    o.add(
+        "predicate",
+        f"目标判据 {judge_badge(state, pid, p['goal']['check']['judge_id'])} "
+        f"expect={p['goal']['check'].get('expect', {})} 候选上限 {p['goal']['max_attempts']}",
+    )
+    o.add(
+        "profile",
+        "画像 "
+        + " ".join(f"{k}={v}" for k, v in sorted(p["profile"].items()))
+        + ("（含人工覆盖）" if p.get("profile_overrides") else ""),
+    )
     o.add("budget", _budget_line(budget))
     o.blank()
     facts = sorted((f for f in state["facts"].values() if f["problem_id"] == pid), key=lambda f: int(f["id"][2:]))
@@ -93,10 +106,14 @@ def status(state: dict, pid: str, budget: dict) -> str:
         o.add("hint", f"{h['id']} {h['author']}{'（已关闭）' if h.get('closed') else ''}：{h['text']}")
         after = [i["id"] for i in intents if int(i["id"][2:]) > h["seq"]]
         o.add("structure", f"{h['id']} 之后新增的 Intent：{', '.join(after) or '无'}（时序关联，不是因果）")
-    for l in sorted((l for l in state["leases"].values() if l["problem_id"] == pid and l["active"]),
-                    key=lambda l: l["issued_seq"]):
-        o.add("lease", f"在途 {l['id']} {l['kind']}{' ' + l['target'] if l.get('target') else ''} "
-                       f"预留 {l['reserve']['usd_milli']} 毫美元")
+    for l in sorted(
+        (l for l in state["leases"].values() if l["problem_id"] == pid and l["active"]), key=lambda l: l["issued_seq"]
+    ):
+        o.add(
+            "lease",
+            f"在途 {l['id']} {l['kind']}{' ' + l['target'] if l.get('target') else ''} "
+            f"预留 {l['reserve']['usd_milli']} 毫美元",
+        )
     return o.text()
 
 
@@ -110,12 +127,18 @@ def _fact(o: Out, state: dict, pid: str, f: dict, level: str | None) -> None:
     if f["claim_type"] == "observation" and f.get("check"):
         c = f["check"]
         spec = state["artifacts"][c["spec_ref"]]["hash"][:12] if c.get("spec_ref") else "无"
-        o.add("level", f"{f['id']} {level_phrase(state, pid, f['id'], level)}；谓词 {judge_badge(state, pid, c['judge_id'])} "
-                       f"规格 {spec} expect={c.get('expect', {})}")
+        o.add(
+            "level",
+            f"{f['id']} {level_phrase(state, pid, f['id'], level)}；谓词 {judge_badge(state, pid, c['judge_id'])} "
+            f"规格 {spec} expect={c.get('expect', {})}",
+        )
         roots = ", ".join(f"{g}({state['artifacts'][g]['class']})" for g in f.get("grounds", []))
         o.add("structure", f"{f['id']} 证据根：{roots or '无证据根'}")
     else:
-        o.add("level", f"{f['id']} {level_phrase(state, pid, f['id'], level)}；推断，前提 {', '.join(f['premises']) or '无'}")
+        o.add(
+            "level",
+            f"{f['id']} {level_phrase(state, pid, f['id'], level)}；推断，前提 {', '.join(f['premises']) or '无'}",
+        )
     o.add("title", f"{f['id']} 标题：{f['title']}")
     if f.get("summary"):
         o.add("summary", f"{f['id']} 摘要：{f['summary']}")
@@ -142,16 +165,24 @@ def report(state: dict, pid: str, budget: dict) -> str:
     """首行：终态与根结论的等级上限。确定性投影，不调用模型；未解出时同样产出。"""
     lv = node_levels(state, pid)
     o = Out()
-    o.add("terminal", f"终态 {terminal_phrase(state, pid)}；根结论等级上限 {level_phrase(state, pid, 'goal', lv.get('goal'))}")
+    o.add(
+        "terminal",
+        f"终态 {terminal_phrase(state, pid)}；根结论等级上限 {level_phrase(state, pid, 'goal', lv.get('goal'))}",
+    )
     o.add("budget", _budget_line(budget))
     o.blank()
     rank = {"E3": 0, "E3d": 1, "E2": 2, "E1": 3, "E0": 4, "X": 5}
-    facts = sorted((f for f in state["facts"].values() if f["problem_id"] == pid),
-                   key=lambda f: (rank.get(lv.get(f["id"]), 9), int(f["id"][2:])))
+    facts = sorted(
+        (f for f in state["facts"].values() if f["problem_id"] == pid),
+        key=lambda f: (rank.get(lv.get(f["id"]), 9), int(f["id"][2:])),
+    )
     for f in facts:
         _fact(o, state, pid, f, lv.get(f["id"]))
-    abandoned = [i for i in state["intents"].values() if i["problem_id"] == pid
-                 and intent_status(state, pid, i["id"]) == "abandoned"]
+    abandoned = [
+        i
+        for i in state["intents"].values()
+        if i["problem_id"] == pid and intent_status(state, pid, i["id"]) == "abandoned"
+    ]
     for i in abandoned:
         o.add("status", f"已放弃 {i['id']}")
         o.add("title", f"{i['id']} 标题：{i['title']}")
@@ -177,15 +208,20 @@ def approval_card(state: dict, pid: str, iid: str) -> str:
     i = state["intents"][iid]
     lv = node_levels(state, pid)
     o = Out()
-    o.add("status", f"审批 {iid}：状态 {intent_status(state, pid, iid)}；风险 {i['risk']}；预留 {i['budget']['usd_milli']} 毫美元；"
-                    "一次批准只管一次租约")
+    o.add(
+        "status",
+        f"审批 {iid}：状态 {intent_status(state, pid, iid)}；风险 {i['risk']}；预留 {i['budget']['usd_milli']} 毫美元；"
+        "一次批准只管一次租约",
+    )
     o.add("title", f"动作：{i['title']}")
     if i.get("summary"):
         o.add("summary", f"说明：{i['summary']}")
     o.add("structure", "回退：未声明回退" if not i.get("rollback") else "回退：见下")
     if i.get("done"):
-        o.add("predicate", f"结果预测：完成判据 {judge_badge(state, pid, i['done']['judge_id'])} "
-                           f"expect={i['done'].get('expect', {})}")
+        o.add(
+            "predicate",
+            f"结果预测：完成判据 {judge_badge(state, pid, i['done']['judge_id'])} expect={i['done'].get('expect', {})}",
+        )
     for p in i["premises"]:
         o.add("level", f"前提 {p} {level_phrase(state, pid, p, lv.get(p))}")
     if not i["premises"]:

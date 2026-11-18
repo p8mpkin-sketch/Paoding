@@ -4,6 +4,7 @@
 每个会话一个路径 /mcp/<key>，key 随机且只写进该会话的 --mcp-config 文件；
 一个 Adapter 进程可以并行托管多个会话（3.4.4）。响应一律 application/json（不开 SSE 推送）。
 """
+
 from __future__ import annotations
 
 import json
@@ -40,13 +41,18 @@ class ToolEndpoint:
         mid, method = msg.get("id"), msg.get("method", "")
         if host is None:
             return _rpc_err(mid, -32001, "会话不存在或已结束")
-        if mid is None:                                    # 通知不回
+        if mid is None:  # 通知不回
             return None
         if method == "initialize":
-            return {"jsonrpc": "2.0", "id": mid, "result": {
-                "protocolVersion": msg.get("params", {}).get("protocolVersion", PROTOCOL_VERSION),
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "paoding", "version": "0"}}}
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "result": {
+                    "protocolVersion": msg.get("params", {}).get("protocolVersion", PROTOCOL_VERSION),
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "serverInfo": {"name": "paoding", "version": "0"},
+                },
+            }
         if method == "ping":
             return {"jsonrpc": "2.0", "id": mid, "result": {}}
         if method == "tools/list":
@@ -59,8 +65,15 @@ class ToolEndpoint:
                 traceback.print_exc(file=sys.stderr)
                 return _rpc_err(mid, -32603, f"内部错误：{type(e).__name__}")
             is_err = out.get("ok") is False
-            return {"jsonrpc": "2.0", "id": mid, "result": {
-                "content": [{"type": "text", "text": as_text(out)}], "structuredContent": out, "isError": is_err}}
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "result": {
+                    "content": [{"type": "text", "text": as_text(out)}],
+                    "structuredContent": out,
+                    "isError": is_err,
+                },
+            }
         return _rpc_err(mid, -32601, f"未实现 {method}")
 
     def serve(self, host: str = "127.0.0.1", port: int = 0) -> str:
@@ -95,7 +108,7 @@ class ToolEndpoint:
                 out = ep.handle(parts[2], msg)
                 self._send(202, None) if out is None else self._send(200, out)
 
-            def do_GET(self):                              # 不提供服务端推送流
+            def do_GET(self):  # 不提供服务端推送流
                 self._send(405, None)
 
             def do_DELETE(self):

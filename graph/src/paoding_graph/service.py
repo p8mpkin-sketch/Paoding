@@ -7,6 +7,7 @@
 - 同一 (problem_id, idem_key) 重放返回首次结果；进程被 kill -9 后重启，状态由日志重放得出（3.1.5 的 2）。
 - 时钟只在这里读（clock 可注入），作为参数交给 validate 与事件信封；reducer 不读时钟。
 """
+
 from __future__ import annotations
 
 import threading
@@ -27,15 +28,19 @@ from .tokens import TokenRegistry, UnknownToken
 GRAPH_ACTOR: Actor = {"kind": "graph", "id": "graph"}
 
 
-
 class GraphService:
-    def __init__(self, path: str | Path, cfg: Config, tokens: TokenRegistry,
-                 clock: Callable[[], int] = lambda: int(time.time() * 1000)):
+    def __init__(
+        self,
+        path: str | Path,
+        cfg: Config,
+        tokens: TokenRegistry,
+        clock: Callable[[], int] = lambda: int(time.time() * 1000),
+    ):
         self.log, self.cfg, self.tokens, self._clock = EventLog(path), cfg, tokens, clock
-        self.state: State = replay(self.log.events(), apply, empty_state())     # 崩溃恢复即重放
-        self._lock = threading.RLock()                 # 单写者：提交串行；日志连接只在锁内使用
-        self._cond = threading.Condition(self._lock)   # 新事件落盘后唤醒长轮询与事件流
-        self._snaps: OrderedDict[int, State] = OrderedDict()   # as_of 回放的状态缓存（日志只追加，永不失效）
+        self.state: State = replay(self.log.events(), apply, empty_state())  # 崩溃恢复即重放
+        self._lock = threading.RLock()  # 单写者：提交串行；日志连接只在锁内使用
+        self._cond = threading.Condition(self._lock)  # 新事件落盘后唤醒长轮询与事件流
+        self._snaps: OrderedDict[int, State] = OrderedDict()  # as_of 回放的状态缓存（日志只追加，永不失效）
 
     def _ts(self) -> int:
         return max(self._clock(), self.state["now"] + 1)
@@ -64,12 +69,19 @@ class GraphService:
                 ts = self._ts() if not evs else max(self._ts(), evs[-1]["ts"])
                 r = validate(state, actor, pid, kind, body, self.cfg, ts)
                 if not isinstance(r, Ok):
-                    results.append({"ok": False, "code": r.code, "detail": r.detail,
-                                    # stale_view：附上链头的最新卡片（§3.1.9），形状与 /cards 端点相同
-                                    **({"card": {"as_of": state["seq"], **views.card(state, pid, *r.card)}}
-                                       if r.card else {})})
-                    raise _Abort(results + [{"ok": False, "code": "batch_aborted", "detail": f"第 {i} 条被拒"}
-                                            for _ in ops[i + 1:]])
+                    results.append(
+                        {
+                            "ok": False,
+                            "code": r.code,
+                            "detail": r.detail,
+                            # stale_view：附上链头的最新卡片（§3.1.9），形状与 /cards 端点相同
+                            **({"card": {"as_of": state["seq"], **views.card(state, pid, *r.card)}} if r.card else {}),
+                        }
+                    )
+                    raise _Abort(
+                        results
+                        + [{"ok": False, "code": "batch_aborted", "detail": f"第 {i} 条被拒"} for _ in ops[i + 1 :]]
+                    )
                 ev = append(pid, kind, r.body, actor, ts, f"{idem_key}#{i}")
                 state = apply(state, ev)
                 evs.append(ev)
@@ -78,8 +90,14 @@ class GraphService:
             for fkind, fbody in wk.followups(state, pid):
                 r = validate(state, GRAPH_ACTOR, pid, fkind, fbody, self.cfg, evs[-1]["ts"] if evs else self._ts())
                 if isinstance(r, Ok):
-                    ev = append(pid, fkind, r.body, GRAPH_ACTOR, evs[-1]["ts"] if evs else self._ts(),
-                                f"{idem_key}#auto-{fkind}-{len(evs)}")
+                    ev = append(
+                        pid,
+                        fkind,
+                        r.body,
+                        GRAPH_ACTOR,
+                        evs[-1]["ts"] if evs else self._ts(),
+                        f"{idem_key}#auto-{fkind}-{len(evs)}",
+                    )
                     state = apply(state, ev)
                     evs.append(ev)
             staged["state"] = state
@@ -103,8 +121,9 @@ class GraphService:
     def head(self) -> int:
         return self.state["seq"]
 
-    def events(self, pid: str | None = None, after: int = 0, limit: int | None = None,
-               upto: int | None = None) -> list[Event]:
+    def events(
+        self, pid: str | None = None, after: int = 0, limit: int | None = None, upto: int | None = None
+    ) -> list[Event]:
         with self._lock:
             out = []
             for ev in self.log.events(pid, after):

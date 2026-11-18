@@ -6,6 +6,7 @@
 
 人只做一件事：经 HTTP 开题。之后的每一条事件都由组件按自己的令牌写入；网页那一侧（SSE、as_of）全程旁观。
 """
+
 import hashlib
 import http.client
 import json
@@ -52,13 +53,38 @@ class CannedExec:
         text = next((v for k, v in self.answers.items() if k in cmd), "")
         data = text.encode()
         h = self.blobs.put(data)
-        prov = {"sandbox_id": sid, "base": "basic", "baseline_ref": "basic@1", "tool": "shell", "command": cmd,
-                "cwd": cwd, "exit_code": 0, "touched": [], "started_at": 1000, "ended_at": 3000, "truncated": False}
+        prov = {
+            "sandbox_id": sid,
+            "base": "basic",
+            "baseline_ref": "basic@1",
+            "tool": "shell",
+            "command": cmd,
+            "cwd": cwd,
+            "exit_code": 0,
+            "touched": [],
+            "started_at": 1000,
+            "ended_at": 3000,
+            "truncated": False,
+        }
         aid = None
         if register_as == "exec":
-            out = self.graph.submit("tok-exec", pid, idem_key, [{"op": "register_artifact", "body": {
-                "hash": h, "size": len(data), "media_type": "text/plain; charset=utf-8", "class": "exec",
-                "exec": prov}}])
+            out = self.graph.submit(
+                "tok-exec",
+                pid,
+                idem_key,
+                [
+                    {
+                        "op": "register_artifact",
+                        "body": {
+                            "hash": h,
+                            "size": len(data),
+                            "media_type": "text/plain; charset=utf-8",
+                            "class": "exec",
+                            "exec": prov,
+                        },
+                    }
+                ],
+            )
             assert out["ok"], out
             aid = out["results"][0]["id"]
         return ExecResult(aid, h, 0, text, False, prov)
@@ -94,10 +120,12 @@ class Watcher(threading.Thread):
 
 
 def http_json(url, path, body=None, token=None):
-    req = urllib.request.Request(url + path, data=None if body is None else json.dumps(body).encode(),
-                                 method="GET" if body is None else "POST",
-                                 headers={"Content-Type": "application/json",
-                                          **({"Authorization": f"Bearer {token}"} if token else {})})
+    req = urllib.request.Request(
+        url + path,
+        data=None if body is None else json.dumps(body).encode(),
+        method="GET" if body is None else "POST",
+        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})},
+    )
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read())
 
@@ -113,26 +141,73 @@ def scripts(rig, host):
         p.write_text(json.dumps({"steps": steps, "resume_steps": []}))
         rig.scripts[role] = p
 
-    put("bootstrap", [
-        {"tool": EXEC, "input": {"cmd": probe}},
-        {"tool": "Write", "input": {"file_path": "probe.sh", "content": probe + "\n"}},
-        {"tool": SUBMIT, "input": {"ops": [
-            {"op": "add_fact", "tmp_id": "f", "claim_type": "observation", "title": "目标在线并报告 ready",
-             "summary": "读 /status 得到 ready", "premises": [], "grounds": ["$r0.artifact"],
-             "check": {"judge_id": "replay", "expect": {"stdout_contains": "ready", "exit_code": 0},
-                       "spec_path": "probe.sh"}},
-            {"op": "request_judge", "target": "f"}], "final": {"outcome": "found"}}}])
-    put("reason", [
-        {"tool": SHOW, "input": {"list": "all"}},
-        {"tool": SUBMIT, "input": {"ops": [
-            {"op": "add_intent", "title": "读取 /value 并提交", "summary": "目标在线，直接读取取值",
-             "premises": ["$r0.items.0.id"], "risk": "r0", "expected_gain": 0.8,
-             "budget_hint": {"usd_milli": 400, "wall_s": 300}}], "final": {"outcome": "found"}}}])
-    put("explore", [
-        {"tool": EXEC, "input": {"cmd": FETCH.format(host=host, path="value")}},
-        {"tool": "Write", "input": {"file_path": "answer.txt", "content": "$r0.output"}},
-        {"tool": SUBMIT, "input": {"ops": [{"op": "claim_done", "target": "goal", "candidate_path": "answer.txt"}],
-                                   "final": {"outcome": "found"}}}])
+    put(
+        "bootstrap",
+        [
+            {"tool": EXEC, "input": {"cmd": probe}},
+            {"tool": "Write", "input": {"file_path": "probe.sh", "content": probe + "\n"}},
+            {
+                "tool": SUBMIT,
+                "input": {
+                    "ops": [
+                        {
+                            "op": "add_fact",
+                            "tmp_id": "f",
+                            "claim_type": "observation",
+                            "title": "目标在线并报告 ready",
+                            "summary": "读 /status 得到 ready",
+                            "premises": [],
+                            "grounds": ["$r0.artifact"],
+                            "check": {
+                                "judge_id": "replay",
+                                "expect": {"stdout_contains": "ready", "exit_code": 0},
+                                "spec_path": "probe.sh",
+                            },
+                        },
+                        {"op": "request_judge", "target": "f"},
+                    ],
+                    "final": {"outcome": "found"},
+                },
+            },
+        ],
+    )
+    put(
+        "reason",
+        [
+            {"tool": SHOW, "input": {"list": "all"}},
+            {
+                "tool": SUBMIT,
+                "input": {
+                    "ops": [
+                        {
+                            "op": "add_intent",
+                            "title": "读取 /value 并提交",
+                            "summary": "目标在线，直接读取取值",
+                            "premises": ["$r0.items.0.id"],
+                            "risk": "r0",
+                            "expected_gain": 0.8,
+                            "budget_hint": {"usd_milli": 400, "wall_s": 300},
+                        }
+                    ],
+                    "final": {"outcome": "found"},
+                },
+            },
+        ],
+    )
+    put(
+        "explore",
+        [
+            {"tool": EXEC, "input": {"cmd": FETCH.format(host=host, path="value")}},
+            {"tool": "Write", "input": {"file_path": "answer.txt", "content": "$r0.output"}},
+            {
+                "tool": SUBMIT,
+                "input": {
+                    "ops": [{"op": "claim_done", "target": "goal", "candidate_path": "answer.txt"}],
+                    "final": {"outcome": "found"},
+                },
+            },
+        ],
+    )
 
 
 def run_chain(rig, host):
@@ -146,37 +221,76 @@ def run_chain(rig, host):
     statement = "目标服务在 8080 端口。取回 /value 的内容，原样提交。".encode()
     try:
         # —— 人：经 HTTP 开题（与网页、pd 同一条提议通道） ——
-        req = urllib.request.Request(url + "/v1/blobs", data=statement, method="PUT", headers={
-            "Authorization": "Bearer tok-human", "Content-Type": "application/octet-stream"})
+        req = urllib.request.Request(
+            url + "/v1/blobs",
+            data=statement,
+            method="PUT",
+            headers={"Authorization": "Bearer tok-human", "Content-Type": "application/octet-stream"},
+        )
         with urllib.request.urlopen(req, timeout=10) as r:
             h = json.loads(r.read())["hash"]
-        opened = http_json(url, "/v1/problems", {"id": PID, "idem_key": "open-e2e", "ops": [
-            {"op": "register_artifact", "body": {"hash": h, "size": len(statement), "media_type": "text/plain",
-                                                  "class": "input"}},
-            {"op": "open_problem", "body": {
-                "title": "取回目标上的取值", "origin": {"statement_ref": "$0", "materials": []},
-                "goal": {"statement": "取回 /value 的内容并原样提交",
-                         "check": {"judge_id": "exact_match", "sealed": [sealed]}, "max_attempts": 3, "accept": "judge"},
-                "scope": [{"resource": "net", "pattern": f"{host}:8080", "actions": ["connect"], "risk": "r0"}],
-                "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
-                "env": {"base": "basic", "baseline_ref": "basic@1"}, "judges": ["exact_match", "replay"]}}]},
-            token="tok-human")
+        opened = http_json(
+            url,
+            "/v1/problems",
+            {
+                "id": PID,
+                "idem_key": "open-e2e",
+                "ops": [
+                    {
+                        "op": "register_artifact",
+                        "body": {"hash": h, "size": len(statement), "media_type": "text/plain", "class": "input"},
+                    },
+                    {
+                        "op": "open_problem",
+                        "body": {
+                            "title": "取回目标上的取值",
+                            "origin": {"statement_ref": "$0", "materials": []},
+                            "goal": {
+                                "statement": "取回 /value 的内容并原样提交",
+                                "check": {"judge_id": "exact_match", "sealed": [sealed]},
+                                "max_attempts": 3,
+                                "accept": "judge",
+                            },
+                            "scope": [
+                                {"resource": "net", "pattern": f"{host}:8080", "actions": ["connect"], "risk": "r0"}
+                            ],
+                            "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
+                            "env": {"base": "basic", "baseline_ref": "basic@1"},
+                            "judges": ["exact_match", "replay"],
+                        },
+                    },
+                ],
+            },
+            token="tok-human",
+        )
         assert opened["ok"], opened
         watcher.start()
 
         # —— 组件：司南循环 + 判官运行器（单进程部署，判官在每一步之间被驱动） ——
         scripts(rig, host)
-        judge = JudgeRunner(JudgeConfig(token="tok-judge", registry=load_registry(), bases=rig.cfg.bases),
-                            g, g, rig.blobs, vault, rig.executor)
+        judge = JudgeRunner(
+            JudgeConfig(token="tok-judge", registry=load_registry(), bases=rig.cfg.bases),
+            g,
+            g,
+            rig.blobs,
+            vault,
+            rig.executor,
+        )
         sinan = Sinan(SinanConfig(token="tok-sinan"), g, g, rig.blobs, rig.runner)
         verdicts = []
         out = sinan.run(PID, between=lambda: verdicts.extend(judge.tick(PID)))
         watcher.closed.wait(10)
-        return {"url": url, "out": out, "verdicts": verdicts, "frames": list(watcher.frames), "sinan": sinan,
-                "live": {k: http_json(url, f"/v1/problems/{PID}/{k}") for k in ("status", "budget", "work")},
-                "events": http_json(url, f"/v1/problems/{PID}/events?after=0&limit=1000")["events"],
-                "at": lambda seq: http_json(url, f"/v1/problems/{PID}/status?as_of={seq}"),
-                "close": app.close}
+        return {
+            "url": url,
+            "out": out,
+            "verdicts": verdicts,
+            "frames": list(watcher.frames),
+            "sinan": sinan,
+            "live": {k: http_json(url, f"/v1/problems/{PID}/{k}") for k in ("status", "budget", "work")},
+            "events": http_json(url, f"/v1/problems/{PID}/events?after=0&limit=1000")["events"],
+            "at": lambda seq: http_json(url, f"/v1/problems/{PID}/status?as_of={seq}"),
+            "close": app.close,
+        }
     except BaseException:
         app.close()
         raise
@@ -195,9 +309,9 @@ def check_chain(rig, r):
     order = [kinds.index(k) for k in ("open_problem", "add_fact", "add_intent", "close_problem")]
     assert order == sorted(order)
     # 关题后只剩交回：记账、释放，以及在途会话的留档登记
-    assert set(kinds[kinds.index("close_problem") + 1:]) <= {"cost", "release", "register_artifact"}
+    assert set(kinds[kinds.index("close_problem") + 1 :]) <= {"cost", "release", "register_artifact"}
     close = next(e for e in r["events"] if e["kind"] == "close_problem")
-    assert close["actor"]["kind"] == "graph" and close["body"]["terminal"] == "solved"   # 没有人、没有 Worker 关题
+    assert close["actor"]["kind"] == "graph" and close["body"]["terminal"] == "solved"  # 没有人、没有 Worker 关题
 
     # 2. 等级只来自判官：论断与 Goal 都是 E3，支持记录指向 judge 类 Artifact
     lv = node_levels(st, PID)
@@ -206,7 +320,7 @@ def check_chain(rig, r):
     assert lv[fact["id"]] == "E3" and lv["goal"] == "E3"
     assert intent["premises"] == [fact["id"]] and intent_status(st, PID, intent["id"]) in ("done", "achieved")
     assert st["artifacts"][fact["grounds"][0]]["class"] == "exec"
-    assert st["artifacts"][fact["grounds"][0]]["producer"]["actor"] == "ex1"       # 证据由执行层登记，不由会话
+    assert st["artifacts"][fact["grounds"][0]]["producer"]["actor"] == "ex1"  # 证据由执行层登记，不由会话
     for v in st["verdicts"]:
         assert [st["artifacts"][a]["class"] for a in v["evidence"]] == ["judge"]
     goal_v = next(v for v in st["verdicts"] if v["target"] == "goal")
@@ -258,16 +372,17 @@ def check_chain(rig, r):
 
 def test_e2e_fake_cli_with_stub_executor(tmp_path, graph, upstream):  # noqa: F811
     rig = Rig(tmp_path, graph, upstream)
-    rig.executor = rig.runner.executor = CannedExec(graph, rig.blobs, {
-        "/status": "ready\n", "/value": ANSWER + "\n", "sh /workspace/spec": "ready\n"})
+    rig.executor = rig.runner.executor = CannedExec(
+        graph, rig.blobs, {"/status": "ready\n", "/value": ANSWER + "\n", "sh /workspace/spec": "ready\n"}
+    )
     r = None
     try:
         r = run_chain(rig, "target-a")
         check_chain(rig, r)
         ex = rig.executor
         assert len(ex.launched) == 3 and sorted(ex.destroyed) == sorted(b["sid"] for b in ex.launched)
-        assert [b["mount"] for b in ex.launched] == [True, False, True]      # 中间那个是判官的洁净容器
-        assert all(b["egress"] for b in ex.launched)                         # r0 规则编进了每个容器
+        assert [b["mount"] for b in ex.launched] == [True, False, True]  # 中间那个是判官的洁净容器
+        assert all(b["egress"] for b in ex.launched)  # r0 规则编进了每个容器
     finally:
         if r:
             r["close"]()
@@ -283,14 +398,17 @@ def test_e2e_fake_cli_with_docker(tmp_path, graph, upstream):  # noqa: F811
         host = rig.target({"status": "ready", "value": ANSWER})
         r = run_chain(rig, host)
         check_chain(rig, r)
-        assert rig.sandboxes() == []                                         # 任务容器与判官容器都已销毁
+        assert rig.sandboxes() == []  # 任务容器与判官容器都已销毁
         st = graph.state
         fact_v = next(v for v in st["verdicts"] if v["target"] != "goal")
         ev = st["artifacts"][fact_v["evidence"][0]]
         assert ev["exec"]["tool"] == "replay" and b"ready" in rig.blobs.get(ev["hash"])
-        boxes = {a["exec"]["sandbox_id"] for a in st["artifacts"].values() if a["class"] in ("exec", "judge")
-                 and a["exec"]["sandbox_id"] != "builtin"}
-        assert len(boxes) == 3                                               # bootstrap、判官重放、explore 各一个
+        boxes = {
+            a["exec"]["sandbox_id"]
+            for a in st["artifacts"].values()
+            if a["class"] in ("exec", "judge") and a["exec"]["sandbox_id"] != "builtin"
+        }
+        assert len(boxes) == 3  # bootstrap、判官重放、explore 各一个
     finally:
         if r:
             r["close"]()

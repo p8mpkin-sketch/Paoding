@@ -3,6 +3,7 @@
 Problem 里出现的只有键与加盐摘要 `VaultRef {vault, digest}`：摘要让人事后核对资产没被换过，
 盐让它不能用来离线穷举。库里的内容不进日志、不进 Blob、不进任何容器。
 """
+
 from __future__ import annotations
 
 import hashlib

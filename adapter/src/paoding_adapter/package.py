@@ -7,6 +7,7 @@
 ④只列节点 id 与 title，按创建顺序；等级与状态这类每次都变的东西放在⑤。
 整个任务包以确定性 JSON 登记为 authored 类 Artifact，producer.session 即租约 id（会话令牌决定）。
 """
+
 from __future__ import annotations
 
 import json
@@ -25,31 +26,37 @@ def _j(obj) -> str:
 
 @dataclass(frozen=True)
 class Rendered:
-    package: dict            # TaskPackage 的内容形态（各段正文就地给出，留档时整体登记）
-    system: str              # ①–⑤：追加系统提示
-    user: str                # ⑥⑦：首条用户消息
-    prefix: str = ""         # ①–④：同题内只追加的稳定前缀
+    package: dict  # TaskPackage 的内容形态（各段正文就地给出，留档时整体登记）
+    system: str  # ①–⑤：追加系统提示
+    user: str  # ⑥⑦：首条用户消息
+    prefix: str = ""  # ①–④：同题内只追加的稳定前缀
 
     def as_bytes(self) -> bytes:
         return _j(self.package).encode()
 
 
 def role_prompt(role: str) -> str:
-    return (PROMPTS / "common.md").read_text(encoding="utf-8") + "\n" + \
-        (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
+    return (
+        (PROMPTS / "common.md").read_text(encoding="utf-8")
+        + "\n"
+        + (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
+    )
 
 
 def problem_brief(state: dict, pid: str, statement: str, judges_cfg: dict) -> str:
     p = state["problems"][pid]
     judges = [{"judge_id": j, "grade": judges_cfg.get(j, {}).get("grade")} for j in sorted(p["judges"])]
-    return "\n".join([
-        f"题目：{p['title']}",
-        "题面：", statement.rstrip(),
-        f"目标：{p['goal']['statement']}",
-        f"目标判据：{_j(p['goal']['check'])}，候选上限 {p['goal']['max_attempts']}",
-        f"授权范围：{_j(p['scope'])}",
-        f"可用判官：{_j(judges)}",
-    ])
+    return "\n".join(
+        [
+            f"题目：{p['title']}",
+            "题面：",
+            statement.rstrip(),
+            f"目标：{p['goal']['statement']}",
+            f"目标判据：{_j(p['goal']['check'])}，候选上限 {p['goal']['max_attempts']}",
+            f"授权范围：{_j(p['scope'])}",
+            f"可用判官：{_j(judges)}",
+        ]
+    )
 
 
 def listing(state: dict, pid: str) -> str:
@@ -62,26 +69,43 @@ def status(state: dict, pid: str, budget: dict) -> str:
     lv = node_levels(state, pid)
     facts = {fid: lv.get(fid) for fid, f in state["facts"].items() if f["problem_id"] == pid}
     intents = {iid: intent_status(state, pid, iid) for iid, i in state["intents"].items() if i["problem_id"] == pid}
-    intents = {k: v for k, v in intents.items() if v != "open"}          # 只列非默认状态，⑤随图增长尽量慢
+    intents = {k: v for k, v in intents.items() if v != "open"}  # 只列非默认状态，⑤随图增长尽量慢
     b = {k: budget.get(k, {}).get("usd_milli") for k in ("cap", "spent", "reserved")}
     return _j({"levels": facts, "intents_not_open": intents, "budget_usd_milli": b})
 
 
-def render(state: dict, pid: str, lease: dict, *, statement: str, judges_cfg: dict, budget: dict,
-           kits: list[dict] | None = None, focus: dict | None = None, limits: dict | None = None) -> Rendered:
+def render(
+    state: dict,
+    pid: str,
+    lease: dict,
+    *,
+    statement: str,
+    judges_cfg: dict,
+    budget: dict,
+    kits: list[dict] | None = None,
+    focus: dict | None = None,
+    limits: dict | None = None,
+) -> Rendered:
     role = lease["kind"]
-    kit_index = sorted(({"name": k["name"], "description": k["description"], "path": k["path"]}
-                        for k in (kits or [])), key=lambda k: k["name"])
+    kit_index = sorted(
+        ({"name": k["name"], "description": k["description"], "path": k["path"]} for k in (kits or [])),
+        key=lambda k: k["name"],
+    )
     focus = dict(focus or {})
     focus.setdefault("premises", [])
-    focus.setdefault("hints", sorted(h for h, x in state["hints"].items()
-                                     if x["problem_id"] == pid and not x.get("closed")))
+    focus.setdefault(
+        "hints", sorted(h for h, x in state["hints"].items() if x["problem_id"] == pid and not x.get("closed"))
+    )
     if role == "explore":
         focus.setdefault("intent", lease["target"])
         it = state["intents"][lease["target"]]
         focus.setdefault("restate", f"推进 Intent {lease['target']}：{it['title']}")
-    focus.setdefault("restate", {"bootstrap": "摸清材料与环境，提交直接观察到的事实。",
-                                 "reason": "读图，提交推断与下一步 Intent。"}.get(role, ""))
+    focus.setdefault(
+        "restate",
+        {"bootstrap": "摸清材料与环境，提交直接观察到的事实。", "reason": "读图，提交推断与下一步 Intent。"}.get(
+            role, ""
+        ),
+    )
     hint_text = [{"id": h, "text": state["hints"][h]["text"]} for h in focus["hints"]]
     sections = [
         ("① 角色", role_prompt(role)),
@@ -94,12 +118,20 @@ def render(state: dict, pid: str, lease: dict, *, statement: str, judges_cfg: di
     st = status(state, pid, budget)
     system = prefix + f"\n# ⑤ 状态\n{st}\n"
     shown = {**focus, **({"hint_text": hint_text} if hint_text else {})}
-    shown.pop("restate")                                   # 复述放在最末一行（⑥的 restate）
-    user = (f"# ⑥ 焦点\n{_j(shown)}\n\n"
-            f"# ⑦ 限额\n{_j(limits or {})}\n\n任务：{focus['restate']}\n")
-    package = {"role_prompt": sections[0][1], "problem_brief": sections[1][1], "kit_index": kit_index,
-               "listing": sections[3][1], "status": st, "focus": focus, "limits": limits or {},
-               "as_of_seq": as_of_seq(state), "task_id": lease["id"], "role": role}
+    shown.pop("restate")  # 复述放在最末一行（⑥的 restate）
+    user = f"# ⑥ 焦点\n{_j(shown)}\n\n# ⑦ 限额\n{_j(limits or {})}\n\n任务：{focus['restate']}\n"
+    package = {
+        "role_prompt": sections[0][1],
+        "problem_brief": sections[1][1],
+        "kit_index": kit_index,
+        "listing": sections[3][1],
+        "status": st,
+        "focus": focus,
+        "limits": limits or {},
+        "as_of_seq": as_of_seq(state),
+        "task_id": lease["id"],
+        "role": role,
+    }
     return Rendered(package, system, user, prefix)
 
 

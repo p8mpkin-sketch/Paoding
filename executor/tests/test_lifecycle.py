@@ -4,6 +4,7 @@
 验收：3.6.4 的 1（越界不通）在重置与重建之后仍成立；3.6.4 的 4（环境容器的启动参数进不了执行容器）；
 3.4.5 的 3 的执行层一半（租约结束后沙箱被回收）；孤儿清扫（哮天犬第 3 件事）。
 """
+
 import os
 import socket
 import subprocess
@@ -21,8 +22,11 @@ SERVE = ["python", "-m", "http.server", "8080"]
 
 
 def names(kind="ps"):
-    args = ["docker", "ps", "-a", "--format", "{{.Names}}"] if kind == "ps" else \
-        ["docker", "network", "ls", "--format", "{{.Name}}"]
+    args = (
+        ["docker", "ps", "-a", "--format", "{{.Names}}"]
+        if kind == "ps"
+        else ["docker", "network", "ls", "--format", "{{.Name}}"]
+    )
     return set(subprocess.run(args, capture_output=True).stdout.decode().split())
 
 
@@ -51,6 +55,7 @@ def spec_for(tmp_path, target=None, sid="lc", **kw):
 
 # ---------- 创建与销毁 ----------
 
+
 def test_launch_creates_container_and_network_destroy_removes_both(ex, tmp_path, target):
     sid = ex.launch(spec_for(tmp_path, target), "l_1")
     assert sid in names() and f"{sid}-net" in names("net")
@@ -58,19 +63,27 @@ def test_launch_creates_container_and_network_destroy_removes_both(ex, tmp_path,
     assert sb == {"sid": sid, "lease": "l_1", "spec": "lc", "targets": [target], "mounted": True, "running": True}
     ex.destroy(sid)
     assert sid not in names() and f"{sid}-net" not in names("net") and ex.sandboxes() == []
-    assert target in names()                              # 目标容器不归沙箱所有，不随之销毁
-    ex.destroy(sid)                                       # 幂等
+    assert target in names()  # 目标容器不归沙箱所有，不随之销毁
+    ex.destroy(sid)  # 幂等
     with pytest.raises(SandboxGone):
         ex.exec(sid, "true", "p1", "k")
 
 
 def test_failed_launch_leaves_nothing_behind(ex, tmp_path):
     before = (names(), names("net"))
-    spec = compile_spec("bad", [{"resource": "net", "pattern": "no-such-container:80", "actions": ["*"], "risk": "r0"}],
-                        ENV, "r0", False, str(tmp_path))
+    spec = compile_spec(
+        "bad",
+        [{"resource": "net", "pattern": "no-such-container:80", "actions": ["*"], "risk": "r0"}],
+        ENV,
+        "r0",
+        False,
+        str(tmp_path),
+    )
     with pytest.raises(ScopeError):
         ex.launch(spec, "l_1")
-    bad_image = compile_spec("bad2", [], {"base": "no-such-image:none", "baseline_ref": "x"}, "r0", False, str(tmp_path))
+    bad_image = compile_spec(
+        "bad2", [], {"base": "no-such-image:none", "baseline_ref": "x"}, "r0", False, str(tmp_path)
+    )
     with pytest.raises(subprocess.CalledProcessError):
         ex.launch(bad_image, "l_1")
     assert (names(), names("net")) == before and ex.sandboxes() == []
@@ -80,14 +93,19 @@ def test_hardening_flags_and_no_inherited_env(ex, tmp_path, target, monkeypatch)
     """I2、3.6.4 的 4：能力全丢、不可提权、资源有上限；宿主进程的环境变量一个都不带进去。"""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-never-appear")
     sid = ex.launch(spec_for(tmp_path, target, limits=Limits(cpu=0.5, mem_mb=128, pids=64, wall_s=300)), "l_1")
-    fmt = "{{.HostConfig.CapDrop}}|{{.HostConfig.SecurityOpt}}|{{.HostConfig.Memory}}|{{.HostConfig.PidsLimit}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Privileged}}"
+    fmt = "{{.HostConfig.CapDrop}}|{{.HostConfig.SecurityOpt}}|{{.HostConfig.Memory}}|{{.HostConfig.PidsLimit}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Privileged}}"  # noqa: E501
     got = subprocess.run(["docker", "inspect", "--format", fmt, sid], capture_output=True).stdout.decode().strip()
     assert got == f"[ALL]|[no-new-privileges]|{128 * 1024 * 1024}|64|500000000|false"
     env = ex.exec(sid, "env; id -u", "p1", "a").output
     assert "sk-should-never-appear" not in env and "ANTHROPIC" not in env
-    mounts = subprocess.run(["docker", "inspect", "--format", "{{range .Mounts}}{{.Destination}} {{end}}", sid],
-                            capture_output=True).stdout.decode().split()
-    assert mounts == ["/workspace"]                       # 工作区是唯一的挂载；没有 docker.sock
+    mounts = (
+        subprocess.run(
+            ["docker", "inspect", "--format", "{{range .Mounts}}{{.Destination}} {{end}}", sid], capture_output=True
+        )
+        .stdout.decode()
+        .split()
+    )
+    assert mounts == ["/workspace"]  # 工作区是唯一的挂载；没有 docker.sock
 
 
 def test_wall_clock_limit_stops_container(ex, tmp_path):
@@ -96,20 +114,21 @@ def test_wall_clock_limit_stops_container(ex, tmp_path):
     assert ex.sandboxes()[0]["running"] is False
     with pytest.raises(SandboxGone):
         ex.exec(sid, "echo late", "p1", "k")
-    assert ex.graph.calls == []                           # 没有采集，也就没有登记
+    assert ex.graph.calls == []  # 没有采集，也就没有登记
 
 
 # ---------- 重置 ----------
+
 
 def test_reset_keeps_id_and_scope_but_drops_state(ex, tmp_path, target):
     sid = ex.launch(spec_for(tmp_path, target), "l_1")
     ex.exec(sid, "echo x > /tmp/state; echo kept > /workspace/note.txt", "p1", "a")
     cid = subprocess.run(["docker", "inspect", "--format", "{{.Id}}", sid], capture_output=True).stdout
-    assert ex.reset(sid) == sid                           # 会话手里的沙箱 id 继续有效
+    assert ex.reset(sid) == sid  # 会话手里的沙箱 id 继续有效
     assert subprocess.run(["docker", "inspect", "--format", "{{.Id}}", sid], capture_output=True).stdout != cid
-    assert ex.exec(sid, "test -e /tmp/state", "p1", "b").exit_code != 0            # 容器内状态回到 baseline
-    assert ex.exec(sid, "cat /workspace/note.txt", "p1", "c").output == "kept\n"    # 工作区是共享挂载，不重置
-    assert ex.exec(sid, PROBE.format(h=target, p=8080), "p1", "d").exit_code == 0   # 白名单照旧
+    assert ex.exec(sid, "test -e /tmp/state", "p1", "b").exit_code != 0  # 容器内状态回到 baseline
+    assert ex.exec(sid, "cat /workspace/note.txt", "p1", "c").output == "kept\n"  # 工作区是共享挂载，不重置
+    assert ex.exec(sid, PROBE.format(h=target, p=8080), "p1", "d").exit_code == 0  # 白名单照旧
     assert ex.exec(sid, PROBE.format(h="1.1.1.1", p=443), "p1", "e").exit_code != 0  # 3.6.4 的 1：越界照旧不通
     assert [s["sid"] for s in ex.sandboxes()] == [sid]
     with pytest.raises(SandboxGone):
@@ -118,6 +137,7 @@ def test_reset_keeps_id_and_scope_but_drops_state(ex, tmp_path, target):
 
 # ---------- 按租约清理 ----------
 
+
 def test_destroy_lease_and_reap(ex, tmp_path):
     a = ex.launch(spec_for(tmp_path, sid="a"), "l_1")
     aj = ex.launch(spec_for(tmp_path, sid="aj"), "l_1", mount_workspace=False)
@@ -125,7 +145,7 @@ def test_destroy_lease_and_reap(ex, tmp_path):
     c = ex.launch(spec_for(tmp_path, sid="c"), "l_3")
     assert sorted(ex.destroy_lease("l_1")) == sorted([a, aj])
     assert {a, aj}.isdisjoint(names()) and {b, c} <= names()
-    assert ex.reap({"l_3"}) == [b]                        # l_2 已不在途：回收；l_3 在途：不动
+    assert ex.reap({"l_3"}) == [b]  # l_2 已不在途：回收；l_3 在途：不动
     assert b not in names() and c in names() and [s["sid"] for s in ex.sandboxes()] == [c]
     assert ex.destroy_lease("l_none") == []
 
@@ -162,11 +182,30 @@ def test_sweep_removes_dead_owners_networks_and_envs(tmp_path, target):
     sid, net, env = f"pd-dead-{tag}", f"pd-dead-{tag}-net", f"pd-deadenv-{tag}"
     lab = ["--label", f"{LABEL}={sid}", "--label", f"{OWNER}={dead_owner}"]
     subprocess.run(["docker", "network", "create", "--internal", *lab, net], check=True, capture_output=True)
-    subprocess.run(["docker", "run", "-d", "--name", sid, *lab, "--network", net, IMAGE, "sleep", "300"],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["docker", "run", "-d", "--name", sid, *lab, "--network", net, IMAGE, "sleep", "300"],
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(["docker", "network", "connect", net, target], check=True, capture_output=True)
-    subprocess.run(["docker", "run", "-d", "--name", env, "--label", f"{LABEL}={env}", "--label", f"{OWNER}={dead_owner}",
-                    IMAGE, "sleep", "300"], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            env,
+            "--label",
+            f"{LABEL}={env}",
+            "--label",
+            f"{OWNER}={dead_owner}",
+            IMAGE,
+            "sleep",
+            "300",
+        ],
+        check=True,
+        capture_output=True,
+    )
     try:
         swept = sweep_orphans()
         assert {sid, env} <= set(swept) and target not in swept
@@ -179,15 +218,18 @@ def test_sweep_removes_dead_owners_networks_and_envs(tmp_path, target):
 
 # ---------- 题目环境容器 ----------
 
+
 def test_env_start_reset_stop(envs, ex, tmp_path):
     name = f"pde-{uuid.uuid4().hex[:8]}"
-    cmd = ["sh", "-c", "echo \"$SEED\" > /tmp/seed; echo 0 > /tmp/hits; exec python -m http.server 8080 -d /tmp"]
+    cmd = ["sh", "-c", 'echo "$SEED" > /tmp/seed; echo 0 > /tmp/hits; exec python -m http.server 8080 -d /tmp']
     envs.start(name, IMAGE, env={"SEED": "s3cr3t-seed"}, command=cmd, ready_port=8080)
     assert envs.running(name) and envs.names() == [name]
     with pytest.raises(ValueError):
         envs.start(name, IMAGE, command=SERVE)
     sid = ex.launch(spec_for(tmp_path, name), "l_1")
-    fetch = f"python -c \"import urllib.request as u;print(u.urlopen('http://{name}:8080/%s').read().decode().strip())\""
+    fetch = (
+        f"python -c \"import urllib.request as u;print(u.urlopen('http://{name}:8080/%s').read().decode().strip())\""
+    )
     assert ex.exec(sid, fetch % "seed", "p1", "a").output.strip() == "s3cr3t-seed"
     subprocess.run(["docker", "exec", name, "sh", "-c", "echo dirty > /tmp/hits"], check=True)
     assert ex.exec(sid, fetch % "hits", "p1", "b").output.strip() == "dirty"
@@ -195,14 +237,14 @@ def test_env_start_reset_stop(envs, ex, tmp_path):
     assert "s3cr3t-seed" not in ex.exec(sid, "env; ls -la /workspace", "p1", "c").output
     ex.destroy(sid)
     cid = subprocess.run(["docker", "inspect", "--format", "{{.Id}}", name], capture_output=True).stdout
-    assert envs.reset(name) == name                       # 重置 = 删除后按同一参数重建
+    assert envs.reset(name) == name  # 重置 = 删除后按同一参数重建
     assert subprocess.run(["docker", "inspect", "--format", "{{.Id}}", name], capture_output=True).stdout != cid
     sid = ex.launch(spec_for(tmp_path, name, sid="lc2"), "l_2")
-    assert ex.exec(sid, fetch % "hits", "p1", "d").output.strip() == "0"            # 状态清零
+    assert ex.exec(sid, fetch % "hits", "p1", "d").output.strip() == "0"  # 状态清零
     assert ex.exec(sid, fetch % "seed", "p1", "e").output.strip() == "s3cr3t-seed"  # 同一参数
-    envs.stop(name)                                       # 沙箱网络还接着它，也删得掉
+    envs.stop(name)  # 沙箱网络还接着它，也删得掉
     assert name not in names() and envs.names() == []
-    envs.stop(name)                                       # 幂等
+    envs.stop(name)  # 幂等
     assert ex.exec(sid, PROBE.format(h=name, p=8080), "p1", "f").exit_code != 0
 
 

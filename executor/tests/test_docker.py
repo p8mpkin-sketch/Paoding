@@ -3,6 +3,7 @@
 验收：3.6.4 的 1（越界不通）、2（r0 容器没有 r1 通路）、3（判官洁净容器看不到 Worker 的文件）、
 4（执行容器一侧：没有模型密钥、连不到外网与模型端点）；exec 的采集、登记与 8 KB 截断回显。
 """
+
 import hashlib
 import os
 import shutil
@@ -43,7 +44,7 @@ class MemBlobs:
         self.d = {}
 
     def put(self, data):
-        data = data if isinstance(data, bytes) else data.read()      # 执行层给的是只读流
+        data = data if isinstance(data, bytes) else data.read()  # 执行层给的是只读流
         h = hashlib.sha256(data).hexdigest()
         self.d[h] = data
         return h
@@ -56,8 +57,11 @@ class MemBlobs:
 def targets():
     names = [f"pdt-{uuid.uuid4().hex[:6]}-{i}" for i in range(2)]
     for n in names:
-        subprocess.run(["docker", "run", "-d", "--name", n, IMAGE, "python", "-m", "http.server", "80"],
-                       check=True, capture_output=True)
+        subprocess.run(
+            ["docker", "run", "-d", "--name", n, IMAGE, "python", "-m", "http.server", "80"],
+            check=True,
+            capture_output=True,
+        )
     yield names
     for n in names:
         subprocess.run(["docker", "rm", "-f", n], capture_output=True)
@@ -73,13 +77,17 @@ def ex(tmp_path):
 
 
 ENV = {"base": IMAGE, "baseline_ref": f"{IMAGE}@test"}
-PROBE = ("python -c \"import socket,sys;s=socket.socket();s.settimeout(3);"
-         "sys.exit(0 if s.connect_ex(('{h}',{p}))==0 else 7)\"")
+PROBE = (
+    'python -c "import socket,sys;s=socket.socket();s.settimeout(3);'
+    "sys.exit(0 if s.connect_ex(('{h}',{p}))==0 else 7)\""
+)
 
 
 def _scope(targets):
-    return [{"resource": "net", "pattern": f"{targets[0]}:80", "actions": ["*"], "risk": "r0"},
-            {"resource": "net", "pattern": f"{targets[1]}:80", "actions": ["*"], "risk": "r1"}]
+    return [
+        {"resource": "net", "pattern": f"{targets[0]}:80", "actions": ["*"], "risk": "r0"},
+        {"resource": "net", "pattern": f"{targets[1]}:80", "actions": ["*"], "risk": "r1"},
+    ]
 
 
 def test_exec_capture_and_register(ex, tmp_path, targets):
@@ -100,7 +108,7 @@ def test_timeout(ex, tmp_path, targets):
     sid = ex.launch(compile_spec("t2", _scope(targets), ENV, "r0", False, str(tmp_path)), "l_1")
     r = ex.exec(sid, "echo start; sleep 30", "p1", "k1", timeout_s=2)
     assert r.exit_code is None and "start" in r.output and r.ended_by == "timeout"
-    assert ex.exec(sid, "exit 137", "p1", "k2").ended_by == "killed"      # 没到点的 137 不算超时
+    assert ex.exec(sid, "exit 137", "p1", "k2").ended_by == "killed"  # 没到点的 137 不算超时
 
 
 def test_oom_is_told_apart_from_timeout(ex, tmp_path):
@@ -110,7 +118,7 @@ def test_oom_is_told_apart_from_timeout(ex, tmp_path):
     r = ex.exec(sid, "echo start; exec python -c 'x = bytearray(400 * 1024 * 1024); print(len(x))'", "p1", "k1")
     assert (r.exit_code, r.ended_by) == (137, "oom") and "start" in r.output
     assert "内存上限 64 MB" in r.output
-    ok = ex.exec(sid, "echo still-here", "p1", "k2")                      # 容器还在，后续命令照常
+    ok = ex.exec(sid, "echo still-here", "p1", "k2")  # 容器还在，后续命令照常
     assert (ok.exit_code, ok.ended_by) == (0, "exit")
 
 
@@ -132,6 +140,7 @@ def test_huge_output_does_not_land_in_memory(tmp_path):
 
     from paoding_executor.runtime import MAX_CAPTURE
     from paoding_graph.contract import BlobStore
+
     os.chmod(tmp_path, 0o777)
     blobs = BlobStore(tmp_path / "blobs")
     spool = tmp_path / "spool"
@@ -176,7 +185,7 @@ def test_judge_clean_container(ex, tmp_path, targets):
     j = ex.launch(spec, "l_j", mount_workspace=False)
     r = ex.exec(j, "cat /workspace/proof.txt /tmp/proof.txt", "p1", "b", register_as="judge")
     assert r.exit_code != 0 and r.artifact is None
-    assert len(ex.graph.calls) == 1                      # judge 模式不由执行层登记
+    assert len(ex.graph.calls) == 1  # judge 模式不由执行层登记
 
 
 def test_reset_returns_to_baseline(ex, tmp_path, targets):
@@ -189,13 +198,30 @@ def test_reset_returns_to_baseline(ex, tmp_path, targets):
 def test_sweep_only_dead_owners(ex, tmp_path, targets):
     """评审方 #14 必修 2：孤儿清扫只清属主已死的沙箱；活实例的、别的主机的一律不动。"""
     from paoding_executor.runtime import LABEL, OWNER, sweep_orphans
+
     spec = compile_spec("s1", [], ENV, "r0", False, str(tmp_path))
     live = ex.launch(spec, "l_1")
     tag = uuid.uuid4().hex[:6]
     dead, foreign = f"pd-dead-{tag}", f"pd-foreign-{tag}"
     for name, owner in [(dead, f"{socket.gethostname()}:999999:1"), (foreign, "other-host:1:1")]:
-        subprocess.run(["docker", "run", "-d", "--name", name, "--label", f"{LABEL}={name}", "--label",
-                        f"{OWNER}={owner}", IMAGE, "sleep", "infinity"], check=True, capture_output=True)
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                name,
+                "--label",
+                f"{LABEL}={name}",
+                "--label",
+                f"{OWNER}={owner}",
+                IMAGE,
+                "sleep",
+                "infinity",
+            ],
+            check=True,
+            capture_output=True,
+        )
     try:
         swept = sweep_orphans()
         assert dead in swept and live not in swept and foreign not in swept

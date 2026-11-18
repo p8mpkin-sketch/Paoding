@@ -3,6 +3,7 @@
 只追加，不更新、不删除。seq 全局单调；哈希链按题独立。
 同一题内同一 idem_key 的再次追加返回首次的事件，不写新行（§3.1.2 冲突表）。
 """
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,7 @@ from typing import cast
 from .envelope import GENESIS, seal, verify_chain
 from .state import Actor, Body, Event
 
-Append = Callable[[str, str, Body, Actor, int, str], Event]     # (pid, kind, body, actor, ts, idem_key) → 事件
+Append = Callable[[str, str, Body, Actor, int, str], Event]  # (pid, kind, body, actor, ts, idem_key) → 事件
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -49,24 +50,37 @@ class EventLog:
     def close(self) -> None:
         self._db.close()
 
-    def append(self, *, problem_id: str, actor: Actor, kind: str, body: Body, idem_key: str,
-               ts: int) -> tuple[Event, bool]:
+    def append(
+        self, *, problem_id: str, actor: Actor, kind: str, body: Body, idem_key: str, ts: int
+    ) -> tuple[Event, bool]:
         """追加一条事件，返回 (事件, 是否新写入)。整个过程在一个 IMMEDIATE 事务里，单写者。"""
         db = self._db
         db.execute("BEGIN IMMEDIATE")
         try:
-            row = db.execute("SELECT doc FROM events WHERE problem_id=? AND idem_key=?",
-                             (problem_id, idem_key)).fetchone()
+            row = db.execute(
+                "SELECT doc FROM events WHERE problem_id=? AND idem_key=?", (problem_id, idem_key)
+            ).fetchone()
             if row:
                 db.execute("COMMIT")
                 return cast(Event, json.loads(row[0])), False
-            head = db.execute("SELECT hash FROM events WHERE problem_id=? ORDER BY seq DESC LIMIT 1",
-                              (problem_id,)).fetchone()
+            head = db.execute(
+                "SELECT hash FROM events WHERE problem_id=? ORDER BY seq DESC LIMIT 1", (problem_id,)
+            ).fetchone()
             seq = (db.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0]) + 1
-            ev = seal(seq=seq, problem_id=problem_id, ts=ts, actor=actor, kind=kind, body=body,
-                      idem_key=idem_key, prev_hash=head[0] if head else GENESIS)
-            db.execute("INSERT INTO events (seq, problem_id, idem_key, hash, doc) VALUES (?,?,?,?,?)",
-                       (seq, problem_id, idem_key, ev["hash"], json.dumps(ev, ensure_ascii=False)))
+            ev = seal(
+                seq=seq,
+                problem_id=problem_id,
+                ts=ts,
+                actor=actor,
+                kind=kind,
+                body=body,
+                idem_key=idem_key,
+                prev_hash=head[0] if head else GENESIS,
+            )
+            db.execute(
+                "INSERT INTO events (seq, problem_id, idem_key, hash, doc) VALUES (?,?,?,?,?)",
+                (seq, problem_id, idem_key, ev["hash"], json.dumps(ev, ensure_ascii=False)),
+            )
             db.execute("COMMIT")
             return ev, True
         except BaseException:
@@ -84,33 +98,47 @@ class EventLog:
         db = self._db
         db.execute("BEGIN IMMEDIATE")
         try:
-            row = db.execute("SELECT results FROM proposals WHERE problem_id=? AND idem_key=?",
-                             (problem_id, idem_key)).fetchone()
+            row = db.execute(
+                "SELECT results FROM proposals WHERE problem_id=? AND idem_key=?", (problem_id, idem_key)
+            ).fetchone()
             if row:
                 db.execute("COMMIT")
                 return cast(Body, json.loads(row[0])), False
 
             def append(pid: str, kind: str, body: Body, actor: Actor, ts: int, idem: str) -> Event:
-                head = db.execute("SELECT hash FROM events WHERE problem_id=? ORDER BY seq DESC LIMIT 1",
-                                  (pid,)).fetchone()
+                head = db.execute(
+                    "SELECT hash FROM events WHERE problem_id=? ORDER BY seq DESC LIMIT 1", (pid,)
+                ).fetchone()
                 seq = db.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0] + 1
-                ev = seal(seq=seq, problem_id=pid, ts=ts, actor=actor, kind=kind, body=body,
-                          idem_key=idem, prev_hash=head[0] if head else GENESIS)
-                db.execute("INSERT INTO events (seq, problem_id, idem_key, hash, doc) VALUES (?,?,?,?,?)",
-                           (seq, pid, idem, ev["hash"], json.dumps(ev, ensure_ascii=False)))
+                ev = seal(
+                    seq=seq,
+                    problem_id=pid,
+                    ts=ts,
+                    actor=actor,
+                    kind=kind,
+                    body=body,
+                    idem_key=idem,
+                    prev_hash=head[0] if head else GENESIS,
+                )
+                db.execute(
+                    "INSERT INTO events (seq, problem_id, idem_key, hash, doc) VALUES (?,?,?,?,?)",
+                    (seq, pid, idem, ev["hash"], json.dumps(ev, ensure_ascii=False)),
+                )
                 return ev
 
             db.execute("SAVEPOINT batch")
             try:
                 results = build(append)
-            except Exception as e:                          # 整批被拒：撤回本批事件，只记下结果
+            except Exception as e:  # 整批被拒：撤回本批事件，只记下结果
                 if not hasattr(e, "batch_results"):
                     raise
                 db.execute("ROLLBACK TO batch")
                 results = cast(Body, e.batch_results)
             db.execute("RELEASE batch")
-            db.execute("INSERT INTO proposals (problem_id, idem_key, results) VALUES (?,?,?)",
-                       (problem_id, idem_key, json.dumps(results, ensure_ascii=False)))
+            db.execute(
+                "INSERT INTO proposals (problem_id, idem_key, results) VALUES (?,?,?)",
+                (problem_id, idem_key, json.dumps(results, ensure_ascii=False)),
+            )
             db.execute("COMMIT")
             return results, True
         except BaseException:
@@ -121,8 +149,9 @@ class EventLog:
         if problem_id is None:
             cur = self._db.execute("SELECT doc FROM events WHERE seq>? ORDER BY seq", (after,))
         else:
-            cur = self._db.execute("SELECT doc FROM events WHERE problem_id=? AND seq>? ORDER BY seq",
-                                   (problem_id, after))
+            cur = self._db.execute(
+                "SELECT doc FROM events WHERE problem_id=? AND seq>? ORDER BY seq", (problem_id, after)
+            )
         for (doc,) in cur:
             yield cast(Event, json.loads(doc))
 

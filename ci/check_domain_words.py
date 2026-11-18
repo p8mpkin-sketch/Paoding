@@ -4,6 +4,7 @@
 扫描 COMPONENTS 下的源码（排除 tests/ 与判官配置目录 judges.d/），命中即非零退出。
 web（前端）也在其内：TypeScript、样式与页面同样零领域词（HMI 设计 HT-1）；依赖与构建产物不扫。
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -17,13 +18,15 @@ SUFFIXES = {".py", ".yaml", ".yml", ".toml", ".json", ".ts", ".tsx", ".css", ".h
 
 
 def load_words(path: pathlib.Path) -> list[str]:
-    return [w.strip().lower() for w in path.read_text(encoding="utf-8").splitlines()
-            if w.strip() and not w.lstrip().startswith("#")]
+    return [
+        w.strip().lower()
+        for w in path.read_text(encoding="utf-8").splitlines()
+        if w.strip() and not w.lstrip().startswith("#")
+    ]
 
 
 def scan(root: pathlib.Path, words: list[str]) -> list[tuple[str, int, str]]:
-    pattern = re.compile(r"(?<![a-z0-9_])(" + "|".join(re.escape(w) for w in words) + r")(?![a-z0-9_])",
-                         re.IGNORECASE)
+    pattern = re.compile(r"(?<![a-z0-9_])(" + "|".join(re.escape(w) for w in words) + r")(?![a-z0-9_])", re.IGNORECASE)
     hits = []
     for comp in COMPONENTS:
         for f in sorted((root / comp).rglob("*")):
