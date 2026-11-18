@@ -2,6 +2,7 @@ import hashlib
 
 import pytest
 
+from paoding_graph.cards import seen as seen_card
 from paoding_graph.envelope import GENESIS, seal
 from paoding_graph.reducer import Config, Ok, apply, empty_state, result_id, validate
 
@@ -66,6 +67,12 @@ class Kernel:
             "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
             "env": {"base": "basic", "baseline_ref": "base@1"},
             "judges": ["replay", "exact_match", "soft", "costly", "advice"]})
+
+    def decide(self, pid, iid, decision="approve", reason=None, seen=None):
+        """人的审批：seen 缺省取当前状态上的审批卡（人看的就是链头）。"""
+        return self.submit(HUMAN, pid, "approve", {
+            "intent": iid, "decision": decision, "seen": seen or seen_card(self.state, pid, "approval", iid),
+            **({"reason": reason} if reason is not None else {})})
 
     def obs(self, pid="p1", title="o", judge="replay", actor=None, grounds=None, expect=None, premises=()):
         g = grounds if grounds is not None else [self.art(pid, "exec", title.encode())]

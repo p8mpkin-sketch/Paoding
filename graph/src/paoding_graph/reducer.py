@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .resources import external_resources
+from . import cards
 from . import levels as lv
 from . import refmodel as rm
 from . import work as wk
@@ -37,6 +38,7 @@ class Ok:
 class Reject:
     code: str
     detail: str = ""
+    card: tuple | None = None      # stale_view 时所指的卡 (kind, target)；服务层据此附上链头的最新卡片
 
 
 @dataclass(frozen=True)
@@ -525,6 +527,24 @@ def _v_expire_lease(state, actor, pid, body, cfg, ts):
     return Ok({"lease": l["id"]})
 
 
+# ---------- 人的决定绑定所见（§3.1.9、HMI H2） ----------
+
+def _seen(state: dict, pid: str, kind: str, target: str, body: dict) -> tuple[dict | None, Reject | None]:
+    """决策操作带 seen {seq, card_hash}：在当前状态（链头）重算这张卡的投影哈希，不等即 stale_view。
+
+    seq 只留作审计，不参与比较；哈希按卡片范围计算，与这张卡无关的事件不会让它过期。"""
+    seen = body.get("seen")
+    if not (isinstance(seen, dict) and set(seen) == {"seq", "card_hash"} and isinstance(seen["card_hash"], str)
+            and _HEX64.match(seen["card_hash"]) and type(seen["seq"]) is int and seen["seq"] >= 0):
+        return None, Reject("schema_error", "决策操作须带 seen {seq, card_hash}")
+    card = cards.card_object(state, pid, kind, target)
+    if card is None:
+        return None, Reject("unknown_ref", f"没有 {kind} 卡 {target}")
+    if rm.validate_decision(seen["card_hash"], card) != "ok":
+        return None, Reject("stale_view", f"{kind} 卡 {target} 在你查看之后已变化", (kind, target))
+    return {"seq": seen["seq"], "card_hash": seen["card_hash"]}, None
+
+
 # ---------- Intent 的放弃与审批、Hint、用量、关题 ----------
 
 def _v_abandon_intent(state, actor, pid, body, cfg):
@@ -547,12 +567,15 @@ def _v_approve(state, actor, pid, body, cfg):
         return Reject("unknown_ref", "Intent 不存在")
     if body["decision"] not in ("approve", "deny"):
         return Reject("schema_error", "decision 只取 approve、deny")
+    seen, err = _seen(state, pid, "approval", iid, body)     # 先于状态检查：卡片变了，人要先看到新卡
+    if err:
+        return err
     if wk.intent_status(state, pid, iid) != "needs_human":
         return Reject("schema_error", "只有 needs_human 的 Intent 待审批")
     reason = str(body.get("reason") or "").strip()
     if body["decision"] == "deny" and not reason:
         return Reject("schema_error", "拒绝须写理由（§3.2 pd deny --reason）")
-    return Ok({"intent": iid, "decision": body["decision"], **({"reason": reason} if reason else {})})
+    return Ok({"intent": iid, "decision": body["decision"], "seen": seen, **({"reason": reason} if reason else {})})
 
 
 PROFILE_AXES = {"info": ("complete", "partial"), "judge": ("hard", "costly", "deferred", "none"),
@@ -607,7 +630,16 @@ def _v_close_problem(state, actor, pid, body, cfg):
         return Reject("schema_error", "图服务只在 Goal 到 E3 时自动关题")
     if wk.closeout_items(state, pid) and actor["kind"] == "graph":
         return Reject("schema_error", "四顾清单非空，需人确认")
-    return Ok({"terminal": term, "by": actor["kind"], "card_hash": body.get("card_hash"),
+    seen = None
+    if actor["kind"] == "human":
+        if "card_hash" in body:
+            return Reject("schema_error", "card_hash 不单独接受：所见的收尾清单经 seen {seq, card_hash} 给出并校验")
+        if "seen" in body:                              # 人关题时所见的四顾清单；带了就必须与链头相符
+            seen, err = _seen(state, pid, "closeout", pid, body)
+            if err:
+                return err
+    return Ok({"terminal": term, "by": actor["kind"], "card_hash": seen["card_hash"] if seen else None,
+               **({"seen": seen} if seen else {}),
                **({"reason": str(body["reason"])} if "reason" in body else {})})
 
 

@@ -122,7 +122,7 @@ def test_r2_never_in_explore_without_approve(k):
     i = add_intent(k, risk="r2", rollback=None) if False else add_intent(k, risk="r2")
     assert wk.intent_status(k.state, "p1", i) == "needs_human"
     assert ("explore", i) not in kinds(k) and ("human", i) in kinds(k)
-    assert k.submit(HUMAN, "p1", "approve", {"intent": i, "decision": "approve"}) == "ok"
+    assert k.decide("p1", i) == "ok"
     assert ("explore", i) in kinds(k)
     lid = lease(k, "explore", i, ttl=1)
     k.ts += 2000
@@ -134,7 +134,7 @@ def test_r2_never_in_explore_without_approve(k):
 def test_deny_abandons(k):
     k.open("p1", scope_risks=("r2",)); boot(k)
     i = add_intent(k, risk="r2")
-    k.submit(HUMAN, "p1", "approve", {"intent": i, "decision": "deny", "reason": "不放行"})
+    assert k.decide("p1", i, "deny", reason="不放行") == "ok"
     assert wk.intent_status(k.state, "p1", i) == "abandoned"
 
 

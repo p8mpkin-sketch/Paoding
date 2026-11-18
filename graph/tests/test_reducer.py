@@ -31,7 +31,7 @@ def test_reducer_is_pure():
     """I1：reducer、等级桥接与参考模型不 import 时钟、IO、随机数、网络、子进程。"""
     banned = {"time", "datetime", "os", "random", "socket", "sqlite3", "subprocess", "pathlib",
               "urllib", "http", "requests", "asyncio", "secrets", "io", "shutil", "tempfile"}
-    for name in ("reducer.py", "levels.py", "refmodel.py", "jcs.py", "envelope.py", "work.py", "views.py"):
+    for name in ("reducer.py", "levels.py", "refmodel.py", "jcs.py", "envelope.py", "work.py", "views.py", "cards.py"):
         tree = ast.parse((ROOT / "graph/src/paoding_graph" / name).read_text())
         for node in ast.walk(tree):
             mods = []
