@@ -25,7 +25,16 @@
 
 读过保密库的判官输出在出处里记 `touched: ["vault:<键>"]`，Adapter 的 `show` 据此返回 `forbidden_op`。
 
-已知缺口：执行层 M0 没有逐连接的访问摘要（`touched` 恒空），所以 `require_touch` 在真容器上打开后恒为 `untouched`；内建配置里默认关闭，逻辑由替身执行层的测试覆盖。`seal_check`、对照判据（`control`）、评审团判官随 M1/M3。
+### 恒真谓词与 `require_touch`（P0-3，2026-11-18）
+
+`replay` 重放的脚本与期望都是 Worker 写的，一条 `echo ok`、期望含 `ok` 的规格在洁净容器里永远"可复现"。`judges.d/replay.yaml` 现在默认 `require_touch: true`：
+
+- **访问摘要从哪来**：执行层的出站闸门记下重放期间真实发生的连接（`net:host:port`）；判官另把挂入洁净容器、且自身有出处的候选记为 `artifact:<id>`（`runner._grounded`：`input` 类算；`exec`、`judge` 类里自身访问摘要非空的算；`authored` 类与访问摘要为空的 `exec` 输出不算）。规格脚本本身不算。
+- **裁决**：访问摘要为空时裁决 `inconclusive(untouched)`，不论谓词成立与否，等级不变，成本照记。判官输出照常登记，`touched` 如实为空。
+- **什么时候要求**：判官配置打开，且题目的授权范围里有外部资源（资源种类登记表里 `external` 的，如 `net`；没登记过的种类按外部算）。只有 `workspace` 规则的纯计算题没有可碰的东西，不要求。要对某类题彻底关闭，在判官配置里把 `require_touch` 设为 `false`。
+- **挡不住的**：规格先连一下授权目标、再打印与它无关的内容。这是规格 §5.2 场景 2 承认的缺口，靠 Verify 反证、对照判据（M1）处理。
+
+已知缺口：`seal_check`、对照判据（`control`）、评审团判官随 M1/M3。
 
 ## 验收对应（3.3.5）
 
@@ -37,7 +46,7 @@
 | 4 错误候选与次数上限 | `test_wrong_candidate_does_not_raise_level`、`test_candidate_quota_is_enforced_by_the_kernel` |
 | 5 任务令牌不能裁决 | `test_task_tokens_cannot_submit_verdicts`、`…_register_judge_class`、`…_take_judge_leases` |
 | 6 规格被改 | `test_tampered_spec_is_refused` |
-| 8 空谓词 | `test_replay_untouched_predicate`、`test_replay_touching_the_resource_counts` |
+| 8 空谓词 | `test_echo_ok_observation_never_reaches_e3`、`test_echo_ok_does_not_reach_e3_on_a_real_sandbox`（Docker）、`test_a_spec_that_really_reads_the_target_reaches_e3`（Docker）、`test_mounted_candidate_counts_only_when_it_has_provenance`、`test_pure_computation_problems_are_not_asked_to_touch`、`test_replay_untouched_predicate`、`test_replay_touching_the_resource_counts` |
 | 9 保密库不可见 | `test_judge_output_never_contains_the_answer`、`test_problem_carries_only_the_vault_reference`、adapter 的 `test_show_refuses_judge_output_that_read_the_vault` |
 
 ## 官的声明
