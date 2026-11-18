@@ -111,7 +111,7 @@ def test_human_close_binds_the_closeout_card(k):
 
 
 def test_human_close_without_seen_still_allowed(k):
-    """M0 没有 accept 操作；人中止一道题（close_problem 带理由）不要求 seen（异议 006 第 2 条）。"""
+    """M0 没有 accept 操作；人中止一道题（close_problem 带理由）不要求 seen（异议报告 P0-5 第 2 条）。"""
     k.open()
     assert k.submit(HUMAN, "p1", "close_problem", {"reason": "不做了"}) == "ok"
     assert k.events[-1]["body"]["card_hash"] is None
