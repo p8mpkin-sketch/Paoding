@@ -6,6 +6,7 @@
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -37,18 +38,27 @@ def _close(stack):
     stack.proxy.close()
 
 
+def _fake_cli(d: Path, name: str = "claude") -> Path:
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / name
+    f.write_text("#!/bin/sh\nexit 0\n")
+    f.chmod(0o755)
+    return f
+
+
 def test_real_backend_takes_program_api_base_model_and_key(tmp_path, monkeypatch, caplog):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     caplog.set_level(logging.WARNING)
+    cli = _fake_cli(tmp_path / "opt" / "bin")
     cfg = _cfg(
         tmp_path,
-        program="/opt/bin/claude --debug",
+        program=f"{cli} --debug",
         api_base="https://api.deepseek.com/anthropic",
         model="deepseek-chat",
         api_key=FAKE_KEY,
     )
     assert (cfg.program, cfg.upstream, cfg.model, cfg.api_key) == (
-        ("/opt/bin/claude", "--debug"),
+        (str(cli), "--debug"),
         "https://api.deepseek.com/anthropic",
         "deepseek-chat",
         FAKE_KEY,
@@ -57,7 +67,7 @@ def test_real_backend_takes_program_api_base_model_and_key(tmp_path, monkeypatch
     try:
         assert s.proxy.cfg.upstream == "https://api.deepseek.com/anthropic" and s.proxy.cfg.api_key == FAKE_KEY
         argv = _argv(s, tmp_path)
-        assert argv[:2] == ["/opt/bin/claude", "--debug"]
+        assert argv[:2] == [str(cli), "--debug"]
         assert argv[argv.index("--model") + 1] == "deepseek-chat"
         assert any("backend.api_key" in r.getMessage() for r in caplog.records)
         assert not any(FAKE_KEY in r.getMessage() for r in caplog.records)  # 密钥不进日志
@@ -67,6 +77,7 @@ def test_real_backend_takes_program_api_base_model_and_key(tmp_path, monkeypatch
 
 def test_env_key_wins_over_config_key(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-env")
+    monkeypatch.setenv("PATH", f"{_fake_cli(tmp_path / 'bin').parent}:{os.environ['PATH']}")
     s = Stack(_cfg(tmp_path, program=["claude"], api_key=FAKE_KEY))
     try:
         assert s.proxy.cfg.api_key == "sk-fake-env"
@@ -78,6 +89,28 @@ def test_env_key_wins_over_config_key(tmp_path, monkeypatch):
 def test_real_backend_without_any_key_refuses(tmp_path, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(StackError, match="backend.api_key"):
+        Stack(_cfg(tmp_path))
+
+
+def test_local_cli_resolved_on_host_path(tmp_path, monkeypatch):
+    """宿主子进程起真 CLI 时，CLI 进程的 PATH 是固定的几个系统目录：命令按 run.py 的 PATH 解析成绝对路径，
+    它所在的目录（以及符号链接指向的目录，node 常在那里）加到 CLI 的 PATH 前面。找不到就当场报错。"""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-env")
+    real = _fake_cli(tmp_path / "pkg" / "bin")
+    link_dir = tmp_path / "npm" / "bin"
+    link_dir.mkdir(parents=True)
+    (link_dir / "claude").symlink_to(real)
+    monkeypatch.setenv("PATH", f"{link_dir}:{os.environ['PATH']}")
+    s = Stack(_cfg(tmp_path))
+    try:
+        plan = LaunchPlan("l_1", tmp_path / "ws", tmp_path / "sys.md", "go", tmp_path / "mcp.json")
+        argv, env = s.adapter_cfg.binding.command(plan)
+        assert argv[0] == str(link_dir / "claude")
+        assert env["PATH"].split(":")[:2] == [str(link_dir), str(real.parent)]
+    finally:
+        _close(s)
+    monkeypatch.setenv("PATH", "/nonexistent")
+    with pytest.raises(StackError, match="找不到 CLI 命令"):
         Stack(_cfg(tmp_path))
 
 

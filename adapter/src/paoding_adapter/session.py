@@ -285,7 +285,15 @@ class SessionRunner:
         rec.rounds += 1
         argv, env = self.cfg.binding.command(plan)
         lv = self.live.get(plan.lease_id, {})
-        proc = self.launcher(argv, {**env, **lv.get("env", self.cfg.extra_env)}, plan.workspace)
+        try:
+            proc = self.launcher(argv, {**env, **lv.get("env", self.cfg.extra_env)}, plan.workspace)
+        except OSError as e:  # 命令不存在、没有执行权限等：记下来，按失败释放租约，不让租约悬到过期
+            msg = f"CLI 起不来：{argv[0]}：{type(e).__name__}: {e}\n"
+            with stderr_file(plan.workspace) as err:
+                err.write(msg.encode("utf-8"))
+            LOG.error("会话 %s %s", plan.lease_id, msg.strip())
+            rec.exit_codes.append(-1)
+            return "failed(launch)"
         lv["proc"] = proc
         if lv.get("killed"):  # 起进程前已被叫停
             _terminate(proc)

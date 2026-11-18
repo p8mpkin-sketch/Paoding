@@ -21,7 +21,7 @@ import sys
 import time
 
 import pytest
-from adapter_rig import PRICES, graph, lease_bootstrap, open_problem  # noqa: F401  fixture
+from adapter_rig import PRICES, graph, lease_bootstrap, open_problem, rig, upstream  # noqa: F401  fixture
 
 from paoding_adapter import proxy as proxy_mod
 from paoding_adapter.fakeupstream import FakeUpstream
@@ -191,3 +191,16 @@ def test_real_cli_through_proxy_to_deepseek_like_upstream(graph, tmp_path):
     finally:
         p.close()
         up.close()
+
+
+def test_cli_that_cannot_start_fails_the_lease_visibly(rig, caplog):
+    """CLI 命令不存在：会话按 failed(launch) 释放租约，原因写进 cli.stderr.log 与日志（不再悄悄挂着等过期）。"""
+    from paoding_adapter import backend as be
+
+    caplog.set_level(logging.ERROR, logger="adapter")
+    rig.cfg.binding = be.CliBinding(program=["/nonexistent/claude"])
+    lid = lease_bootstrap(rig.graph)
+    rec = rig.run(lid)
+    assert rec.status == "failed(launch)" and rec.release["ok"] and rec.release["outcome"] == "failed"
+    assert "/nonexistent/claude" in (rig.cfg.root / lid / CLI_STDERR).read_text(encoding="utf-8")
+    assert any("CLI 起不来" in r.getMessage() for r in caplog.records)

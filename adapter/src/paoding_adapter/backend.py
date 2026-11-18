@@ -49,6 +49,7 @@ class CliBinding:
     program: list = field(default_factory=lambda: ["claude"])
     max_turns_flag: bool = False  # 帮助文本未列出 --max-turns；D4 真机核对前不传
     model: str = ""  # 非空时传 --model（例如 Anthropic 兼容端点上的别家模型名）
+    path_prefix: tuple = ()  # 加在 CLI 进程 PATH 前面的目录（宿主子进程：CLI 与它要的 node 所在目录）
 
     def command(self, plan: LaunchPlan) -> tuple[list[str], dict[str, str]]:
         allowed = list(FILE_TOOLS) + [f"mcp__{MCP_NAME}__{t}" for t in plan.proxy_tools]
@@ -85,7 +86,7 @@ class CliBinding:
             "ANTHROPIC_BASE_URL": plan.proxy_url,
             "ANTHROPIC_API_KEY": plan.task_token,
             "HOME": str(plan.workspace.parent / "home"),
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "PATH": ":".join([*self.path_prefix, "/usr/local/bin:/usr/bin:/bin"]),
             "LANG": "C.UTF-8",
         }
         return argv, env  # 9 计量对照与 10 终止由运行器处理
