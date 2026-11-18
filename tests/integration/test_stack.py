@@ -213,6 +213,8 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         # —— 停机之后：没有在途会话、没有本进程起的容器 ——
         assert stack.runner.live == {} and owned_containers(stack.executor.owner) == []
         assert procs_under(home / "sessions") == []
+        # —— 没有组件线程因缺陷退出（线程顶层不再宽接 Exception，缺陷会记在这里，审计 P1-4） ——
+        assert stack.crashed == []
 
         # —— 同一数据目录再起一套（进程重启）：端点代理的累计花费从账本恢复，不归零（审计 P1-1） ——
         again = Stack(config(home, executor="none"))
@@ -300,3 +302,28 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
     st = GraphService(home / "g.sqlite", Config(), TokenRegistry()).state
     [boot] = [l for l in st["leases"].values() if l["kind"] == "bootstrap"]
     assert not boot["active"] and boot["outcome"] == "failed"
+
+
+def test_component_thread_defect_is_recorded_not_swallowed(tmp_path):
+    """判官循环里的缺陷（这里人为注入 KeyError）不再被线程顶层的宽接吞成一行日志：记进 crashed，带异常类名。
+    环境故障（OSError）仍只记一行，循环照常。"""
+    stack = Stack(config(tmp_path / "home", executor="none"))
+    calls = []
+
+    def tick():
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("disk hiccup")
+        raise KeyError("judge_snapshot")
+
+    stack.judge.tick = tick
+    stack.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not stack.crashed and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert stack.crashed == [{"thread": "judge", "error": "KeyError: 'judge_snapshot'"}]
+        assert len(calls) == 2  # OSError 那一轮没有让循环退出
+    finally:
+        stack.stop()
+    assert threading.excepthook is not stack._thread_died

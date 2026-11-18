@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from paoding_adapter.contract import SessionPort
-from paoding_graph.contract import BlobPort, GraphPort, GraphReader
+from paoding_graph.contract import BlobError, BlobPort, GraphPort, GraphReader
 
 TASK_ORDER = ("bootstrap", "reason", "explore")
 
@@ -216,7 +216,7 @@ class Sinan:
         ref = st["problems"][pid]["origin"]["statement_ref"]
         try:
             return self.blobs.get(st["artifacts"][ref]["hash"]).decode("utf-8", "replace")
-        except Exception:  # noqa: BLE001  题面 Blob 不在本机：会话仍可从任务包里读到 Goal
+        except (BlobError, OSError):  # 题面 Blob 不在本机或读不出：会话仍可从任务包里读到 Goal
             return st["problems"][pid]["goal"]["statement"]
 
     # ---------- 跑到停 ----------

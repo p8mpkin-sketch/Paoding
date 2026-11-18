@@ -29,7 +29,7 @@ ADMISSIBLE_CLASSES = frozenset({"exec", "judge", "input"})  # authored 永不入
 from typing import BinaryIO, Protocol  # noqa: E402
 
 from . import views  # noqa: E402,F401
-from .blobs import BlobStore, CorruptBlob  # noqa: E402,F401
+from .blobs import BlobError, BlobNotFound, BlobStore, CorruptBlob  # noqa: E402,F401
 
 # HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
 from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401

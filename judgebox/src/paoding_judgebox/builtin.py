@@ -9,10 +9,11 @@ import base64
 import hashlib
 import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
-from paoding_executor.contract import SandboxGone, compile_spec
+from paoding_executor.contract import SandboxGone, ScopeError, compile_spec
 
 from .vault import Vault, VaultError
 
@@ -146,7 +147,7 @@ def _replay_once(c: Ctx, n: int) -> Outcome:
     try:
         spec = compile_spec(f"{c.lease_id.replace('_', '-')}-{n}", p["scope"], env, ceiling, False, "")
         sid = c.executor.launch(spec, c.lease_id, mount_workspace=False)  # 洁净容器：不挂 Worker 的工作区
-    except Exception as e:  # noqa: BLE001  起不来一律是环境错误（无结论，不进裁决序列）
+    except (ScopeError, OSError, subprocess.SubprocessError, RuntimeError) as e:  # 起不来是环境错误（无结论）
         return Outcome("inconclusive", "env_error", f"launch failed: {type(e).__name__}: {e}".encode())
     try:
         setup = _put("spec", script)

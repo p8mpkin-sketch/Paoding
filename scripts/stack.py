@@ -186,6 +186,8 @@ class Stack:
         self.stop_event = threading.Event()
         self.threads: list[threading.Thread] = []
         self.workers: dict[str, threading.Thread] = {}
+        self.crashed: list[dict] = []  # 因缺陷退出的组件线程（_thread_died 记下）
+        self._prev_hook = threading.excepthook
         self._stopped = False
         home = cfg.home
         home.mkdir(parents=True, exist_ok=True)
@@ -308,6 +310,7 @@ class Stack:
 
     def start(self) -> str:
         """按次序起：图服务 → 判官运行器 → 司南 → 哮天犬。返回图服务的地址。"""
+        threading.excepthook = self._thread_died
         self.url = self.http.serve()
         log("graph").info(
             "HTTP + SSE 在 %s（链头 seq=%d，题 %d 道；人的令牌在 %s）",
@@ -342,15 +345,24 @@ class Stack:
         return self.url
 
     def _spawn(self, name: str, fn) -> None:
-        t = threading.Thread(target=self._guarded, args=(name, fn), name=name, daemon=True)
+        t = threading.Thread(target=fn, name=name, daemon=True)
         self.threads.append(t)
         t.start()
 
-    def _guarded(self, name: str, fn) -> None:
-        try:
-            fn()
-        except Exception:  # noqa: BLE001  线程顶层：记下栈，不让一个组件带倒整个进程
-            log(name).exception("线程异常退出")
+    def _thread_died(self, a: threading.ExceptHookArgs) -> None:
+        """组件线程里没被接住的异常就是缺陷：记下栈与线程名，留在 crashed 里，不吞掉（审计 P1-4）。
+
+        不在线程顶层宽接 Exception：那样缺陷与环境故障混在一起，只剩一行日志。司南的每题线程退出后
+        由监管循环按原样重起；判官、哮天犬与事件跟随线程不重起，死了就是死了，看 crashed 与日志。"""
+        name = a.thread.name if a.thread is not None else "?"
+        if a.exc_type is SystemExit or not any(t is a.thread for t in [*self.threads, *self.workers.values()]):
+            self._prev_hook(a)
+            return
+        self.crashed.append({"thread": name, "error": f"{a.exc_type.__name__}: {a.exc_value}"})
+        log(name.split("-", 1)[0]).error(
+            "线程因缺陷退出",
+            exc_info=(a.exc_type, a.exc_value, a.exc_traceback),
+        )
 
     # ---------- 事件流：每条落盘事件一行日志 ----------
 
@@ -380,7 +392,7 @@ class Stack:
                         d.get("reason", d.get("code", "")),
                         "" if d.get("status") == "judged" else d,
                     )
-            except Exception:  # noqa: BLE001  循环顶层：记下栈，下一轮照常
+            except (OSError, subprocess.SubprocessError):  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
             self.stop_event.wait(self.cfg.poll_s)
 
@@ -392,12 +404,7 @@ class Stack:
                 t = self.workers.get(pid)
                 if p.get("closed") or (t is not None and t.is_alive()):
                     continue
-                t = threading.Thread(
-                    target=self._guarded,
-                    args=("sinan", lambda pid=pid: self._sinan_loop(pid)),
-                    name=f"sinan-{pid}",
-                    daemon=True,
-                )
+                t = threading.Thread(target=self._sinan_loop, args=(pid,), name=f"sinan-{pid}", daemon=True)
                 self.workers[pid] = t
                 t.start()
             self.stop_event.wait(self.cfg.poll_s)
@@ -486,7 +493,7 @@ class Stack:
                 for k in ("expired", "soft", "killed", "closed", "swept", "alerts"):
                     if getattr(r, k):
                         L.info("%s: %s", k, getattr(r, k))
-            except Exception:  # noqa: BLE001  循环顶层：记下栈，下一轮照常
+            except (OSError, subprocess.SubprocessError):  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
             self.stop_event.wait(self.cfg.dog_interval_s)
 
@@ -519,7 +526,11 @@ class Stack:
         if self.upstream is not None:
             self.upstream.close()
         self.http.close()
+        if threading.excepthook == self._thread_died:
+            threading.excepthook = self._prev_hook
         L.info("已停：链头 seq=%d", self.graph.head())
+        if self.crashed:
+            L.error("有组件线程因缺陷退出：%s", self.crashed)
 
 
 def _who(actor: dict) -> str:
