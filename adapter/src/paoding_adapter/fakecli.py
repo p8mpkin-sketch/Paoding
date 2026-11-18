@@ -8,7 +8,8 @@
 
 脚本（JSON，路径由 PD_FAKE_SCRIPT 给出）：{"steps": [...], "resume_steps": [...]}。
 步骤：{"tool": 名, "input": {...}} | {"exit": 码} | {"hang": 秒}。
-input 里形如 "$r3.artifact" 的字符串替换为第 3 步工具结果的字段（步号从 0 起）。
+input 里形如 "$r3.artifact" 的字符串替换为第 3 步工具结果的字段（步号从 0 起）；
+字段可以逐级取，例如 "$r0.items.0.id"。
 只用标准库；以 python -I 运行，不导入工作区里的任何东西。
 """
 import json
@@ -71,8 +72,11 @@ class Mcp:
 
 def subst(v, results):
     if isinstance(v, str) and v.startswith("$r") and "." in v:
-        n, key = v[2:].split(".", 1)
-        return results[int(n)].get(key)
+        n, path = v[2:].split(".", 1)
+        cur = results[int(n)]
+        for key in path.split("."):                 # 逐级取：字典按键，数组按下标（"$r0.items.0.id"）
+            cur = cur[int(key)] if isinstance(cur, list) else (cur or {}).get(key)
+        return cur
     if isinstance(v, list):
         return [subst(x, results) for x in v]
     if isinstance(v, dict):
