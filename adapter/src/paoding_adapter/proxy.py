@@ -110,7 +110,7 @@ class EndpointProxy:
         self.cfg, self.prices, self.graph = cfg, prices, graph
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
-        self.boot = secrets.token_hex(4)  # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
+        # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
         self.boot = secrets.token_hex(4)
         self.global_spent = 0
         self.problem_spent: dict[str, int] = {}
