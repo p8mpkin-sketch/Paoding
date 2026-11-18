@@ -193,6 +193,14 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         # —— 停机之后：没有在途会话、没有本进程起的容器 ——
         assert stack.runner.live == {} and owned_containers(stack.executor.owner) == []
         assert procs_under(home / "sessions") == []
+
+        # —— 同一数据目录再起一套（进程重启）：端点代理的累计花费从账本恢复，不归零（审计 P1-1） ——
+        again = Stack(config(home, executor="none"))
+        try:
+            assert again.proxy.global_spent == budget["spent"]["usd_milli"] > 0
+            assert again.proxy.problem_spent == {PID: budget["spent"]["usd_milli"]}
+        finally:
+            again.stop()
     finally:
         stack.stop()
 
