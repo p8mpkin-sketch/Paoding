@@ -1,6 +1,7 @@
 # M2+ 三项新核心能力：跨任务记忆、经验沉淀、多会话协同
 
-> 日期：2026-11-18｜性质：设计稿，待 cz 审核；不含实现代码。
+> 日期：2026-11-18｜性质：设计稿，不含实现代码。
+> 裁决（2026-11-18，cz）：§5 六条变更提议全部采纳，§6 开放问题 4 采纳（练习预算上限放设置页，人可见）；附加两点条件：判例往下的投影带开关并记进运行元数据、`assets=off` 能切到它；`touches` 只许收窄的校验与授权校验放在同一处。已并入[基座规格 v1.5](../base-layer-spec-v1.md)（文首第四张表第 50 到 56 条）。推进次序按 §0③。
 > 依据：[基座规格 v1.4](../base-layer-spec-v1.md)（六契约、八不变量、M0–M5）、[核心创新清单](../core-innovations.md)、[官知止总纲](../paoding-allegory-mapping.md)、[协调基质](../coordination-substrates.md)、[HMI v1.1](../hmi-design-v1.md)、[工作台设计](../web-workbench-v1.md)、`docs/m1/readings/` 与 PR #74、#75 的重跑读数。
 > 文件：[01 跨任务记忆](./01-memory.md) · [02 经验沉淀](./02-experience.md) · [03 多会话协同](./03-parallel.md) · [04 度量与证明计划](./04-proof-plan.md) · [05 前端](./05-frontend.md) · [线框](./wireframes/)
 
