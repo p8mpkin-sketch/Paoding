@@ -232,6 +232,17 @@ def test_authored_as_ground_is_inadmissible(rig):
     assert r["results"][0]["code"] == "inadmissible_class"
 
 
+def test_claim_done_takes_inline_candidate(rig):
+    """P0-A 的提示词让模型写 candidate=答案字符串：不先写文件也能交候选，照样登记为 authored、进判官。"""
+    lid = lease_bootstrap(rig.graph)
+    rig.script([sub({"op": "claim_done", "target": "goal", "candidate": "flag{42}"}, final={"outcome": "found"})])
+    (rig.cfg.root / lid / "workspace").mkdir(parents=True)
+    rig.run(lid)
+    [req] = rig.graph.state["requests"].values()
+    art = rig.graph.state["artifacts"][req["candidate"]]
+    assert art["class"] == "authored" and rig.blobs.get(art["hash"]) == b"flag{42}"
+
+
 # ---------- 3.4.5 的 7：没有命令工具；不出工作目录 ----------
 
 
@@ -362,3 +373,25 @@ def test_problem_closed_mid_session_still_releases(rig):
     assert lease["transcript_ref"] == rec.transcript_ref
     assert rig.graph.state["artifacts"][rec.transcript_ref]["class"] == "authored"
     assert rig.runner.live == {}
+
+
+# ---------- 真实测试报告 P0-B：回合上限缺省 100 ----------
+
+
+def test_default_max_turns_is_100(rig):
+    """真实测试里 40 回合不够走完“探索 + 提取 + 验证 + 提交”，11 次 Explore 被截断。缺省改为 100，
+    超过 40 回合的会话照常收尾，任务包 limits 里写的也是 100。"""
+    from paoding_adapter.session import AdapterConfig
+
+    assert AdapterConfig(root=rig.cfg.root).max_turns == 100
+    lid = lease_bootstrap(rig.graph)
+    rig.cfg.max_turns = AdapterConfig(root=rig.cfg.root).max_turns
+    rig.script(
+        [{"tool": "mcp__paoding__show", "input": {"list": "budget"}} for _ in range(45)]
+        + [sub(final={"outcome": "nothing"})]
+    )
+    rec = rig.run(lid)
+    assert rec.status == "released" and rec.release["outcome"] == "nothing", rec.status
+    assert sum(1 for e in rec.events if e["type"] == "assistant") > 40
+    pkg = rig.blobs.get(rig.graph.state["artifacts"][rec.package_ref]["hash"]).decode()
+    assert '"max_turns":100' in pkg.replace(" ", "")

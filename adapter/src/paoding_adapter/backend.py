@@ -48,6 +48,7 @@ class LaunchPlan:
 class CliBinding:
     program: list = field(default_factory=lambda: ["claude"])
     max_turns_flag: bool = False  # 帮助文本未列出 --max-turns；D4 真机核对前不传
+    model: str = ""  # 非空时传 --model（例如 Anthropic 兼容端点上的别家模型名）
 
     def command(self, plan: LaunchPlan) -> tuple[list[str], dict[str, str]]:
         allowed = list(FILE_TOOLS) + [f"mcp__{MCP_NAME}__{t}" for t in plan.proxy_tools]
@@ -76,6 +77,8 @@ class CliBinding:
         ]
         if plan.max_budget_usd:  # 8 花费上限（客户端估算，可能略超）
             argv += ["--max-budget-usd", f"{plan.max_budget_usd:.2f}"]
+        if self.model:
+            argv += ["--model", self.model]
         if plan.max_turns and self.max_turns_flag:
             argv += ["--max-turns", str(plan.max_turns)]
         env = {

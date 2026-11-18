@@ -7,6 +7,7 @@ Op 到内核操作的翻译：
 - `*_path`：工作区里的文件，读出后登记为 authored 类，再把 ArtifactId 填进 body_ref / spec_ref。
   路径须落在工作区内，解析符号链接后越界即拒（schema_error）。
 - `claim_done`：不是内核操作。登记候选（authored），再提交 request_judge，判官取登记判据时的那一个。
+  候选可以是工作区里的文件（candidate_path），也可以直接是答案字符串（candidate）；两样都给时以文件为准。
 - `tmp_id`：本次 submit 内，后一条可用前一条的 tmp_id 指代它的 id。
 - 同一操作连续被拒 3 次后不再转发（3.4.4），直接返回上次的拒绝码。
 
@@ -157,8 +158,8 @@ class ToolHost:
         subl = lambda vs: [sub(v) for v in (vs or [])]  # noqa: E731
         batch: list[dict] = []
 
-        def authored(rel: str) -> str:
-            data = self._read_ws(rel)
+        def authored(rel: str | None, inline: str | None = None) -> str:
+            data = self._read_ws(rel) if inline is None else inline.encode("utf-8")
             h = self.blobs.put(data)
             batch.append(
                 {
@@ -228,7 +229,10 @@ class ToolHost:
             )
         elif kind == "claim_done":
             target = sub(op.string("target"))
-            cand = authored(op.string("candidate_path"))
+            if "candidate_path" not in op and op.opt_string("candidate") is not None:
+                cand = authored(None, op.string("candidate"))  # 答案字符串直接给（提示词的写法），同样登记为 authored
+            else:
+                cand = authored(op.string("candidate_path"))
             judge = self._registered_judge(target)
             if judge is None:
                 return _err("unknown_ref", f"{target} 不是本题带判据的对象")
