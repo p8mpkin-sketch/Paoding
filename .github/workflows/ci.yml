@@ -66,3 +66,9 @@ jobs:
         run: npm run build
       - name: 浏览器测试（Playwright：驾驶舱、审批卡、时间轴回放、窄屏、图的键盘操作）
         run: npx playwright install --with-deps chromium && npx playwright test
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 浏览器连真实图服务（起 scripts/run.py，验证 SSE 推送与节点渲染）
+        run: uv sync --frozen --directory .. && npx playwright test -c playwright.real.config.ts

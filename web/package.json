@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "node lint/node_modules/eslint/bin/eslint.js -c lint/eslint.config.js --max-warnings 0 .",
-    "e2e": "vite build && playwright test"
+    "e2e": "vite build && playwright test",
+    "e2e:real": "vite build && playwright test -c playwright.real.config.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
