@@ -144,6 +144,20 @@ def test_waits_while_a_judgment_is_pending(w):
     assert w.sinan.step("p1")["did"] == {"kind": "reason"}
 
 
+def test_waits_while_a_judge_holds_the_request(w):
+    """判官已领走请求（不在 /work 里了）而裁决未落盘：仍算判定未决，不开 Reason。"""
+    w.open()
+    w.sinan.step("p1")
+    [item] = [x for x in w.svc.work("p1") if x["kind"] == "judge"]
+    lid = w.one("tok-judge", "p1", "lease", {"kind": "judge", "target": item["target"], "holder": "jr1",
+                                             "reserve": {"usd_milli": 1, "wall_s": 10}, "ttl_s": 60})
+    assert not [x for x in w.svc.work("p1") if x["kind"] == "judge"]
+    assert w.sinan.step("p1") == {"wait": "judge"} and kinds(w) == ["bootstrap"]
+    w.one("tok-judge", "p1", "release", {"lease": lid, "outcome": "failed"})
+    w.judge()
+    assert w.sinan.step("p1")["did"] == {"kind": "reason"}
+
+
 def test_does_not_wait_when_switch_is_off(tmp_path):
     w = World(tmp_path, wait_for_judges=False)
     w.open()

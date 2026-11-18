@@ -1,0 +1,7 @@
+{"steps": [
+  {"tool": "mcp__paoding__show", "input": {"list": "all"}},
+  {"tool": "mcp__paoding__submit", "input": {"ops": [
+    {"op": "add_intent", "title": "在执行环境里算出结果并提交", "summary": "环境可用，直接计算",
+     "premises": ["$r0.items.0.id"], "risk": "r0", "expected_gain": 0.8,
+     "budget_hint": {"usd_milli": 400, "wall_s": 300}}], "final": {"outcome": "found"}}}
+], "resume_steps": []}
