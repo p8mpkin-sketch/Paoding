@@ -15,3 +15,5 @@ executor:
 
 poll_s: 0.3                  # 司南与判官运行器的轮询间隔（秒）
 dog_interval_s: 1.0          # 哮天犬的巡查间隔（秒）
+# max_sessions: 3            # 每题并发会话上限（司南），缺省 3
+# 真实后端（backend.kind: real）的各项见 adapter/SPEC.md；密钥只经环境变量名（api_key_env）给出，不写进本文件
