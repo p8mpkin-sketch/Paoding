@@ -6,11 +6,12 @@
 - net：网络地址。题目环境在本机之外或可能变化，算外部资源（§6.1 走查：目标环境在题目之外的题画像为 partial）。
 - workspace：本题工作区，只读写自己的文件，信息完整（§6.4 走查：只有 workspace 的题为 complete）。
 """
+
 RESOURCE_EXTERNAL: dict[str, bool] = {
     "net": True,
     "workspace": False,
 }
 
 
-def external_resources() -> frozenset:
+def external_resources() -> frozenset[str]:
     return frozenset(k for k, ext in RESOURCE_EXTERNAL.items() if ext)

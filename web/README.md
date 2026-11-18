@@ -33,7 +33,7 @@ PAODING_API=http://127.0.0.1:8787 npm run dev
 
 ```sh
 (cd web && npm run build)
-uv run python scripts/run.py --home /tmp/paoding-run --port 8100 --config scripts/e2e/config.json
+uv run python scripts/run.py --home /tmp/paoding-run --port 8100 --config scripts/e2e/config.yaml
 # 或者开发服务器：PAODING_API=http://127.0.0.1:8100 npm run dev （run.py 缺省放行 http://127.0.0.1:5173）
 uv run python scripts/e2e/drive.py --url http://127.0.0.1:8100 --token-file /tmp/paoding-run/human.token
 ```

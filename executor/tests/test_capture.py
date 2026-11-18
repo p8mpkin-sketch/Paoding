@@ -1,4 +1,5 @@
 """流式采集的落盘缓冲（P1-2）：不需要 Docker。对照是"整段读进内存再取头尾"的旧做法。"""
+
 import random
 import subprocess
 import sys
@@ -12,19 +13,21 @@ from paoding_executor.runtime import echo
 
 def reference(data: bytes, limit: int) -> bytes:
     half = limit // 2
-    return data if len(data) <= limit else data[:half] + data[len(data) - (limit - half):]
+    return data if len(data) <= limit else data[:half] + data[len(data) - (limit - half) :]
 
 
 @pytest.mark.parametrize("seed", range(40))
 def test_capture_matches_head_plus_tail(seed):
     rnd = random.Random(seed)
     limit = rnd.choice([2, 3, 7, 64, 100, 1000])
-    data = bytes(rnd.randrange(256) for _ in range(rnd.choice([0, 1, limit - 1, limit, limit + 1, 3 * limit, 10 * limit + 3])))
+    data = bytes(
+        rnd.randrange(256) for _ in range(rnd.choice([0, 1, limit - 1, limit, limit + 1, 3 * limit, 10 * limit + 3]))
+    )
     with Capture(limit) as cap:
         pos = 0
         while pos < len(data):
             n = rnd.randint(1, max(1, limit))
-            cap.write(data[pos:pos + n])
+            cap.write(data[pos : pos + n])
             pos += n
         want = reference(data, limit)
         assert cap.total == len(data) and cap.stored == len(want) and cap.truncated == (len(data) > limit)
@@ -47,8 +50,9 @@ def test_echo_reads_only_head_and_tail():
 
 def test_pump_streams_and_reports_exit_code():
     with Capture(1 << 16) as cap:
-        code, took = pump([sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr); sys.exit(4)"],
-                          cap, 30)
+        code, took = pump(
+            [sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr); sys.exit(4)"], cap, 30
+        )
         assert code == 4 and sorted(cap.read().split()) == [b"err", b"out"]
 
 

@@ -33,15 +33,20 @@ STACK_PID=""
 
 # 1. 测试配置：假 CLI 后端，三类任务的脚本取 scripts/e2e/ 下的那三份（绝对路径）
 E2E="$ROOT/scripts/e2e"
-cat > "$HOME_DIR/config.json" <<JSON
-{
-  "backend": {"kind": "fake", "scripts": {
-    "bootstrap": "$E2E/bootstrap.json", "reason": "$E2E/reason.json", "explore": "$E2E/explore.json"}},
-  "executor": {"kind": "docker", "bases": {"basic": "python:3.12-slim"}},
-  "poll_s": 0.3,
-  "dog_interval_s": 1.0
-}
-JSON
+cat > "$HOME_DIR/config.yaml" <<YAML
+backend:
+  kind: fake
+  scripts:
+    bootstrap: "$E2E/bootstrap.json"
+    reason: "$E2E/reason.json"
+    explore: "$E2E/explore.json"
+executor:
+  kind: docker
+  bases:
+    basic: python:3.12-slim
+poll_s: 0.3
+dog_interval_s: 1.0
+YAML
 
 cleanup() {
   local rc=$?
