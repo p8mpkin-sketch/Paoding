@@ -52,3 +52,15 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "yaml"
 ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web"]
+
+[tool.ruff.lint]
+# E/W/F：基本错误；I：导入顺序；B：常见缺陷；UP：过时写法；BLE：不许宽接 Exception（审计 P1-4）
+select = ["E", "W", "F", "I", "B", "UP", "BLE"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["paoding_graph", "paoding_adapter", "paoding_executor", "paoding_judge", "paoding_sinan", "paoding_pd"]

@@ -210,7 +210,7 @@ class GraphHttp:
             self._json(h, 400, {"ok": False, "code": "schema_error", "detail": str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  进程边界：见模块说明
             # 到这里的都是服务端自己的缺陷：留下栈，回 500，不说成是调用方的输入错误。
             # 应答可能已经发出一半（事件流），那就只关连接。
             traceback.print_exc(file=sys.stderr)

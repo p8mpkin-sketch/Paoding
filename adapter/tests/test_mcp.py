@@ -93,3 +93,57 @@ def test_show_refuses_judge_output_that_read_the_vault(rig):
         ids[name] = out["results"][0]["id"]
     assert h.call("show", {"artifact": ids["sealed"]})["code"] == "forbidden_op"
     assert h.call("show", {"artifact": ids["plain"]})["text"] == "judge output plain"
+
+
+# ---------- 入参不合形状是 schema_error；本组件的缺陷不伪装成入参错误（审计 P1-4） ----------
+
+JUNK = [None, True, 0, -3, 2.5, 10 ** 30, "", "x", "a\x00b", "../../etc/passwd", [], [1, "a"], {}, {"k": [1]}, [[]]]
+
+
+def test_malformed_tool_args_are_schema_errors_never_raise(rig):
+    import random
+    host = _host(rig)
+    rng = random.Random(20261118)
+    keys = ["op", "title", "summary", "claim_type", "premises", "grounds", "body_path", "check", "risk", "done",
+            "budget_hint", "target", "candidate_path", "judge_id", "intent", "reason", "tmp_id", "needs_scope"]
+    kinds = ["add_fact", "add_intent", "abandon_intent", "claim_done", "request_judge", "nope", 3]
+    codes = set()
+    for _ in range(400):
+        op = {k: rng.choice(JUNK) for k in rng.sample(keys, rng.randint(0, 6))}
+        op["op"] = rng.choice(kinds)
+        if rng.random() < 0.3:
+            op["check"] = {k: rng.choice(JUNK) for k in rng.sample(["judge_id", "expect", "spec_path", "x"], 2)}
+        if rng.random() < 0.3:
+            op["done"] = {k: rng.choice(JUNK) for k in rng.sample(["judge_id", "max_attempts", "spec_path"], 2)}
+        args = rng.choice([
+            {"ops": [op], "final": rng.choice([None, 3, {"outcome": rng.choice(JUNK[5:9] + ["nothing"]),
+                                                        "excluded_paths": rng.choice(JUNK)}])},
+            {"ops": rng.choice(JUNK)},
+        ])
+        out = host.call("submit", args)
+        for r in out.get("results", [out]):
+            if r.get("ok") is False:
+                codes.add(r["code"])
+        out = host.call("show", {k: rng.choice(JUNK) for k in rng.sample(["id", "artifact", "range", "list", "layer"], 2)})
+        assert isinstance(out, dict)
+        out = host.call("exec", {k: rng.choice(JUNK) for k in rng.sample(["cmd", "timeout_s", "cwd"], 2)})
+        assert isinstance(out, dict)
+    assert "schema_error" in codes
+
+
+def test_tool_host_defect_is_not_reported_as_schema_error(rig, capsys):
+    """宿主内部的 KeyError（这里人为注入）不再变成给模型看的 schema_error；工具端点报内部错误并留栈。"""
+    import pytest
+    host = _host(rig)
+
+    def broken(nid):
+        raise KeyError("judge_snapshot")
+    host._registered_judge = broken
+    with pytest.raises(KeyError):
+        host.call("submit", {"ops": [{"op": "request_judge", "target": "goal"}]})
+    url = rig.endpoint.mount(host)
+    path = "/" + url.split("/", 3)[3]
+    st, out = rpc(rig.endpoint.base, path, {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {
+        "name": "submit", "arguments": {"ops": [{"op": "request_judge", "target": "goal", "x": 1}]}}})
+    assert st == 200 and out["error"]["code"] == -32603 and "KeyError" in out["error"]["message"]
+    assert "Traceback" in capsys.readouterr().err

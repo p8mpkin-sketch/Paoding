@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import secrets
+import sys
 import threading
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .tools import ToolHost, as_text, tool_schemas
@@ -51,7 +53,11 @@ class ToolEndpoint:
             return {"jsonrpc": "2.0", "id": mid, "result": {"tools": tool_schemas(host.s.tools)}}
         if method == "tools/call":
             p = msg.get("params") or {}
-            out = host.call(str(p.get("name")), p.get("arguments") or {})
+            try:
+                out = host.call(str(p.get("name")), p.get("arguments") or {})
+            except Exception as e:  # noqa: BLE001  进程边界：本组件或下游的缺陷，留栈并如实报成内部错误
+                traceback.print_exc(file=sys.stderr)
+                return _rpc_err(mid, -32603, f"内部错误：{type(e).__name__}")
             is_err = out.get("ok") is False
             return {"jsonrpc": "2.0", "id": mid, "result": {
                 "content": [{"type": "text", "text": as_text(out)}], "structuredContent": out, "isError": is_err}}
