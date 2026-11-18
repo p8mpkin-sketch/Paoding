@@ -39,13 +39,13 @@ class ProblemSpec:
     title: str
     statement: str
     answer: str
-    scope: list[dict] = field(
+    scope: list[dict[str, Any]] = field(
         default_factory=lambda: [{"resource": "workspace", "pattern": "*", "actions": ["read", "write"], "risk": "r0"}]
     )
-    budget: dict = field(
+    budget: dict[str, Any] = field(
         default_factory=lambda: {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3}
     )
-    env: dict = field(default_factory=lambda: {"base": "basic", "baseline_ref": "basic@1"})
+    env: dict[str, Any] = field(default_factory=lambda: {"base": "basic", "baseline_ref": "basic@1"})
     judges: list[str] = field(default_factory=lambda: ["exact_match"])
     prompt: str = ""
 
@@ -55,11 +55,11 @@ class ProblemSpec:
         baseline 的判定读工作目录下的 answer.txt，所以交付方式必须写进提示；full 里同一件事由 claim_done 承担。"""
         return (self.prompt or self.statement).rstrip() + "\n\n" + DELIVERY
 
-    def expect(self) -> dict:
+    def expect(self) -> dict[str, Any]:
         """exact_match 判据：答案的 sha256。答案本身不出现在判据里。"""
         return {"sha256": sha256_hex(self.answer)}
 
-    def open_ops(self) -> list[dict]:
+    def open_ops(self) -> list[dict[str, Any]]:
         """开题的两条操作：登记题面 Artifact（input），再开题（Goal 判据为 exact_match）。
 
         题面 Artifact 用 $0 回指：第 0 条的结果 id 就是它的引用。与 scripts/e2e/drive.py 同形。"""

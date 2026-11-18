@@ -1,6 +1,6 @@
 # eval/：评测台
 
-规格：v1.4 §7 D14、§8。M0 做 baseline 与 full 两种模式：同一模型、同一 Goal 判据、同一端点代理与价目表计量（红线 5）。
+规格：v1.4 §7 D14、§8、变更表 A2。瘦基线三臂（baseline、Bk、Bn）与 full：同一模型、同一 Goal 判据、同一端点代理与价目表计量（红线 5），瘦基线三臂都在执行层同款沙箱里跑。
 
 ## 官的声明
 
@@ -17,7 +17,31 @@
 | `full`（全栈流程，M0 报告里的 B1b） | `scripts/run.py` 整套系统，人经 HTTP 开题后旁观 | 代理工具 exec / submit / show，执行层沙箱 | 判官独立裁决，图服务写终态 | 图服务的 `/budget` 与事件日志；`events` = 本题事件数 | 是 |
 
 说明：规格 §8.3 里的 B1b 原指“瘦基线换用代理工具面”的单会话；M0 报告与本运行器里的 `full` 是全栈（司南 + 代理工具 + 沙箱 + 判官），
-即庖丁本身的最简形态。两者的差别、以及 Bk（等成本重试）与 Bn（共享笔记），在 M1 的四臂对照里补。
+即庖丁本身的最简形态。B1b 的单会话形态尚未单独做。
+
+## 对照臂：Bk 与 Bn（`src/paoding_eval/arms.py`）
+
+规格 A2：独立重试本身就能涨解题率，所以只和 B1 比会虚高。庖丁赢 Bk 才说明共享状态有价值，赢 Bn 才说明图和等级有价值。
+三条瘦基线臂共用一个核心：若干轮，每轮若干个独立的 CLI 尝试，每个尝试一个新沙箱、新工作区（与 baseline 同一套闸门与中继），
+同一个端点代理计量。
+
+| 臂 | 每轮 | 轮数 | 尝试之间共享什么 | 何时停 |
+| --- | --- | --- | --- | --- |
+| `baseline`（B1） | 1 个尝试 | 1 | 无 | 跑完 |
+| `bk`（等成本独立重试） | 1 个尝试 | 到预算，或 `--rounds`（缺省 20） | 无 | 任一次解出，或花费到预算 |
+| `bn`（共享笔记） | `--workers` 个并行尝试（缺省 3） | 到预算，或 `--rounds`（缺省 10） | 一份只追加的 `NOTES.md` | 同上 |
+
+- **等成本**：`--budget-usd` 取 full 臂在同一道题上的每题成本。预算在每轮开始前检查；轮内每个尝试的代理预留取剩余预算的均分，
+  到额即被代理拒（429），所以一臂的总花费至多越过预算一次请求。bk、bn 不给预算也不给 `--rounds` 时拒跑。
+- **Bn 的笔记**：每轮开始时把共享笔记拷进各工作区的 `NOTES.md`，提示里说明它是协作者共享的、只许追加；轮末收回每个 Worker
+  在原内容之后追加的部分，按“`## w<序号> · 第 <轮> 轮`”接到共享笔记后面。改动了已有内容的那一份整个丢弃，记进 meta。
+  同一轮里的 Worker 彼此看不到对方这一轮的追加（轮是同步点）；没有图、没有等级、没有判官，这正是 Bn 要隔离出来的变量。
+- **终态**：任一尝试解出即 `solved`；全部尝试 `failed` 即 `failed`；否则 `unsolved`。`cost_usd` 是全部尝试的总花费，
+  `events` 是全部尝试的回合数之和，`duration_s` 是整臂的墙钟。
+- **产物**：`log_dir/r<轮>-w<序号>/` 是每个尝试（工作区、`cli.stream-json`、`gate.jsonl`），Bn 另有合并后的 `NOTES.md`；
+  `meta.json` 多出 `arm`（workers、rounds_max、budget_usd、stopped_by）、`attempts`（逐次终态、花费、回合、到目标的连接数）
+  与 Bn 的 `notes`（字节数、被丢弃的改写）。
+- **未做**：尝试之间不重置题目容器（与 full 相同：一道题开着时环境不重建）。如果题目有会被尝试改坏的状态，这一点对 Bk、Bn 更不利。
 
 ## 两臂环境对等（baseline 的沙箱）
 
@@ -44,7 +68,7 @@ M1 第一批读数里 baseline 三次全败、full 三次全解，原因不是�
  "log_dir": "runs/20261118T100000Z-full-q1-login-1/"}
 ```
 
-`terminal` 取 `solved | unsolved | failed`（failed：CLI 出错、超时，或全栈没跑到终态）。`log_dir` 是
+`mode` 取 `baseline | full | bk | bn`。`terminal` 取 `solved | unsolved | failed`（failed：CLI 出错、超时，或全栈没跑到终态）。`log_dir` 是
 `<产物根目录名>/<时间戳>-<模式>-<题目>-<次>/`，产物根缺省 `runs/`。目录里有 `record.json`，以及 baseline 的
 `cli.stream-json`、`workspace/`、`gate.jsonl`，full 的 `stack.log`、`events.json`、`home/`。
 
@@ -70,6 +94,9 @@ docker build -t paoding-cli eval/images/cli                                     
 uv run python -m paoding_eval baseline --problem eval/problems.d/<题>.yaml --image paoding-cli \
     --program claude --upstream https://api.deepseek.com/anthropic \
     --api-key-env DEEPSEEK_API_KEY --model deepseek-chat --run 1
+uv run python -m paoding_eval bk --problem eval/problems.d/<题>.yaml --image paoding-cli \
+    --program claude --upstream … --api-key-env … --model … --budget-usd <full 臂每题成本> --run 1
+uv run python -m paoding_eval bn  …同上… --budget-usd <full 臂每题成本> --workers 3 --run 1
 uv run python -m paoding_eval full --problem eval/problems.d/<题>.yaml --config <栈配置.yaml> --run 1
 ```
 
