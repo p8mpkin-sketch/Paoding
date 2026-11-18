@@ -229,3 +229,32 @@ def test_tool_host_defect_is_not_reported_as_schema_error(rig, capsys):
     )
     assert st == 200 and out["error"]["code"] == -32603 and "KeyError" in out["error"]["message"]
     assert "Traceback" in capsys.readouterr().err
+
+
+def test_add_fact_carries_a_control_from_workspace_files(rig):
+    """对照判据（§3.3.3）：control.input_paths 里的工作区文件登记为 authored 类，填进 check.control.inputs。"""
+    h = _host(rig)
+    ground = h.call("exec", {"cmd": "uname"})["artifact"]
+    (h.s.workspace / "probe.sh").write_text("probe $(cat /workspace/inputs/1 2>/dev/null)\n")
+    (h.s.workspace / "bogus.txt").write_text("target=bogus\n")
+    op = {
+        "op": "add_fact",
+        "claim_type": "observation",
+        "title": "目标在线",
+        "check": {
+            "judge_id": "replay",
+            "spec_path": "probe.sh",
+            "expect": {},
+            "control": {"input_paths": ["bogus.txt"]},
+        },
+        "premises": [],
+        "grounds": [ground],
+    }
+    out = h.call("submit", {"ops": [op]})
+    assert out["results"][0]["ok"], out
+    f = rig.graph.state["facts"][out["results"][0]["id"]]
+    [inp] = f["check"]["control"]["inputs"]
+    a = rig.graph.state["artifacts"][inp]
+    assert a["class"] == "authored" and rig.blobs.get(a["hash"]) == b"target=bogus\n"
+    bad = {**op, "check": {**op["check"], "control": {"paths": ["bogus.txt"]}}}
+    assert h.call("submit", {"ops": [bad]})["results"][0]["code"] == "schema_error"

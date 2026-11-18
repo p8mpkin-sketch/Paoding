@@ -142,7 +142,14 @@ define(
 define("ProfileAxis", lit("info", "judge", "reversibility"))
 define("Budget", obj({"usd_milli": INT, "wall_s": INT}, {"tokens": INT}))
 define("VaultRef", obj({"vault": STR, "digest": STR}))
-define("Check", obj({"judge_id": STR}, {"spec_ref": ref("ArtifactId"), "expect": OBJ, "sealed": arr(ref("VaultRef"))}))
+define("Control", obj({"inputs": arr(ref("ArtifactId"))}, doc="对照判据（§3.3.3）：同规格、异输入，只用于观察类论断。"))
+define(
+    "Check",
+    obj(
+        {"judge_id": STR},
+        {"spec_ref": ref("ArtifactId"), "expect": OBJ, "sealed": arr(ref("VaultRef")), "control": ref("Control")},
+    ),
+)
 define("ScopeRule", obj({"resource": STR, "pattern": STR, "actions": arr(STR), "risk": ref("Risk")}))
 define("Origin", obj({"statement_ref": ref("ArtifactId"), "materials": arr(ref("ArtifactId"))}))
 define("Env", obj({"base": STR, "baseline_ref": STR}))

@@ -125,6 +125,7 @@ class JudgeRunner:
                             "version": self._spec(st, pid, req)["version"],
                             "evidence": [aid],
                             "reason": o.reason,
+                            **({"control_end": o.control_end} if o.control_end is not None else {}),
                         },
                     }
                 ],
@@ -201,6 +202,10 @@ class JudgeRunner:
             cand = self._bytes(st, req.get("candidate"))
             spec_art = st["artifacts"].get(check.get("spec_ref") or "")
             spec_bytes = self.blobs.get(spec_art["hash"]) if spec_art else None  # 读取时校验哈希：被改过即拒
+            control = check.get("control")
+            ctl_inputs = (
+                tuple(self.blobs.get(st["artifacts"][a]["hash"]) for a in control["inputs"]) if control else None
+            )
         except (BlobError, OSError) as e:  # Blob 缺失、被改过或读盘失败：环境错误（无结论，不进裁决序列）
             return Outcome(
                 "inconclusive", "env_error", f"判官输入读取失败：{type(e).__name__}".encode(), _builtin_prov(jid, now)
@@ -222,10 +227,20 @@ class JudgeRunner:
             bases=self.cfg.bases,
             now_ms=now,
             grounded=_grounded(st, req.get("candidate")),
+            control_inputs=ctl_inputs,
         )
         o: Outcome = fn(ctx)
         if not o.provenance:
             o.provenance = _builtin_prov(jid, now)
+        if ctl_inputs is not None and o.control_end is None:  # 判官不认对照：不能替它说"对照不通过"
+            return Outcome(
+                "inconclusive",
+                "unsupported",
+                f"判官 {jid} 不支持对照判据".encode(),
+                o.provenance,
+                o.wall_s,
+                "unsupported",
+            )
         return o
 
     def _bytes(self, st: Mapping[str, Any], aid: str | None) -> bytes | None:

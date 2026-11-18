@@ -54,7 +54,30 @@ def _v_request_judge(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
     return Ok({"target": target, "judge_id": judge, "candidate": candidate})
 
 
-INCONCLUSIVE_REASONS = ("timeout", "env_error", "unsupported", "untouched")  # §3.3.2 reason_code 的无结论各项
+# §3.3.2 reason_code 的无结论各项；no_contrast 是对照判据的：主运行与对照都通过，结果不依赖输入（§3.3.3）
+INCONCLUSIVE_REASONS = ("timeout", "env_error", "unsupported", "untouched", "no_contrast")
+# 对照运行的结束类别（§3.3.3 的 control_end）：not_run 表示主运行没通过，对照不必跑
+CONTROL_ENDS = ("pass", "fail", "flaky", "timeout", "env_error", "untouched", "unsupported", "not_run")
+
+
+def _controlled(state: State, pid: str, target: str) -> bool:
+    f = state["facts"].get(target)
+    return f is not None and f["problem_id"] == pid and "control" in f.get("check", {})
+
+
+def _control_rule(result: str, reason: str | None, end: str | None, controlled: bool) -> str | None:
+    """带对照的判据：主运行通过且对照不通过才算通过。内核再核一遍，不只信判官运行器。"""
+    if not controlled:
+        if end is not None or reason == "no_contrast":
+            return "目标的判据不带对照，裁决不能带 control_end 或 no_contrast"
+        return None
+    if end not in CONTROL_ENDS:
+        return f"带对照的判据，裁决须带 control_end {CONTROL_ENDS}"
+    if result == "pass" and end != "fail":
+        return "带对照的判据：主运行通过且对照不通过才算通过"
+    if reason == "no_contrast" and end not in ("pass", "flaky"):
+        return "no_contrast 只在对照也通过（或抖动）时给出"
+    return None
 
 
 def _v_judge_verdict(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
@@ -69,6 +92,11 @@ def _v_judge_verdict(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
     reason = body.text("reason") if "reason" in body else None
     if result == "inconclusive" and reason not in INCONCLUSIVE_REASONS:
         return Reject("schema_error", f"inconclusive 须带原因码 {INCONCLUSIVE_REASONS}")
+    end = body.text("control_end") if "control_end" in body else None
+    controlled = _controlled(state, pid, req["target"])
+    why = _control_rule(result, reason, end, controlled)
+    if why:
+        return Reject("schema_error", why)
     evidence = body.strings("evidence", [])
     for ref in evidence:
         err = _ref(state, pid, ref, "evidence")
@@ -85,6 +113,7 @@ def _v_judge_verdict(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
             "grade": snap["grade"],
             "evidence": evidence,
             **({"reason": reason} if reason is not None else {}),
+            **({"control_end": end, "controlled": result == "pass"} if controlled else {}),
         }
     )
 
@@ -103,6 +132,8 @@ def _a_judge_verdict(s: State, ev: Event) -> None:
     judged: Request = {**req, "verdict_seq": seq}
     if body["result"] == "inconclusive":
         judged["inconclusive"] = body["reason"]
+    if "control_end" in body:
+        judged["control_end"] = body["control_end"]
     s["requests"] = {**s["requests"], req["id"]: judged}
     if body["result"] == "inconclusive":  # 抖动以外的无结论裁决不进裁决序列（§3.1.2），等级不变
         return
@@ -118,4 +149,7 @@ def _a_judge_verdict(s: State, ev: Event) -> None:
         "request": req["id"],
         "evidence": body["evidence"],
     }
+    if "control_end" in body:  # 对照判据：支持记录带 controlled，另记对照运行的结束类别（§3.3.3）
+        verdict["controlled"] = body["controlled"]
+        verdict["control_end"] = body["control_end"]
     s["verdicts"] = s["verdicts"] + [verdict]
