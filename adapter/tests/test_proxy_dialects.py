@@ -15,7 +15,7 @@ from adapter_rig import PRICES, graph, lease_bootstrap, open_problem  # noqa: F4
 from paoding_adapter.fakeupstream import FakeUpstream
 from paoding_adapter.proxy import EndpointProxy, PriceTable, ProxyConfig, ledger_diff, normalize_usage
 
-DEEPSEEK = "deepseek-chat"  # 价目表里没有：按最贵档计
+DEEPSEEK = "deepseek-chat"
 ANTHROPIC_STYLE = {
     "input_tokens": 1000,
     "output_tokens": 200,
@@ -119,3 +119,12 @@ def test_normalize_usage_shapes():
     assert normalize_usage({"prompt_tokens": 10, "completion_tokens": 2}) == {"input_tokens": 10, "output_tokens": 2}
     assert normalize_usage({"input_tokens": None, "output_tokens": True, "x": "y"}) == {}
     assert normalize_usage({}) == {}
+
+
+def test_deepseek_prices():
+    """cz 2026-11-18 给的 DeepSeek 官方标价：deepseek-chat 不再按最贵档计。"""
+    pt = PriceTable.load(PRICES)
+    assert "deepseek@2026-11" in pt.version
+    u = {"input_tokens": 1_000_000, "output_tokens": 1_000_000, "cache_read_input_tokens": 1_000_000}
+    assert pt.usd_milli("deepseek-chat", u) == 270 + 1100 + 70
+    assert pt.usd_milli("deepseek-reasoner", u) == 550 + 2190 + 140
