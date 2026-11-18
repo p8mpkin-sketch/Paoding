@@ -8,6 +8,7 @@
 
 另一条测 run.py 进程本身：会话卡在半路时 SIGINT，进程要干净退出，不留假 CLI 进程、不留容器，租约记为 failed。
 """
+
 import http.client
 import json
 import os
@@ -20,6 +21,7 @@ import urllib.parse
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E = ROOT / "scripts" / "e2e"
@@ -36,8 +38,10 @@ PID = "e2e"
 
 
 def docker_ok() -> bool:
-    return docker_available() and subprocess.run(["docker", "image", "inspect", IMAGE],
-                                                 capture_output=True).returncode == 0
+    return (
+        docker_available()
+        and subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True).returncode == 0
+    )
 
 
 pytestmark = pytest.mark.skipif(not docker_ok(), reason="需要 Docker 与本地镜像 python:3.12-slim")
@@ -51,6 +55,7 @@ class Watcher(threading.Thread):
         u = urllib.parse.urlsplit(url)
         self.conn = http.client.HTTPConnection(u.hostname, u.port, timeout=60)
         self.path, self.frames, self.closed = f"/v1/problems/{pid}/stream?after=0", [], threading.Event()
+        self.views: list[dict] = []
 
     def run(self):
         self.conn.request("GET", self.path, headers={"Accept": "text/event-stream"})
@@ -64,7 +69,9 @@ class Watcher(threading.Thread):
             if line.startswith(":"):
                 continue
             if line == "":
-                if "data" in f:
+                if "data" in f and f.get("event") == "view":  # P2-1：一批事件之后的 view 帧
+                    self.views.append({"id": int(f["id"]), **json.loads(f["data"])})
+                elif "data" in f and "event" not in f:
                     ev = json.loads(f["data"])
                     self.frames.append({"id": int(f["id"]), **ev})
                     if ev.get("kind") == "close_problem":
@@ -76,13 +83,18 @@ class Watcher(threading.Thread):
 
 
 def config(home: Path, **over) -> StackConfig:
-    return StackConfig.load(home, E2E / "config.json", port=0, static_dir=None, poll_s=0.2, dog_interval_s=0.5,
-                            **over)
+    return StackConfig.load(home, E2E / "config.yaml", port=0, static_dir=None, poll_s=0.2, dog_interval_s=0.5, **over)
 
 
 def owned_containers(owner: str) -> list[str]:
-    out = subprocess.run(["docker", "ps", "-a", "--filter", f"label=paoding.owner={owner}", "--format",
-                          "{{.Names}}"], capture_output=True).stdout.decode().split()
+    out = (
+        subprocess.run(
+            ["docker", "ps", "-a", "--filter", f"label=paoding.owner={owner}", "--format", "{{.Names}}"],
+            capture_output=True,
+        )
+        .stdout.decode()
+        .split()
+    )
     return sorted(out)
 
 
@@ -111,6 +123,12 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         assert opened["ok"], opened
         watcher = Watcher(url, PID)
         watcher.start()
+        hz = call(url, "/healthz")  # 题在跑的时候各组件都报正常
+        assert hz["ok"] and hz["status"] == "ok", hz
+        assert {"graph", "blobs", "events", "judge", "sinan", "watchdog", "adapter", "executor"} <= set(
+            hz["components"]
+        )
+        assert all(c["ok"] for c in hz["components"].values()), hz
         final = wait_terminal(url, PID, 120)
         assert watcher.closed.wait(10)
         evs = call(url, f"/v1/problems/{PID}/events?after=0&limit=5000")["events"]
@@ -127,22 +145,34 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         for e in evs:
             if e["seq"] > close["seq"]:
                 assert e["kind"] in ("cost", "release") or (
-                    e["kind"] == "register_artifact" and e["body"]["class"] == "authored"
-                    and e["actor"].get("session")), e
+                    e["kind"] == "register_artifact" and e["body"]["class"] == "authored" and e["actor"].get("session")
+                ), e
 
         # —— 事件按规定的次序写入 ——
         def first(ev_kind, **match):
-            return next(e["seq"] for e in evs if e["kind"] == ev_kind and all(
-                e["body"].get(k) == v for k, v in match.items()))
+            return next(
+                e["seq"] for e in evs if e["kind"] == ev_kind and all(e["body"].get(k) == v for k, v in match.items())
+            )
+
         fact = next(e for e in evs if e["kind"] == "add_fact")
         fid = f"f_{fact['seq']}"
         rq_fact = next(e for e in evs if e["kind"] == "request_judge" and e["body"]["target"] == fid)
         rq_goal = next(e for e in evs if e["kind"] == "request_judge" and e["body"]["target"] == "goal")
         v_fact = next(e for e in evs if e["kind"] == "judge_verdict" and e["body"]["request"] == f"j_{rq_fact['seq']}")
         v_goal = next(e for e in evs if e["kind"] == "judge_verdict" and e["body"]["request"] == f"j_{rq_goal['seq']}")
-        chain = [first("open_problem"), first("lease", kind="bootstrap"), fact["seq"], rq_fact["seq"], v_fact["seq"],
-                 first("lease", kind="reason"), first("add_intent"), first("lease", kind="explore"), rq_goal["seq"],
-                 v_goal["seq"], close["seq"]]
+        chain = [
+            first("open_problem"),
+            first("lease", kind="bootstrap"),
+            fact["seq"],
+            rq_fact["seq"],
+            v_fact["seq"],
+            first("lease", kind="reason"),
+            first("add_intent"),
+            first("lease", kind="explore"),
+            rq_goal["seq"],
+            v_goal["seq"],
+            close["seq"],
+        ]
         assert chain == sorted(chain), chain
         assert v_fact["body"]["result"] == v_goal["body"]["result"] == "pass"
         # 司南在判官裁决落盘之后才开 Reason（判官在途也算判定未决）
@@ -159,6 +189,7 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         # —— 等级从 E0 升到 E3：论断与 Goal 都只因判官的裁决而升 ——
         def fact_level(seq):
             return next(f["level"] for f in at(seq)["facts"] if f["id"] == fid)
+
         assert fact_level(fact["seq"]) == "E0" and fact_level(v_fact["seq"] - 1) == "E0"
         assert fact_level(v_fact["seq"]) == "E3"
         assert at(first("open_problem"))["goal"]["predicate"]["level"] == "E0"
@@ -168,7 +199,7 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
 
         # —— 预算：每个租约在领时预留、释放后归零；花费 = cost 事件之和；没有悬着的预留 ——
         leases = [e for e in evs if e["kind"] == "lease"]
-        assert len(leases) == 5                                   # bootstrap、reason、explore + 两次判官
+        assert len(leases) == 5  # bootstrap、reason、explore + 两次判官
         for e in leases:
             reserved = at(e["seq"], "budget")["reserved"]["usd_milli"]
             assert reserved >= e["body"]["reserve"]["usd_milli"] > 0, (e["body"], reserved)
@@ -184,15 +215,21 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         goal_v = next(v for v in g.state["verdicts"] if v["target"] == "goal")
         assert stack.blobs.get(g.state["artifacts"][goal_v["candidate"]]["hash"]).strip() == ANSWER
 
-
         # —— 网页一侧：SSE 帧逐条等于日志 ——
         upto = [e for e in evs if e["seq"] <= close["seq"]]
-        assert [(f["id"], f["kind"]) for f in watcher.frames][:len(upto)] == [(e["seq"], e["kind"]) for e in upto]
+        assert [(f["id"], f["kind"]) for f in watcher.frames][: len(upto)] == [(e["seq"], e["kind"]) for e in upto]
+        # view 帧：每帧的序号是此前最后一条事件的序号，各份哈希等于该序号上 snapshot 的 parts_hash
+        seqs = {f["id"] for f in watcher.frames}
+        assert watcher.views and all(v["id"] in seqs and v["as_of"] == v["id"] for v in watcher.views)
+        v = watcher.views[-1]
+        assert call(url, f"/v1/problems/{PID}/snapshot?as_of={v['id']}&parts=work")["parts_hash"] == v["parts_hash"]
 
         stack.stop()
         # —— 停机之后：没有在途会话、没有本进程起的容器 ——
         assert stack.runner.live == {} and owned_containers(stack.executor.owner) == []
         assert procs_under(home / "sessions") == []
+        # —— 没有组件线程因缺陷退出（线程顶层不再宽接 Exception，缺陷会记在这里，审计 P1-4） ——
+        assert stack.crashed == []
 
         # —— 同一数据目录再起一套（进程重启）：端点代理的累计花费从账本恢复，不归零（审计 P1-1） ——
         again = Stack(config(home, executor="none"))
@@ -210,15 +247,31 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     hang = tmp_path / "hang.json"
-    hang.write_text(json.dumps({"steps": [{"tool": "mcp__paoding__exec", "input": {"cmd": "echo hi"}},
-                                          {"hang": 300}], "resume_steps": []}))
-    cfg = json.loads((E2E / "config.json").read_text())
+    hang.write_text(
+        json.dumps(
+            {"steps": [{"tool": "mcp__paoding__exec", "input": {"cmd": "echo hi"}}, {"hang": 300}], "resume_steps": []}
+        )
+    )
+    cfg = yaml.safe_load((E2E / "config.yaml").read_text())
     cfg["backend"]["scripts"] = {"bootstrap": str(hang)}
-    (home / "config.json").write_text(json.dumps(cfg))
+    (home / "config.yaml").write_text(yaml.safe_dump(cfg))
     ready = tmp_path / "ready"
-    proc = subprocess.Popen([sys.executable, str(ROOT / "scripts" / "run.py"), "--home", str(home), "--port", "0",
-                             "--no-static", "--ready-file", str(ready)],
-                            stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "run.py"),
+            "--home",
+            str(home),
+            "--port",
+            "0",
+            "--no-static",
+            "--ready-file",
+            str(ready),
+        ],
+        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        text=True,
+    )
     lines: list[str] = []
     threading.Thread(target=lambda: lines.extend(proc.stderr), daemon=True).start()
     try:
@@ -229,7 +282,7 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
         url = ready.read_text().strip()
         token = (home / "human.token").read_text().strip()
         assert open_problem(url, token, PID)["ok"]
-        for _ in range(200):                                   # 等会话真的卡在半路：exec 已落盘
+        for _ in range(200):  # 等会话真的卡在半路：exec 已落盘
             evs = call(url, f"/v1/problems/{PID}/events?after=0&limit=500")["events"]
             if any(e["kind"] == "register_artifact" and e["actor"]["kind"] == "executor" for e in evs):
                 break
@@ -248,16 +301,53 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
     time.sleep(0.2)
     log = "".join(lines)
     assert procs_under(home / "sessions") == [], log
-    leftover = subprocess.run(["docker", "ps", "-a", "--filter", "label=paoding.lease", "--format",
-                               "{{.Names}} {{.Label \"paoding.owner\"}}"], capture_output=True).stdout.decode()
-    assert f":{proc.pid}:" not in leftover, leftover               # 属主是 run.py 进程的容器一个不剩
-    # 日志一行一条：时间 组件名 消息
-    for line in log.strip().splitlines():
-        assert line.split(" ", 2)[1] in ("graph", "judge", "sinan", "watchdog", "stack"), line
-    assert "已停" in log
+    leftover = subprocess.run(
+        ["docker", "ps", "-a", "--filter", "label=paoding.lease", "--format", '{{.Names}} {{.Label "paoding.owner"}}'],
+        capture_output=True,
+    ).stdout.decode()
+    assert f":{proc.pid}:" not in leftover, leftover  # 属主是 run.py 进程的容器一个不剩
+    # 日志结构化：stderr 一行一个 JSON 对象（时间、级别、组件名、消息），文件里是同样的行
+    recs = [json.loads(line) for line in log.strip().splitlines()]
+    for r in recs:
+        assert {"ts", "level", "component", "msg"} <= set(r), r
+        assert r["component"] in ("graph", "judge", "sinan", "adapter", "watchdog", "stack"), r
+        assert r["level"] in ("info", "warning", "error"), r
+    assert any("已停" in r["msg"] for r in recs)
+    lease_lines = [r for r in recs if r["component"] == "graph" and r.get("kind") == "lease"]
+    assert lease_lines and all(r["problem_id"] and r["lease_id"] and r["seq"] for r in lease_lines), lease_lines
+    filed = [json.loads(line) for line in (home / "logs" / "stack.log").read_text().splitlines()]
+    assert [r["msg"] for r in filed] == [r["msg"] for r in recs if r["msg"] in {f["msg"] for f in filed}]
+    assert any("已停" in r["msg"] for r in filed)
 
     # 重启读回同一份日志：租约以 failed 释放（停机不是花超），没有悬着的租约
     from paoding_graph.contract import Config, GraphService, TokenRegistry
+
     st = GraphService(home / "g.sqlite", Config(), TokenRegistry()).state
     [boot] = [l for l in st["leases"].values() if l["kind"] == "bootstrap"]
     assert not boot["active"] and boot["outcome"] == "failed"
+    assert {r["lease_id"] for r in lease_lines} == set(st["leases"])  # 日志里的租约 id 就是图里的租约 id
+
+
+def test_component_thread_defect_is_recorded_not_swallowed(tmp_path):
+    """判官循环里的缺陷（这里人为注入 KeyError）不再被线程顶层的宽接吞成一行日志：记进 crashed，带异常类名。
+    环境故障（OSError）仍只记一行，循环照常。"""
+    stack = Stack(config(tmp_path / "home", executor="none"))
+    calls = []
+
+    def tick():
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("disk hiccup")
+        raise KeyError("judge_snapshot")
+
+    stack.judge.tick = tick
+    stack.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not stack.crashed and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert stack.crashed == [{"thread": "judge", "error": "KeyError: 'judge_snapshot'"}]
+        assert len(calls) == 2  # OSError 那一轮没有让循环退出
+    finally:
+        stack.stop()
+    assert threading.excepthook is not stack._thread_died

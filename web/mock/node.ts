@@ -11,7 +11,14 @@ export function nodeMiddleware(mock: Mock) {
       const last = Number(req.headers["last-event-id"] ?? new URL(url, "http://x").searchParams.get("after") ?? 0);
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
       res.write(": ok\n\n");
-      const off = mock.subscribe(decodeURIComponent(stream[1]), last, (e) => res.write(`id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`));
+      const pid = decodeURIComponent(stream[1]);
+      // 与图服务相同：每条事件之后跟一帧 view（该序号上四份投影的 view_hash），刚连上时也先发一帧
+      const view = (seq: number) => {
+        const h = seq > 0 ? mock.partsHash(pid, seq) : null;
+        if (h) res.write(`id: ${seq}\nevent: view\ndata: ${JSON.stringify({ as_of: seq, parts_hash: h })}\n\n`);
+      };
+      const off = mock.subscribe(pid, last, (e) => { res.write(`id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`); view(e.seq); });
+      view(last);
       const beat = setInterval(() => res.write(": beat\n\n"), 15000);
       req.on("close", () => { off(); clearInterval(beat); });
       return;

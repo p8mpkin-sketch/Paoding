@@ -1,4 +1,5 @@
 """adapter 测试台：真图服务（SQLite 临时文件）+ 本机假上游。不碰真密钥、真模型。"""
+
 import hashlib
 import json
 from pathlib import Path
@@ -10,23 +11,50 @@ from paoding_graph.contract import Config, GraphService, TokenRegistry
 ROOT = Path(__file__).resolve().parents[1]
 PRICES = ROOT / "config" / "prices.yaml"
 
-CFG = Config(judges={
-    "replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
-    "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
-}, external_resources=frozenset())
+CFG = Config(
+    judges={
+        "replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
+        "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
+    },
+    external_resources=frozenset(),
+)
 
 
 def open_problem(svc, pid="p1", usd_milli=5000):
     st = b"statement " + pid.encode()
-    return svc.submit("tok-human", pid, f"open-{pid}", [
-        {"op": "register_artifact", "body": {"hash": hashlib.sha256(st).hexdigest(), "size": len(st),
-                                              "media_type": "text/plain", "class": "input"}},
-        {"op": "open_problem", "body": {
-            "title": "t", "origin": {"statement_ref": "$0", "materials": []},
-            "goal": {"statement": "g", "check": {"judge_id": "exact_match"}, "max_attempts": 3, "accept": "judge"},
-            "scope": [{"resource": "target", "pattern": "*", "actions": ["read"], "risk": "r0"}],
-            "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
-            "env": {"base": "basic", "baseline_ref": "base@1"}, "judges": ["exact_match", "replay"]}}])
+    return svc.submit(
+        "tok-human",
+        pid,
+        f"open-{pid}",
+        [
+            {
+                "op": "register_artifact",
+                "body": {
+                    "hash": hashlib.sha256(st).hexdigest(),
+                    "size": len(st),
+                    "media_type": "text/plain",
+                    "class": "input",
+                },
+            },
+            {
+                "op": "open_problem",
+                "body": {
+                    "title": "t",
+                    "origin": {"statement_ref": "$0", "materials": []},
+                    "goal": {
+                        "statement": "g",
+                        "check": {"judge_id": "exact_match"},
+                        "max_attempts": 3,
+                        "accept": "judge",
+                    },
+                    "scope": [{"resource": "target", "pattern": "*", "actions": ["read"], "risk": "r0"}],
+                    "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
+                    "env": {"base": "basic", "baseline_ref": "base@1"},
+                    "judges": ["exact_match", "replay"],
+                },
+            },
+        ],
+    )
 
 
 @pytest.fixture
@@ -41,13 +69,28 @@ def graph(tmp_path):
     def tick():
         t[0] += 1
         return t[0]
+
     svc = GraphService(tmp_path / "g.sqlite", CFG, reg, tick)
     return svc
 
 
 def lease_bootstrap(svc, pid="p1", reserve=1000):
-    out = svc.submit("tok-sinan", pid, f"lease-{pid}", [{"op": "lease", "body": {
-        "kind": "bootstrap", "holder": "sn1", "reserve": {"usd_milli": reserve, "wall_s": 600}, "ttl_s": 600}}])
+    out = svc.submit(
+        "tok-sinan",
+        pid,
+        f"lease-{pid}",
+        [
+            {
+                "op": "lease",
+                "body": {
+                    "kind": "bootstrap",
+                    "holder": "sn1",
+                    "reserve": {"usd_milli": reserve, "wall_s": 600},
+                    "ttl_s": 600,
+                },
+            }
+        ],
+    )
     assert out["ok"], out
     return out["results"][0]["id"]
 
@@ -80,13 +123,40 @@ class FakeExec:
 
     def exec(self, sid, cmd, pid, idem_key, timeout_s=60, cwd="/workspace", register_as="exec"):
         from paoding_executor.contract import ExecResult
+
         self.calls.append(cmd)
         data = f"$ {cmd}\nok\n".encode()
         h = self.blobs.put(data)
-        prov = {"sandbox_id": sid, "base": "basic", "baseline_ref": "base@1", "tool": "shell", "command": cmd,
-                "cwd": cwd, "exit_code": 0, "touched": [], "started_at": 1, "ended_at": 2, "truncated": False}
-        out = self.graph.submit("tok-exec", pid, idem_key, [{"op": "register_artifact", "body": {
-            "hash": h, "size": len(data), "media_type": "text/plain; charset=utf-8", "class": "exec", "exec": prov}}])
+        prov = {
+            "sandbox_id": sid,
+            "base": "basic",
+            "baseline_ref": "base@1",
+            "tool": "shell",
+            "command": cmd,
+            "cwd": cwd,
+            "exit_code": 0,
+            "touched": [],
+            "started_at": 1,
+            "ended_at": 2,
+            "truncated": False,
+        }
+        out = self.graph.submit(
+            "tok-exec",
+            pid,
+            idem_key,
+            [
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": h,
+                        "size": len(data),
+                        "media_type": "text/plain; charset=utf-8",
+                        "class": "exec",
+                        "exec": prov,
+                    },
+                }
+            ],
+        )
         assert out["ok"], out
         return ExecResult(out["results"][0]["id"], h, 0, data.decode(), False, prov)
 
@@ -97,25 +167,41 @@ class Rig:
         from paoding_adapter.mcp import ToolEndpoint
         from paoding_adapter.proxy import EndpointProxy, PriceTable, ProxyConfig
         from paoding_adapter.session import AdapterConfig, SessionRunner
+
         self.tmp, self.graph, self.upstream = tmp_path, graph, upstream
         self.blobs = BlobStore(tmp_path / "blobs")
-        self.proxy = EndpointProxy(ProxyConfig(upstream.url, "sk-fake-upstream", "tok-adapter"),
-                                   PriceTable.load(PRICES), graph)
+        self.proxy = EndpointProxy(
+            ProxyConfig(upstream.url, "sk-fake-upstream", "tok-adapter"), PriceTable.load(PRICES), graph
+        )
         self.proxy.serve()
         self.endpoint = ToolEndpoint()
         self.endpoint.serve()
         self.executor = FakeExec(graph, self.blobs)
-        self.cfg = AdapterConfig(root=tmp_path / "sessions", renew_s=60, stall_s=30, judges_cfg=CFG.judges,
-                                 binding=be.CliBinding(program=be.fake_program()))
-        self.runner = SessionRunner(self.cfg, graph, graph, self.blobs, graph.tokens, self.proxy,
-                                    self.endpoint, self.executor)
+        self.cfg = AdapterConfig(
+            root=tmp_path / "sessions",
+            renew_s=60,
+            stall_s=30,
+            judges_cfg=CFG.judges,
+            binding=be.CliBinding(program=be.fake_program()),
+        )
+        self.runner = SessionRunner(
+            self.cfg, graph, graph, self.blobs, graph.tokens, self.proxy, self.endpoint, self.executor
+        )
         self.statement = "statement p1"
 
     def put_input(self, content: bytes, pid="p1"):
         h = self.blobs.put(content)
-        out = self.graph.submit("tok-human", pid, "in-" + _hl.sha256(content).hexdigest()[:8], [
-            {"op": "register_artifact", "body": {"hash": h, "size": len(content), "media_type": "text/plain",
-                                                 "class": "input"}}])
+        out = self.graph.submit(
+            "tok-human",
+            pid,
+            "in-" + _hl.sha256(content).hexdigest()[:8],
+            [
+                {
+                    "op": "register_artifact",
+                    "body": {"hash": h, "size": len(content), "media_type": "text/plain", "class": "input"},
+                }
+            ],
+        )
         return out["results"][0]["id"]
 
     def script(self, steps, resume_steps=()):
@@ -148,8 +234,10 @@ import uuid  # noqa: E402
 
 IMAGE = "python:3.12-slim"
 FETCH = "python -c \"import urllib.request as u;print(u.urlopen('http://{host}:8080/{path}',timeout=5).read().decode().strip())\""
-PROBE = ("python -c \"import socket,sys;s=socket.socket();s.settimeout(3);"
-         "sys.exit(0 if s.connect_ex(('{h}',{p}))==0 else 7)\"")
+PROBE = (
+    'python -c "import socket,sys;s=socket.socket();s.settimeout(3);'
+    "sys.exit(0 if s.connect_ex(('{h}',{p}))==0 else 7)\""
+)
 
 
 def docker_ok() -> bool:
@@ -161,17 +249,42 @@ def docker_ok() -> bool:
 def open_net_problem(svc, pid, targets, usd_milli=5000, expect=None, max_attempts=3):
     """scope 是真的网络地址：targets = [(容器名, risk), …]。env.base 是基础规格名，由 Adapter 配置映射到镜像。"""
     st = b"statement " + pid.encode()
-    out = svc.submit("tok-human", pid, f"open-{pid}", [
-        {"op": "register_artifact", "body": {"hash": hashlib.sha256(st).hexdigest(), "size": len(st),
-                                              "media_type": "text/plain", "class": "input"}},
-        {"op": "open_problem", "body": {
-            "title": "取回目标上的取值", "origin": {"statement_ref": "$0", "materials": []},
-            "goal": {"statement": "取回 /value 的内容并原样提交", "check": {"judge_id": "exact_match", "expect": expect or {}},
-                     "max_attempts": max_attempts, "accept": "judge"},
-            "scope": [{"resource": "net", "pattern": f"{name}:8080", "actions": ["connect"], "risk": risk}
-                      for name, risk in targets],
-            "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
-            "env": {"base": "basic", "baseline_ref": "basic@1"}, "judges": ["exact_match", "replay"]}}])
+    out = svc.submit(
+        "tok-human",
+        pid,
+        f"open-{pid}",
+        [
+            {
+                "op": "register_artifact",
+                "body": {
+                    "hash": hashlib.sha256(st).hexdigest(),
+                    "size": len(st),
+                    "media_type": "text/plain",
+                    "class": "input",
+                },
+            },
+            {
+                "op": "open_problem",
+                "body": {
+                    "title": "取回目标上的取值",
+                    "origin": {"statement_ref": "$0", "materials": []},
+                    "goal": {
+                        "statement": "取回 /value 的内容并原样提交",
+                        "check": {"judge_id": "exact_match", "expect": expect or {}},
+                        "max_attempts": max_attempts,
+                        "accept": "judge",
+                    },
+                    "scope": [
+                        {"resource": "net", "pattern": f"{name}:8080", "actions": ["connect"], "risk": risk}
+                        for name, risk in targets
+                    ],
+                    "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
+                    "env": {"base": "basic", "baseline_ref": "basic@1"},
+                    "judges": ["exact_match", "replay"],
+                },
+            },
+        ],
+    )
     assert out["ok"], out
     return out
 
@@ -181,6 +294,7 @@ class DockerRig(Rig):
 
     def __init__(self, tmp_path, graph, upstream):
         from paoding_executor.contract import DockerExecutor, EnvManager
+
         super().__init__(tmp_path, graph, upstream)
         self.executor = DockerExecutor(graph, self.blobs, "tok-exec")
         self.runner.executor = self.executor
@@ -192,7 +306,7 @@ class DockerRig(Rig):
     def target(self, files: dict[str, str]) -> str:
         """一个通用的 HTTP 环境容器，按路径给出固定内容。内容经环境变量传入，不落在宿主上。"""
         name = f"pdt-{uuid.uuid4().hex[:8]}"
-        boot = "mkdir -p /srv && cd /srv && python -c \"import os,json;[open(k,'w').write(v) for k,v in json.loads(os.environ['FILES']).items()]\" && exec python -m http.server 8080"
+        boot = "mkdir -p /srv && cd /srv && python -c \"import os,json;[open(k,'w').write(v) for k,v in json.loads(os.environ['FILES']).items()]\" && exec python -m http.server 8080"  # noqa: E501
         self.envs.start(name, IMAGE, env={"FILES": json.dumps(files)}, command=["sh", "-c", boot], ready_port=8080)
         return name
 
@@ -206,9 +320,24 @@ class DockerRig(Rig):
         return self.runner.run(pid, lease_id, statement=self.statement, **kw)
 
     def sandboxes(self):
-        out = subprocess.run(["docker", "ps", "-a", "--filter", "label=paoding.role=sandbox", "--filter",
-                              f"label=paoding.owner={self.executor.owner}", "--format", "{{.Names}}"],
-                             capture_output=True).stdout.decode().split()
+        out = (
+            subprocess.run(
+                [
+                    "docker",
+                    "ps",
+                    "-a",
+                    "--filter",
+                    "label=paoding.role=sandbox",
+                    "--filter",
+                    f"label=paoding.owner={self.executor.owner}",
+                    "--format",
+                    "{{.Names}}",
+                ],
+                capture_output=True,
+            )
+            .stdout.decode()
+            .split()
+        )
         return sorted(out)
 
     def close(self):

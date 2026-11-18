@@ -12,6 +12,7 @@ input 里形如 "$r3.artifact" 的字符串替换为第 3 步工具结果的字�
 字段可以逐级取，例如 "$r0.items.0.id"。
 只用标准库；以 python -I 运行，不导入工作区里的任何东西。
 """
+
 import json
 import os
 import signal
@@ -44,8 +45,9 @@ def emit(ev):
 
 
 def post(url, body, headers):
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
-                                 headers={"content-type": "application/json", **headers})
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode(), method="POST", headers={"content-type": "application/json", **headers}
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             data = r.read()
@@ -57,8 +59,10 @@ def post(url, body, headers):
 class Mcp:
     def __init__(self, url):
         self.url, self.n = url, 0
-        self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                "clientInfo": {"name": "fakecli", "version": "0"}})
+        self.rpc(
+            "initialize",
+            {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fakecli", "version": "0"}},
+        )
         post(self.url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, {})
         self.tools = [t["name"] for t in self.rpc("tools/list", {})["tools"]]
 
@@ -74,7 +78,7 @@ def subst(v, results):
     if isinstance(v, str) and v.startswith("$r") and "." in v:
         n, path = v[2:].split(".", 1)
         cur = results[int(n)]
-        for key in path.split("."):                 # 逐级取：字典按键，数组按下标（"$r0.items.0.id"）
+        for key in path.split("."):  # 逐级取：字典按键，数组按下标（"$r0.items.0.id"）
             cur = cur[int(key)] if isinstance(cur, list) else (cur or {}).get(key)
         return cur
     if isinstance(v, list):
@@ -103,9 +107,10 @@ def builtin(name, inp, allowed, restricted, cwd):
 
 
 def main():
-    def on_sigint(*_):                     # 真 CLI：SIGINT 结束当前回合
+    def on_sigint(*_):  # 真 CLI：SIGINT 结束当前回合
         emit({"type": "result", "subtype": "interrupted", "is_error": True, "result": "interrupted"})
         sys.exit(130)
+
     signal.signal(signal.SIGINT, on_sigint)
     flags = parse(sys.argv[1:])
     script = json.loads(Path(os.environ["PD_FAKE_SCRIPT"]).read_text())
@@ -118,8 +123,16 @@ def main():
     mcps = {name: Mcp(s["url"]) for name, s in cfg.items()}
     tools = allowed + [f"mcp__{n}__{t}" for n, m in mcps.items() for t in m.tools]
     sid = flags.get("--session-id") or flags.get("--resume")
-    emit({"type": "system", "subtype": "init", "session_id": sid, "tools": tools,
-          "mcp_servers": [{"name": n, "status": "connected"} for n in mcps], "cwd": str(cwd)})
+    emit(
+        {
+            "type": "system",
+            "subtype": "init",
+            "session_id": sid,
+            "tools": tools,
+            "mcp_servers": [{"name": n, "status": "connected"} for n in mcps],
+            "cwd": str(cwd),
+        }
+    )
     results, turns, cost = [], 0, 0.0
     for step in steps:
         if "exit" in step:
@@ -128,15 +141,34 @@ def main():
             time.sleep(step["hang"])
             continue
         turns += 1
-        st, msg = post(base.rstrip("/") + "/v1/messages",
-                       {"model": step.get("model", "claude-sonnet-5-5"), "max_tokens": 1024, "messages": []},
-                       {"x-api-key": key, "anthropic-version": "2023-06-01"})
+        st, msg = post(
+            base.rstrip("/") + "/v1/messages",
+            {"model": step.get("model", "claude-sonnet-5-5"), "max_tokens": 1024, "messages": []},
+            {"x-api-key": key, "anthropic-version": "2023-06-01"},
+        )
         if st != 200:
-            emit({"type": "result", "subtype": "error_during_execution", "is_error": True,
-                  "result": f"API Error: {st} {json.dumps(msg)}", "num_turns": turns, "total_cost_usd": cost})
+            emit(
+                {
+                    "type": "result",
+                    "subtype": "error_during_execution",
+                    "is_error": True,
+                    "result": f"API Error: {st} {json.dumps(msg)}",
+                    "num_turns": turns,
+                    "total_cost_usd": cost,
+                }
+            )
             sys.exit(1)
-        emit({"type": "assistant", "message": {"usage": msg.get("usage", {}), "content": [
-            {"type": "tool_use", "id": f"t{turns}", "name": step["tool"], "input": step.get("input", {})}]}})
+        emit(
+            {
+                "type": "assistant",
+                "message": {
+                    "usage": msg.get("usage", {}),
+                    "content": [
+                        {"type": "tool_use", "id": f"t{turns}", "name": step["tool"], "input": step.get("input", {})}
+                    ],
+                },
+            }
+        )
         name, inp = step["tool"], subst(step.get("input", {}), results)
         if name.startswith("mcp__"):
             _, server, tool = name.split("__", 2)
@@ -148,11 +180,31 @@ def main():
         else:
             err, out = builtin(name, inp, allowed, restricted, cwd)
         results.append(out if isinstance(out, dict) else {"text": out, "is_error": err})
-        emit({"type": "user", "message": {"content": [
-            {"type": "tool_result", "tool_use_id": f"t{turns}", "is_error": err,
-             "content": out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)}]}})
-    emit({"type": "result", "subtype": "success", "is_error": False, "num_turns": turns,
-          "total_cost_usd": cost, "session_id": sid})
+        emit(
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": f"t{turns}",
+                            "is_error": err,
+                            "content": out if isinstance(out, str) else json.dumps(out, ensure_ascii=False),
+                        }
+                    ]
+                },
+            }
+        )
+    emit(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "num_turns": turns,
+            "total_cost_usd": cost,
+            "session_id": sid,
+        }
+    )
 
 
 if __name__ == "__main__":

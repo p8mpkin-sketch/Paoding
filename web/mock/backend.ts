@@ -59,7 +59,7 @@ export const TEMPLATES: Catalog = { items: [{ name: "service-practice", hash: sh
 type Art = { id: string; problem_id: string; hash: string; size: number; media_type: string; class: ArtifactClass; parents: string[]; producer: { actor: string; session?: string }; exec?: ExecRecord };
 type Fact = { id: string; seq: number; session?: string; title: string; summary: string; claim_type: "observation" | "inference"; check?: { judge_id: string; spec_ref?: string; expect?: Record<string, unknown>; sealed?: { vault: string; digest: string }[] }; premises: string[]; grounds: string[] };
 type Intent = { id: string; seq: number; session?: string; abandoned_seq?: number; title: string; summary: string; premises: string[]; risk: Risk; budget: Budget; done?: Fact["check"] & { max_attempts: number }; needs_scope?: ScopeRule[]; expected_gain?: number; rollback?: { text: string } };
-type Hint = { id: string; seq: number; author: string; text: string; about?: string; closed_seq?: number };
+type Hint = { id: string; seq: number; ts: number; author: string; text: string; about?: string; closed_seq?: number };
 type Lease = { id: string; kind: string; target?: string; holder: string; reserve: Budget; issued_seq: number; expires_at: number; ended_seq?: number; outcome?: string };
 type Req = { id: string; seq: number; target: string; judge_id: string; candidate?: string; verdict_seq?: number };
 type Verdict = { seq: number; request: string; target: string; result: "pass" | "fail" | "inconclusive"; evidence: string[]; judge: string; version: string; grade: Predicate["grade"]; candidate?: string };
@@ -91,7 +91,7 @@ function project(events: Event[], pid: string, asOf: number): State {
       case "abandon_intent": { const i = s.intents.get(b.intent); if (i) i.abandoned_seq = ev.seq; break; }
       case "hint":
         if ("close" in b) { const h = s.hints.get(b.close); if (h) h.closed_seq = ev.seq; }
-        else s.hints.set(`h_${ev.seq}`, { id: `h_${ev.seq}`, seq: ev.seq, author: ev.actor.id, text: b.text, about: b.about });
+        else s.hints.set(`h_${ev.seq}`, { id: `h_${ev.seq}`, seq: ev.seq, ts: ev.ts, author: ev.actor.id, text: b.text, about: b.about });
         break;
       case "lease": s.leases.set(`l_${ev.seq}`, { id: `l_${ev.seq}`, kind: b.kind, target: b.target, holder: b.holder, reserve: b.reserve, issued_seq: ev.seq, expires_at: ev.ts + b.ttl_s * 1000 }); break;
       case "release": case "expire_lease": { const l = s.leases.get(b.lease); if (l) { l.ended_seq = ev.seq; l.outcome = b.outcome ?? "expired"; } break; }
@@ -178,7 +178,7 @@ function intentNode(s: State, i: Intent): IntentNode {
   };
 }
 
-const hintNode = (h: Hint): HintNode => ({ id: h.id, type: "hint", seq: h.seq, author: h.author, closed: h.closed_seq !== undefined, about: h.about ?? null, text: tag("hint", h.text) });
+const hintNode = (h: Hint): HintNode => ({ id: h.id, type: "hint", seq: h.seq, ts: h.ts, author: h.author, closed: h.closed_seq !== undefined, about: h.about ?? null, text: tag("hint", h.text) });
 const bySeq = <T extends { seq: number }>(m: Map<string, T>): T[] => [...m.values()].sort((a, b) => a.seq - b.seq);
 const zero = (): Budget => ({ usd_milli: 0, tokens: 0, wall_s: 0 });
 const closed = (s: State) => s.problem?.closed_seq !== undefined;
@@ -264,6 +264,22 @@ function deriveProfile(scope: ScopeRule[], judgeId: string): Profile {
   const j = JUDGES[judgeId];
   const judge: Profile["judge"] = !j || j.grade === "advisory" ? "none" : j.kind === "deferred" || j.grade === "consistent" ? "deferred" : j.max_cost <= 0.05 ? "hard" : "costly";
   return { reversibility: top, judge, info: scope.some((r) => EXTERNAL_RESOURCES.includes(r.resource)) ? "partial" : "complete" };
+}
+
+/** H6 的链级“有证据根”（裁决 005-4），与图服务的 views.evidence_rooted 同义。 */
+function rooted(s: State, id: string): boolean {
+  const seen = new Set<string>();
+  const todo = [id];
+  while (todo.length > 0) {
+    const cur = todo.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    const f = s.facts.get(cur), i = s.intents.get(cur);
+    if (!f && !i) continue;
+    if ((f && f.grounds.length > 0) || s.verdicts.some((v) => v.target === cur && v.evidence.length > 0)) return true;
+    todo.push(...(f ?? i)!.premises);
+  }
+  return false;
 }
 
 function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind: CardKind; target: string; fields: unknown }; card_hash: string; display: unknown } | "not_found" {
@@ -556,9 +572,9 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (f) {
         const n = factNode(s, f);
         const grounds = f.grounds.map((g) => { const a = s.artifacts.get(g)!; const src = `artifact:${a.class}`; return { id: g, class: a.class, src, register: REGISTER[src], hash: a.hash, size: a.size }; });
-        return wrap({ problem_id: pid, ...n, grounds, no_evidence_root: grounds.length === 0, body_ref: null });
+        return wrap({ problem_id: pid, ...n, grounds, no_evidence_root: !rooted(s, f.id), body_ref: null });
       }
-      if (i) return wrap({ problem_id: pid, ...intentNode(s, i), leases: [...s.leases.values()].filter((l) => l.target === i.id).map((l) => l.id) });
+      if (i) return wrap({ problem_id: pid, ...intentNode(s, i), leases: [...s.leases.values()].filter((l) => l.target === i.id).map((l) => l.id), no_evidence_root: !rooted(s, i.id) });
       return wrap({ problem_id: pid, ...hintNode(h!) });
     }
     if ((m = path.match(/^\/v1\/hints\/([^/]+)\/trace$/))) {
@@ -576,10 +592,30 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       };
       return wrap(doc);
     }
+    if ((m = path.match(/^\/v1\/problems\/([^/]+)\/ticks$/))) {
+      const pid = decodeURIComponent(m[1]);
+      if (!stateOf(pid, asOf).problem) return notFound(`题目 ${pid} 不存在（或在该序号时尚未开题）`);
+      const evs = eventsOf(pid, asOf);
+      const ticks = evs.map((e) => ({ seq: e.seq, ts: e.ts, kind: e.kind,
+        ...(e.kind === "judge_verdict" ? { result: e.body.result } : {}), ...(e.kind === "budget_mark" ? { mark: e.body.mark } : {}) }));
+      return json(200, { as_of: asOf, head: headSeq(), ticks, last_seq: evs.at(-1)?.seq ?? 0, head_hash: evs.at(-1)?.hash ?? null });
+    }
     if ((m = path.match(/^\/v1\/problems\/([^/]+)\/(.+)$/))) {
       const pid = decodeURIComponent(m[1]);
       const s = stateOf(pid, asOf);
       if (!s.problem) return notFound(`题目 ${pid} 不存在（或在该序号时尚未开题）`);
+      if (m[2] === "snapshot") {
+        const sh = { state_hash: sha256(canonical(log.filter((e) => e.seq <= asOf).map((e) => e.hash))) };
+        const docs = { status: statusView(s, pid), view: graphView(s, pid), budget: budgetView(s), work: { items: work(s, pid) } };
+        const parts_hash = Object.fromEntries(Object.entries(docs).map(([k, d]) => [k, sha256(canonical(d))])) as Record<keyof typeof docs, string>;
+        const want = (q.get("parts") ?? "status,view,budget,work").split(",").filter(Boolean);
+        if (want.length === 0 || want.some((k) => !(k in docs))) return err(400, "schema_error", "parts 只取 status,view,budget,work");
+        const out: Record<string, unknown> = { as_of: asOf, head: headSeq(), view_hash: sha256(canonical(parts_hash)), parts_hash };
+        for (const k of Object.keys(docs) as (keyof typeof docs)[]) {
+          if (want.includes(k)) out[k] = { as_of: asOf, head: headSeq(), view_hash: parts_hash[k], ...docs[k], ...(k === "status" && q.get("state_hash") === "1" ? sh : {}) };
+        }
+        return json(200, out);
+      }
       switch (m[2]) {
         case "status": return wrap(statusView(s, pid), pid);
         case "view": return wrap(graphView(s, pid));
@@ -615,6 +651,13 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     } });
   }
 
+  /** 某序号上四份投影的 view_hash（事件流的 view 帧用）。题在该序号时还没开就是 null。 */
+  function partsHash(pid: string, seq: number): Record<string, string> | null {
+    const r = handle({ method: "GET", url: `/v1/problems/${encodeURIComponent(pid)}/snapshot?as_of=${seq}&parts=work` });
+    if (r.status !== 200) return null;
+    return (JSON.parse(new TextDecoder().decode(r.body as Uint8Array)) as { parts_hash: Record<string, string> }).parts_hash;
+  }
+
   /** 事件流：先补发 after 之后的，再推新的。返回取消函数。 */
   function subscribe(pid: string, after: number, cb: (e: Event) => void): () => void {
     for (const e of eventsOf(pid)) if (e.seq > after) cb(e);
@@ -623,5 +666,5 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return () => subs.delete(sub);
   }
 
-  return { handle, subscribe, step, append, putBlob, eventsOf, pids, head: (pid: string) => eventsOf(pid).at(-1)?.seq ?? 0, globalHead: headSeq, demoPid: demo.pid };
+  return { handle, subscribe, partsHash, step, append, putBlob, eventsOf, pids, head: (pid: string) => eventsOf(pid).at(-1)?.seq ?? 0, globalHead: headSeq, demoPid: demo.pid };
 }

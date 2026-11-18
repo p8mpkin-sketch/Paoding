@@ -1,11 +1,12 @@
 // 事件回放时间轴（HMI 设计 §10.4）。刻度只来自事件。
 // 拖动中只移动游标，松手后取一次 as_of 视图，不逐帧请求。
 import { useEffect, useState } from "react";
-import type { Event } from "../api/types";
+import type { WireTick } from "../api/types";
 import { TICK_LEGEND, ticksOf, type TickKind } from "../model/ticks";
 
 type Props = {
-  events: readonly Event[];
+  /** 本题每条事件的 seq、ts、种类（/ticks 与事件流）。 */
+  ticks: readonly WireTick[];
   head: number;
   /** null 即实时。 */
   asOf: number | null;
@@ -13,8 +14,8 @@ type Props = {
   link: string;
 };
 
-export function Timeline({ events, head, asOf, onSeek, link }: Props) {
-  const seqs = events.map((e) => e.seq);
+export function Timeline({ ticks: items, head, asOf, onSeek, link }: Props) {
+  const seqs = items.map((e) => e.seq);
   const cur = asOf ?? head;
   const idxOf = (seq: number) => { let i = 0; while (i < seqs.length - 1 && seqs[i + 1] <= seq) i++; return i; };
   const [drag, setDrag] = useState<number | null>(null);
@@ -24,7 +25,7 @@ export function Timeline({ events, head, asOf, onSeek, link }: Props) {
   const [copied, setCopied] = useState(false);
   useEffect(() => setInput(String(cur)), [cur]);
 
-  const ticks = ticksOf(events, head).filter((t) => showLeases || t.kind !== "L");
+  const ticks = ticksOf(items, head).filter((t) => showLeases || t.kind !== "L");
   const idx = drag ?? idxOf(cur);
   const last = Math.max(seqs.length - 1, 1);
   const commit = (i: number) => { setDrag(null); const seq = seqs[i]; if (seq !== undefined) onSeek(seq >= head ? null : seq); };

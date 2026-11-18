@@ -1,9 +1,14 @@
 // 判据卡（HMI 设计 §3.3）：Goal、带判据的 Intent、观察类论断三处共用一个组件，
 // 正如三者走同一条判定路径。任何显示"达成、通过、solved"的位置都由它或它的缩略徽章承载。
 import type { Badge, Level, Predicate, Terminal } from "../api/types";
-import { GRADE_WORD, levelWord, terminalWord } from "../model/levels";
+import { GRADE_WORD, LEVEL_GLYPH, levelWord, RESULT_GLYPH, TERMINAL_GLYPH, terminalWord } from "../model/levels";
 import { shortHash } from "../model/text";
 import { ArtifactChip, Plain, VaultRefView } from "./registers";
+
+/** 形状记号：与文字并排，读屏器跳过。 */
+export function Glyph({ g }: { g: string }) {
+  return <span className="glyph" aria-hidden="true">{g}</span>;
+}
 
 /** 缩略徽章：至少带判官名与版本，点开即判据卡。 */
 export function CriterionBadge({ badge, onOpen }: { badge: Badge | null; onOpen?: () => void }) {
@@ -18,14 +23,14 @@ export function CriterionBadge({ badge, onOpen }: { badge: Badge | null; onOpen?
 
 export function LevelBadge({ level, word }: { level: Level | null; word: string }) {
   if (!level) return null;
-  return <span className={`badge level level-${level}`} data-level={level}>{level} {word}</span>;
+  return <span className={`badge level level-${level}`} data-level={level}><Glyph g={LEVEL_GLYPH[level]} />{level} {word}</span>;
 }
 
 /** 终态徽章：三值；必带判官徽章。accepted 写"人验收"。 */
 export function TerminalBadge({ terminal, badge, level, onOpen }: { terminal: Terminal | null; badge: Badge; level: Level | null; onOpen?: () => void }) {
   return (
     <span className="terminal" data-terminal={terminal ?? "running"}>
-      <span className="badge">{terminalWord(terminal)}</span>
+      <span className="badge" data-terminal-word><Glyph g={TERMINAL_GLYPH[terminal ?? "running"]} />{terminalWord(terminal)}</span>
       <CriterionBadge badge={badge} onOpen={onOpen} />
       <span className="muted">根结论 {level ?? "—"}</span>
     </span>
@@ -60,7 +65,7 @@ export function CriterionCard({ p, seq }: { p: Predicate; seq: number }) {
           {p.verdicts.map((v) => (
             <li key={v.seq} data-verdict={v.result}>
               <details data-action="open-support">
-                <summary>seq {v.seq} · {v.judge}@{v.version} · {v.grade ? GRADE_WORD[v.grade] : "未定级"} · {RESULT_WORD[v.result]}{v.candidate ? ` · 候选 ${v.candidate}` : ""}</summary>
+                <summary><Glyph g={RESULT_GLYPH[v.result]} />seq {v.seq} · {v.judge}@{v.version} · {v.grade ? GRADE_WORD[v.grade] : "未定级"} · {RESULT_WORD[v.result]}{v.candidate ? ` · 候选 ${v.candidate}` : ""}</summary>
                 <ul className="tree">
                   {v.evidence.map((a) => <ArtifactChip key={a} id={a} seq={seq} hint="判官输出" />)}
                   {v.candidate && <ArtifactChip id={v.candidate} seq={seq} hint="候选（authored）" />}

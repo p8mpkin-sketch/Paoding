@@ -42,12 +42,13 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const [tab, setTab] = useState<"frontier" | "graph">("frontier");
   const [graphPref, setGraphPref] = useState(prefs.graphView());
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [panel, setPanel] = useState<"left" | "main" | "right">("main");
 
   const vm = s.vm;
   const writable = canWrite(s) && cfg.token !== null;
   const go = (patch: { asOf?: number | null; node?: string | null }) =>
     navigate({ page: "problem", pid, asOf: patch.asOf !== undefined ? patch.asOf : asOf, node: patch.node !== undefined ? patch.node : node });
-  const select = (id: string) => { countUsage("inspect"); go({ node: id }); };
+  const select = (id: string) => { countUsage("inspect"); setPanel("right"); go({ node: id }); };
 
   if (!vm) return <p className={s.error ? "error" : "muted"}>{s.error ? <>读不到题目 <Plain text={pid} />：<Plain text={s.error} /></> : "读取中…"}</p>;
 
@@ -58,31 +59,48 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const link = window.location.origin + hrefOf({ page: "problem", pid, asOf: vm.seq, node });
 
   return (
-    <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn}>
+    <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel}>
+      {/* 顶栏分主次（P2-2）：一眼要看的放主栏——题名、终态与判官、连接、花费；其余收进“详情”。 */}
       <header className="topbar">
-        <h2><Text t={vm.title} block={false} /></h2>
-        <TerminalBadge terminal={vm.terminal} badge={vm.goal.badge} level={vm.goal.predicate.level} onOpen={() => select("goal")} />
-        <span className="badge" data-goal-attempts>Goal 尝试 {vm.goal.predicate.attempts_used ?? 0}/{vm.goal.predicate.max_attempts ?? "—"}</span>
-        <details className="profile">
-          <summary className="badge">画像 {vm.profile.info} · {vm.profile.judge} · {vm.profile.reversibility}{vm.profileOverrides.length ? " · 已人工覆盖" : ""}</summary>
-          <p className="muted">画像是派生量：reversibility 取 scope 的最高风险，judge 取 Goal 判官的类型，info 取资源是否 external。人不填写，只能事后覆盖（pd profile --override）。</p>
-          <p>推导值：{vm.derivedProfile.info} · {vm.derivedProfile.judge} · {vm.derivedProfile.reversibility}</p>
-          {vm.profileOverrides.map((o) => (
-            <div key={o.seq} data-override={o.axis}>
-              <span>{o.axis}：{o.derived ?? "—"} 改为 {o.value} · seq {o.seq}</span>
-              <Text t={o.reason} meta={{ author: o.by }} />
-            </div>
-          ))}
+        <div className="topbar-primary">
+          <h2><Text t={vm.title} block={false} /></h2>
+          <TerminalBadge terminal={vm.terminal} badge={vm.goal.badge} level={vm.goal.predicate.level} onOpen={() => select("goal")} />
+          <span className="conn" data-conn-label>{conn}</span>
+          <CostMeter b={vm.budget} />
+          {s.error && <span className="error">刷新失败：<Plain text={s.error} /></span>}
+        </div>
+        <details className="topbar-secondary" data-topbar="secondary">
+          <summary className="badge">详情</summary>
+          <div className="topbar-secondary-body">
+            <span className="badge" data-goal-attempts>Goal 尝试 {vm.goal.predicate.attempts_used ?? 0}/{vm.goal.predicate.max_attempts ?? "—"}</span>
+            <details className="profile">
+              <summary className="badge">画像 {vm.profile.info} · {vm.profile.judge} · {vm.profile.reversibility}{vm.profileOverrides.length ? " · 已人工覆盖" : ""}</summary>
+              <p className="muted">画像是派生量：reversibility 取 scope 的最高风险，judge 取 Goal 判官的类型，info 取资源是否 external。人不填写，只能事后覆盖（pd profile --override）。</p>
+              <p>推导值：{vm.derivedProfile.info} · {vm.derivedProfile.judge} · {vm.derivedProfile.reversibility}</p>
+              {vm.profileOverrides.map((o) => (
+                <div key={o.seq} data-override={o.axis}>
+                  <span>{o.axis}：{o.derived ?? "—"} 改为 {o.value} · seq {o.seq}</span>
+                  <Text t={o.reason} meta={{ author: o.by }} />
+                </div>
+              ))}
+            </details>
+            <span className="muted">state <code>{vm.state_hash ? shortHash(vm.state_hash) : "—"}</code></span>
+          </div>
         </details>
-        <CostMeter b={vm.budget} />
-        <span className="conn" data-conn-label>{conn}</span>
-        <span className="muted">state <code>{vm.state_hash ? shortHash(vm.state_hash) : "—"}</code></span>
-        {s.error && <span className="error">刷新失败：<Plain text={s.error} /></span>}
       </header>
+
+      {/* 窄屏（< 1024px）三栏改为一栏，用这排按钮切换；宽屏时隐藏，三栏并排。 */}
+      <nav className="panel-switch" aria-label="面板">
+        {(["left", "main", "right"] as const).map((k) => (
+          <button key={k} type="button" aria-pressed={panel === k} data-panel-switch={k} onClick={() => setPanel(k)}>
+            {k === "left" ? `待办${vm.todo.length ? `（${vm.todo.length}）` : ""}` : k === "main" ? "前沿与图" : "检视"}
+          </button>
+        ))}
+      </nav>
 
       <div className="columns">
         <aside className="left">
-          <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); }} />
+          <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); if (k) setPanel("main"); }} />
           <button type="button" data-action="open-inject" onClick={() => setSheet(sheet?.kind === "inject" ? null : { kind: "inject" })}>注入 Hint…</button>
           {!writable && <p className="muted" data-readonly-note>{asOf !== null ? "回放中：写操作全部禁用，人的决定只能针对链头。" : vm.closed ? "题目已关闭。" : cfg.token === null ? "还没有配置人的令牌（页面右上角）：现在只读。" : "未连到链头：写操作暂时禁用。"}</p>}
         </aside>
@@ -120,7 +138,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
       </div>
 
       <footer className="bottom">
-        <Timeline events={session.log.events} head={s.head} asOf={asOf} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} link={link} />
+        <Timeline ticks={session.log.ticks} head={s.head} asOf={asOf} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} link={link} />
       </footer>
     </div>
   );

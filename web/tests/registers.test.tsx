@@ -2,10 +2,10 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ArtifactClass, ArtifactView, RegisterName, Tagged } from "../src/api/types";
-import { levelWord, terminalWord } from "../src/model/levels";
+import { LEVEL_GLYPH, levelWord, TERMINAL_GLYPH, terminalWord } from "../src/model/levels";
 import { isEvidence, registerOf } from "../src/model/register";
 import { visible } from "../src/model/text";
-import { TerminalBadge } from "../src/ui/criterion";
+import { LevelBadge, TerminalBadge } from "../src/ui/criterion";
 import { Frontier, NodeRowView } from "../src/ui/Frontier";
 import { ArtifactCard, Text } from "../src/ui/registers";
 import { liveSession, playToEnd, renderWith, rig, rng } from "./helpers";
@@ -159,5 +159,35 @@ describe("HT-4 判据徽章与终态", () => {
     expect(levelWord("E3", "判定通过", { label: "replay@1" })).toBe("判定通过（replay@1）");
     expect(levelWord("E1", "单源复核", { label: "replay@1" })).toBe("单源复核");
     expect(levelWord(null, null, null)).toBe("无等级");
+  });
+
+  it("徽章不靠颜色区分：每档等级、每个终态各有不同的形状记号，去掉样式后文字仍各不相同（P2-2）", () => {
+    const levels = Object.keys(LEVEL_GLYPH) as (keyof typeof LEVEL_GLYPH)[];
+    expect(new Set(Object.values(LEVEL_GLYPH)).size).toBe(levels.length);
+    expect(new Set(Object.values(TERMINAL_GLYPH)).size).toBe(Object.keys(TERMINAL_GLYPH).length);
+    const texts = levels.map((l) => {
+      const { container } = render(<LevelBadge level={l} word="词" />);
+      const glyph = container.querySelector(".glyph")!;
+      expect(glyph.getAttribute("aria-hidden")).toBe("true");
+      return container.textContent;
+    });
+    expect(new Set(texts).size).toBe(levels.length);
+    const badge = { judge_id: "replay", version: "1", grade: null, kind: null, label: "replay@1" };
+    const terms = (["solved", "accepted", "unsolved", null] as const).map((t) => {
+      const { container } = render(<TerminalBadge terminal={t} badge={badge} level={null} />);
+      return container.querySelector("[data-terminal-word]")!.textContent!;
+    });
+    expect(new Set(terms.map((t) => t[0])).size).toBe(4);           // 第一个字符就是形状，各不相同
+  });
+
+  it("样式表里等级与徽章的规则不用颜色（只用字形、边框线型与文字）", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync("src/styles.css", "utf8");
+    const rules = css.match(/[^{}]*\.(level|badge|glyph|terminal)[^{]*\{[^}]*\}/g) ?? [];
+    expect(rules.length).toBeGreaterThan(5);
+    const neutral = /^var\(--(panel|fg|muted)\)$/;
+    for (const r of rules) {
+      for (const [, prop, val] of r.matchAll(/(?:^|[;{\s])(color|background(?:-color)?)\s*:\s*([^;}]+)/g)) expect(val.trim(), `${prop} in ${r}`).toMatch(neutral);
+    }
   });
 });

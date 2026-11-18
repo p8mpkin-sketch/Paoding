@@ -4,7 +4,7 @@
  "body": {
   "as_of": 36,
   "head": 36,
-  "view_hash": "6c64effe4153f81970a697d0eb204b2723a0754cbc1392ec4d00089a0127bf1e",
+  "view_hash": "8095640392ee578be793be8b98fcb8c35380960c93f0be244103752aa1aeda72",
   "problem": {
    "id": "p1",
    "title": {
@@ -226,6 +226,7 @@
     "id": "h_11",
     "type": "hint",
     "seq": 11,
+    "ts": 1011,
     "author": "cz",
     "closed": false,
     "about": "i_9",

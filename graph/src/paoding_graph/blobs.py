@@ -4,6 +4,7 @@
 - 读取：每次校验哈希，不符抛 CorruptBlob（3.2.5 的 4，错误码 corrupt）。
 - 单个 Blob 上限 256 MB；超出的截断由采集方负责（保留头尾、置 truncated），本层只拒绝。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -61,7 +62,7 @@ class BlobStore:
             h = hasher.hexdigest()
             dest = self.path(h)
             if dest.exists():
-                os.unlink(tmp)            # 去重：已存在即同一内容
+                os.unlink(tmp)  # 去重：已存在即同一内容
             else:
                 dest.parent.mkdir(exist_ok=True)
                 os.chmod(tmp, 0o444)
@@ -92,5 +93,6 @@ class BlobStore:
 def _as_stream(data: bytes | BinaryIO) -> BinaryIO:
     if isinstance(data, (bytes, bytearray, memoryview)):
         import io
+
         return io.BytesIO(bytes(data))
     return data

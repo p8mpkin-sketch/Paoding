@@ -3,6 +3,7 @@
 Problem 里出现的只有键与加盐摘要 `VaultRef {vault, digest}`：摘要让人事后核对资产没被换过，
 盐让它不能用来离线穷举。库里的内容不进日志、不进 Blob、不进任何容器。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,7 +45,7 @@ class Vault:
         try:
             content, salt = p.read_bytes(), p.with_name(p.name + ".salt").read_bytes()
         except OSError:
-            raise VaultError(f"保密库里没有 {ref.get('vault')!r}")
+            raise VaultError(f"保密库里没有 {ref.get('vault')!r}") from None
         if hashlib.sha256(salt + content).hexdigest() != ref.get("digest"):
             raise VaultError("保密库内容与登记的摘要不符")
         return content

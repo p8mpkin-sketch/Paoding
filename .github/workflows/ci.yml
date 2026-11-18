@@ -20,10 +20,21 @@ jobs:
         run: python ci/check_domain_words.py
       - name: 依赖方向：只走契约接口
         run: python ci/check_deps.py
+      - name: 前端类型与线格式 schema 一致（types.ts 是生成物）
+        run: python scripts/gen-types.py --check
+      - name: ruff lint（含 BLE：不许宽接 Exception）
+        run: uv run --frozen ruff check
+      - name: ruff format
+        run: uv run --frozen ruff format --check
+      - name: mypy --strict（图内核：graph/ 全部，参考模型的搬运副本除外）
+        run: uv run --frozen mypy
       - name: 执行层测试用的通用镜像（不是题目容器）
         run: docker pull python:3.12-slim
-      - name: 单元与对抗测试
-        run: uv run --frozen pytest -q
+      - name: 单元与对抗测试（带覆盖率）
+        run: uv run --frozen pytest -q --cov --cov-report=json:coverage.json --cov-report=
+      - name: 覆盖率（按组件；只显示，不设门槛）
+        if: always()
+        run: python ci/coverage_by_component.py coverage.json
       - name: 全栈冒烟（假 CLI，起全栈 → 开题 → solved → 清理）
         run: scripts/test-e2e.sh --port 8100
 
@@ -38,11 +49,17 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            web/lint/package-lock.json
       - run: npm ci
+      - name: ESLint（单独的包，见 web/lint/package.json）
+        run: npm ci --prefix lint && npm run lint
       - name: 类型检查
         run: npm run typecheck
       - name: 前端测试（HT 验收、契约、边界）
         run: npm test
       - name: 构建
         run: npm run build
+      - name: 浏览器测试（Playwright：驾驶舱、审批卡、时间轴回放、窄屏、图的键盘操作）
+        run: npx playwright install --with-deps chromium && npx playwright test
