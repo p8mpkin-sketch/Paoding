@@ -96,6 +96,17 @@ KINDS = ("open_problem", "register_artifact", "add_fact", "add_intent", "request
 AFTER_CLOSE = ("cost", "release")                  # 关题后在途任务仍可交回用量与释放租约
 
 
+def _handback(state: dict, actor: dict, pid: str, kind: str, body: dict) -> bool:
+    """关题那一刻还在途的会话，可以把自己的留档（authored 类）登记进来再释放租约。
+
+    题目常常是被会话自己提交的候选关掉的：判官一通过，图服务立刻关题，而会话还没来得及交回留档。
+    只认"令牌的会话是本题一条仍在途的租约"；authored 类永不入 grounds（I2），不影响任何等级。"""
+    if kind != "register_artifact" or body.get("class") != "authored":
+        return False
+    held = state["leases"].get(actor.get("session") or "")
+    return held is not None and held["problem_id"] == pid and held["active"]
+
+
 def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Config,
              ts: int | None = None) -> Ok | Reject:
     """ts：这条事件将被赋予的时间戳（服务层的时钟，作为参数传入）；缺省取 state["now"]。"""
@@ -109,7 +120,7 @@ def validate(state: dict, actor: dict, pid: str, kind: str, body: dict, cfg: Con
         p = state["problems"].get(pid)
         if p is None:
             return Reject("unknown_ref", f"题目 {pid} 未开")
-        if p.get("closed") and kind not in AFTER_CLOSE:
+        if p.get("closed") and kind not in AFTER_CLOSE and not _handback(state, actor, pid, kind, body):
             return Reject("schema_error", "题目已关闭")
         held = state["leases"].get(actor.get("session") or "")
         if held is not None and held["problem_id"] != pid:      # 任务令牌随租约签发，只在租约所属的题内有效
@@ -502,7 +513,10 @@ def _v_release(state, actor, pid, body, cfg, ts):
     if err:
         return err
     if state["problems"][pid].get("closed"):          # 关题后在途任务交回租约：结局一律记 closed
-        return Ok({"lease": l["id"], "outcome": "closed", "after_close": True})
+        tr = body.get("transcript_ref")                # 关题后交回的留档照样挂到租约上
+        keep = tr is not None and state["artifacts"].get(tr, {}).get("problem_id") == pid
+        return Ok({"lease": l["id"], "outcome": "closed", "after_close": True,
+                   **({"transcript_ref": tr} if keep else {})})
     if body["outcome"] not in RELEASE_OUTCOMES:
         return Reject("schema_error", f"outcome 只取 {RELEASE_OUTCOMES}")
     tr = body.get("transcript_ref")
