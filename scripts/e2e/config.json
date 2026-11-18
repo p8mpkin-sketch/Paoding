@@ -1,0 +1,9 @@
+{
+  "backend": {
+    "kind": "fake",
+    "scripts": {"bootstrap": "bootstrap.json", "reason": "reason.json", "explore": "explore.json"}
+  },
+  "executor": {"kind": "docker", "bases": {"basic": "python:3.12-slim"}},
+  "poll_s": 0.3,
+  "dog_interval_s": 1.0
+}

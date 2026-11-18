@@ -1,0 +1,6 @@
+{"steps": [
+  {"tool": "mcp__paoding__exec", "input": {"cmd": "python -c \"print(6*7)\""}},
+  {"tool": "Write", "input": {"file_path": "answer.txt", "content": "$r0.output"}},
+  {"tool": "mcp__paoding__submit", "input": {"ops": [{"op": "claim_done", "target": "goal", "candidate_path": "answer.txt"}],
+                                             "final": {"outcome": "found"}}}
+], "resume_steps": []}

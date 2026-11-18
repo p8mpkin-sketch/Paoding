@@ -1,0 +1,9 @@
+{"steps": [
+  {"tool": "mcp__paoding__exec", "input": {"cmd": "python -c \"print('ready')\""}},
+  {"tool": "Write", "input": {"file_path": "probe.sh", "content": "python -c \"print('ready')\"\n"}},
+  {"tool": "mcp__paoding__submit", "input": {"ops": [
+    {"op": "add_fact", "tmp_id": "f", "claim_type": "observation", "title": "执行环境可用",
+     "summary": "在执行容器里跑探测命令，输出 ready", "premises": [], "grounds": ["$r0.artifact"],
+     "check": {"judge_id": "replay", "expect": {"stdout_contains": "ready", "exit_code": 0}, "spec_path": "probe.sh"}},
+    {"op": "request_judge", "target": "f"}], "final": {"outcome": "found"}}}
+], "resume_steps": []}
