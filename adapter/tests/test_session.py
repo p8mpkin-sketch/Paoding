@@ -282,8 +282,8 @@ def test_tokens_revoked_after_release(rig):
 
 
 def test_problem_closed_mid_session_still_releases(rig):
-    """并行的另一个会话（或判官）在本会话跑着的时候把题关了：关题后内核不收登记、只收释放。
-    会话不该在登记会话记录时炸掉而留下没人释放的租约（审计 P1-3 的并发形态下才会遇到）。"""
+    """并行的另一个会话（或判官）在本会话跑着的时候把题关了：会话照常释放租约，不留悬着的租约
+    （审计 P1-3 的并发形态下才会遇到）。在途会话的留档内核仍然收（交回），所以记录挂在租约上。"""
     import threading
     lid = lease_bootstrap(rig.graph)
     rig.script([{"hang": 1.0}, sub(final={"outcome": "nothing"})], resume_steps=[sub(final={"outcome": "nothing"})])
@@ -293,7 +293,9 @@ def test_problem_closed_mid_session_still_releases(rig):
     rec = rig.run(lid)
     t.join()
     assert rig.graph.state["problems"]["p1"]["closed"]
-    assert rec.release and rec.release["ok"] and rec.transcript_ref is None
+    assert rec.release and rec.release["ok"] and rec.transcript_ref is not None
     lease = lease_of(rig, lid)
     assert not lease["active"] and lease["outcome"] == "closed"
+    assert lease["transcript_ref"] == rec.transcript_ref
+    assert rig.graph.state["artifacts"][rec.transcript_ref]["class"] == "authored"
     assert rig.runner.live == {}
