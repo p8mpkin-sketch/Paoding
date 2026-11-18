@@ -14,6 +14,8 @@ import pytest
 from adapter_rig import (FETCH, PROBE, docker_ok, drig, graph, lease_bootstrap, open_net_problem,  # noqa: F401
                          upstream)
 
+from paoding_graph.contract import seen_card
+
 pytestmark = pytest.mark.skipif(not docker_ok(), reason="需要 Docker 与本地镜像 python:3.12-slim")
 R = {"usd_milli": 1000, "wall_s": 600}
 EXEC, SUBMIT, SHOW = "mcp__paoding__exec", "mcp__paoding__submit", "mcp__paoding__show"
@@ -39,7 +41,9 @@ def explore(drig, pid, risk="r0", approve=False):
     iid = drig.graph.submit("tok-human", pid, "int-1", [{"op": "add_intent", "body": {
         "title": "取值", "premises": [], "risk": risk, "budget": R}}])["results"][0]["id"]
     if approve:
-        assert drig.graph.submit("tok-human", pid, "ap-1", [{"op": "approve", "body": {"intent": iid, "decision": "approve"}}])["ok"]
+        assert drig.graph.submit("tok-human", pid, "ap-1", [{"op": "approve", "body": {
+            "intent": iid, "decision": "approve",
+            "seen": seen_card(drig.graph.state, pid, "approval", iid)}}])["ok"]
     out = drig.graph.submit("tok-sinan", pid, "lease-e", [{"op": "lease", "body": {
         "kind": "explore", "target": iid, "holder": "sn1", "reserve": R, "ttl_s": 120}}])
     assert out["ok"], out

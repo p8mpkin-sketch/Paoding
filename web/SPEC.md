@@ -70,7 +70,7 @@
 - `src/model/`：视图模型、布局、刻度、等级词、语域、向导草稿，都是纯函数。
 - `src/app/`：本机配置、路由、题目会话（事件流加视图模型）、使用读数。
 - `src/ui/`、`src/pages/`：组件与页面。
-- `mock/`：开发与测试用的假后端，线格式与图服务相同；多出来的只有 M1 的续期门与 `stale_view` 校验。
+- `mock/`：开发与测试用的假后端，线格式与图服务相同；多出来的只有 M1 的续期门。`stale_view` 校验两边都有：图服务在内核里校验 `seen.card_hash`，拒绝时在结果的 `card` 里附上最新卡片。
 - `tests/fixtures/real/`：真图服务录下的应答（`tools/record_fixtures.py`）。
 - `tools/live_demo.py`：起一个真图服务，按固定脚本经 HTTP 提交事件，给网页一份实时数据。
 
@@ -96,7 +96,7 @@
 ## 实现取值（待裁决，见 `docs/m0/dissent-005-web-f1.md`）
 
 1. 线格式类型由图服务的 JSON Schema 生成（`graph/src/paoding_graph/wire_schema.py` → `scripts/gen-types.py` → `src/api/types.ts`，不手改；CI 带 `--check`）。契约测试照旧对着真应答核。
-2. 批准与拒绝都带 `seen {seq, card_hash}`。M0 的图服务不校验它，M1 起不等即 `stale_view`；两种情况下发出的字段相同。
+2. 批准与拒绝都带 `seen {seq, card_hash}`。图服务在链头重算卡片哈希，不等即 `stale_view` 并附最新卡片；前端的差异高亮只是便利，判定以服务端为准。
 3. 续期门、争议卡、暂停与恢复随 M1：图服务返回 `not_enabled` 时如实显示“暂不可用”；暂停与恢复没有做按钮。
 4. r2 而没有回退声明时禁用批准（HMI H1 的字面）。比图服务 M0 的现行取值严，这类 Intent 在 M0 只能用 `pd approve`。
 5. “无证据根”由图服务按整条前提链给出（`no_evidence_root`，裁决 005-4）；检视只读这个字段，不自己算。

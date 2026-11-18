@@ -51,7 +51,7 @@ save("missing", "/v1/problems/nope/status")
 st, body, _ = api.req("POST", "/v1/profile/preview", {"scope": [{"resource": "target", "pattern": "*", "actions": ["read"], "risk": "r1"}, {"resource": "x", "pattern": "*", "actions": ["w"]}], "goal": {"check": {"judge_id": "exact_match"}}})
 (out / "profile-preview.json").write_text(json.dumps({"status": st, "body": body}, ensure_ascii=False, indent=1), encoding="utf-8")
 # 被拒的批次长什么样
-st, body, _ = api.req("POST", "/v1/problems/p2/proposals", {"idem_key": "bad1", "ops": [{"op": "approve", "body": {"intent": i2, "decision": "deny"}}]}, token="tok-human")
+st, body, _ = api.req("POST", "/v1/problems/p2/proposals", {"idem_key": "bad1", "ops": [{"op": "approve", "body": {"intent": i2, "decision": "deny", "seen": (lambda c: {"seq": c["as_of"], "card_hash": c["card_hash"]})(api.get(f"/v1/problems/p2/cards/approval/{i2}"))}}]}, token="tok-human")
 (out / "proposal-rejected.json").write_text(json.dumps({"status": st, "body": body}, ensure_ascii=False, indent=1), encoding="utf-8")
 st, body, _ = api.req("POST", "/v1/problems/p2/proposals", {"idem_key": "bad2", "ops": [{"op": "pause", "body": {}}]}, token="tok-human")
 (out / "proposal-unknown-op.json").write_text(json.dumps({"status": st, "body": body}, ensure_ascii=False, indent=1), encoding="utf-8")

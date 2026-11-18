@@ -15,6 +15,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
+from . import views
 from . import work as wk
 from .eventlog import EventLog
 from .reducer import Config, Ok, apply, empty_state, result_id, validate
@@ -61,7 +62,10 @@ class GraphService:
                 ts = self._ts() if not evs else max(self._ts(), evs[-1]["ts"])
                 r = validate(state, actor, pid, kind, body, self.cfg, ts)
                 if not isinstance(r, Ok):
-                    results.append({"ok": False, "code": r.code, "detail": r.detail})
+                    results.append({"ok": False, "code": r.code, "detail": r.detail,
+                                    # stale_view：附上链头的最新卡片（§3.1.9），形状与 /cards 端点相同
+                                    **({"card": {"as_of": state["seq"], **views.card(state, pid, *r.card)}}
+                                       if r.card else {})})
                     raise _Abort(results + [{"ok": False, "code": "batch_aborted", "detail": f"第 {i} 条被拒"}
                                             for _ in ops[i + 1:]])
                 ev = append(pid, kind, r.body, actor, ts, f"{idem_key}#{i}")

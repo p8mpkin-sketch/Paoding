@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import cards
 from . import levels as lv
 from . import refmodel as rm
 from . import work as wk
@@ -31,7 +32,7 @@ REGISTER = {
 REGISTERS = ("证据", "叙述", "人", "估")
 LEVEL_WORDS = {"E3": "判定通过", "E3d": "相符", "E2": "模型共识", "E1": "单源复核", "E0": "猜想", "X": "已证伪"}
 VIEW_LAYERS = ("title", "summary", "full")
-CARD_KINDS = ("approval", "closeout", "extension", "dispute")
+CARD_KINDS = cards.CARD_KINDS
 
 
 class NotFound(Exception):
@@ -344,12 +345,11 @@ def card(state: dict, pid: str, kind: str, target: str) -> dict:
     if kind not in CARD_KINDS:
         raise NotFound(f"没有卡片种类 {kind}")
     ctx = _ctx(state, pid)
-    st, res = ctx["ref"]
     if kind == "approval":
         i = state["intents"].get(target)
         if i is None or i["problem_id"] != pid:
             raise NotFound(f"本题没有 Intent {target}")
-        obj = rm.approval_card(st, res, st.intents[target])
+        obj = cards.card_object(state, pid, kind, target, ctx["ref"])
         display = {
             "status": wk.intent_status(state, pid, target, ctx),
             "title": tag("title", i["title"]), "summary": tag("summary", i.get("summary", "")),
@@ -373,14 +373,12 @@ def card(state: dict, pid: str, kind: str, target: str) -> dict:
     elif kind == "closeout":
         if target != pid:
             raise NotFound("四顾清单的 id 就是题目 id")
-        obj = {"kind": "closeout", "target": pid,
-               "fields": {"items": wk.closeout_items(state, pid), "goal_level": ctx["levels"].get("goal"),
-                          "closed": bool(p.get("closed")), "terminal": _terminal(state, pid)}}
+        obj = cards.card_object(state, pid, kind, target, ctx["ref"])
         display = {"steps": ["四顾", "满志", "藏刀"], "terminal_if_closed_now": wk.terminal(state, pid),
                    "terminal_badge": _badge(p, p["goal"]["check"]["judge_id"])}
     else:
         raise NotEnabled(f"{kind} 卡随 M1 落地（续期门、争议裁决）")
-    return {"card": obj, "card_hash": rm.card_hash(obj), "display": display}
+    return {"card": obj, "card_hash": cards.card_hash(obj), "display": display}
 
 
 # ---------- Hint 效果追溯（H4）：时序关联与暴露关联两列，都只是“关联” ----------
