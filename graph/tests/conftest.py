@@ -35,7 +35,7 @@ class Kernel:
         self.cfg, self.state, self.events, self.heads, self.ts = cfg, empty_state(), [], {}, 1000
 
     def submit(self, actor, pid, kind, body):
-        r = validate(self.state, actor, pid, kind, body, self.cfg)
+        r = validate(self.state, actor, pid, kind, body, self.cfg, self.ts + 1)
         if not isinstance(r, Ok):
             return r.code
         self.ts += 1

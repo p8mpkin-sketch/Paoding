@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS events (
   doc        TEXT    NOT NULL,
   UNIQUE (problem_id, idem_key)
 );
+CREATE TABLE IF NOT EXISTS proposals (
+  problem_id TEXT NOT NULL,
+  idem_key   TEXT NOT NULL,
+  results    TEXT NOT NULL,
+  PRIMARY KEY (problem_id, idem_key)
+);
 CREATE INDEX IF NOT EXISTS events_by_problem ON events (problem_id, seq);
 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
   BEGIN SELECT RAISE(ABORT, 'append-only'); END;
@@ -59,6 +65,50 @@ class EventLog:
                        (seq, problem_id, idem_key, ev["hash"], json.dumps(ev, ensure_ascii=False)))
             db.execute("COMMIT")
             return ev, True
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+
+    def commit_batch(self, problem_id: str, idem_key: str, build) -> tuple[list, bool]:
+        """整批原子提交：在一个 IMMEDIATE 事务里调用 build(append) 生成事件与结果，连同结果一起落盘。
+
+        build 收到一个 append(kind, body, actor, ts, idem) 函数，返回结果列表（可 JSON 化）。
+        同一 (problem_id, idem_key) 已提交过时不调用 build，直接返回首次结果（恰好一次）。
+        build 抛出带 batch_results 的异常表示整批被拒：本批事件撤回，结果照样记下，重放返回同一结果。
+        其它异常整体回滚，日志与结果表都不留痕。
+        """
+        db = self._db
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            row = db.execute("SELECT results FROM proposals WHERE problem_id=? AND idem_key=?",
+                             (problem_id, idem_key)).fetchone()
+            if row:
+                db.execute("COMMIT")
+                return json.loads(row[0]), False
+
+            def append(pid: str, kind: str, body: dict, actor: dict, ts: int, idem: str) -> dict:
+                head = db.execute("SELECT hash FROM events WHERE problem_id=? ORDER BY seq DESC LIMIT 1",
+                                  (pid,)).fetchone()
+                seq = db.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0] + 1
+                ev = seal(seq=seq, problem_id=pid, ts=ts, actor=actor, kind=kind, body=body,
+                          idem_key=idem, prev_hash=head[0] if head else GENESIS)
+                db.execute("INSERT INTO events (seq, problem_id, idem_key, hash, doc) VALUES (?,?,?,?,?)",
+                           (seq, pid, idem, ev["hash"], json.dumps(ev, ensure_ascii=False)))
+                return ev
+
+            db.execute("SAVEPOINT batch")
+            try:
+                results = build(append)
+            except Exception as e:                          # 整批被拒：撤回本批事件，只记下结果
+                if not hasattr(e, "batch_results"):
+                    raise
+                db.execute("ROLLBACK TO batch")
+                results = e.batch_results
+            db.execute("RELEASE batch")
+            db.execute("INSERT INTO proposals (problem_id, idem_key, results) VALUES (?,?,?)",
+                       (problem_id, idem_key, json.dumps(results, ensure_ascii=False)))
+            db.execute("COMMIT")
+            return results, True
         except BaseException:
             db.execute("ROLLBACK")
             raise

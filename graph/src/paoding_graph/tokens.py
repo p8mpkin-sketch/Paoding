@@ -20,9 +20,10 @@ class TokenRegistry:
     def __init__(self) -> None:
         self._by_token: dict[str, dict] = {}
 
-    def issue(self, actor: dict) -> str:
+    def issue(self, actor: dict, token: str | None = None) -> str:
+        """token 只在测试与重启恢复时显式给出；缺省随机生成。"""
         check_actor(actor)
-        tok = secrets.token_urlsafe(32)
+        tok = token or secrets.token_urlsafe(32)
         self._by_token[tok] = dict(actor)
         return tok
 

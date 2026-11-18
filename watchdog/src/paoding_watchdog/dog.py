@@ -1,0 +1,148 @@
+"""哮天犬（§3.5.2、3.4.4）：不含任何策略的脚本，只做四件事。
+
+1. 过期租约：expires_at 已过的在途租约，提交 expire_lease；Intent 回到 open（Adapter 崩溃时的回收）。
+2. 超预算终止：读 /budget 与 cost 事件。任务花费越过软线（预留额的 90%）→ 通知 Adapter 进入收尾轮，
+   每个任务只通知一次；越过硬顶（预留额）→ 终止任务。题花费达到 cap → 终止题内所有任务，以 unsolved 关题。
+   题的墙钟（wall_s）用尽 → 同样终止并关题。
+3. 清理孤儿容器：调用注入的清扫函数（执行层按标签回收）。
+4. 健康告警：某后端最近 N 个任务里失败占比超过阈值 → backend_unhealthy 告警交人。
+
+依赖方向只到 graph.contract（ci/check_deps.py）。对会话与容器的动作经注入的 TaskControl 完成，
+由组装根把 Adapter 的会话运行器接进来；哮天犬不 import 任何其它组件。
+"""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import Callable
+
+from paoding_graph.contract import GraphPort, GraphReader
+
+from .contract import TaskControl
+
+SOFT_LINE = 0.9
+FAIL_OUTCOMES = ("failed", "expired")
+
+
+@dataclass
+class DogConfig:
+    token: str                              # 哮天犬的组件令牌（actor.kind = watchdog）
+    interval_s: float = 10.0
+    health_window: int = 10                 # 最近多少个已结束任务
+    health_threshold: float = 0.5           # 失败占比超过它就告警
+    health_min: int = 4                     # 样本不足不告警
+
+
+@dataclass
+class TickReport:
+    expired: list = field(default_factory=list)
+    soft: list = field(default_factory=list)
+    killed: list = field(default_factory=list)
+    closed: list = field(default_factory=list)
+    swept: list = field(default_factory=list)
+    alerts: list = field(default_factory=list)
+
+
+class Watchdog:
+    def __init__(self, cfg: DogConfig, graph: GraphPort, reader: GraphReader, control: TaskControl | None = None,
+                 sweep: Callable[[], list] | None = None, clock: Callable[[], int] = lambda: int(time.time() * 1000)):
+        self.cfg, self.graph, self.reader, self.control, self.sweep, self.clock = cfg, graph, reader, control, sweep, clock
+        self._soft_sent: set[str] = set()
+        self._killed: set[str] = set()
+        self._alerted: set[str] = set()
+
+    def tick(self) -> TickReport:
+        r = TickReport()
+        now = self.clock()
+        st = self.reader.state
+        for pid, p in sorted(st["problems"].items()):
+            if p.get("closed"):
+                continue
+            self._expire(pid, now, r)
+            self._budget(pid, now, r)
+        if self.sweep is not None:
+            r.swept = list(self.sweep())
+        r.alerts = self._health()
+        return r
+
+    # ---------- 1. 过期租约 ----------
+
+    def _expire(self, pid: str, now: int, r: TickReport) -> None:
+        for l in self._active(pid):
+            if now >= l["expires_at"]:
+                out = self.graph.submit(self.cfg.token, pid, f"expire:{l['id']}", [{"op": "expire_lease",
+                                                                                     "body": {"lease": l["id"]}}])
+                if out["ok"]:
+                    r.expired.append(l["id"])
+                    self._halt(l["id"], "expired", r, record=False)    # 会话若还活着，一并收掉容器
+
+    # ---------- 2. 超预算终止 ----------
+
+    def _budget(self, pid: str, now: int, r: TickReport) -> None:
+        st = self.reader.state
+        view = self.reader.budget(pid)
+        spent_by_task: dict[str, int] = {}
+        for c in st["costs"]:
+            if c["problem_id"] == pid:
+                spent_by_task[c["task_id"]] = spent_by_task.get(c["task_id"], 0) + c["usd_milli"]
+        for l in self._active(pid):
+            if l["kind"] == "judge":
+                continue
+            spent, reserve = spent_by_task.get(l["id"], 0), l["reserve"]["usd_milli"]
+            if spent >= reserve:
+                self._halt(l["id"], "budget", r)
+            elif spent >= SOFT_LINE * reserve and l["id"] not in self._soft_sent:
+                self._soft_sent.add(l["id"])
+                if self.control is not None:
+                    self.control.soft_line(l["id"])
+                r.soft.append(l["id"])
+        p = st["problems"][pid]
+        cap = view["cap"].get("usd_milli")
+        over_cap = cap is not None and view["spent"]["usd_milli"] >= cap
+        over_wall = "wall_s" in p["budget"] and "opened_ts" in p and now - p["opened_ts"] >= p["budget"]["wall_s"] * 1000
+        if over_cap or over_wall:
+            why = "problem_budget" if over_cap else "wall_s"
+            for l in self._active(pid):
+                self._halt(l["id"], why, r)
+            out = self.graph.submit(self.cfg.token, pid, f"close:{pid}:{why}", [{"op": "close_problem", "body": {
+                "reason": why}}])
+            if out["ok"]:
+                r.closed.append(pid)
+
+    def _halt(self, lid: str, why: str, r: TickReport, record: bool = True) -> None:
+        if lid in self._killed:
+            return
+        self._killed.add(lid)
+        if self.control is not None:
+            self.control.kill(lid, why)
+        if record:
+            r.killed.append((lid, why))
+
+    # ---------- 4. 健康告警 ----------
+
+    def _health(self) -> list:
+        ended = [l for l in self.reader.state["leases"].values() if not l["active"] and l["kind"] != "judge"]
+        ended.sort(key=lambda l: l["ended_seq"])
+        by_backend: dict[str, list] = {}
+        for l in ended:
+            by_backend.setdefault(l.get("backend", "default"), []).append(l)
+        alerts = []
+        for b, ls in sorted(by_backend.items()):
+            recent = ls[-self.cfg.health_window:]
+            if len(recent) < self.cfg.health_min:
+                continue
+            rate = sum(1 for l in recent if l["outcome"] in FAIL_OUTCOMES) / len(recent)
+            key = f"{b}:{recent[-1]['id']}"
+            if rate > self.cfg.health_threshold and key not in self._alerted:
+                self._alerted.add(key)
+                alerts.append({"alert": "backend_unhealthy", "backend": b, "fail_rate": round(rate, 3),
+                               "window": len(recent)})
+        return alerts
+
+    def _active(self, pid: str) -> list:
+        return [l for l in self.reader.state["leases"].values() if l["problem_id"] == pid and l["active"]]
+
+    def run_forever(self, stop: Callable[[], bool] = lambda: False) -> None:
+        while not stop():
+            self.tick()
+            time.sleep(self.cfg.interval_s)

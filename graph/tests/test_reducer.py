@@ -8,7 +8,7 @@ import pathlib
 import random
 
 import pytest
-from conftest import ADAPTER, EXECUTOR, HUMAN, JUDGE, Kernel, explore, reason
+from conftest import ADAPTER, CFG, EXECUTOR, HUMAN, JUDGE, Kernel, explore, reason
 
 from paoding_graph import levels as lv
 from paoding_graph.replay import replay, state_hash
@@ -31,7 +31,7 @@ def test_reducer_is_pure():
     """I1：reducer、等级桥接与参考模型不 import 时钟、IO、随机数、网络、子进程。"""
     banned = {"time", "datetime", "os", "random", "socket", "sqlite3", "subprocess", "pathlib",
               "urllib", "http", "requests", "asyncio", "secrets", "io", "shutil", "tempfile"}
-    for name in ("reducer.py", "levels.py", "refmodel.py", "jcs.py", "envelope.py"):
+    for name in ("reducer.py", "levels.py", "refmodel.py", "jcs.py", "envelope.py", "work.py"):
         tree = ast.parse((ROOT / "graph/src/paoding_graph" / name).read_text())
         for node in ast.walk(tree):
             mods = []
@@ -322,3 +322,13 @@ def test_valuation_not_in_levels(k):
     st, res = lv.compute(k.state, "p1")
     assert lv.intent_state(k.state, "p1", a) == lv.intent_state(k.state, "p1", b)
     assert lv.gate(k.state, "p1", a) == lv.gate(k.state, "p1", b)
+
+
+def test_profile_info_from_resource_registry():
+    """评审方 #14 必修 1：画像的信息轴取自资源种类登记表（单一事实源）：有 net → partial，只有 workspace → complete。"""
+    from paoding_graph.reducer import Config
+    k = Kernel(Config(judges=CFG.judges))
+    k.open("pa", resource="net")
+    k.open("pb", resource="workspace")
+    assert k.state["problems"]["pa"]["profile"]["info"] == "partial"
+    assert k.state["problems"]["pb"]["profile"]["info"] == "complete"

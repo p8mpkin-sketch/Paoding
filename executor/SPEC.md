@@ -19,3 +19,21 @@
 ## 依赖
 
 `paoding_graph.contract`。
+
+## M0 实现（预备，2026-11-17）
+
+- `compile.py`：确定性授权编译。资源种类插件 `net`（host:port）与 `workspace`；没有插件解释的 resource 直接报错，不默认放行。
+- `runtime.py`：Docker 实现。每个沙箱一张 `--internal` 网络，只接入白名单里的本机题目容器；`--cap-drop ALL`、`no-new-privileges`、pids/内存/CPU 上限，不传任何凭据类环境变量。判官的洁净容器不挂 Worker 工作区。exec 合并 stdout 与 stderr（保序），容器外采集，写 Blob，用执行层令牌登记为 exec 类；判官模式只交回出处字段，由判官运行器登记。回显超过 8 KB 只回头尾。
+- 依赖：`paoding_graph.contract` 的 `GraphPort` 与 `BlobPort`。
+
+## 已知缺口（D3 正式日补齐，需要题目容器一起验）
+
+1. **`scope_violation` 尚未产生。** `--internal` 网络对越界连接是静默丢弃，执行层看不到，所以 3.6.4 的 1 只验了"连接被拒"，没验"日志里出现 `scope_violation`"。计划：沙箱的唯一出口改为一个出站闸门容器（DNS 加 TCP 转发），白名单外的名字或地址在闸门处拒绝并上报，执行层据此追加事件；同一任务累计 3 次交哮天犬终止。
+2. **访问摘要 `touched` 为空。** 同一个闸门可以记下实际连到过的授权目标，届时填入。
+3. **端口粒度未强制。** 白名单写到 host:port，但目前整台目标容器可达。闸门落地后按端口放行。
+4. **只支持本机容器作为目标。** M0 的题目都是本机题目容器，够用；外部地址要等闸门。
+
+## 评审方 #14 必修项（已修）
+
+1. **资源种类登记表单一事实源**：`graph/src/paoding_graph/resources.py` 的 `RESOURCE_EXTERNAL`（`net` 为外部资源，`workspace` 不是）。画像推导的 `Config.external_resources` 默认取自它；执行层的 `RESOURCE_KINDS` 只挂编译行为，external 取自同一张表，键集合不一致时导入即失败。原先这里把 `net` 登记为 `external=False`，与 §6.1 走查（CTF 题画像为 partial）矛盾；当时画像侧另持一份（缺省为空），两边都错且互不相干。
+2. **孤儿清扫查属主**：沙箱容器与网络打 `paoding.owner=<主机名>:<pid>:<进程启动时刻>` 标签；`sweep_orphans` 只清本机属主确定已死的（pid 不在或启动时刻不符，防 pid 复用）。别的主机的、标签缺失或格式不明的一律不动。

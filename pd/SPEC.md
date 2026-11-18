@@ -19,3 +19,26 @@
 ## 依赖
 
 `paoding_graph.contract`。
+
+## 实现（骨架，离线预备）
+
+- `cli.py`：`problem open`、`status`、`report`、`profile`、`hint add|close`、`approve`、`deny`。pid 取 `--pid` 或 `PD_PROBLEM`，数据目录取 `--home` 或 `PD_HOME`。
+- `render.py`：渲染入口 `Out.add(出处类别, 文本)`，语域查 `REGISTER` 表得到，没有直接写语域的入口；模型撰写的文本压成单行，内容里伪造的行首标记不成行。等级词表 `LEVEL_WORDS` 固定；E3、E3d、X 带作出裁决的 `judge@version`；`solved` 带目标判官徽章；`accepted` 写“人验收，未经判官判定”。
+- 观察类论断：首行是谓词（判官徽章、规格哈希、`expect`）与等级，第二行是证据根，标题与摘要在其后，按叙述。
+- `pd status` 对每条 Hint 列出“之后新增的 Intent”，注明是时序关联，不是因果。
+- `pd approve` 先打印审批卡文本，再要求输入 yes（`--yes` 跳过）；`deny` 理由必填。
+
+### 实现取值（待评审方确认）
+
+1. **本机进程内打开图服务**：骨架直接打开 `PD_HOME/g.sqlite`。图服务独立成进程（司南循环在跑）时，两个进程各自持有状态，pd 的写入要等对方重放才看得见；D10 改走 HTTP/Unix socket 绑定，接口不变。
+2. 内建判官表取异议 001 裁决的三个（replay、exact_match、seal_check）；配置判官随 judgebox 落地后从 `judges.d` 读。
+3. `pd hint add` 需要 pid（规格命令表里没写），取 `--pid` 或 `PD_PROBLEM`。
+
+### 已补齐（异议 003，评审方授权）
+
+1. `profile_override`：`pd profile <pid> --override <轴>=<值> --reason`，理由必填，推出值与覆盖留痕。
+2. `deny` 的理由：入日志，`pd status` 以 `[人]` 显示。
+
+### 按里程碑走（不在 M0）
+
+`--scope-amend`、`--waive-premise`、`pd extend`，以及 `rule`、`accept`、`judge_revoke`、`intent_done`（变更 #41）。r2 缺回退时禁用批准（HMI H1）随 M4 的 `rollback` 字段落地，M0 卡面只写“未声明回退”。
