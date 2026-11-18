@@ -184,3 +184,24 @@ test("题库：克隆一道题进向导，id 留空、判据与 scope 已预填"
   await page.locator('[data-step-tab="3"]').click();
   await expect(page.locator('[data-rule="0"] input').nth(1)).not.toHaveValue("");
 });
+
+test("工作区：在途会话、三视图、右侧三 Tab、图上高亮支撑链不挪坐标", async ({ page }) => {
+  await openCockpit(page, "demo-1");
+  await expect(page.locator("[data-sessions]")).toBeVisible();
+  await page.locator('[data-center="timeline"]').click();
+  await expect(page.locator("[data-event-timeline] li").first()).toBeVisible();
+  await page.locator('[data-right-tab="cost"]').click();
+  await expect(page.locator("[data-cost-panel]")).toBeVisible();
+  await page.locator('[data-right-tab="log"]').click();
+  await expect(page.locator("[data-log-row]").first()).toBeVisible();
+  await page.locator('[data-action="graph-always"]').check();
+  await page.locator('[data-action="tab-graph"]').click();
+  const node = page.locator("[data-graph-node].gnode-intent").first();
+  const before = await node.getAttribute("data-x");
+  await node.click();
+  await page.locator('[data-center="graph"]').click();
+  await page.locator('[data-action="emph-chain"]').click();
+  await expect(page.locator(".gnode.lit").first()).toBeVisible();
+  expect(await node.getAttribute("data-x")).toBe(before);
+  await expect(page.locator('[data-right-tab="detail"]')).toHaveAttribute("aria-pressed", "true"); // 选中节点切回详情
+});
