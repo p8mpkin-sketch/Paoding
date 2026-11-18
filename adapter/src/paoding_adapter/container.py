@@ -25,6 +25,7 @@ from pathlib import Path
 
 from . import backend as be
 from .relay import accept_loop
+from .session import stderr_file
 
 RELAY_ALIAS = "pd-endpoints"
 PROXY_PORT, MCP_PORT = 8081, 8082
@@ -289,9 +290,10 @@ class ContainerLauncher:
             memory=self.memory,
             pids=self.pids,
         )
-        popen = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True
-        )
+        with stderr_file(cwd) as err:  # docker run 的 stderr：容器里 CLI 的 stderr 与 docker 自己的报错
+            popen = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=err, stdin=subprocess.DEVNULL, start_new_session=True
+            )
         return ContainerProc(n["model"], popen)
 
     def release(self, lease_id: str) -> None:

@@ -28,8 +28,11 @@ import http.client
 import json
 import logging
 import math
+import os
 import secrets
+import ssl
 import threading
+import time
 import urllib.parse
 import zlib
 from dataclasses import dataclass, field
@@ -42,6 +45,40 @@ import yaml
 from paoding_graph.contract import GraphPort, GraphReader
 
 LOG = logging.getLogger("adapter")
+# 系统没配好 CA 时（macOS 上 python.org 与 uv 装的 Python 常见）依次试的证书包
+CA_CANDIDATES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
+
+
+def tls_context() -> tuple[ssl.SSLContext, str]:
+    """连上游用的 TLS 上下文与它的 CA 来源（记进日志）。
+
+    真实测试报告：CLI 经代理调 DeepSeek 无响应。代理连上游的 TLS 握手要是因为本机 Python 找不到 CA 而失败，
+    代理回 502，CLI 默默重试几分钟再退出，看上去就是“没有响应”。所以：SSL_CERT_FILE / SSL_CERT_DIR 有就用
+    （OpenSSL 自己认）；系统缺省路径里有证书就用；都没有再试 certifi（装了的话）与几个常见的证书包位置。"""
+    ctx = ssl.create_default_context()
+    paths = ssl.get_default_verify_paths()
+    if os.environ.get(paths.openssl_cafile_env) or os.environ.get(paths.openssl_capath_env):
+        return ctx, "SSL_CERT_FILE/SSL_CERT_DIR"
+    if (paths.cafile and os.path.isfile(paths.cafile)) or (
+        paths.capath and os.path.isdir(paths.capath) and any(os.scandir(paths.capath))
+    ):
+        return ctx, "system"
+    if ctx.cert_store_stats().get("x509_ca"):  # macOS 等从系统钥匙串之类的地方装进来的
+        return ctx, "system"
+    candidates: list[str] = []
+    try:
+        import certifi  # type: ignore[import-not-found]
+
+        candidates.append(certifi.where())
+    except ImportError:
+        pass
+    for ca in (*candidates, *CA_CANDIDATES):
+        if os.path.isfile(ca):
+            ctx.load_verify_locations(cafile=ca)
+            return ctx, ca
+    return ctx, "none"  # 连 https 上游必然失败；请求日志里会看到 502 与 SSL 报错
+
+
 ESTIMATED = "+estimated"
 BYTES_PER_TOKEN = 3  # 估算用：英文约 4 字节一个 token，中文约 3 字节；取小的，估多不估少
 
@@ -117,6 +154,7 @@ class EndpointProxy:
         # 启动时从账本恢复的基线：seq 是恢复时的链头，对账只比它之后的事件
         self.restored: dict[str, Any] = {"seq": 0, "global": 0, "problems": {}}
         self.server: ThreadingHTTPServer | None = None
+        self.tls, self.tls_source = tls_context()
         self.url = ""
         if reader is not None:
             self.restore(reader)
@@ -226,16 +264,24 @@ class EndpointProxy:
                 self._forward(None)
 
             def do_POST(self):
-                n = int(self.headers.get("content-length") or 0)
-                self._forward(self.rfile.read(n))
+                if "chunked" in self.headers.get("transfer-encoding", "").lower():
+                    body = _read_chunked(self.rfile)  # 不读完的话，剩下的字节会被当成下一个请求，连接就卡住
+                else:
+                    body = self.rfile.read(int(self.headers.get("content-length") or 0))
+                self._forward(body)
 
             def _forward(self, body: bytes | None) -> None:
+                t0 = time.monotonic()
                 status, why, task, n = proxy.admit(self._token())
                 if status != 200:
+                    LOG.warning("代理：%s %s → %d %s", self.command, self.path, status, why)
                     return self._reject(status, why)
                 up = urllib.parse.urlsplit(proxy.cfg.upstream)
-                conn_cls = http.client.HTTPSConnection if up.scheme == "https" else http.client.HTTPConnection
-                conn = conn_cls(up.netloc, timeout=600)
+                conn: http.client.HTTPConnection
+                if up.scheme == "https":
+                    conn = http.client.HTTPSConnection(up.netloc, timeout=600, context=proxy.tls)
+                else:
+                    conn = http.client.HTTPConnection(up.netloc, timeout=600)
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
                 headers["x-api-key"] = proxy.cfg.api_key
                 headers["accept-encoding"] = "identity"  # 压缩的响应没法边转边计量
@@ -244,7 +290,31 @@ class EndpointProxy:
                     conn.request(self.command, path, body=body, headers=headers)
                     resp = conn.getresponse()
                 except OSError as e:
-                    return self._reject(502, f"upstream_error:{type(e).__name__}")
+                    conn.close()
+                    LOG.error(
+                        "代理：%s %s → 上游 %s://%s%s 连不上：%s: %s（TLS 证书来源 %s）",
+                        self.command,
+                        self.path,
+                        up.scheme,
+                        up.netloc,
+                        path,
+                        type(e).__name__,
+                        e,
+                        proxy.tls_source,
+                    )
+                    return self._reject(502, f"upstream_error:{type(e).__name__}: {e}")
+                LOG.info(
+                    "代理：%s %s → 上游 %s://%s%s %d（%s，首字节 %.1f 秒）%s",
+                    self.command,
+                    self.path,
+                    up.scheme,
+                    up.netloc,
+                    path,
+                    resp.status,
+                    resp.getheader("content-type", "-"),
+                    time.monotonic() - t0,
+                    task.lease_id,
+                )
                 ctype = resp.getheader("content-type", "")
                 self.send_response(resp.status)
                 for k, v in resp.getheaders():
@@ -266,46 +336,66 @@ class EndpointProxy:
                     pass
                 finally:
                     conn.close()
-                    model, raw = meter.result()
-                    model = model or _req_model(body)
-                    usage, estimated = normalize_usage(raw), False
-                    if (
-                        not usage
-                        and resp.status == 200
-                        and self.command == "POST"
-                        and urllib.parse.urlsplit(self.path).path.endswith("/v1/messages")
-                    ):
-                        usage, estimated = estimate_usage(body, meter.size), True
-                        LOG.warning(
-                            "计量：%s 第 %d 个请求的响应里没有可用的 usage（content-type=%s，"
-                            "content-encoding=%s），按字节数估算 %s",
-                            task.lease_id,
-                            n,
-                            ctype,
-                            resp.getheader("content-encoding", "") or "-",
-                            usage,
-                        )
-                    if usage:  # 先入账再收尾：客户端见到响应结束时 cost 事件已落盘
-                        usd = proxy.charge(task, n, model, usage, estimated)
-                        LOG.info(
-                            "计量：%s 第 %d 个请求 model=%s 上游 usage=%s → %d 毫美元%s",
-                            task.lease_id,
-                            n,
-                            model or "?",
-                            json.dumps(raw, sort_keys=True),
-                            usd,
-                            "（估算）" if estimated else "",
-                        )
+                    try:
+                        self._meter(task, n, body, resp, ctype, meter)
+                    except Exception:  # noqa: BLE001  计量出错不能吞掉响应收尾，否则客户端一直等最后一块
+                        LOG.exception("计量：%s 第 %d 个请求入账失败", task.lease_id, n)
                 if not client_gone:
                     try:
                         self.wfile.write(b"0\r\n\r\n")
                     except OSError:
                         pass
+                if resp.status >= 400:
+                    LOG.warning(
+                        "代理：%s 上游回 %d，正文头：%s",
+                        task.lease_id,
+                        resp.status,
+                        meter.buf[:300].decode("utf-8", "replace"),
+                    )
+
+            def _meter(self, task: Task, n: int, body: bytes | None, resp: Any, ctype: str, meter: _Meter) -> None:
+                """取用量、入账、记日志。上游没给用量时按字节估算。"""
+                model, raw = meter.result()
+                model = model or _req_model(body)
+                usage, estimated = normalize_usage(raw), False
+                if (
+                    not usage
+                    and resp.status == 200
+                    and self.command == "POST"
+                    and urllib.parse.urlsplit(self.path).path.endswith("/v1/messages")
+                ):
+                    usage, estimated = estimate_usage(body, meter.size), True
+                    LOG.warning(
+                        "计量：%s 第 %d 个请求的响应里没有可用的 usage（content-type=%s，"
+                        "content-encoding=%s），按字节数估算 %s",
+                        task.lease_id,
+                        n,
+                        ctype,
+                        resp.getheader("content-encoding", "") or "-",
+                        usage,
+                    )
+                if usage:  # 先入账再收尾：客户端见到响应结束时 cost 事件已落盘
+                    usd = proxy.charge(task, n, model, usage, estimated)
+                    LOG.info(
+                        "计量：%s 第 %d 个请求 model=%s 上游 usage=%s → %d 毫美元%s",
+                        task.lease_id,
+                        n,
+                        model or "?",
+                        json.dumps(raw, sort_keys=True),
+                        usd,
+                        "（估算）" if estimated else "",
+                    )
 
         self.server = ThreadingHTTPServer((host, port), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         h, p = self.server.server_address[:2]
         self.url = f"http://{h}:{p}"
+        LOG.info(
+            "端点代理在 %s，上游 %s（https 的 CA 来源：%s）",
+            self.url,
+            self.cfg.upstream,
+            self.tls_source if self.cfg.upstream.startswith("https") else "不适用",
+        )
         return h, p
 
     def close(self) -> None:
@@ -393,6 +483,18 @@ def _req_model(body: bytes | None) -> str:
     except (ValueError, AttributeError):
         return ""
     return m if isinstance(m, str) else ""
+
+
+def _read_chunked(f) -> bytes:  # type: ignore[no-untyped-def]
+    out = b""
+    while True:
+        size = int(f.readline().split(b";")[0].strip() or b"0", 16)
+        if size == 0:
+            while f.readline() not in (b"\r\n", b"\n", b""):  # 尾部头
+                pass
+            return out
+        out += f.read(size)
+        f.readline()
 
 
 class _Meter:

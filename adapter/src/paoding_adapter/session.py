@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 import signal
@@ -31,6 +32,15 @@ from .mcp import ToolEndpoint
 from .package import MEDIA_TYPE, render
 from .proxy import EndpointProxy
 from .tools import Session, ToolHost
+
+LOG = logging.getLogger("adapter")
+CLI_STDERR = "cli.stderr.log"  # 会话目录里：CLI 的 stderr（两轮追加写）。CLI 出错时只在这里留话
+
+
+def stderr_file(cwd: Path):
+    """CLI 的 stderr 落到会话目录（cwd 是工作区，它的上一级）。调用方把返回的文件交给 Popen 后自己关掉。"""
+    return open(cwd.parent / CLI_STDERR, "ab")  # noqa: SIM115  交给子进程后由调用方关
+
 
 TTL_S = 120
 OUTCOME = {"found": "done", "nothing": "nothing", "unsolved": "nothing", "failed": "failed"}
@@ -69,15 +79,16 @@ def local_launcher(argv: list[str], env: dict, cwd: Path) -> subprocess.Popen:
     会话运行器有就用：属性 proxy_url 与 mcp_base（CLI 所在位置看到的端点代理与工具端点地址，缺省即本机回环上的
     真实地址）；方法 release(lease_id)（会话结束时收回它为这个会话建的东西）。返回的对象可以带
     interrupt() 与 terminate()，缺省用进程组信号。"""
-    return subprocess.Popen(
-        argv,
-        env=env,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    with stderr_file(cwd) as err:
+        return subprocess.Popen(
+            argv,
+            env=env,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=err,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
 
 
 class SessionRunner:
@@ -318,6 +329,17 @@ class SessionRunner:
             time.sleep(0.05)
         t.join(timeout=5)
         rec.exit_codes.append(proc.wait())
+        if status or rec.exit_codes[-1] != 0:
+            tail = _tail(plan.workspace.parent / CLI_STDERR)
+            LOG.warning(
+                "会话 %s 第 %d 轮异常结束（%s，退出码 %s）。CLI stderr 在 %s%s",
+                plan.lease_id,
+                rec.rounds,
+                status or "exit",
+                rec.exit_codes[-1],
+                plan.workspace.parent / CLI_STDERR,
+                f"，末尾：{tail}" if tail else "（空）",
+            )
         return status
 
     def _register(self, token: str, pid: str, idem: str, data: bytes, media_type: str) -> str:
@@ -367,3 +389,11 @@ def _terminate(proc: subprocess.Popen) -> None:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+def _tail(path: Path, n: int = 800) -> str:
+    try:
+        data = path.read_bytes()[-n:]
+    except OSError:
+        return ""
+    return data.decode("utf-8", "replace").strip()
