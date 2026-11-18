@@ -1,4 +1,7 @@
-# 内建判官：在洁净容器里重新执行规格，按 expect 比对。require_touch 在观察对象是外部资源时打开。
+# 内建判官：在洁净容器里重新执行规格，按 expect 比对。
+# require_touch：重放过程没有访问任何授权资源（执行层闸门记下的连接）、也没有挂入有出处的 Artifact 时，
+# 裁决为 inconclusive(untouched)，等级不变。它只在题目的授权范围含外部资源（如 net）时生效；
+# 只有 workspace 规则的纯计算题没有可碰的东西，不受影响。
 id: replay
 version: "1"
 kind: programmatic
@@ -9,4 +12,4 @@ timeout_s: 60
 max_cost: {usd_milli: 10, wall_s: 120}
 auto: true
 flake: {reruns: 0, require: all}
-params: {require_touch: false}
+params: {require_touch: true}

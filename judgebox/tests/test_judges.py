@@ -320,6 +320,10 @@ def test_inconclusive_needs_a_reason_code(jr):
 
 # ---------- replay（替身执行层） ----------
 
+TOUCH = ["net:target-a:8080"]          # 替身执行层报告的访问摘要：规格确实连过授权目标
+PURE = [{"resource": "workspace", "pattern": "*", "actions": ["read", "write"], "risk": "r0"}]
+
+
 def replay_fact(r, script="probe target-a 8080", expect=None, pid="p1"):
     if pid not in r.state["problems"]:
         r.open(pid)
@@ -329,7 +333,7 @@ def replay_fact(r, script="probe target-a 8080", expect=None, pid="p1"):
 
 
 def test_replay_pass_raises_the_fact(jr):
-    jr.box.runs = [(0, "open\n", [], 1500)]
+    jr.box.runs = [(0, "open\n", TOUCH, 1500)]
     fid, rid = replay_fact(jr)
     before = jr.level("p1", fid)
     [done] = jr.runner.tick()
@@ -339,7 +343,7 @@ def test_replay_pass_raises_the_fact(jr):
 
 
 def test_replay_runs_in_a_clean_container_and_tears_it_down(jr):
-    jr.box.runs = [(1, "closed\n", [], 10)]
+    jr.box.runs = [(1, "closed\n", TOUCH, 10)]
     fid, rid = replay_fact(jr)
     [done] = jr.runner.tick()
     assert done["result"] == "fail"
@@ -352,7 +356,7 @@ def test_replay_runs_in_a_clean_container_and_tears_it_down(jr):
 def test_replay_never_gets_irreversible_reach(jr):
     """判官容器的上限是被判对象的风险但不超过 r1：r2 规则放行的地址不进重放容器。"""
     jr.open(risk="r2")
-    jr.box.runs = [(0, "", [], 1)]
+    jr.box.runs = [(0, "", TOUCH, 1)]
     lid, tok = jr.session()
     jr.fact(tok, {"judge_id": "replay", "spec_ref": jr.spec("true"), "expect": {}})
     jr.runner.tick()
@@ -360,7 +364,7 @@ def test_replay_never_gets_irreversible_reach(jr):
 
 
 def test_replay_timeout_is_inconclusive_and_still_costs(jr):             # 3.3.5-1
-    jr.box.runs = [(None, "partial", [], 61_000)]
+    jr.box.runs = [(None, "partial", TOUCH, 61_000)]
     fid, rid = replay_fact(jr)
     before = jr.level("p1", fid)
     [done] = jr.runner.tick()
@@ -373,7 +377,7 @@ def test_replay_timeout_is_inconclusive_and_still_costs(jr):             # 3.3.5
 
 def test_replay_flaky_when_reruns_disagree(tmp_path):                    # 3.3.5-2
     r = JRig(tmp_path, registry=with_flake(REG, "replay", flake={"reruns": 2, "require": "all"}))
-    r.box.runs = [(0, "", [], 1000), (1, "", [], 1000), (0, "", [], 1000)]
+    r.box.runs = [(0, "", TOUCH, 1000), (1, "", TOUCH, 1000), (0, "", TOUCH, 1000)]
     fid, rid = replay_fact(r)
     before = r.level("p1", fid)
     [done] = r.runner.tick()
@@ -385,14 +389,14 @@ def test_replay_flaky_when_reruns_disagree(tmp_path):                    # 3.3.5
 
 def test_replay_majority_policy(tmp_path):                               # 3.3.5-2
     r = JRig(tmp_path, registry=with_flake(REG, "replay", flake={"reruns": 2, "require": "majority"}))
-    r.box.runs = [(0, "", [], 1), (1, "", [], 1), (0, "", [], 1)]
+    r.box.runs = [(0, "", TOUCH, 1), (1, "", TOUCH, 1), (0, "", TOUCH, 1)]
     fid, rid = replay_fact(r)
     assert r.runner.tick()[0]["result"] == "pass" and r.level("p1", fid) == "E3"
 
 
 def test_replay_stable_reruns_agree(tmp_path):
     r = JRig(tmp_path, registry=with_flake(REG, "replay", flake={"reruns": 1, "require": "all"}))
-    r.box.runs = [(1, "", [], 1), (1, "", [], 1)]
+    r.box.runs = [(1, "", TOUCH, 1), (1, "", TOUCH, 1)]
     replay_fact(r)
     assert r.runner.tick()[0]["result"] == "fail"
 
@@ -411,6 +415,73 @@ def test_replay_touching_the_resource_counts(tmp_path):                  # 3.3.5
     r.box.runs = [(0, "ok", ["net:target-a:8080"], 1)]
     fid, rid = replay_fact(r)
     assert r.runner.tick()[0]["result"] == "pass"
+
+
+def test_echo_ok_observation_never_reaches_e3(jr):                       # P0-3 验收；3.3.5-8
+    """恒真谓词：规格是 `echo ok`、期望含 ok。内建配置默认要求碰过资源，所以它到不了 E3。"""
+    assert REG["replay"]["params"]["require_touch"] is True
+    jr.box.runs = [(0, "ok\n", [], 1)]
+    fid, rid = replay_fact(jr, script="echo ok", expect={"stdout_contains": "ok"})
+    before = jr.level("p1", fid)
+    [done] = jr.runner.tick()
+    assert (done["result"], done["reason"]) == ("inconclusive", "untouched")
+    assert jr.level("p1", fid) == before != "E3" and verdicts(jr) == []
+    assert jr.state["artifacts"][done["evidence"]]["exec"]["touched"] == []
+
+
+def test_untouched_wins_over_a_failing_predicate(jr):
+    """没碰过资源的运行什么也说明不了：谓词不成立时同样是无结论，不把论断判成证伪。"""
+    jr.box.runs = [(1, "closed\n", [], 1)]
+    fid, rid = replay_fact(jr)
+    before = jr.level("p1", fid)
+    assert jr.runner.tick()[0]["reason"] == "untouched" and jr.level("p1", fid) == before
+
+
+def test_pure_computation_problems_are_not_asked_to_touch(jr):
+    """授权范围里没有外部资源的题是纯计算，没有可碰的东西：require_touch 不生效。"""
+    jr.open("p2", scope=PURE)
+    jr.box.runs = [(0, "42\n", [], 1)]
+    fid, rid = replay_fact(jr, script="echo $((6*7))", expect={"stdout_contains": "42"}, pid="p2")
+    assert jr.runner.tick("p2")[0]["result"] == "pass" and jr.level("p2", fid) == "E3"
+
+
+def test_require_touch_can_be_switched_off_in_the_judge_config(tmp_path):
+    r = JRig(tmp_path, registry=with_flake(REG, "replay", params={"require_touch": False}))
+    r.box.runs = [(0, "ok", [], 1)]
+    replay_fact(r)
+    assert r.runner.tick()[0]["result"] == "pass"
+
+
+def test_mounted_candidate_counts_only_when_it_has_provenance(jr):
+    """挂入的候选算不算"访问过的输入"：人给的材料算；Worker 自己写的不算；访问摘要为空的 exec 输出不算。"""
+    from paoding_judgebox.runner import _grounded
+    jr.open(check={"judge_id": "replay", "expect": {"stdout_contains": "ok"}})
+    lid, tok = jr.session()
+    prov = {"sandbox_id": "s", "base": "basic", "baseline_ref": "basic@1", "tool": "shell", "command": "c",
+            "cwd": "/", "exit_code": 0, "touched": [], "started_at": 1, "ended_at": 2, "truncated": False}
+
+    def reg(who, cls, data, **extra):
+        return jr.one(who, "p1", "register_artifact", {"hash": jr.blobs.put(data), "size": len(data),
+                                                       "media_type": "text/plain", "class": cls, **extra})
+    given = jr.art(b"echo ok")
+    authored = reg(tok, "authored", b"echo ok  ")
+    empty = reg("exec", "exec", b"ok", exec=prov)
+    real = reg("exec", "exec", b"ok ", exec={**prov, "touched": TOUCH})
+    st = jr.state
+    assert [_grounded(st, a) for a in (given, authored, empty, real, None)] == [(given,), (), (), (real,), ()]
+    # Worker 自己写的候选 `echo ok`：重放没碰任何资源，到不了 E3
+    jr.box.runs = [(0, "ok", [], 1)]
+    out = jr.submit(tok, "p1", [{"op": "request_judge", "body": {"target": "goal", "judge_id": "replay",
+                                                                  "candidate": authored}}])
+    assert out["ok"], out
+    [done] = jr.runner.tick()
+    assert (done["result"], done["reason"]) == ("inconclusive", "untouched") and jr.level("p1", "goal") != "E3"
+    # 人给的候选挂进去：算访问过的输入，记在访问摘要里
+    jr.box.runs = [(0, "ok", [], 1)]
+    aid, _ = jr.candidate(b"echo ok", judge="replay")
+    [done] = jr.runner.tick()
+    assert done["result"] == "pass"
+    assert jr.state["artifacts"][done["evidence"]]["exec"]["touched"] == [f"artifact:{aid}"]
 
 
 def test_tampered_spec_is_refused(jr):                                   # 3.3.5-6
@@ -446,7 +517,7 @@ def test_replay_without_executor(jr):
     ({"exit_code": 0, "stdout_contains": "a"}, 1, "a", "fail"),
 ])
 def test_replay_expectations(jr, expect, code, text, want):
-    jr.box.runs = [(code, text, [], 1)]
+    jr.box.runs = [(code, text, TOUCH, 1)]
     replay_fact(jr, expect=expect)
     assert jr.runner.tick()[0]["result"] == want
 

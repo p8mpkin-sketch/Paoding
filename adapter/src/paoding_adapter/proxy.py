@@ -6,6 +6,7 @@
    以 cost 事件（source=proxy）交给图服务。流式响应边转发边解析 SSE。
 3. 超额拒绝：任务花费达到预留额、题花费达到题上限、或全局上限（M0 暂定 500 美元）用尽，新请求直接 429。
    任务令牌在租约释放后作废，带它的请求 401。
+   全局与按题的累计花费在启动时从图服务的账本投影（/budget）恢复：进程重启后不归零，硬顶继续有效。
 
 只用标准库：ThreadingHTTPServer 收，http.client 转发。不调用模型 SDK：代理是透明转发，客户端是 CLI。
 """
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import secrets
 import threading
 import urllib.parse
 from dataclasses import dataclass, field
@@ -22,7 +24,7 @@ from typing import Any
 
 import yaml
 
-from paoding_graph.contract import GraphPort
+from paoding_graph.contract import GraphPort, GraphReader
 
 HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization",
        "proxy-authenticate", "host", "content-length", "x-api-key", "authorization"}
@@ -69,14 +71,36 @@ class ProxyConfig:
 
 
 class EndpointProxy:
-    def __init__(self, cfg: ProxyConfig, prices: PriceTable, graph: GraphPort):
+    def __init__(self, cfg: ProxyConfig, prices: PriceTable, graph: GraphPort,
+                 reader: GraphReader | None = None):
         self.cfg, self.prices, self.graph = cfg, prices, graph
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
+        self.boot = secrets.token_hex(4)        # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
         self.global_spent = 0
         self.problem_spent: dict[str, int] = {}
+        # 启动时从账本恢复的基线：seq 是恢复时的链头，对账只比它之后的事件
+        self.restored: dict[str, Any] = {"seq": 0, "global": 0, "problems": {}}
         self.server: ThreadingHTTPServer | None = None
         self.url = ""
+        if reader is not None:
+            self.restore(reader)
+
+    # ---------- 启动恢复 ----------
+
+    def restore(self, reader: GraphReader) -> dict:
+        """从图服务的账本投影（GET /budget 的进程内形态）恢复累计花费。在开始收请求之前调用。
+
+        图是账本，代理只是计量点：进程重启后，按题花费取各题 /budget 的 spent.usd_milli，全局花费取各题之和
+        （已关的题也算，钱已经花了）。取的是账本里这道题的全部花费，不只是本代理入账的那部分：
+        硬顶宁紧勿松。任务级的花费不恢复：任务令牌只在进程内存里，旧进程的会话随进程结束，租约由哮天犬回收。"""
+        st = reader.state
+        problems = {pid: int(reader.budget(pid)["spent"]["usd_milli"]) for pid in sorted(st["problems"])}
+        with self._lock:
+            self.problem_spent = dict(problems)
+            self.global_spent = sum(problems.values())
+            self.restored = {"seq": int(st.get("seq", 0)), "global": self.global_spent, "problems": problems}
+        return self.restored
 
     # ---------- 任务令牌 ----------
 
@@ -115,7 +139,7 @@ class EndpointProxy:
             t.spent_usd_milli += usd
             self.global_spent += usd
             self.problem_spent[t.pid] = self.problem_spent.get(t.pid, 0) + usd
-        self.graph.submit(self.cfg.adapter_token, t.pid, f"cost:{t.lease_id}:{n}", [{"op": "cost", "body": {
+        self.graph.submit(self.cfg.adapter_token, t.pid, f"cost:{t.lease_id}:{self.boot}:{n}", [{"op": "cost", "body": {
             "task_id": t.lease_id, "source": "proxy", "model": model,
             "tokens_in": usage.get("input_tokens", 0),
             "tokens_cached": usage.get("cache_read_input_tokens", 0),
@@ -214,10 +238,12 @@ class EndpointProxy:
 
 def ledger_diff(proxy: "EndpointProxy", state: dict) -> list[dict]:
     """对账（3.5.5 的 4、5）：代理自记的逐任务花费与图里 source=proxy 的 cost 事件之和逐项比较。
-    返回不一致的条目；空表示对上。图是账本，代理是计量点，两者独立累计。"""
+    返回不一致的条目；空表示对上。图是账本，代理是计量点，两者独立累计。
+    代理启动时从账本恢复过基线的，只对恢复之后（seq 大于恢复时链头）的事件逐任务比较，合计加上基线。"""
+    base = proxy.restored
     graph_by_task: dict[str, int] = {}
     for c in state["costs"]:
-        if c["source"] == "proxy":
+        if c["source"] == "proxy" and c["seq"] > base["seq"]:
             graph_by_task[c["task_id"]] = graph_by_task.get(c["task_id"], 0) + c["usd_milli"]
     proxy_by_task: dict[str, int] = {}
     for t in proxy._tasks.values():
@@ -225,8 +251,9 @@ def ledger_diff(proxy: "EndpointProxy", state: dict) -> list[dict]:
     diffs = [{"task_id": k, "proxy": proxy_by_task.get(k, 0), "graph": graph_by_task.get(k, 0)}
              for k in sorted(set(graph_by_task) | set(proxy_by_task))
              if proxy_by_task.get(k, 0) != graph_by_task.get(k, 0)]
-    if proxy.global_spent != sum(graph_by_task.values()):
-        diffs.append({"task_id": "*", "proxy": proxy.global_spent, "graph": sum(graph_by_task.values())})
+    total = base["global"] + sum(graph_by_task.values())
+    if proxy.global_spent != total:
+        diffs.append({"task_id": "*", "proxy": proxy.global_spent, "graph": total})
     return diffs
 
 
