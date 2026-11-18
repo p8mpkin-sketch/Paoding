@@ -96,7 +96,8 @@
 - 判官裁决的 `grade` 取开题时的判官快照，不取裁决方自报。
 - `request_judge` 的判官必须是登记判据时的那一个（I4 判据先行的字面推论）；推断类论断在 M0 没有判据，不能请求判定。
 - `input` 类 Artifact 可以在 `open_problem` 之前登记（Origin 要引用它们）；其它类别要求题目已开。
-- M0 拒绝 `accept=human`、`check.control`、`done.tests` 与 `follows`/`executor`/`rollback`/`delegate`，返回 `schema_error`，待对应里程碑启用。
+- M0 拒绝 `accept=human`、`done.tests` 与 `follows`/`executor`/`rollback`/`delegate`，返回 `schema_error`，待对应里程碑启用。
+- 对照判据 `check.control`（§3.3.3，N1，2026-11-18 从 M1 提前）：只接受观察类论断的判据，形状 `{inputs: ArtifactId[]}`（1–8 个、互不相同、属于本题；对象形式的对照参数未启用）；Goal 与 `done` 的判据带它是 `schema_error`。内容键里对照输入按 Blob 哈希代入。目标的判据带对照时，`judge_verdict` 必须带 `control_end`（对照运行的结束类别）：`pass` 只在 `control_end=fail` 时接受，`inconclusive(no_contrast)` 只在对照也通过或抖动时接受；判据不带对照的目标不许出现这两样。裁决记录带 `controlled` 与 `control_end`；等级桥接把"判据带对照"交给参考模型（续期门的进展、r2 的观察类前提读它）。
 - Blob 是否存在由服务层在 validate 之前检查（IO 不进内核）。
 - `validate` 多一个参数 `ts`：这条事件将被赋予的时间戳，由服务层的时钟给出；过期判断（`expire_lease`、`renew`）用它，reducer 仍不读时钟。租约的 `expires_at = ts + ttl_s × 1000` 在 apply 里由事件 ts 算出。
 - Intent 的完整状态 = 参考模型的资格状态（achieved/abandoned/needs_human/blocked/open）叠加租约生命周期（leased、done）。失败（failed、nothing、budget_exhausted、过期；带判据的 Intent 释放后判据未过且无未决判定）累计 2 次即 abandoned（§3.4.4“两次后放弃”）。r2 失败或过期后转 needs_human。

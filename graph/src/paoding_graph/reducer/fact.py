@@ -26,6 +26,8 @@ def content_key(state: State, f: Body) -> str:
         c = dict(f["check"])
         if "spec_ref" in c:
             c["spec_ref"] = state["artifacts"][c["spec_ref"]]["hash"]
+        if "control" in c:  # 对照输入同样按 Blob 哈希代入：换个 id 登记同一份字节不算新论断
+            c["control"] = {"inputs": [state["artifacts"][a]["hash"] for a in c["control"]["inputs"]]}
         return "o:" + sha256_hex(canonicalize(c))
     return "i:" + sha256_hex(canonicalize([f["title"], sorted(f["premises"])]))
 
@@ -42,9 +44,10 @@ def _v_add_fact(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) ->
     if len(title) > 120 or len(summary) > 600:
         return Reject("schema_error", "title ≤120、summary ≤600 字符")
     premises, grounds = body.strings("premises", []), body.strings("grounds", [])
-    check = _check(body.child("check")) if body.get("check") is not None else None
+    check = _check(body.child("check"), claim_type == "observation") if body.get("check") is not None else None
     body_ref = body.opt_string("body_ref")
-    for ref in [body_ref, check.get("spec_ref") if check else None]:
+    controls = check["control"]["inputs"] if check and "control" in check else []
+    for ref in [body_ref, check.get("spec_ref") if check else None, *controls]:
         if ref is None:
             continue
         err = _ref(state, pid, ref, "引用")
