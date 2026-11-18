@@ -53,7 +53,7 @@ describe("事件流", () => {
     release();
     await until(() => s.getState().conn === "live" && s.log.head === r.mock.head(pid), "补齐");
     await s.settled();
-    expect(s.log.events.map((e) => e.seq)).toEqual(r.mock.eventsOf(pid).map((e) => e.seq));
+    expect(s.log.ticks.map((e) => e.seq)).toEqual(r.mock.eventsOf(pid).map((e) => e.seq));
     await until(() => s.getState().vm?.seq === r.mock.head(pid), "视图到链头");
     expect(s.getState().vm!.closed).toBe(true);
     s.close();
@@ -83,7 +83,7 @@ describe("事件流", () => {
     await until(() => s.log.head === r.mock.head(pid), "追到链头");
     await s.settled();
     expect(n).toBeGreaterThan(9);
-    expect(s.log.events.map((e) => e.seq)).toEqual(r.mock.eventsOf(pid).map((e) => e.seq));
+    expect(s.log.ticks.map((e) => e.seq)).toEqual(r.mock.eventsOf(pid).map((e) => e.seq));
     s.close();
   });
 

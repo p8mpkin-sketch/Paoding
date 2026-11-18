@@ -1,0 +1,15 @@
+{
+  "name": "paoding-web-lint",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "网页前端的 ESLint。单独一个包：typescript-eslint 的解析器要 TypeScript 的 JS 接口，而 web/ 用的 TypeScript 7 没有这个接口，这里固定 5.9 只供解析。",
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.73.0"
+  }
+}

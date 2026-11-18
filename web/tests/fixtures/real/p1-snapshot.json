@@ -1,0 +1,466 @@
+{
+ "path": "/v1/problems/p1/snapshot?state_hash=1",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "view_hash": "ff9e7b8015037ee19377e17385e55f64afd2dcc85fa9c76ecbd4bd4def1d8ea3",
+  "parts_hash": {
+   "status": "8095640392ee578be793be8b98fcb8c35380960c93f0be244103752aa1aeda72",
+   "view": "62aac77fe60ca3b6654f986ae73fec839f9e0adf2d8350c17440c0d4f15af81a",
+   "budget": "9bdc6238fcdf62be5a5fa2f27fffee66c50d413069ce341be3bc91b42f5f5a35",
+   "work": "eef46741adfc3a9f76294d3b78f37a45f113092ac9d44ee77c7a038a88ff09a1"
+  },
+  "status": {
+   "as_of": 36,
+   "head": 36,
+   "view_hash": "8095640392ee578be793be8b98fcb8c35380960c93f0be244103752aa1aeda72",
+   "problem": {
+    "id": "p1",
+    "title": {
+     "src": "title",
+     "register": "叙述",
+     "value": "题 p1"
+    },
+    "closed": true,
+    "terminal": "solved",
+    "terminal_badge": {
+     "judge_id": "exact_match",
+     "version": "1",
+     "grade": "decisive",
+     "kind": "builtin",
+     "label": "exact_match@1"
+    },
+    "opened_seq": 2,
+    "opened_ts": 1002,
+    "closed_seq": 23,
+    "now_ts": 1035,
+    "profile": {
+     "info": "complete",
+     "judge": "hard",
+     "reversibility": "r0"
+    },
+    "derived_profile": {
+     "info": "complete",
+     "judge": "hard",
+     "reversibility": "r0"
+    },
+    "profile_overrides": [],
+    "scope": [
+     {
+      "resource": "target",
+      "pattern": "*",
+      "actions": [
+       "read"
+      ],
+      "risk": "r0"
+     }
+    ],
+    "env": {
+     "base": "basic",
+     "baseline_ref": "base@1"
+    },
+    "judges": [
+     "exact_match",
+     "replay"
+    ],
+    "origin": {
+     "statement_ref": "a_1",
+     "materials": []
+    }
+   },
+   "goal": {
+    "statement": {
+     "src": "statement",
+     "register": "人",
+     "value": "取得答案并原样提交"
+    },
+    "accept": "judge",
+    "predicate": {
+     "target": "goal",
+     "judge_id": "exact_match",
+     "version": "1",
+     "grade": "decisive",
+     "kind": "builtin",
+     "label": "exact_match@1",
+     "spec_ref": null,
+     "spec_hash": null,
+     "expect": {
+      "digest": "ab"
+     },
+     "sealed": [],
+     "max_attempts": 3,
+     "attempts_used": 1,
+     "level": "E3",
+     "level_word": "判定通过",
+     "fail_means": "not_yet",
+     "verdicts": [
+      {
+       "seq": 22,
+       "result": "pass",
+       "judge": "exact_match",
+       "version": "1",
+       "grade": "decisive",
+       "candidate": "a_16",
+       "request": "j_17",
+       "evidence": [
+        "a_21"
+       ]
+      }
+     ]
+    }
+   },
+   "facts": [
+    {
+     "id": "f_5",
+     "type": "fact",
+     "seq": 5,
+     "claim_type": "observation",
+     "level": "E0",
+     "level_word": "猜想",
+     "unstable": false,
+     "disputed": false,
+     "stale": false,
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "主机名可读"
+     },
+     "summary": {
+      "src": "summary",
+      "register": "叙述",
+      "value": "读取主机名成功"
+     },
+     "premises": [],
+     "yielded_by": null,
+     "session": "l_3",
+     "predicate": {
+      "target": "f_5",
+      "judge_id": "replay",
+      "version": "1",
+      "grade": "decisive",
+      "kind": "builtin",
+      "label": "replay@1",
+      "spec_ref": null,
+      "spec_hash": null,
+      "expect": {
+       "exit_code": 0
+      },
+      "sealed": [],
+      "max_attempts": null,
+      "attempts_used": null,
+      "level": "E0",
+      "level_word": "猜想",
+      "fail_means": "refuted",
+      "verdicts": []
+     },
+     "grounds": [
+      "a_4"
+     ]
+    }
+   ],
+   "intents": [
+    {
+     "id": "i_9",
+     "type": "intent",
+     "seq": 9,
+     "status": "done",
+     "risk": "r0",
+     "level": null,
+     "level_word": null,
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "取回答案"
+     },
+     "summary": {
+      "src": "summary",
+      "register": "叙述",
+      "value": "沿已知入口取回"
+     },
+     "premises": [
+      "f_5"
+     ],
+     "budget": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "session": "l_8",
+     "needs_scope": [],
+     "gate": true,
+     "approvals": [],
+     "attempts": 1,
+     "predicate": null,
+     "decision": null,
+     "expected_gain": {
+      "src": "estimate",
+      "register": "估",
+      "value": 0.7
+     }
+    },
+    {
+     "id": "i_13",
+     "type": "intent",
+     "seq": 13,
+     "status": "open",
+     "risk": "r0",
+     "level": null,
+     "level_word": null,
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "核对表单字段"
+     },
+     "summary": {
+      "src": "summary",
+      "register": "叙述",
+      "value": ""
+     },
+     "premises": [],
+     "budget": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "session": "l_12",
+     "needs_scope": [],
+     "gate": true,
+     "approvals": [],
+     "attempts": 0,
+     "predicate": null,
+     "decision": null,
+     "expected_gain": null
+    }
+   ],
+   "hints": [
+    {
+     "id": "h_11",
+     "type": "hint",
+     "seq": 11,
+     "ts": 1011,
+     "author": "cz",
+     "closed": false,
+     "about": "i_9",
+     "text": {
+      "src": "hint",
+      "register": "人",
+      "value": "先看登录表单"
+     }
+    }
+   ],
+   "leases": [
+    {
+     "id": "l_3",
+     "kind": "bootstrap",
+     "holder": "sn1",
+     "reserve": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "issued_seq": 3,
+     "expires_at": 121003,
+     "active": false,
+     "outcome": "done",
+     "ended_seq": 7
+    },
+    {
+     "id": "l_8",
+     "kind": "reason",
+     "holder": "sn1",
+     "reserve": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "issued_seq": 8,
+     "expires_at": 121008,
+     "active": false,
+     "outcome": "done",
+     "ended_seq": 10
+    },
+    {
+     "id": "l_12",
+     "kind": "reason",
+     "holder": "sn1",
+     "reserve": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "issued_seq": 12,
+     "expires_at": 121012,
+     "active": false,
+     "outcome": "done",
+     "ended_seq": 14
+    },
+    {
+     "id": "l_15",
+     "kind": "explore",
+     "target": "i_9",
+     "holder": "sn1",
+     "reserve": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "issued_seq": 15,
+     "expires_at": 121015,
+     "active": false,
+     "outcome": "done",
+     "ended_seq": 19
+    },
+    {
+     "id": "l_20",
+     "kind": "judge",
+     "target": "j_17",
+     "holder": "jr1",
+     "reserve": {
+      "usd_milli": 100,
+      "wall_s": 60
+     },
+     "issued_seq": 20,
+     "expires_at": 121020,
+     "active": false,
+     "outcome": "closed",
+     "ended_seq": 24
+    }
+   ],
+   "requests": [
+    {
+     "id": "j_17",
+     "seq": 17,
+     "target": "goal",
+     "judge_id": "exact_match",
+     "candidate": "a_16",
+     "verdict_seq": 22
+    }
+   ],
+   "review": false,
+   "closeout": [],
+   "state_hash": "c47b533d8f91cb13be4ca96daa7c7154ed153c106a2ebe80951d8cb112533aef"
+  },
+  "view": {
+   "as_of": 36,
+   "head": 36,
+   "view_hash": "62aac77fe60ca3b6654f986ae73fec839f9e0adf2d8350c17440c0d4f15af81a",
+   "layer": "title",
+   "items": [
+    {
+     "id": "f_5",
+     "type": "fact",
+     "seq": 5,
+     "claim_type": "observation",
+     "level": "E0",
+     "level_word": "猜想",
+     "unstable": false,
+     "disputed": false,
+     "stale": false,
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "主机名可读"
+     }
+    },
+    {
+     "id": "i_9",
+     "type": "intent",
+     "seq": 9,
+     "status": "done",
+     "risk": "r0",
+     "level": null,
+     "level_word": null,
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "取回答案"
+     }
+    },
+    {
+     "id": "i_13",
+     "type": "intent",
+     "seq": 13,
+     "status": "open",
+     "risk": "r0",
+     "level": null,
+     "level_word": null,
+     "title": {
+      "src": "title",
+      "register": "叙述",
+      "value": "核对表单字段"
+     }
+    }
+   ],
+   "next_after_seq": null,
+   "total": 3,
+   "frontier": {
+    "hints": [
+     "h_11"
+    ],
+    "human": [],
+    "disputed": [],
+    "intents": [
+     "i_13"
+    ],
+    "premises": [],
+    "facts": [
+     "f_5"
+    ]
+   }
+  },
+  "budget": {
+   "as_of": 36,
+   "head": 36,
+   "view_hash": "9bdc6238fcdf62be5a5fa2f27fffee66c50d413069ce341be3bc91b42f5f5a35",
+   "cap": {
+    "usd_milli": 5000,
+    "wall_s": 3600
+   },
+   "spent": {
+    "usd_milli": 70,
+    "tokens": 30,
+    "wall_s": 2
+   },
+   "reserved": {
+    "usd_milli": 0,
+    "tokens": 0,
+    "wall_s": 0
+   },
+   "by_kind": {
+    "bootstrap": {
+     "usd_milli": 30,
+     "tokens": 15,
+     "wall_s": 1
+    },
+    "explore": {
+     "usd_milli": 40,
+     "tokens": 15,
+     "wall_s": 1
+    }
+   },
+   "verify_spent": {
+    "usd_milli": 0,
+    "tokens": 0,
+    "wall_s": 0
+   },
+   "marks": [],
+   "percent": {
+    "spent": 1,
+    "committed": 1
+   },
+   "mark_lines": [
+    50,
+    80
+   ],
+   "mark_seqs": [],
+   "verify_share": 0.2,
+   "bootstrap_share": 0.3,
+   "wall": {
+    "cap_s": 3600,
+    "elapsed_s": 0
+   },
+   "review": false
+  },
+  "work": {
+   "as_of": 36,
+   "head": 36,
+   "view_hash": "eef46741adfc3a9f76294d3b78f37a45f113092ac9d44ee77c7a038a88ff09a1",
+   "items": []
+  }
+ }
+}

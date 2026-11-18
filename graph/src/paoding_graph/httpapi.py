@@ -19,11 +19,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import re
 import sys
 import threading
+import time
 import traceback
 import urllib.parse
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -36,12 +40,13 @@ from .jcs import canonicalize
 from .parse import BadBody
 from .replay import state_hash
 from .service import GraphService
-from .state import Actor, Body, JudgeEntry, State
+from .state import Actor, Body, Event, JudgeEntry, State
 from .tokens import UnknownToken
 
 MAX_BODY = 8 * 1024 * 1024  # JSON 请求体上限
 MAX_BLOB = 256 * 1024 * 1024  # 单个 Blob 上限（§3.2.2）
 LOOPBACK = ("127.0.0.1", "localhost", "[::1]")
+_ACCESS = logging.getLogger("http")  # 访问日志；格式由组装根决定，这里只给字段
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -58,6 +63,8 @@ class HttpConfig:
     templates_dir: Path | None = None  # 开题模板（随锦囊发布的数据，前端只解释字段映射）
     renderers_dir: Path | None = None
     extra_hosts: tuple[str, ...] = field(default_factory=tuple)
+    health: Callable[[], dict[str, Doc]] | None = None  # 组装根给出的其它组件状态：{组件名: {ok, …}}（/healthz）
+    access_log: bool = False  # HTTP 访问日志（logging 的 "http"），缺省关
 
 
 class HttpError(Exception):
@@ -72,6 +79,12 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     cors_origin: str | None = None
     started = False  # 应答头是否已经发出
+    sent_status: int | None = None  # 访问日志用：发出的状态码
+    sent_bytes = 0  # 访问日志用：发出的应答体字节数
+
+    def send_response(self, code: int, message: str | None = None) -> None:
+        self.sent_status = code
+        super().send_response(code, message)
 
     def log_message(self, format: str, *args: Any) -> None:
         pass
@@ -115,15 +128,21 @@ class GraphHttp:
         self.server: ThreadingHTTPServer | None = None
         self.url = ""
         self._closing = threading.Event()
+        self._snap_lock = threading.Lock()
+        # (题, 序号) → 四份投影与各自的 view_hash
+        self._snap_cache: OrderedDict[tuple[str, int], dict[str, Doc]] = OrderedDict()
         g, p = self._get, self._post
         R = re.compile
         self.routes: list[tuple[str, re.Pattern[str], Route]] = [
             ("GET", R(r"/v1/health"), self.r_health),
+            ("GET", R(r"/healthz"), self.r_healthz),
             ("GET", R(r"/v1/problems"), g(lambda st, m, q: views.problems(st))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/status"), g(lambda st, m, q: views.status(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/view"), g(self.v_view)),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget"), g(lambda st, m, q: views.budget(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/work"), g(lambda st, m, q: views.work(st, m["pid"]))),
+            ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/snapshot"), self.r_snapshot),
+            ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/ticks"), self.r_ticks),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/invalidations"), g(self.v_invalidations)),
             (
                 "GET",
@@ -189,6 +208,31 @@ class GraphHttp:
     # ---------- 分发、来源检查 ----------
 
     def dispatch(self, h: Handler, method: str) -> None:
+        if not self.cfg.access_log:
+            return self._dispatch(h, method)
+        t0 = time.monotonic()
+        h.sent_status, h.sent_bytes = None, 0
+        try:
+            self._dispatch(h, method)
+        finally:
+            # 只记方法、路径（不含查询串）、状态、耗时、字节数。请求头与请求体不进日志：令牌在头里。
+            # 长连接（SSE、长轮询）在连接结束时记一条，耗时就是连接时长。
+            _ACCESS.info(
+                "%s %s → %s",
+                method,
+                h.path.split("?", 1)[0],
+                h.sent_status or "-",
+                extra={
+                    "method": method,
+                    "path": h.path.split("?", 1)[0],
+                    "status": h.sent_status,
+                    "duration_ms": round((time.monotonic() - t0) * 1000, 1),
+                    "bytes": h.sent_bytes,
+                    "remote": h.client_address[0],
+                },
+            )
+
+    def _dispatch(self, h: Handler, method: str) -> None:
         try:
             self._guard(h)
             if method == "OPTIONS":
@@ -256,6 +300,7 @@ class GraphHttp:
         for k, v in (extra or {}).items():
             h.send_header(k, v)
         h.end_headers()
+        h.sent_bytes = len(data)
         h.wfile.write(data)
 
     def _cors(self, h: Handler) -> None:
@@ -335,8 +380,115 @@ class GraphHttp:
             raise views.NotFound(f"没有 Hint {m['id']}")
         return views.hint_trace(st, self.svc.events(h["problem_id"], 0, upto=st["seq"]), m["id"])
 
+    # ---------- 合并读与刻度（P2-1） ----------
+
+    SNAPSHOT_PARTS = ("status", "view", "budget", "work")
+
+    def _parts(self, pid: str, seq: int | None) -> tuple[int, dict[str, Doc]]:
+        """某序号上四份投影的外壳与各自的 view_hash。按 (题, 序号) 缓存：日志只追加、视图是状态的纯函数，
+        所以缓存永不失效。事件流的 view 帧与随后的 snapshot 请求共用这份缓存，同一序号只算一次。"""
+        state = self.svc.state_at(seq)
+        key = (pid, state["seq"])
+        with self._snap_lock:
+            hit = self._snap_cache.get(key)
+            if hit is not None:
+                self._snap_cache.move_to_end(key)
+                return state["seq"], hit
+        self._known(pid, state)
+        docs = views.snapshot(state, pid, views.view(state, pid, "title", 0, None, self.cfg.view_full_dump))
+        parts = {k: {"view_hash": hashlib.sha256(canonicalize(d)).hexdigest(), "doc": d} for k, d in docs.items()}
+        with self._snap_lock:
+            self._snap_cache[key] = parts
+            while len(self._snap_cache) > 64:
+                self._snap_cache.popitem(last=False)
+        return state["seq"], parts
+
+    def r_snapshot(self, h: Handler, m: Params, q: Params) -> None:
+        """GET /v1/problems/{pid}/snapshot?as_of=&parts=：一次给 status、view（layer=title）、budget、work。
+        每份与单独的端点同形（`{as_of, head, view_hash, …}`），所以前端拿来就能拼视图模型；
+        `parts=status,budget` 只要其中几份（事件流的 view 帧说哪几份变了）。`state_hash=1` 加在 status 上。"""
+        pid = m["pid"]
+        self._known(pid)
+        _, head = self._state(q)
+        seq, parts = self._parts(pid, _int(q, "as_of"))
+        want = [p for p in (q.get("parts") or ",".join(self.SNAPSHOT_PARTS)).split(",") if p]
+        bad = set(want) - set(self.SNAPSHOT_PARTS)
+        if bad or not want:
+            raise HttpError(400, "schema_error", f"parts 只取 {','.join(self.SNAPSHOT_PARTS)}")
+        out: Doc = {
+            "as_of": seq,
+            "head": head,
+            "view_hash": hashlib.sha256(canonicalize({k: v["view_hash"] for k, v in parts.items()})).hexdigest(),
+            "parts_hash": {k: v["view_hash"] for k, v in parts.items()},
+        }
+        for k in self.SNAPSHOT_PARTS:
+            if k in want:
+                out[k] = {"as_of": seq, "head": head, "view_hash": parts[k]["view_hash"], **parts[k]["doc"]}
+        if "status" in want and q.get("state_hash") in ("1", "true"):
+            out["status"]["state_hash"] = state_hash(self.svc.state_at(seq))
+        self._json(h, 200, out)
+
+    def r_ticks(self, h: Handler, m: Params, q: Params) -> None:
+        """GET /v1/problems/{pid}/ticks?as_of=：时间轴只要每条事件的 seq、ts、种类
+        （判官裁决另带 result，预算标记另带 mark），不要事件体。`head_hash` 是这道题到 as_of 为止
+        最后一条事件的哈希，前端拿它核对随后从流里接上的第一条（prev_hash）。"""
+        pid = m["pid"]
+        state, head = self._state(q)
+        self._known(pid, state)
+        ticks: list[Doc] = []
+        last: Event | None = None
+        for ev in self.svc.events(pid, 0, upto=state["seq"]):
+            t: Doc = {"seq": ev["seq"], "ts": ev["ts"], "kind": ev["kind"]}
+            b = ev.get("body") or {}
+            if ev["kind"] == "judge_verdict" and "result" in b:
+                t["result"] = b["result"]
+            if ev["kind"] == "budget_mark" and "mark" in b:
+                t["mark"] = b["mark"]
+            ticks.append(t)
+            last = ev
+        self._json(
+            h,
+            200,
+            {
+                "as_of": state["seq"],
+                "head": head,
+                "ticks": ticks,
+                "last_seq": last["seq"] if last else 0,
+                "head_hash": last["hash"] if last else None,
+            },
+        )
+
     def r_health(self, h: Handler, m: Params, q: Params) -> None:
         self._json(h, 200, {"ok": True, "head": self.svc.head(), "api": "v1"})
+
+    def r_healthz(self, h: Handler, m: Params, q: Params) -> None:
+        """各组件的状态。全部正常 200，任何一项不正常 503；应答体形状相同，所以探针只看状态码也行。
+        图服务的一项在这里算（日志读得到、Blob 目录写得进）；其余由组装根的 health() 给，没有组装根就只有图服务。"""
+        comps: dict[str, Doc] = {}
+        try:
+            head = self.svc.head()
+            problems = self.svc.state["problems"]
+            comps["graph"] = {
+                "ok": True,
+                "head": head,
+                "problems": len(problems),
+                "open": sum(1 for p in problems.values() if not p.get("closed")),
+            }
+        except (OSError, KeyError, ValueError) as e:  # 探针不能因为被探的东西坏了而自己抛
+            comps["graph"] = {"ok": False, "last_error": f"{type(e).__name__}: {e}"[:300]}
+        root = getattr(self.blobs, "root", None)
+        if root is not None:
+            comps["blobs"] = {"ok": os.path.isdir(root) and os.access(root, os.W_OK)}
+        if self.cfg.health is not None:
+            try:
+                for name, st in self.cfg.health().items():
+                    comps.setdefault(name, st)
+            except Exception as e:  # noqa: BLE001  组装根的探针是外部回调，坏了只能如实报 503，不能让探针自己抛
+                comps["stack"] = {"ok": False, "last_error": f"{type(e).__name__}: {e}"[:300]}
+        ok = all(bool(c.get("ok")) for c in comps.values())
+        self._json(
+            h, 200 if ok else 503, {"ok": ok, "status": "ok" if ok else "degraded", "api": "v1", "components": comps}
+        )
 
     def _known(self, pid: str, state: State | None = None) -> None:
         if pid not in (state or self.svc.state)["problems"]:
@@ -403,6 +555,13 @@ class GraphHttp:
                 for ev in evs:
                     self._frame(h, ev, ev["seq"])
                     after = ev["seq"]
+                if evs and not self._closing.is_set():
+                    # 一批事件之后跟一帧 view：最后那个序号上四份投影各自的 view_hash。前端据此只取变了的那几份，
+                    # 一份都没变就不发请求（P2-1）。具名帧，只用 onmessage 的客户端看不见它，事件帧仍等于日志。
+                    seq, parts = self._parts(pid, after)
+                    self._frame(
+                        h, {"as_of": seq, "parts_hash": {k: v["view_hash"] for k, v in parts.items()}}, after, "view"
+                    )
                 h.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass

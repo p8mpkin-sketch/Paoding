@@ -55,6 +55,7 @@ class Watcher(threading.Thread):
         u = urllib.parse.urlsplit(url)
         self.conn = http.client.HTTPConnection(u.hostname, u.port, timeout=60)
         self.path, self.frames, self.closed = f"/v1/problems/{pid}/stream?after=0", [], threading.Event()
+        self.views: list[dict] = []
 
     def run(self):
         self.conn.request("GET", self.path, headers={"Accept": "text/event-stream"})
@@ -68,7 +69,9 @@ class Watcher(threading.Thread):
             if line.startswith(":"):
                 continue
             if line == "":
-                if "data" in f:
+                if "data" in f and f.get("event") == "view":  # P2-1：一批事件之后的 view 帧
+                    self.views.append({"id": int(f["id"]), **json.loads(f["data"])})
+                elif "data" in f and "event" not in f:
                     ev = json.loads(f["data"])
                     self.frames.append({"id": int(f["id"]), **ev})
                     if ev.get("kind") == "close_problem":
@@ -120,6 +123,12 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         assert opened["ok"], opened
         watcher = Watcher(url, PID)
         watcher.start()
+        hz = call(url, "/healthz")  # 题在跑的时候各组件都报正常
+        assert hz["ok"] and hz["status"] == "ok", hz
+        assert {"graph", "blobs", "events", "judge", "sinan", "watchdog", "adapter", "executor"} <= set(
+            hz["components"]
+        )
+        assert all(c["ok"] for c in hz["components"].values()), hz
         final = wait_terminal(url, PID, 120)
         assert watcher.closed.wait(10)
         evs = call(url, f"/v1/problems/{PID}/events?after=0&limit=5000")["events"]
@@ -209,6 +218,11 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         # —— 网页一侧：SSE 帧逐条等于日志 ——
         upto = [e for e in evs if e["seq"] <= close["seq"]]
         assert [(f["id"], f["kind"]) for f in watcher.frames][: len(upto)] == [(e["seq"], e["kind"]) for e in upto]
+        # view 帧：每帧的序号是此前最后一条事件的序号，各份哈希等于该序号上 snapshot 的 parts_hash
+        seqs = {f["id"] for f in watcher.frames}
+        assert watcher.views and all(v["id"] in seqs and v["as_of"] == v["id"] for v in watcher.views)
+        v = watcher.views[-1]
+        assert call(url, f"/v1/problems/{PID}/snapshot?as_of={v['id']}&parts=work")["parts_hash"] == v["parts_hash"]
 
         stack.stop()
         # —— 停机之后：没有在途会话、没有本进程起的容器 ——
@@ -292,10 +306,18 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
         capture_output=True,
     ).stdout.decode()
     assert f":{proc.pid}:" not in leftover, leftover  # 属主是 run.py 进程的容器一个不剩
-    # 日志一行一条：时间 组件名 消息
-    for line in log.strip().splitlines():
-        assert line.split(" ", 2)[1] in ("graph", "judge", "sinan", "watchdog", "stack", "adapter"), line
-    assert "已停" in log
+    # 日志结构化：stderr 一行一个 JSON 对象（时间、级别、组件名、消息），文件里是同样的行
+    recs = [json.loads(line) for line in log.strip().splitlines()]
+    for r in recs:
+        assert {"ts", "level", "component", "msg"} <= set(r), r
+        assert r["component"] in ("graph", "judge", "sinan", "adapter", "watchdog", "stack"), r
+        assert r["level"] in ("info", "warning", "error"), r
+    assert any("已停" in r["msg"] for r in recs)
+    lease_lines = [r for r in recs if r["component"] == "graph" and r.get("kind") == "lease"]
+    assert lease_lines and all(r["problem_id"] and r["lease_id"] and r["seq"] for r in lease_lines), lease_lines
+    filed = [json.loads(line) for line in (home / "logs" / "stack.log").read_text().splitlines()]
+    assert [r["msg"] for r in filed] == [r["msg"] for r in recs if r["msg"] in {f["msg"] for f in filed}]
+    assert any("已停" in r["msg"] for r in filed)
 
     # 重启读回同一份日志：租约以 failed 释放（停机不是花超），没有悬着的租约
     from paoding_graph.contract import Config, GraphService, TokenRegistry
@@ -303,6 +325,7 @@ def test_run_py_exits_cleanly_with_a_session_in_flight(tmp_path):
     st = GraphService(home / "g.sqlite", Config(), TokenRegistry()).state
     [boot] = [l for l in st["leases"].values() if l["kind"] == "bootstrap"]
     assert not boot["active"] and boot["outcome"] == "failed"
+    assert {r["lease_id"] for r in lease_lines} == set(st["leases"])  # 日志里的租约 id 就是图里的租约 id
 
 
 def test_component_thread_defect_is_recorded_not_swallowed(tmp_path):

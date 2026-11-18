@@ -16,9 +16,9 @@
 
 **规格。** 基座规格 v1.4 是当前权威：v1.3（v1.1 的裁决、v1.2 的三项补充与典故对账 D1 到 D6、蓝图 v2 的采纳项与评审附加条件、人机界面设计的裁决落地项）加上 M0 实施中裁决的五条勘误 E1 到 E5。参考模型 88 条测试全绿。
 
-**代码（2026-11-18）。** M0 的机制层已经写完并合入 `main`：九个组件、图服务的 HTTP 绑定、网页前端 F1、全栈一键启动（`scripts/run.py`）。`uv run pytest` 369 条（含全部 Docker 测试）、`web` 的 `npm test` 53 条全绿。全程只用假 CLI（`adapter/src/paoding_adapter/fakecli.py`），没有调用过真实模型。
+**代码（2026-11-18）。** M0 的机制层已经写完并合入 `main`：九个组件、图服务的 HTTP 绑定、网页前端 F1、全栈一键启动（`scripts/run.py`）。`uv run pytest` 636 条（含全部 Docker 测试）、`web` 的 `npm test` 67 条、浏览器测试（Playwright）6 条全绿。全程只用假 CLI（`adapter/src/paoding_adapter/fakecli.py`），没有调用过真实模型。
 
-**还没有的。** 真实模型与题目环境上的实效验证（B1、B1b 与庖丁各臂的解题率和成本）尚未进行，规格里标 `[假设]` 的条目都还没有读数。质量提升两个阶段（安全与正确性加固；前端体验、运维基础、文档收口）的条目逐项以 PR 进行，进度见 [docs/m0/status.md](docs/m0/status.md)。
+**还没有的。** 真实模型与题目环境上的实效验证（B1、B1b 与庖丁各臂的解题率和成本）尚未进行，规格里标 `[假设]` 的条目都还没有读数。质量提升两个阶段（安全与正确性加固；前端数据路径与体验、运维基础、文档收口）已逐项以 PR 落地，记录见 [docs/m0/status.md](docs/m0/status.md)。
 
 ## 代码（M0，EDR-001 D-4）
 
@@ -47,10 +47,14 @@ scripts/test-e2e.sh                                                # 起全栈 �
 
 ```
 uv run pytest -q                      # 单元与对抗测试（没有 Docker 时相关测试自动跳过）
+uv run ruff check && uv run ruff format --check && uv run mypy   # 静态检查（BLE：不许宽接 Exception）
 python ci/check_domain_words.py       # 红线 3
 python ci/check_deps.py               # 依赖只走契约接口
-(cd web && npm ci && npm run typecheck && npm test && npm run build)   # 前端
+python scripts/gen-types.py --check   # web/src/api/types.ts 由线格式 schema 生成，不手改
+(cd web && npm ci && npm ci --prefix lint && npm run lint && npm run typecheck && npm test && npm run e2e)   # 前端
 ```
+
+运维（`/healthz`、结构化日志、备份与恢复、覆盖率）见 [docs/ops.md](docs/ops.md)。
 
 M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格缝隙见 `docs/m0/dissent-*.md`（下表“实施记录”）。
 

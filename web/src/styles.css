@@ -17,6 +17,7 @@ a { color: inherit; }
 code, pre { font-family: var(--mono); font-size: 12.5px; }
 button, select, input, textarea { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 3px 8px; }
 button { cursor: pointer; }
+button:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--line); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: 0.45; border-style: dashed; }
 button[aria-pressed="true"], button[aria-current="true"] { outline: 2px solid var(--line); outline-offset: 1px; font-weight: 600; }
 textarea { width: 100%; min-height: 64px; display: block; }
@@ -54,6 +55,10 @@ q.reg-narrative { display: inline-block; margin: 2px 0 2px 8px; }
 .badge-criterion::before { content: "⚖ "; }
 .badge-none { border-style: dotted; color: var(--muted); }
 .level { font-weight: 600; }
+.glyph { display: inline-block; min-width: 1.1em; margin-right: 3px; font-family: var(--sans); font-weight: 400; text-align: center; }
+.badge-warn { border: 2px solid var(--line); border-radius: 2px; font-weight: 600; }
+.badge-warn::before { content: "⚠ "; }
+.warn { border: 2px solid var(--line); padding: 4px 8px; font-weight: 600; }
 .level-X { text-decoration: line-through; }
 .level-E0 { border-style: dotted; font-weight: 400; }
 .level-E3 { border-width: 2px; }
@@ -72,8 +77,14 @@ table.mini th, table.mini td { border: 1px solid var(--soft); padding: 2px 8px; 
 table.wide { width: 100%; }
 
 /* —— 驾驶舱 —— */
-.cockpit { display: grid; grid-template-rows: auto 1fr auto; height: calc(100vh - 36px); }
-.topbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.cockpit { display: grid; grid-template-rows: auto auto 1fr auto; height: calc(100vh - 36px); }
+.topbar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: space-between; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.topbar-primary { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; min-width: 0; }
+.topbar-secondary { position: relative; }
+.topbar-secondary > summary { cursor: pointer; list-style: none; }
+.topbar-secondary-body { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding-top: 6px; }
+.panel-switch { display: none; gap: 6px; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.panel-switch button { flex: 1; }
 .topbar h2 { margin: 0; }
 .terminal { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .conn { border: 1.5px solid var(--line); padding: 0 8px; font-weight: 600; }
@@ -104,6 +115,21 @@ table.wide { width: 100%; }
 .trace-cols ul { padding-left: 16px; margin: 4px 0; }
 .inspector-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
 
+/* —— 窄屏（< 1024px）：三栏改一栏，面板用按钮切换；时间轴照常在底部 —— */
+@media (max-width: 1023.98px) {
+  .cockpit { height: auto; min-height: calc(100vh - 36px); }
+  .panel-switch { display: flex; position: sticky; top: 0; z-index: 2; background: var(--bg); }
+  .columns { grid-template-columns: minmax(0, 1fr); }
+  .left, .right { border: 0; }
+  .cockpit[data-panel="left"] .main, .cockpit[data-panel="left"] .right,
+  .cockpit[data-panel="main"] .left, .cockpit[data-panel="main"] .right,
+  .cockpit[data-panel="right"] .left, .cockpit[data-panel="right"] .main { display: none; }
+  .cost { min-width: 0; width: 100%; }
+  .site-nav { flex-wrap: wrap; gap: 8px 14px; }
+  .trace-cols { grid-template-columns: minmax(0, 1fr); }
+  .graph-wrap { max-height: 70vh; }
+}
+
 /* —— 成本仪表 —— */
 .cost { min-width: 260px; font-size: 12.5px; }
 .cost-line { display: flex; gap: 10px; font-family: var(--mono); }
@@ -126,7 +152,12 @@ table.wide { width: 100%; }
 .legend ul { display: flex; flex-wrap: wrap; gap: 4px 14px; list-style: none; padding: 0; margin: 4px 0; font-size: 12px; }
 
 /* —— 图 —— */
-.graph-wrap { overflow: auto; border: 1px solid var(--soft); background: var(--panel); }
+.graph-ctl { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+.graph-ctl .btn-small { margin-left: 0; }
+.graph-wrap { overflow: hidden; height: min(70vh, 640px); border: 1px solid var(--soft); background: var(--panel); touch-action: none; cursor: grab; }
+.graph-wrap:focus-visible { outline: 3px solid var(--line); outline-offset: 2px; }
+.gnode:focus-visible { outline: none; }
+.gnode:focus-visible rect, .gnode:focus-visible polygon { stroke-width: 4; stroke-dasharray: 6 2; }
 .gnode rect, .gnode polygon { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
 .gnode { cursor: pointer; } .gnode text { fill: var(--fg); font-size: 11px; font-family: var(--mono); }
 .gnode .g-title { font-family: var(--serif); font-style: italic; }

@@ -1032,7 +1032,15 @@ def apply(state: State, ev: Event) -> State:
                 **s["hints"],
                 hid: cast(
                     Hint,
-                    {**body, "id": hid, "problem_id": pid, "seq": seq, "author": ev["actor"]["id"], "closed": False},
+                    {
+                        **body,
+                        "id": hid,
+                        "problem_id": pid,
+                        "seq": seq,
+                        "ts": ev["ts"],
+                        "author": ev["actor"]["id"],
+                        "closed": False,
+                    },
                 ),
             }
     elif kind == "cost":

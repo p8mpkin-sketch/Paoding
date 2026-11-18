@@ -2,8 +2,8 @@
 // 入参全部是图服务对同一序号给出的投影；这里只做排版前的整理：
 // 不读本机时钟（时间取事件的 ts），排序只用 seq 与 id，不算等级，不解释事件体的语义。
 import type {
-  Badge, BudgetResponse, Event, GraphView, IntentState, Level, Predicate, Profile, ProfileOverride, Risk, ScopeRule,
-  StatusView, Tagged, Terminal, WorkItem, WorkView,
+  Badge, BudgetResponse, GraphView, IntentState, Level, Predicate, Profile, ProfileOverride, Risk, ScopeRule,
+  StatusView, Tagged, Terminal, WireTick, WorkItem, WorkView,
 } from "../api/types";
 import { layout, type Layout } from "./layout";
 import { levelWord } from "./levels";
@@ -96,7 +96,7 @@ export function sameSeq(p: Projections): boolean {
   return p.status.as_of === p.view.as_of && p.view.as_of === p.budget.as_of && p.budget.as_of === p.work.as_of;
 }
 
-export function buildViewModel(pid: string, p: Projections, events: readonly Event[]): ViewModel {
+export function buildViewModel(pid: string, p: Projections, ticks: readonly WireTick[]): ViewModel {
   if (!sameSeq(p)) throw new Error("投影不在同一序号");
   const { status, view, budget, work } = p;
   const seq = status.as_of;
@@ -116,10 +116,9 @@ export function buildViewModel(pid: string, p: Projections, events: readonly Eve
     })),
   ].sort((a, b) => a.created_seq - b.created_seq || cmp(a.id, b.id));
 
-  const tsOf = new Map(events.map((e) => [e.seq, e.ts]));
   const hints: HintRow[] = [...status.hints]
     .sort((a, b) => a.seq - b.seq || cmp(a.id, b.id))
-    .map((h) => ({ id: h.id, created_seq: h.seq, ts: tsOf.get(h.seq) ?? null, author: h.author, text: h.text, about: h.about, closed: h.closed }));
+    .map((h) => ({ id: h.id, created_seq: h.seq, ts: h.ts ?? null, author: h.author, text: h.text, about: h.about, closed: h.closed }));
 
   const seqOf = new Map<string, number>([...rows.map((r) => [r.id, r.created_seq] as const), ...hints.map((h) => [h.id, h.created_seq] as const)]);
   const idsOf = (key: FrontierGroup["key"]): string[] => (key === "human" ? view.frontier.human.map((w) => w.target) : view.frontier[key]);
@@ -154,7 +153,7 @@ export function buildViewModel(pid: string, p: Projections, events: readonly Eve
     scope: status.problem.scope,
     goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept },
     rows, hints, frontier, todo, budget: budgetVM,
-    ticks: ticksOf(events, seq),
+    ticks: ticksOf(ticks, seq),
     layout: layout({
       nodes: rows.map((r) => ({ id: r.id, kind: r.kind, created_seq: r.created_seq, premises: r.premises })),
       hints: hints.map((h) => ({ id: h.id, created_seq: h.created_seq, about: h.about ?? undefined })),
