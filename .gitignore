@@ -12,3 +12,16 @@ vault/
 coverage.json
 .coverage
 .coverage.*
+
+# CLI 的 home 目录（误提交过，见 docs/m0/status.md）：机器标识与会话记录不入库
+/home/
+# 前端 Playwright 的运行产物
+web/test-results/
+web/playwright-report/
+# 评测台的运行产物（读数留在本地，报告另附）
+eval/runs/
+/runs/
+# 填了答案的题目清单不入库（模板除外）
+eval/problems.d/*.yaml
+!eval/problems.d/TEMPLATE.yaml
+pytest.xml

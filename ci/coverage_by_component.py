@@ -1,4 +1,4 @@
-"""按组件汇总测试覆盖率（P2-3 第 4 项）。只显示，不设门槛：读数是量具，不守门。
+"""按组件汇总测试覆盖率（P2-3 第 4 项）。本脚本只显示；总覆盖率的门槛在 CI 的 pytest 步骤（--cov-fail-under）。
 
 用法：
     uv run pytest --cov --cov-report=json:coverage.json
