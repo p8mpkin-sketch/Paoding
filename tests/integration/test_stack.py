@@ -123,7 +123,12 @@ def test_full_stack_solves_a_problem_end_to_end(tmp_path):
         closes = [e for e in evs if e["kind"] == "close_problem"]
         assert len(closes) == 1 and closes[0]["actor"]["kind"] == "graph" and closes[0]["body"]["terminal"] == "solved"
         close = closes[0]
-        assert {e["kind"] for e in evs if e["seq"] > close["seq"]} <= {"cost", "release"}
+        # 关题后只剩交回：用量、释放，以及在途会话自己的留档（authored 类；判官可能先于会话收尾一步关题）
+        for e in evs:
+            if e["seq"] > close["seq"]:
+                assert e["kind"] in ("cost", "release") or (
+                    e["kind"] == "register_artifact" and e["body"]["class"] == "authored"
+                    and e["actor"].get("session")), e
 
         # —— 事件按规定的次序写入 ——
         def first(ev_kind, **match):
