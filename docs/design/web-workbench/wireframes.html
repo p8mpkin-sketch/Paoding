@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>庖丁工作台线框</title>
+<!-- 低保真线框：灰框是组件，方括号里是它读的端点。截图由 shoot.mjs 生成。 -->
+<style>
+body{margin:0;background:#e9e9e9;font:13px/1.45 "Noto Sans CJK SC","PingFang SC",sans-serif;color:#222}
+.frame{width:1280px;height:800px;margin:20px;background:#fff;display:grid;grid-template-rows:40px 1fr;box-shadow:0 1px 3px #0003;position:relative}
+.frame.tall{height:900px}
+.nav{display:flex;align-items:center;gap:18px;padding:0 16px;background:#2b2b2b;color:#eee}
+.nav b{font-size:15px}.nav .sp{flex:1}.nav i{font-style:normal;opacity:.6}
+.nav .on{border-bottom:2px solid #fff;padding-bottom:2px}
+.body{padding:14px;display:grid;gap:12px;overflow:hidden}
+.box{border:1.5px solid #888;border-radius:4px;padding:8px 10px;background:#fafafa;position:relative;min-height:0;overflow:hidden}
+.box h4{margin:0 0 6px;font-size:13px}
+.box .src{position:absolute;right:8px;top:6px;font:11px monospace;color:#777}
+.dash{border-style:dashed;background:#f3f3f3;color:#777}
+.need{border:2px dashed #c33;background:#fff5f5}
+.need::after{content:"需后端";position:absolute;right:6px;bottom:4px;color:#c33;font-size:11px;font-weight:bold}
+.row{display:flex;gap:10px}.col{display:flex;flex-direction:column;gap:8px}
+.card{border:1px solid #aaa;border-radius:4px;padding:8px;flex:1;background:#fff}
+.bar{height:8px;background:#ddd;border-radius:4px;overflow:hidden;margin:4px 0}.bar>span{display:block;height:100%;background:#777}
+.chip{display:inline-block;border:1px solid #999;border-radius:10px;padding:0 7px;margin:1px 2px;font-size:12px;background:#fff}
+.btn{display:inline-block;border:1px solid #555;border-radius:3px;padding:2px 10px;background:#eee;font-size:12px;margin-right:4px}
+.btn.p{background:#333;color:#fff}
+.muted{color:#777}.small{font-size:11px}
+table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:3px 5px;text-align:left;font-size:12px}
+.steps{display:flex;gap:6px;margin-bottom:8px}.steps span{flex:1;text-align:center;border:1px solid #999;padding:4px;border-radius:3px}.steps .cur{background:#333;color:#fff}
+.tag{position:absolute;left:-1px;top:-20px;font:bold 12px monospace;color:#555}
+.label{position:absolute;left:20px;bottom:-1px;transform:translateY(100%);font-size:12px;color:#555}
+.ph{background:repeating-linear-gradient(45deg,#f0f0f0,#f0f0f0 6px,#e4e4e4 6px,#e4e4e4 12px)}
+svg text{font:11px sans-serif}
+</style>
+<body>
+
+<!-- 1 仪表盘 -->
+<section class="frame" id="f1-dashboard">
+<div class="nav"><b>庖丁</b><span class="on">总览</span><span>题库</span><span>开题</span><span>读数</span><span class="sp"></span><i>主题 ◐</i><i>人的令牌：已配置</i></div>
+<div class="body" style="grid-template-columns:1fr 300px;grid-template-rows:auto 1fr auto">
+ <div class="box" style="grid-column:1/3"><h4>快捷入口</h4><span class="btn p">＋ 新建问题</span><span class="btn">导入题集</span><span class="btn">从已有题克隆</span><span class="btn muted">打开知识库（需后端）</span>
+  <span class="src">本机路由</span></div>
+ <div class="box"><h4>进行中（3）</h4><span class="src">GET /v1/problems（扩：goal_level、active、wall、human_todo）</span>
+  <div class="row" style="margin-top:6px">
+   <div class="card"><b>web-login 题</b> <span class="chip">待人 1</span><br><span class="chip">explore ×2</span><span class="chip">judge</span><br>Goal 等级 <b>◔ E1 观察到</b><div class="bar"><span style="width:46%"></span></div><span class="small">$5.30 / $11.50 · 已用 38 分 / 120 分</span></div>
+   <div class="card"><b>证明 lemma_7</b><br><span class="chip">reason</span><br>Goal 等级 <b>○ E0 未判定</b><div class="bar"><span style="width:12%"></span></div><span class="small">$1.40 / $11.50 · 已用 6 分 / 120 分</span></div>
+   <div class="card"><b>e2e 6×7</b><br><span class="chip">无在途会话</span><br>Goal 等级 <b>◑ E2</b><div class="bar"><span style="width:81%"></span></div><span class="small">$9.30 / $11.50 · 80% 标记已过</span></div>
+  </div>
+  <h4 style="margin-top:12px">最近完成</h4>
+  <div class="row"><span class="btn p">全部</span><span class="btn">✓ solved 12</span><span class="btn">◇ accepted 3</span><span class="btn">✕ unsolved 4</span></div>
+  <table style="margin-top:6px"><tr><th>题目</th><th>终态</th><th>Goal 判官</th><th>花费</th><th>关题时间</th></tr>
+  <tr><td>p1 端口扫描</td><td>✓ 已解决</td><td>exact_match@1 · 判定性</td><td>$3.20</td><td>今天 14:02</td></tr>
+  <tr><td>p7 迁移脚本</td><td>◇ 人已验收</td><td>human</td><td>$7.90</td><td>今天 10:15</td></tr>
+  <tr><td>p4 题面不全</td><td>✕ 未解决</td><td>replay@2 · 相符性</td><td>$11.50</td><td>昨天</td></tr></table>
+ </div>
+ <div class="col">
+  <div class="box"><h4>全局统计</h4><span class="src">/v1/problems totals</span>
+   <div class="row"><div class="card">今日解题<br><b style="font-size:20px">4</b></div><div class="card">累计花费<br><b style="font-size:20px">$61.2</b></div></div>
+   <div class="card" style="margin-top:6px">每解成本 <b>$5.10</b> · 共 22 题</div></div>
+  <div class="box" style="flex:1"><h4>成功率趋势（按关题日）</h4><span class="src">items[].closed_ts</span>
+   <svg width="260" height="130"><polyline fill="none" stroke="#555" stroke-width="2" points="10,100 50,90 90,95 130,60 170,70 210,40 250,45"/><line x1="10" y1="115" x2="250" y2="115" stroke="#999"/><text x="10" y="128">11-12</text><text x="215" y="128">11-18</text></svg>
+   <p class="small muted">柱：每日关题数；线：solved 占比。只计数服务端给的终态，不推断。</p></div>
+ </div>
+ <div class="box need" style="grid-column:1/3"><h4>系统健康（设计，不实现）</h4>模型路由、司南并发、哮天犬告警——这些量目前没有读端点。</div>
+</div></section>
+
+<!-- 2 向导 -->
+<section class="frame tall" id="f2-wizard">
+<div class="nav"><b>庖丁</b><span>总览</span><span>题库</span><span class="on">开题</span><span>读数</span><span class="sp"></span><i>草稿已存本机 · 14:03</i></div>
+<div class="body" style="grid-template-columns:1fr 360px;grid-template-rows:auto 1fr">
+ <div class="box" style="grid-column:1/3"><div class="steps"><span>① 基本信息 ✓</span><span>② 起点 ✓</span><span class="cur">③ 终点（判据）</span><span>④ 资源（授权）</span><span>⑤ 预算</span><span>⑥ 复核与提交</span></div>
+  <span class="small muted">②③④⑤ 即 HMI §3.2 的 Origin / 判据 / 授权 / 预算 四步，不增不藏；① 与 ⑥ 只是把题名、陈述与提交前复核单独成页。模板：<span class="chip">ctf-web-practice · a3f1… · 已签名</span></span></div>
+ <div class="box"><h4>③ 终点：怎么判定“做完了”</h4><span class="src">GET /v1/judges</span>
+  <div class="row" style="margin:6px 0"><div class="card"><b>◉ 判官判定</b><br><span class="small">从注册表选 Goal 判官；终态 solved</span></div><div class="card"><b>○ 人验收</b><br><span class="small">accept=human；终态写 accepted，不写“已证明”</span></div></div>
+  <table><tr><th></th><th>判官</th><th>等级</th><th>类型</th><th>单次上限</th></tr>
+  <tr><td>◉</td><td>exact_match@1</td><td>判定性</td><td>hard</td><td>$0.05</td></tr>
+  <tr><td>○</td><td>script_replay@2</td><td>相符性</td><td>costly</td><td>$0.40</td></tr>
+  <tr><td>○</td><td>metric_assert@2</td><td>建议性</td><td>deferred</td><td>$0.10</td></tr></table>
+  <p>目标陈述 <span class="box" style="display:block;min-height:24px">拿到 /admin 页面里的 flag</span></p>
+  <p>判定条件 expect（由判官解释；按判官的字段表逐项填，或切到 JSON）<span class="box" style="display:block;min-height:40px">answer_ref: vault:… (只显示引用) · normalize: trim</span></p>
+  <p>spec_ref <span class="chip">题面.md · 9c2e…</span>  最多尝试 <span class="chip">5</span></p>
+  <div class="row"><span class="btn">上一步</span><span class="btn p">下一步</span></div>
+ </div>
+ <div class="col">
+  <div class="box"><h4>画像预览（服务端推导）</h4><span class="src">POST /v1/profile/preview</span>
+   <table><tr><td>reversibility</td><td>r1</td><td class="small">规则 #2 net write 标 r1</td></tr><tr><td>judge</td><td>hard</td><td class="small">exact_match 的 kind</td></tr><tr><td>info</td><td>complete</td><td class="small">无 external 资源</td></tr></table></div>
+  <div class="box"><h4>每步缺项</h4>✓ ① ✓ ② · ③ 缺 0 · ④ 缺 1：scope 至少一条 · ⑤ 缺 0</div>
+  <div class="box need"><h4>高级选项</h4>模型选择、参考知识：Problem 没有这些字段，需后端。<br>初始提示：作为开题后第一条 Hint 提交（人的判断语域），已有通道。</div>
+  <div class="box" style="flex:1"><h4>将提交的批次（纯文本）</h4><span class="ph" style="display:block;height:120px"></span></div>
+ </div>
+</div></section>
+
+<!-- 3 导入 / 题库 -->
+<section class="frame" id="f3-bank">
+<div class="nav"><b>庖丁</b><span>总览</span><span class="on">题库</span><span>开题</span><span>读数</span></div>
+<div class="body" style="grid-template-columns:1fr 380px">
+ <div class="box"><h4>题库</h4><span class="src">GET /v1/problems</span>
+  <div class="row" style="margin:6px 0"><span class="box" style="flex:1;min-height:20px;padding:2px 6px">搜索题名 / id…</span><span class="btn">终态 ▾</span><span class="btn">判官 ▾</span><span class="btn">画像 ▾</span><span class="btn muted">标签 ▾（需后端）</span></div>
+  <table><tr><th>☐</th><th>题目</th><th>终态</th><th>Goal 判官</th><th>画像</th><th>已花 / 上限</th><th>开题</th></tr>
+   <tr><td>☐</td><td>web-login</td><td>进行中</td><td>exact_match@1</td><td>complete · hard · r1</td><td>$5.30 / $11.50</td><td>seq 12</td></tr>
+   <tr><td>☐</td><td>lemma_7</td><td>进行中</td><td>lean_check@1</td><td>complete · hard · r0</td><td>$1.40 / $11.50</td><td>seq 88</td></tr>
+   <tr><td>☐</td><td>p1</td><td>✓ 已解决</td><td>exact_match@1</td><td>…</td><td>$3.20</td><td>seq 1</td></tr></table>
+  <div class="box need" style="margin-top:10px">批量操作：启动、暂停、删除。暂停/恢复随 M1（not_enabled）；日志只追加，“删除”只能是归档标记，要新事件。</div>
+ </div>
+ <div class="col">
+  <div class="box"><h4>导入题集</h4><span class="src">前端解析 → 逐题 POST /v1/problems</span>
+   <div class="ph" style="height:60px;display:grid;place-items:center">拖入 .json / .yaml / .csv</div>
+   <p class="small">JSON：<code>[{id,title,statement,materials:[{slot,text}],goal,scope,budget}]</code>。每题先 PUT /v1/blobs 再开题，逐题回显结果。YAML 需加解析依赖，见异议。</p></div>
+  <div class="box"><h4>CSV 列映射</h4><table><tr><th>CSV 列</th><th>→ Problem 字段</th></tr><tr><td>name</td><td>title</td></tr><tr><td>question</td><td>材料：题面</td></tr><tr><td>answer</td><td class="muted">（不映射；答案应进 vault）</td></tr></table></div>
+  <div class="box"><h4>从已有题克隆</h4>选一道题 → 向导预填 scope、判据、预算、env；材料按哈希重新登记为 input。<span class="src">/status、/artifacts/{id}</span></div>
+ </div>
+</div></section>
+
+<!-- 4 工作区 -->
+<section class="frame tall" id="f4-workspace">
+<div class="nav"><b>庖丁</b><span>总览</span><span>题库</span><span>开题</span><span class="sp"></span><i>web-login · ◔ E1 · 实时 · $5.30/$11.50 ▮▮▮▯▯</i></div>
+<div class="body" style="grid-template-columns:240px 1fr 330px;grid-template-rows:1fr 130px">
+ <div class="col">
+  <div class="box"><h4>在途会话（3）</h4><span class="src">status.leases</span>
+   <div class="card small">explore · i_4 · sinan-2<br>已 2 分 14 秒 · 预留 $0.80</div>
+   <div class="card small">explore · i_6 · sinan-3<br>已 40 秒 · 预留 $0.80</div>
+   <div class="card small">judge · goal · judgebox<br>已 5 秒</div>
+   <p class="small need" style="padding:4px">每会话已花：需后端</p></div>
+  <div class="box" style="flex:1"><h4>待办（1）</h4><span class="src">work（human）</span>
+   <div class="card">⚠ 审批 i_5 写 /etc/app.conf · r1</div>
+   <p><span class="btn">注入 Hint…</span></p></div>
+ </div>
+ <div class="box"><div class="row" style="justify-content:space-between"><div><span class="btn p">图</span><span class="btn">列表</span><span class="btn">时间线</span></div><div><span class="btn">聚焦子图</span><span class="btn">高亮解题链</span><span class="btn">适合窗口</span> − ＋</div></div>
+  <svg width="640" height="480"><g stroke="#888" fill="#fff" stroke-width="1.5">
+   <rect x="20" y="20" width="110" height="34" rx="4"/><rect x="20" y="90" width="110" height="34" rx="4"/><rect x="190" y="55" width="120" height="34" rx="4" stroke="#222" stroke-width="3"/><rect x="190" y="140" width="120" height="34" rx="4"/><rect x="370" y="90" width="120" height="34" rx="4" stroke="#222" stroke-width="3"/><rect x="530" y="90" width="90" height="34" rx="17" stroke="#222" stroke-width="3"/><rect x="370" y="200" width="120" height="34" rx="4" stroke-dasharray="4 3"/>
+   <path d="M130 37 L190 72 M130 107 L190 72 M130 107 L190 157 M310 72 L370 107 M310 157 L370 217 M490 107 L530 107" fill="none"/>
+  </g><g fill="#222"><text x="28" y="41">● f_1 E3 端口</text><text x="28" y="111">◕ f_2 E2 版本</text><text x="198" y="76">◑ i_3 取 cookie</text><text x="198" y="161">○ f_4 E0</text><text x="378" y="111">◔ i_5 登录</text><text x="545" y="111">Goal</text><text x="378" y="221">i_6 探索中</text></g>
+  <text x="20" y="300" fill="#555">粗框：高亮的解题链（Goal 的前提闭包，取自服务端给的 premises 边）</text>
+  <text x="20" y="318" fill="#555">布局仍是 HT-14 的确定性列/行，只增不挪；缩放平移是本机视口</text></svg>
+ </div>
+ <div class="box"><div class="row"><span class="btn p">详情</span><span class="btn">日志</span><span class="btn">成本</span></div>
+  <h4 style="margin-top:8px">i_3 取 cookie · ◑ E2</h4>
+  <div class="card small">判据卡 replay@2 · 相符性 · 尝试 1/3 · ✓ pass seq 61</div>
+  <div class="card small" style="font-family:monospace">[证据] $ curl -i … · exit 0 · sha256 9c2e… ✓</div>
+  <div class="card small" style="border-left:3px solid #999">[叙述·模型撰写] 登录接口回显了会话 cookie…</div>
+  <div class="card small">前提：f_1 ● E3、f_2 ◕ E2 · 有证据根</div>
+  <p class="small muted">日志 Tab：SSE 事件流按种类过滤；成本 Tab：仪表 + 按角色分项 + 验证池</p></div>
+ <div class="box" style="grid-column:1/4"><h4>时间轴</h4><span class="src">/ticks + SSE</span>
+  <svg width="1220" height="36"><line x1="10" y1="18" x2="1200" y2="18" stroke="#888" stroke-width="2"/><g font-size="11"><text x="80" y="12">H</text><text x="200" y="12">A</text><text x="420" y="12">50%</text><text x="560" y="12">J✓</text><text x="780" y="12">J✗</text><text x="1100" y="12">● 实时</text></g><rect x="900" y="8" width="6" height="20" fill="#333"/></svg>
+  <span class="btn">◀ 上个同类</span><span class="btn">下个同类 ▶</span><span class="btn">复制链接</span> │ 快捷：<span class="btn">注入 Hint</span><span class="btn">追加预算</span><span class="btn">暂停</span><span class="btn">恢复</span><span class="btn muted">更换模型（需后端）</span><span class="btn muted">导出报告（需后端投影）</span>
+  <span class="small muted"> 追加预算、暂停、恢复随 M1：图服务回 not_enabled 时显示“暂不可用”</span></div>
+</div></section>
+
+<!-- 5 知识库 -->
+<section class="frame" id="f5-knowledge">
+<div class="nav"><b>庖丁</b><span>总览</span><span>题库</span><span class="on">知识</span><span>读数</span></div>
+<div class="body" style="grid-template-columns:220px 1fr 320px">
+ <div class="box need"><h4>分类</h4>领域<br>适用条件<br>条目类型：判官配置 / 环境模板 / 经验<br>按历史胜率排序</div>
+ <div class="box need"><h4>知识条目</h4><span class="src">GET /v1/knowledge?q=&kind=</span>
+  <table><tr><th>条目</th><th>类型</th><th>版本</th><th>使用</th><th>胜率</th><th>成本影响</th></tr>
+  <tr><td>web 登录绕过套路</td><td>经验</td><td>v3</td><td>17</td><td>0.59</td><td>−12%</td></tr>
+  <tr><td>ctf-web-practice</td><td>开题模板</td><td>a3f1…</td><td>9</td><td>—</td><td>—</td></tr></table>
+  <h4 style="margin-top:10px">经验蒸馏队列</h4>候选 → 人审核 → 发布（人的操作，要新事件种类与令牌范围）</div>
+ <div class="col"><div class="box need" style="flex:1"><h4>条目详情 / 版本</h4>内容（按语域渲染）· v1 v2 v3 · 回滚 · 来源题目链接</div>
+ <div class="box"><h4>现在就能读的</h4><span class="src">/v1/templates、/v1/judges、/v1/renderers</span>开题模板、判官注册表、渲染器目录——只读，带哈希与签名。</div></div>
+</div></section>
+
+<!-- 6 记忆 -->
+<section class="frame" id="f6-memory">
+<div class="nav"><b>庖丁</b><span>总览</span><span>题库</span><span class="sp"></span><i>工作区 › web-login › 记忆</i></div>
+<div class="body" style="grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto 1fr auto">
+ <div class="box need" style="grid-column:1/4"><h4>上下文占用</h4>会话 L7：118k / 200k tokens ▮▮▮▮▮▮▯▯▯▯ 59% · 下次压缩阈值 80%</div>
+ <div class="box need"><h4>工作记忆（当前会话）</h4>任务包内容、已读 Hint、最近工具输出</div>
+ <div class="box"><h4>任务记忆（本题进展）</h4><span class="src">/status、/view</span>本题的图就是任务记忆：等级、前沿、Hint。这一层已有，工作区即是它的视图。</div>
+ <div class="box need"><h4>长期记忆（跨题）</h4>经验条目，见知识库</div>
+ <div class="box need" style="grid-column:1/4"><h4>接续方案与压缩日志</h4>下一个会话将看到的摘要（可编辑，以人的判断语域提交）· 固定、清除 · 压缩前后对比</div>
+</div></section>
+
+<!-- 7 分析 / 系统 -->
+<section class="frame" id="f7-analytics-admin">
+<div class="nav"><b>庖丁</b><span>总览</span><span>题库</span><span>开题</span><span class="on">读数</span><span>系统</span></div>
+<div class="body" style="grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr">
+ <div class="box"><h4>性能分析（已有读数页扩展）</h4><span class="src">/v1/problems、/budget</span>每解成本、按角色分项、验证池 · 成功率趋势（按关题日、按 Goal 判官）· 成本 vs 解题散点</div>
+ <div class="box need"><h4>对比实验</h4>A/B、消融（关四语域、关预检）、基线对照：要“运行”与“配置”两个概念进日志，eval/ 的结果要有读端点 <span class="src">GET /v1/runs、/v1/runs/{id}/compare</span></div>
+ <div class="box need"><h4>模型与路由</h4>供应商、路由策略、预算——在 sinan/adapter 的配置文件里，没有 HTTP 面；且前端不得调模型</div>
+ <div class="box need"><h4>用户、权限、安全、环境</h4>多用户与令牌范围（HMI §13.3）、审批策略、沙箱等级、审计日志读端点、Docker 环境模板（可先作为 /v1/templates 的一类）</div>
+</div></section>
+
+<!-- 8 窄屏 -->
+<section class="frame" id="f8-mobile" style="width:390px;height:780px">
+<div class="nav"><b>庖丁</b><span class="sp"></span><i>☰</i></div>
+<div class="body" style="grid-template-rows:auto auto 1fr">
+ <div class="box"><h4>待审批（1）</h4><div class="card">⚠ web-login · i_5 写 /etc/app.conf · r1<br><span class="btn p">打开审批卡</span></div></div>
+ <div class="box"><h4>进行中</h4><div class="card">web-login ◔ E1 · $5.3/$11.5<div class="bar"><span style="width:46%"></span></div></div><div class="card">lemma_7 ○ E0 · $1.4/$11.5<div class="bar"><span style="width:12%"></span></div></div></div>
+ <div class="box"><h4>手机：看状态与审批</h4><span class="small">平板：工作区三栏收为一栏 + 面板切换（#55 已有）；手机：总览只留待审批与进行中，工作区默认“待办”。</span></div>
+</div></section>
+</body></html>
