@@ -10,13 +10,17 @@
 对着同一个 SQLite 会各自持有过时的状态。组件之间仍只经契约端口（GraphPort、GraphReader、SessionPort、
 TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，组件代码不动。
 
-会话后端在本阶段只有假 CLI（adapter/src/paoding_adapter/fakecli.py）：模型端点是本机的假上游，
-不需要任何密钥；每类任务的脚本由配置给出。真实后端由人在后续阶段接入。
+会话后端两种（配置 backend.kind）：
+- fake：脚本化假 CLI（adapter/src/paoding_adapter/fakecli.py），模型端点是本机的假上游，不需要任何密钥；
+  每类任务的脚本由配置给出。缺省在宿主上起子进程；`"launcher": "container"` 时在模型容器里起（同一条容器路径）。
+- real：真 CLI，缺省在模型容器里起（规格 §3.4.2）。镜像由 backend.image 给出；真实密钥从环境变量读
+  （backend.api_key_env，缺省 ANTHROPIC_API_KEY），只交给端点代理，不进配置文件、日志与任何容器。
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 import shutil
 import subprocess
@@ -28,8 +32,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from paoding_adapter.contract import (AdapterConfig, CliBinding, EndpointProxy, FakeUpstream,  # noqa: E402
-                                      PriceTable, ProxyConfig, SessionRunner, ToolEndpoint, fake_program)
+from paoding_adapter.contract import (FAKE_CLI, AdapterConfig, CliBinding, ContainerLauncher,  # noqa: E402
+                                      EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, SessionRunner,
+                                      ToolEndpoint, fake_program, local_launcher)
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
 from paoding_graph.contract import (BlobStore, Config, GraphHttp, GraphService, HttpConfig,  # noqa: E402
                                     TokenRegistry)
@@ -68,9 +73,13 @@ class StackConfig:
     port: int = 8100
     allow_origins: tuple = (DEV_ORIGIN,)
     static_dir: Path | None = None
-    # 会话后端：本阶段只有 fake。scripts：任务种类 → 假 CLI 脚本路径；缺的种类司南不开
+    # 会话后端：fake | real。scripts：任务种类 → 假 CLI 脚本路径；缺的种类司南不开（只对 fake 有意义）
     backend: str = "fake"
     scripts: dict = field(default_factory=dict)
+    launcher: str = ""                              # container | local；缺省 real → container，fake → local
+    cli_image: str = ""                             # 模型容器的镜像：real 必填；fake + container 缺省用通用镜像
+    upstream: str = "https://api.anthropic.com"     # real 的模型端点；fake 用本机假上游
+    api_key_env: str = "ANTHROPIC_API_KEY"          # real：真实密钥所在的环境变量名（密钥本身不进配置）
     usage: dict | None = None                       # 假上游每个请求回报的 usage
     executor: str = "docker"                        # docker | none（none：没有 exec，只适合看界面）
     bases: dict = field(default_factory=lambda: {"basic": "python:3.12-slim"})
@@ -99,6 +108,8 @@ class StackConfig:
                   backend=be.get("kind", "fake"),
                   scripts={k: str((base / v).resolve()) for k, v in be.get("scripts", {}).items()},
                   usage=be.get("usage"),
+                  **{k: be[src] for k, src in (("launcher", "launcher"), ("cli_image", "image"),
+                                               ("upstream", "upstream"), ("api_key_env", "api_key_env")) if src in be},
                   executor=ex.get("kind", "docker"),
                   **({"bases": ex["bases"]} if "bases" in ex else {}),
                   **{k: raw[k] for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s") if k in raw})
@@ -120,8 +131,20 @@ def docker_available() -> bool:
 
 class Stack:
     def __init__(self, cfg: StackConfig):
-        if cfg.backend != "fake":
-            raise StackError(f"会话后端 {cfg.backend!r} 本阶段不接：只有假 CLI（backend: fake）。真实后端由人在后续阶段接入")
+        if cfg.backend not in ("fake", "real"):
+            raise StackError(f"会话后端取 fake 或 real，不是 {cfg.backend!r}")
+        self.launch_mode = cfg.launcher or ("container" if cfg.backend == "real" else "local")
+        if self.launch_mode not in ("container", "local"):
+            raise StackError(f"launcher 取 container 或 local，不是 {cfg.launcher!r}")
+        api_key = "sk-fake-upstream"
+        if cfg.backend == "real":
+            api_key = os.environ.get(cfg.api_key_env, "")
+            if not api_key:
+                raise StackError(f"真实后端要模型密钥：环境变量 {cfg.api_key_env} 没有设。密钥只交给端点代理，不进任何容器")
+            if self.launch_mode == "container" and not cfg.cli_image:
+                raise StackError("真实后端在模型容器里起 CLI：配置里要给 backend.image（装有该 CLI 的镜像）")
+        if self.launch_mode == "container" and not docker_available():
+            raise StackError("模型容器要 Docker，但 docker info 失败。先起 dockerd")
         if cfg.executor not in ("docker", "none"):
             raise StackError(f"执行层取 docker 或 none，不是 {cfg.executor!r}")
         if cfg.executor == "docker" and not docker_available():
@@ -158,17 +181,35 @@ class Stack:
         # 执行层
         self.executor = DockerExecutor(self.graph, self.blobs, self.tok["executor"]) if cfg.executor == "docker" else None
 
-        # Adapter：假上游 → 端点代理 → 工具端点 → 会话运行器（假 CLI）
-        self.upstream = FakeUpstream(cfg.usage)
-        self.proxy = EndpointProxy(ProxyConfig(self.upstream.url, "sk-fake-upstream", self.tok["adapter"]),
+        # Adapter：上游（假上游或真模型端点）→ 端点代理 → 工具端点 → 会话运行器
+        real = cfg.backend == "real"
+        self.upstream = None if real else FakeUpstream(cfg.usage)
+        self.upstream_url = cfg.upstream if real else self.upstream.url
+        self.proxy = EndpointProxy(ProxyConfig(self.upstream_url, api_key, self.tok["adapter"]),
                                    PriceTable.load(PRICES), self.graph)
         self.endpoint = ToolEndpoint()
+        # 端点先起：模型容器的启动器要知道它们在本机回环上的端口
+        proxy_port = self.proxy.serve()[1]
+        mcp_port = int(self.endpoint.serve().rsplit(":", 1)[1])
+        if real:
+            self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")     # 真实后端三类任务都开；这张表只对假 CLI 有意义
+            binding, env_for = CliBinding(), None
+        else:
+            binding = CliBinding(program=fake_program(in_container=self.launch_mode == "container"))
+            env_for = lambda lease: {"PD_FAKE_SCRIPT": cfg.scripts.get(lease["kind"], "")}  # noqa: E731
+        if self.launch_mode == "container":
+            # 假 CLI + 容器：通用镜像里挂进假 CLI 与各类任务的脚本（只读）；真 CLI 的镜像自带 CLI，不挂任何东西
+            mounts = () if real else ((str(FAKE_CLI), "/opt/paoding/fakecli.py"),
+                                      *[(v, v) for v in sorted(set(cfg.scripts.values())) if v])
+            self.launcher = ContainerLauncher(cfg.cli_image or cfg.bases.get("basic", "python:3.12-slim"),
+                                              proxy_port, mcp_port, mounts=mounts)
+        else:
+            self.launcher = local_launcher
         self.adapter_cfg = AdapterConfig(
             root=home / "sessions", renew_s=cfg.renew_s, stall_s=cfg.stall_s, judges_cfg=self.judges,
-            binding=CliBinding(program=fake_program()), bases=dict(cfg.bases),
-            env_for=lambda lease: {"PD_FAKE_SCRIPT": cfg.scripts.get(lease["kind"], "")})
+            binding=binding, bases=dict(cfg.bases), env_for=env_for)
         self.runner = SessionRunner(self.adapter_cfg, self.graph, self.graph, self.blobs, self.tokens,
-                                    self.proxy, self.endpoint, self.executor)
+                                    self.proxy, self.endpoint, self.executor, launcher=self.launcher)
 
         # 判官运行器、哮天犬
         self.judge = JudgeRunner(JudgeConfig(token=self.tok["judge"], registry=self.registry, bases=dict(cfg.bases)),
@@ -182,8 +223,6 @@ class Stack:
 
     def start(self) -> str:
         """按次序起：图服务 → 判官运行器 → 司南 → 哮天犬。返回图服务的地址。"""
-        self.proxy.serve()
-        self.endpoint.serve()
         self.url = self.http.serve()
         log("graph").info("HTTP + SSE 在 %s（链头 seq=%d，题 %d 道；人的令牌在 %s）", self.url, self.graph.head(),
                           len(self.graph.state["problems"]), self.cfg.home / "human.token")
@@ -192,7 +231,10 @@ class Stack:
         log("judge").info("判官运行器已起：%s", ", ".join(f"{k}@{v['version']}" for k, v in sorted(self.judges.items())))
         self._spawn("sinan", self._sinan_supervisor)
         missing = [k for k in TASK_KINDS if not self.cfg.scripts.get(k)]
-        log("sinan").info("司南已起：后端 fake（假上游 %s）%s", self.upstream.url,
+        where = "模型容器" if self.launch_mode == "container" else "宿主子进程"
+        if self.launch_mode == "local" and self.cfg.backend == "real":
+            log("sinan").warning("真 CLI 以宿主子进程运行（launcher: local）：没有模型容器的隔离，只适合本机调试")
+        log("sinan").info("司南已起：后端 %s（%s；上游 %s）%s", self.cfg.backend, where, self.upstream_url,
                           f"；没有脚本的任务种类不开：{', '.join(missing)}" if missing else "")
         self._spawn("watchdog", self._dog_loop)
         log("watchdog").info("哮天犬已起：每 %.1f 秒一轮%s", self.cfg.dog_interval_s,
@@ -317,9 +359,12 @@ class Stack:
                 self.runner.kill(lid, "shutdown")
         if self.executor is not None:
             self.executor.close()
+        if self.launch_mode == "container":
+            self.launcher.close()
         self.endpoint.close()
         self.proxy.close()
-        self.upstream.close()
+        if self.upstream is not None:
+            self.upstream.close()
         self.http.close()
         L.info("已停：链头 seq=%d", self.graph.head())
 

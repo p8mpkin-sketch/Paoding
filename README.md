@@ -39,6 +39,8 @@ scripts/test-e2e.sh                                                # 起全栈 �
 
 配置（`<home>/config.json`，可省）的形状见 `scripts/e2e/config.json`；构建过 `web/dist` 的话，网页就在同一端口。
 
+会话后端（`backend`）：`{"kind": "fake", "scripts": {…}}` 是假 CLI，缺省在宿主上起子进程，加 `"launcher": "container"` 则在模型容器里起；`{"kind": "real", "image": "<装有 CLI 的镜像>"}` 是真 CLI，缺省就在模型容器里起，真实密钥从环境变量读（`api_key_env`，缺省 `ANTHROPIC_API_KEY`），只交给端点代理。模型容器的网络与挂载见 [adapter/SPEC.md](adapter/SPEC.md)。
+
 ```
 uv run pytest -q                      # 单元与对抗测试
 python ci/check_domain_words.py       # 红线 3
