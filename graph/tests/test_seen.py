@@ -3,6 +3,7 @@
 人在序号 s 看到卡片，到 s+k 才作决定。决策操作带 seen {seq, card_hash}，内核在链头重算这张卡的投影哈希，
 不等即 stale_view 并附上最新的卡。与这张卡无关的事件再多，旧哈希仍然有效。
 """
+
 import pytest
 from conftest import HUMAN, reason
 from http_rig import Api
@@ -36,8 +37,17 @@ def approve(k, iid, seen, decision="approve", **extra):
 def test_decision_requires_seen(k):
     iid, _ = gated(k)
     good = seen_card(k.state, "p1", "approval", iid)
-    for bad in (None, {}, "abc", {"card_hash": good["card_hash"]}, {"seq": 1}, {**good, "card_hash": "xyz"},
-                {**good, "seq": "7"}, {**good, "seq": -1}, {**good, "extra": 1}):
+    for bad in (
+        None,
+        {},
+        "abc",
+        {"card_hash": good["card_hash"]},
+        {"seq": 1},
+        {**good, "card_hash": "xyz"},
+        {**good, "seq": "7"},
+        {**good, "seq": -1},
+        {**good, "extra": 1},
+    ):
         body = {"intent": iid, "decision": "approve", **({"seen": bad} if bad is not None else {})}
         assert k.submit(HUMAN, "p1", "approve", body) == "schema_error", bad
     assert wk.intent_status(k.state, "p1", iid) == "needs_human"
@@ -49,7 +59,7 @@ def test_stale_card_is_rejected(k, decision):
     """3.1.5 的 17：取得审批卡之后，一条前提被证伪；凭旧哈希的批准与拒绝都返回 stale_view。"""
     iid, f = gated(k)
     old = seen_card(k.state, "p1", "approval", iid)
-    assert k.verdict("p1", f, "fail") == "ok"                    # 卡片打开期间注入的反证：前提降级
+    assert k.verdict("p1", f, "fail") == "ok"  # 卡片打开期间注入的反证：前提降级
     extra = {"reason": "不放行"} if decision == "deny" else {}
     r = validate(k.state, HUMAN, "p1", "approve", {"intent": iid, "decision": decision, "seen": old, **extra}, k.cfg)
     assert isinstance(r, Reject) and r.code == "stale_view" and r.card == ("approval", iid)
@@ -65,16 +75,27 @@ def test_unrelated_events_do_not_stale_the_card(k):
     iid, f = gated(k)
     old = seen_card(k.state, "p1", "approval", iid)
     assert k.submit(HUMAN, "p1", "hint", {"text": "看看配置", "about": iid}).startswith("h_")
-    assert k.submit(reason(), "p1", "add_intent", {"title": "另一条", "premises": [f], "risk": "r0", "budget": R,
-                                                   "expected_gain": 0.9}).startswith("i_")
+    assert k.submit(
+        reason(),
+        "p1",
+        "add_intent",
+        {"title": "另一条", "premises": [f], "risk": "r0", "budget": R, "expected_gain": 0.9},
+    ).startswith("i_")
     other = k.obs("p1", title="无关的观察")
     assert k.verdict("p1", other, "fail") == "ok"
     lid = k.submit(SINAN, "p1", "lease", {"kind": "reason", "holder": "sn1", "reserve": R, "ttl_s": 600})
-    assert k.submit({"kind": "adapter", "id": "ad1"}, "p1", "cost", {
-        "task_id": lid, "source": "proxy", "usd_milli": 30, "price_table": "t"}) == "ok"
+    assert (
+        k.submit(
+            {"kind": "adapter", "id": "ad1"},
+            "p1",
+            "cost",
+            {"task_id": lid, "source": "proxy", "usd_milli": 30, "price_table": "t"},
+        )
+        == "ok"
+    )
     k.open("p2")
     assert seen_card(k.state, "p1", "approval", iid)["card_hash"] == old["card_hash"]
-    assert old["seq"] < k.state["seq"]                           # seq 只留作审计，不参与比较
+    assert old["seq"] < k.state["seq"]  # seq 只留作审计，不参与比较
     assert approve(k, iid, old) == "ok"
     assert k.state["approvals"][iid] == [k.state["seq"]]
 
@@ -91,7 +112,7 @@ def test_seen_is_recorded_and_replays(k):
     iid, _ = gated(k)
     s = seen_card(k.state, "p1", "approval", iid)
     assert approve(k, iid, s) == "ok"
-    assert k.events[-1]["body"]["seen"] == s                     # 事件里留下人当时所见，供审计
+    assert k.events[-1]["body"]["seen"] == s  # 事件里留下人当时所见，供审计
     assert state_hash(replay(k.events, apply, empty_state())) == state_hash(k.state)
 
 
@@ -102,8 +123,8 @@ def test_human_close_binds_the_closeout_card(k):
     assert k.submit(HUMAN, "p1", "close_problem", {"reason": "r", "card_hash": "0" * 64}) == "schema_error"
     assert k.verdict("p1", "goal", "pass", judge="exact_match", candidate=k.art("p1", "authored", b"c")) == "ok"
     assert k.verdict("p1", "goal", "pass", judge="exact_match", candidate=k.art("p1", "authored", b"c")) == "ok"
-    assert not k.state["problems"]["p1"]["closed"]               # r2 题：四顾清单非空，不自动关题
-    assert k.submit(HUMAN, "p1", "close_problem", {"reason": "r", "seen": old}) == "stale_view"   # Goal 的等级变了
+    assert not k.state["problems"]["p1"]["closed"]  # r2 题：四顾清单非空，不自动关题
+    assert k.submit(HUMAN, "p1", "close_problem", {"reason": "r", "seen": old}) == "stale_view"  # Goal 的等级变了
     fresh = seen_card(k.state, "p1", "closeout", "p1")
     assert k.submit(HUMAN, "p1", "close_problem", {"reason": "r", "seen": fresh}) == "ok"
     assert k.events[-1]["body"]["card_hash"] == fresh["card_hash"]
@@ -119,6 +140,7 @@ def test_human_close_without_seen_still_allowed(k):
 
 # ---------- 服务层与 HTTP：stale_view 附上链头的最新卡片 ----------
 
+
 def test_stale_view_carries_the_latest_card_over_http(tmp_path):
     """HT-7 的服务端一侧：凭旧哈希批准被拒为 stale_view，结果里附的卡与 /cards 端点此刻给出的相同。"""
     api = Api(tmp_path)
@@ -128,8 +150,9 @@ def test_stale_view_carries_the_latest_card_over_http(tmp_path):
         api.release(b["lease"]["id"], "nothing")
         _, b = api.lease("p1", "reason")
         rs = api.session(b["lease"]["id"], "reason")
-        iid = api.propose_with(rs, "p1", [{"op": "add_intent", "body": {
-            "title": "改写后重启", "premises": [], "risk": "r2", "budget": R}}])["results"][0]["id"]
+        iid = api.propose_with(
+            rs, "p1", [{"op": "add_intent", "body": {"title": "改写后重启", "premises": [], "risk": "r2", "budget": R}}]
+        )["results"][0]["id"]
         card = api.get(f"/v1/problems/p1/cards/approval/{iid}")
         seen = {"seq": card["as_of"], "card_hash": card["card_hash"]}
         stale = {"seq": card["as_of"], "card_hash": "0" * 64}

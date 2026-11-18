@@ -3,6 +3,7 @@
 图服务开题时把条目的 version、grade、kind、max_cost 抄进题目的判官快照，裁决时再抄进支持记录，
 所以重放不依赖这个目录。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,5 +42,12 @@ def load_registry(directory: str | Path = DEFAULT_DIR) -> dict[str, dict]:
 
 def kernel_judges(registry: dict[str, dict]) -> dict[str, dict]:
     """图服务 Config.judges 的形状：judge_id → {version, grade, kind, max_cost（美元）}。"""
-    return {jid: {"version": s["version"], "grade": s["grade"], "kind": s["kind"],
-                  "max_cost": s["max_cost"].get("usd_milli", 0) / 1000} for jid, s in sorted(registry.items())}
+    return {
+        jid: {
+            "version": s["version"],
+            "grade": s["grade"],
+            "kind": s["kind"],
+            "max_cost": s["max_cost"].get("usd_milli", 0) / 1000,
+        }
+        for jid, s in sorted(registry.items())
+    }

@@ -1,12 +1,15 @@
 """授权编译：能力按风险注入（3.6.4 的 2 的编译部分）。纯函数，不需要 Docker。"""
+
 import pytest
 
 from paoding_executor.compile import ScopeError, compile_spec
 
 ENV = {"base": "img", "baseline_ref": "img@1"}
-SCOPE = [{"resource": "net", "pattern": "t0:80", "actions": ["*"], "risk": "r0"},
-         {"resource": "net", "pattern": "t1:22", "actions": ["*"], "risk": "r1"},
-         {"resource": "net", "pattern": "t2:9000", "actions": ["*"], "risk": "r2"}]
+SCOPE = [
+    {"resource": "net", "pattern": "t0:80", "actions": ["*"], "risk": "r0"},
+    {"resource": "net", "pattern": "t1:22", "actions": ["*"], "risk": "r1"},
+    {"resource": "net", "pattern": "t2:9000", "actions": ["*"], "risk": "r2"},
+]
 
 
 def test_ceiling_filters():
@@ -28,11 +31,13 @@ def test_deterministic():
 
 def test_actions_decide_what_opens():
     """P0-4：只有 actions 含 connect（或 *）的规则进 egress_allow；规则连同动作原样交给闸门。"""
-    scope = [{"resource": "net", "pattern": "t0:80", "actions": ["connect"], "risk": "r0"},
-             {"resource": "net", "pattern": "t0:81", "actions": ["read"], "risk": "r0"},
-             {"resource": "net", "pattern": "t0:82", "actions": [], "risk": "r0"},
-             {"resource": "net", "pattern": "t0:83", "actions": ["read"], "risk": "r0"},
-             {"resource": "net", "pattern": "t0:83", "actions": ["connect"], "risk": "r1"}]
+    scope = [
+        {"resource": "net", "pattern": "t0:80", "actions": ["connect"], "risk": "r0"},
+        {"resource": "net", "pattern": "t0:81", "actions": ["read"], "risk": "r0"},
+        {"resource": "net", "pattern": "t0:82", "actions": [], "risk": "r0"},
+        {"resource": "net", "pattern": "t0:83", "actions": ["read"], "risk": "r0"},
+        {"resource": "net", "pattern": "t0:83", "actions": ["connect"], "risk": "r1"},
+    ]
     r0 = compile_spec("s", scope, ENV, "r0", False, "/w")
     assert r0.egress_allow == ("t0:80",)
     assert r0.egress_rules == (("t0:80", ("connect",)), ("t0:81", ("read",)), ("t0:82", ()), ("t0:83", ("read",)))
@@ -44,17 +49,22 @@ def test_actions_decide_what_opens():
 def test_net_pattern_needs_a_port(pattern):
     """出站放行到端口为止：没写端口的 net 规则不默认成"整台主机"，直接拒绝（异议报告 006 第 1 项）。"""
     with pytest.raises(ScopeError):
-        compile_spec("s", [{"resource": "net", "pattern": pattern, "actions": ["connect"], "risk": "r0"}],
-                     ENV, "r0", False, "/w")
+        compile_spec(
+            "s", [{"resource": "net", "pattern": pattern, "actions": ["connect"], "risk": "r0"}], ENV, "r0", False, "/w"
+        )
 
 
 def test_unknown_resource_kind():
     with pytest.raises(ScopeError):
-        compile_spec("s", [{"resource": "mystery", "pattern": "x", "actions": [], "risk": "r0"}], ENV, "r0", False, "/w")
+        compile_spec(
+            "s", [{"resource": "mystery", "pattern": "x", "actions": [], "risk": "r0"}], ENV, "r0", False, "/w"
+        )
 
 
 def test_workspace_no_egress():
-    spec = compile_spec("s", [{"resource": "workspace", "pattern": "*", "actions": [], "risk": "r0"}], ENV, "r0", False, "/w")
+    spec = compile_spec(
+        "s", [{"resource": "workspace", "pattern": "*", "actions": [], "risk": "r0"}], ENV, "r0", False, "/w"
+    )
     assert spec.egress_allow == ()
 
 
@@ -62,6 +72,7 @@ def test_resource_kinds_single_source():
     """评审方 #14 必修 1：执行层的资源种类与 graph 登记表同一张；external 不各持一份。"""
     from paoding_executor.compile import RESOURCE_KINDS
     from paoding_graph.contract import RESOURCE_EXTERNAL
+
     assert set(RESOURCE_KINDS) == set(RESOURCE_EXTERNAL)
     assert all(k.external == RESOURCE_EXTERNAL[name] for name, k in RESOURCE_KINDS.items())
     assert RESOURCE_EXTERNAL["net"] is True and RESOURCE_EXTERNAL["workspace"] is False
@@ -70,8 +81,10 @@ def test_resource_kinds_single_source():
 def test_owner_alive():
     import os
     import socket
+
     from paoding_executor.runtime import owner_alive, owner_id
+
     assert owner_alive(owner_id()) is True
-    assert owner_alive(f"{socket.gethostname()}:{os.getpid()}:0") is False      # pid 复用
+    assert owner_alive(f"{socket.gethostname()}:{os.getpid()}:0") is False  # pid 复用
     assert owner_alive(f"{socket.gethostname()}:999999:1") is False
     assert owner_alive("other-host:1:1") is None and owner_alive("") is None
