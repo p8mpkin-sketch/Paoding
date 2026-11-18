@@ -2,6 +2,7 @@
 from typing import Protocol
 
 from .backend import CliBinding, fake_program  # noqa: F401
+from .fakeupstream import FakeUpstream  # noqa: F401
 from .mcp import ToolEndpoint  # noqa: F401
 from .proxy import EndpointProxy, PriceTable, ProxyConfig  # noqa: F401
 from .session import AdapterConfig, SessionRecord, SessionRunner  # noqa: F401

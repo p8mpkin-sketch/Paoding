@@ -31,6 +31,7 @@
 | `mcp.py` | 工具端点：MCP 的 HTTP 传输最小子集；每会话一个随机路径，一个进程并行托管多个会话 |
 | `package.py` | 任务包①–⑦渲染与留档；黄金文件 `tests/golden/reason_package.txt` |
 | `backend.py` | 十项绑定的命令构造、`--mcp-config` 内容、模型容器的 `docker run` 命令；都不运行 |
+| `fakeupstream.py` | 假模型端点：本机回环上的 `/v1/messages`，usage 定值，不生成内容；测试台与组装根（`scripts/run.py` 的空配置）共用 |
 | `fakecli.py` | 脚本化假 CLI：接受同一组参数，经代理发请求、经工具端点调工具、输出 stream-json |
 | `session.py` | 会话运行器：状态机、续租、停滞判定、回合上限、收尾轮、`failed(no_output)`、会话记录留档、释放与令牌作废 |
 

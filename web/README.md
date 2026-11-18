@@ -29,7 +29,18 @@ uv run python -m paoding_graph.httpapi --home .paoding --port 8787 --static web/
 PAODING_API=http://127.0.0.1:8787 npm run dev
 ```
 
-想直接看到实时事件流，用演示脚本起一个带数据的真图服务（没有模型调用，事件按固定脚本经 HTTP 提交）：
+连整套系统（图服务 + 判官 + 司南 + 哮天犬，会话是假 CLI）：
+
+```sh
+(cd web && npm run build)
+uv run python scripts/run.py --home /tmp/paoding-run --port 8100 --config scripts/e2e/config.json
+# 或者开发服务器：PAODING_API=http://127.0.0.1:8100 npm run dev （run.py 缺省放行 http://127.0.0.1:5173）
+uv run python scripts/e2e/drive.py --url http://127.0.0.1:8100 --token-file /tmp/paoding-run/human.token
+```
+
+打开 `/p/e2e` 能看到节点、判定刻度与花费随 SSE 一条条到。
+
+只看界面、不跑会话的话，用演示脚本起一个带数据的真图服务（没有模型调用，事件按固定脚本经 HTTP 提交）：
 
 ```sh
 (cd web && npm run build)
