@@ -27,3 +27,16 @@ for (const theme of THEMES) {
     });
   }
 }
+
+for (const theme of THEMES) {
+  test(`axe：命令面板打开（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    await page.goto("/problems");
+    await expect(page.locator(".shell-status")).toContainText("已连接");
+    await page.keyboard.press("Control+k");
+    await expect(page.locator("[cmdk-input]")).toBeFocused();
+    await page.waitForTimeout(200);
+    const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+  });
+}

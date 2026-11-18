@@ -71,7 +71,7 @@
 | cmdk | ⌘K 命令面板 |
 | sonner | 操作反馈提示条（提交中、已记录 seq、被拒） |
 | lucide-react | 图标 |
-| @fontsource/noto-serif-sc、ibm-plex-sans、ibm-plex-mono、ma-shan-zheng、lxgw-wenkai | 自托管字体（CSP 只许同源），中文按 unicode-range 分片 |
+| @fontsource/noto-serif-sc、ibm-plex-sans、ibm-plex-mono、ma-shan-zheng，lxgw-wenkai-webfont | 自托管字体（CSP 只许同源），中文按 unicode-range 分片，构建只留 woff2 |
 
 构建期：tailwindcss 与 @tailwindcss/vite（产物是普通 CSS）。测试期：@axe-core/playwright。不加状态库，不用 WebSocket。
 
@@ -79,7 +79,7 @@
 
 ## 界面（P2-2）
 
-- 外壳（`src/shell/`）：左侧栏（导航、⌘K 搜索、正在运行）、顶栏（面包屑与本页主操作，下沿制图刻度）、内容区（十二栏界栏）、底部状态行（连接、令牌、在途、等你处理、累计花费，全部来自 `/v1/problems`）。工作区把侧栏收成图标栏。快捷键：⌘K 或 Ctrl+K 命令面板，C 新建任务。
+- 外壳（`src/shell/`）：左侧栏（导航、⌘K 搜索、正在运行）、顶栏（面包屑与本页主操作，下沿制图刻度）、内容区（十二栏界栏）、底部状态行（连接、令牌、在途、等你处理、累计花费，全部来自 `/v1/problems`）。工作区把侧栏收成图标栏。快捷键：⌘K 或 Ctrl+K 命令面板；C 新建任务，只在顶栏有“新建任务”按钮的页面生效。
 - 写操作的反馈三段式（`src/ui/feedback.ts`）：提交中 → 已记录（带 seq）→ 被拒（拒绝码翻成人话）。仍不做乐观更新。
 - 可访问性：`e2e/a11y.spec.ts` 对每个页面在宣、墨、素三套主题下跑 axe（WCAG 2.1 AA），不许有违规。
 

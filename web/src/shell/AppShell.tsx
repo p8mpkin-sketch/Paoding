@@ -33,6 +33,9 @@ export function navOf(r: Route): { key: NavKey | null; vol: string; crumbs: stri
   }
 }
 
+/** 顶栏放“导入任务集 / 新建任务”的页面；快捷键 C 也只在这些页面生效。 */
+export const hasNewButton = (r: Route) => r.page === "home" || r.page === "problems";
+
 const hm = (ms: number) => new Date(ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 /** 主题（本机偏好）：随、宣、墨、素。 */
@@ -77,11 +80,12 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "c" || e.key === "C") { if (route.page !== "new") { e.preventDefault(); navigate({ page: "new" }); } }
+      // 只在顶栏有“新建任务”按钮的页面生效；工作区键盘操作多，不抢它的键
+      if ((e.key === "c" || e.key === "C") && hasNewButton(route)) { e.preventDefault(); navigate({ page: "new" }); }
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [route.page]);
+  }, [route]);
 
   return (
     <div className={`shell${narrow ? " shell-narrow" : ""}`}>
@@ -133,7 +137,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
               {nav.crumbs.map((c, i) => <span key={i} className={i === nav.crumbs.length - 1 ? "here" : undefined}>{i > 0 && <span className="sep" aria-hidden="true">/</span>}{c}</span>)}
             </nav>
             <span className="grow" />
-            {(route.page === "home" || route.page === "problems") && (
+            {hasNewButton(route) && (
               <>
                 <Link to={{ page: "import" }} className={btnClass("line", "md")}><FileUp aria-hidden="true" />导入任务集</Link>
                 <Link to={{ page: "new" }} className={btnClass("ink", "md")}><Plus aria-hidden="true" />新建任务 <Kbd>C</Kbd></Link>
