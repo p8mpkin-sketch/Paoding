@@ -1,0 +1,17 @@
+# 全栈配置的样例（scripts/run.py --config，或放在 <home>/config.yaml）。每一项都可省。
+# 文件里的相对路径相对本文件所在目录。
+
+backend:
+  kind: fake                 # fake：假 CLI + 本机假上游，不需要任何密钥
+  scripts:                   # 假 CLI 的脚本，按任务种类给；没有脚本的种类司南不开
+    bootstrap: bootstrap.json
+    reason: reason.json
+    explore: explore.json
+
+executor:
+  kind: docker               # docker：本机 Docker；fake：替身执行层（只供测试）
+  bases:
+    basic: python:3.12-slim  # 执行容器的基础镜像，不是题目容器
+
+poll_s: 0.3                  # 司南与判官运行器的轮询间隔（秒）
+dog_interval_s: 1.0          # 哮天犬的巡查间隔（秒）

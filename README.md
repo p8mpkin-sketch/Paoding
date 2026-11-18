@@ -41,7 +41,7 @@ uv run python scripts/run.py --home /tmp/paoding-run --port 8100   # Ctrl+C 干�
 scripts/test-e2e.sh                                                # 起全栈 → 开一道题 → 等 solved → 摘要 → 清理
 ```
 
-配置（`<home>/config.json`，可省）的形状见 `scripts/e2e/config.json`；构建过 `web/dist` 的话，网页就在同一端口（`http://127.0.0.1:8100/`，人的令牌在 `<home>/human.token`）。图服务对外只有 HTTP（只监听回环地址），端点表见 [graph/SPEC.md](graph/SPEC.md) 的“HTTP 绑定”。
+配置（`<home>/config.yaml`，可省）的形状见 `scripts/e2e/config.yaml`；构建过 `web/dist` 的话，网页就在同一端口（`http://127.0.0.1:8100/`，人的令牌在 `<home>/human.token`）。图服务对外只有 HTTP（只监听回环地址），端点表见 [graph/SPEC.md](graph/SPEC.md) 的“HTTP 绑定”。
 
 ```
 uv run pytest -q                      # 单元与对抗测试（没有 Docker 时相关测试自动跳过）

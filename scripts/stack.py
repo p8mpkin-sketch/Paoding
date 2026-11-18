@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 from paoding_adapter.contract import (AdapterConfig, CliBinding, EndpointProxy, FakeUpstream,  # noqa: E402
@@ -82,12 +84,20 @@ class StackConfig:
 
     @classmethod
     def load(cls, home: Path, path: Path | None = None, **over) -> "StackConfig":
-        """配置文件（JSON）可省：没有就是空配置——假 CLI 后端、没有脚本、Docker 执行层。
-        文件里的相对路径相对配置文件所在目录。"""
+        """配置文件（YAML）可省：没有就是空配置——假 CLI 后端、没有脚本、Docker 执行层。
+        文件里的相对路径相对配置文件所在目录。缺省读 <home>/config.yaml；只有旧的 config.json 时照样读
+        （JSON 是 YAML 的子集），两份都在则报错，不猜用哪份。"""
         raw: dict = {}
-        path = path or (home / "config.json")
+        if path is None:
+            path, old = home / "config.yaml", home / "config.json"
+            if old.exists():
+                if path.exists():
+                    raise ValueError(f"{path} 与 {old} 同时存在；配置已统一为 YAML，请删掉 config.json")
+                path = old
         if path.exists():
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if not isinstance(raw, dict):
+                raise ValueError(f"{path}：配置的顶层必须是映射")
         base = path.parent
         be = raw.get("backend", {})
         if isinstance(be, str):
