@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -52,14 +53,14 @@ class Session:
     role: str  # bootstrap | reason | explore
     token: str
     workspace: Path
-    tools: tuple = ("exec", "submit", "show")
+    tools: tuple[Any, ...] = ("exec", "submit", "show")
     sandbox_id: str | None = None  # 执行容器；reason 不起执行容器（§3.4.2）
-    calls: list = field(default_factory=list)  # 会话记录：每次工具调用的入参与结果
-    final: dict | None = None
+    calls: list[Any] = field(default_factory=list)  # 会话记录：每次工具调用的入参与结果
+    final: dict[str, Any] | None = None
     submitted: bool = False
 
 
-def _err(code: str, detail: str) -> dict:
+def _err(code: str, detail: str) -> dict[str, Any]:
     return {"ok": False, "code": code, "detail": detail}
 
 
@@ -70,11 +71,11 @@ class ToolHost:
         self.s, self.graph, self.reader, self.blobs, self.executor = s, graph, reader, blobs, executor
         self._n = 0
         self._nonce = secrets.token_hex(4)  # 幂等键带宿主实例号：同一租约换了宿主也不会撞上旧结果
-        self._rejects: dict[str, tuple[int, dict]] = {}
+        self._rejects: dict[str, tuple[int, dict[str, Any]]] = {}
 
     # ---------- 入口 ----------
 
-    def call(self, name: str, args: dict) -> dict:
+    def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         self._n += 1
         if name not in self.s.tools:
             out = _err("forbidden_op", f"本会话没有工具 {name}")
@@ -88,7 +89,7 @@ class ToolHost:
 
     # ---------- exec ----------
 
-    def _exec(self, a: Obj) -> dict:
+    def _exec(self, a: Obj) -> dict[str, Any]:
         if self.executor is None or self.s.sandbox_id is None:
             return _err("forbidden_op", "本会话没有执行容器")
         cmd = a.string("cmd")
@@ -106,7 +107,7 @@ class ToolHost:
 
     # ---------- submit ----------
 
-    def _submit(self, a: Obj) -> dict:
+    def _submit(self, a: Obj) -> dict[str, Any]:
         ops = a.array("ops", [])
         self.s.submitted = True
         tmp: dict[str, str] = {}
@@ -127,13 +128,13 @@ class ToolHost:
                 results.append(_err("schema_error", str(e)))
         return {"results": results}
 
-    def _one(self, op: Any, i: int, tmp: dict) -> dict:
+    def _one(self, op: Any, i: int, tmp: dict[str, Any]) -> dict[str, Any]:
         try:
             key = hashlib.sha256(canonicalize(op if isinstance(op, dict) else {"_": repr(op)})).hexdigest()
         except JCSError as e:  # 例如超出双精度的整数：这条 op 进不了事件日志
             return _err("schema_error", str(e))
         n, last = self._rejects.get(key, (0, None))
-        if n >= MAX_SAME_REJECT:
+        if n >= MAX_SAME_REJECT and last is not None:  # n ≥ 1 时 last 必有
             return {**last, "detail": f"同一操作已连续被拒 {n} 次，不再转发。上次：{last['detail']}"}
         try:
             out = self._translate_and_submit(op, i, tmp)
@@ -147,19 +148,29 @@ class ToolHost:
             self._rejects[key] = (n + 1, out)
         return out
 
-    def _translate_and_submit(self, raw: Any, i: int, tmp: dict) -> dict:
+    def _translate_and_submit(self, raw: Any, i: int, tmp: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict) or not isinstance(raw.get("op"), str):
             raise BadBody("每条 op 须为带 op 字段的对象")
         op = Obj(raw, "op")
         kind = op.string("op")
         if kind in LATER_OPS:
             return _err("schema_error", f"{kind} 属于{LATER_OPS[kind]}，M0 未启用")
-        sub = lambda v: tmp.get(v, v) if isinstance(v, str) else v  # noqa: E731
-        subl = lambda vs: [sub(v) for v in (vs or [])]  # noqa: E731
-        batch: list[dict] = []
+
+        def sub(v: Any) -> Any:  # 同一批里的 tmp_id 换成已登记的 id
+            return tmp.get(v, v) if isinstance(v, str) else v
+
+        def subl(vs: Any) -> list[Any]:
+            return [sub(v) for v in (vs or [])]
+
+        batch: list[dict[str, Any]] = []
 
         def authored(rel: str | None, inline: str | None = None) -> str:
-            data = self._read_ws(rel) if inline is None else inline.encode("utf-8")
+            if inline is not None:
+                data = inline.encode("utf-8")
+            elif rel is not None:
+                data = self._read_ws(rel)
+            else:
+                raise BadBody("既没有路径也没有内联内容")
             h = self.blobs.put(data)
             batch.append(
                 {
@@ -283,7 +294,7 @@ class ToolHost:
 
     # ---------- show ----------
 
-    def _show(self, a: Obj) -> dict:
+    def _show(self, a: Obj) -> dict[str, Any]:
         st, pid = self.reader.state, self.s.pid
         aid, nid = a.opt_string("artifact"), a.opt_string("id")
         if aid:
@@ -309,7 +320,7 @@ class ToolHost:
             }
         lv = node_levels(st, pid)
         if nid:
-            node = st["facts"].get(nid) or st["intents"].get(nid)
+            node: Mapping[str, Any] | None = st["facts"].get(nid) or st["intents"].get(nid)
             if node is None or node["problem_id"] != pid:
                 return _err("unknown_ref", f"本题没有 {nid}")
             keep = ("id", "title", "summary", "claim_type", "premises", "risk", "check", "done")
@@ -327,7 +338,7 @@ class ToolHost:
         if lst not in ("frontier", "all", "hints", "budget"):
             raise BadBody("list 只取 frontier|all|hints|budget")
         if lst == "budget":
-            return self.reader.budget(pid)
+            return dict(self.reader.budget(pid))
         if lst == "hints":
             return {
                 "hints": [
@@ -346,7 +357,7 @@ class ToolHost:
     _TOOLS = {"exec": _exec, "submit": _submit, "show": _show}
 
 
-def tool_schemas(tools: tuple) -> list[dict]:
+def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
     """MCP tools/list 的条目。参数 Schema 由工具定义强制（3.4.4）。"""
     s = {
         "exec": {

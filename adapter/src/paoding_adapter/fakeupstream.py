@@ -18,6 +18,7 @@ import json
 import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 DEFAULT_USAGE = {
     "input_tokens": 1000,
@@ -32,13 +33,13 @@ class FakeUpstream:
 
     def __init__(
         self,
-        usage: dict | None = None,
+        usage: dict[str, Any] | None = None,
         model: str = "claude-sonnet-5-5",
         port: int = 0,
-        dialect: dict | None = None,
+        dialect: dict[str, Any] | None = None,
         tls: tuple[str, str] | None = None,
     ):
-        self.seen: list[dict] = []
+        self.seen: list[dict[str, Any]] = []
         self.usage = dict(usage or DEFAULT_USAGE)
         self.model = model
         self.dialect = dict(dialect or {})
@@ -47,10 +48,10 @@ class FakeUpstream:
         class H(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
-            def log_message(self, *a):
+            def log_message(self, *a: Any) -> None:
                 pass
 
-            def do_POST(self):
+            def do_POST(self) -> None:
                 body = json.loads(self.rfile.read(int(self.headers["content-length"])))
                 up.seen.append({"path": self.path, "headers": dict(self.headers), "body": body})
                 dl = up.dialect
@@ -115,6 +116,6 @@ class FakeUpstream:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.url = "%s://%s:%d" % (scheme, "localhost" if tls else "127.0.0.1", self.server.server_address[1])
 
-    def close(self):
+    def close(self) -> None:
         self.server.shutdown()
         self.server.server_close()

@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 from pathlib import Path
+from typing import Any
 
 _KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -30,7 +31,7 @@ class Vault:
             raise VaultError(f"键非法：{key!r}")
         return self.root / key
 
-    def put(self, key: str, content: bytes) -> dict:
+    def put(self, key: str, content: bytes) -> dict[str, Any]:
         """存入一份资产，返回写进 Check.sealed 的引用。"""
         p = self._path(key)
         salt = secrets.token_bytes(16)
@@ -40,7 +41,7 @@ class Vault:
                 f.write(data)
         return {"vault": key, "digest": hashlib.sha256(salt + content).hexdigest()}
 
-    def open(self, ref: dict) -> bytes:
+    def open(self, ref: dict[str, Any]) -> bytes:
         p = self._path(str(ref.get("vault", "")))
         try:
             content, salt = p.read_bytes(), p.with_name(p.name + ".salt").read_bytes()

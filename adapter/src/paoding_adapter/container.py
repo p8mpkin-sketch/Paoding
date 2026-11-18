@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any
 
 from . import backend as be
 from .relay import accept_loop
@@ -39,7 +40,7 @@ class LaunchError(RuntimeError):
     pass
 
 
-def _docker(*args: str, check: bool = True, timeout: float = 120) -> subprocess.CompletedProcess:
+def _docker(*args: str, check: bool = True, timeout: float = 120) -> subprocess.CompletedProcess[Any]:
     p = subprocess.run(["docker", *args], capture_output=True, timeout=timeout)
     if check and p.returncode != 0:
         raise LaunchError(f"docker {args[0]} 失败：{p.stderr.decode('utf-8', 'replace').strip()[-400:]}")
@@ -84,7 +85,7 @@ class ContainerProc:
     """模型容器的一轮 CLI。对会话运行器而言与 subprocess.Popen 同形（stdout、poll、wait），
     另给出 interrupt / terminate：信号发给容器里的 CLI，而不是只发给宿主上的 docker 客户端。"""
 
-    def __init__(self, name: str, popen: subprocess.Popen):
+    def __init__(self, name: str, popen: subprocess.Popen[Any]):
         self.name, self._p = name, popen
         self.stdout, self.pid = popen.stdout, popen.pid
 
@@ -124,7 +125,7 @@ class ContainerLauncher:
         mcp_port: int,
         *,
         relay_image: str = "python:3.12-slim",
-        mounts: tuple = (),
+        mounts: tuple[Any, ...] = (),
         sock_dir: Path | None = None,
         memory: str = "2g",
         pids: int = 512,
@@ -143,7 +144,7 @@ class ContainerLauncher:
             UnixBridge(self.sock_dir / "proxy.sock", proxy_port),
             UnixBridge(self.sock_dir / "mcp.sock", mcp_port),
         ]
-        self._sessions: dict[str, dict] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._isolated: bool | None = None  # 这台 Docker 认不认隔离网关（27.1 起）
 
@@ -158,13 +159,13 @@ class ContainerLauncher:
         return f"http://{RELAY_ALIAS}:{MCP_PORT}"
 
     @staticmethod
-    def names(lease_id: str) -> dict:
+    def names(lease_id: str) -> dict[str, Any]:
         base = "pd-model-" + lease_id.replace("_", "-")
         return {"model": base, "relay": base + "-ep", "net": base + "-net"}
 
     # ---------- 每个会话一张内部网络 + 一个中继 ----------
 
-    def _ensure(self, lease_id: str) -> dict:
+    def _ensure(self, lease_id: str) -> dict[str, Any]:
         with self._lock:
             s = self._sessions.get(lease_id)
         if s is not None:
@@ -248,24 +249,24 @@ class ContainerLauncher:
             _docker("network", "rm", net, check=False)
         _docker("network", "create", "--internal", *labels, net)
 
-    def _teardown(self, n: dict) -> None:
+    def _teardown(self, n: dict[str, Any]) -> None:
         _docker("rm", "-f", "-v", n["model"], n["relay"], check=False)
         _docker("network", "rm", n["net"], check=False)
 
     # ---------- launcher 接口 ----------
 
-    def __call__(self, argv: list[str], env: dict, cwd: Path) -> ContainerProc:
+    def __call__(self, argv: list[str], env: dict[str, Any], cwd: Path) -> ContainerProc:
         """cwd 是会话的工作区 <会话目录>/workspace；会话目录名就是租约 id。"""
         workspace = Path(cwd)
         sdir = workspace.parent
         lease_id = sdir.name
         n = self._ensure(lease_id)
         _docker("rm", "-f", "-v", n["model"], check=False)  # 收尾轮复用同一个名字
-        table = [
+        table: list[tuple[str, str]] = [
             (str(workspace), WORKSPACE),
             (str(sdir / "home"), HOME),
             (str(sdir), SESSION),
-            *[(str(src), dst) for src, dst in self.mounts],
+            *[(str(src), str(dst)) for src, dst in self.mounts],
         ]
         table.sort(key=lambda kv: -len(kv[0]))  # 最长前缀优先
 

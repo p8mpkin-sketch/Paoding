@@ -11,6 +11,9 @@
 import socket
 import sys
 import threading
+from collections.abc import Callable
+
+Connect = Callable[[], socket.socket]  # 给出一条到上游的连接
 
 
 def pump(a: socket.socket, b: socket.socket) -> None:
@@ -27,7 +30,7 @@ def pump(a: socket.socket, b: socket.socket) -> None:
                 pass
 
 
-def bridge(client: socket.socket, connect) -> None:
+def bridge(client: socket.socket, connect: Connect) -> None:
     """connect() 给出上游连接；两个方向各一个线程，任一方向读完就半关另一头。"""
     try:
         up = connect()
@@ -42,7 +45,7 @@ def bridge(client: socket.socket, connect) -> None:
     up.close()
 
 
-def accept_loop(srv: socket.socket, connect) -> None:
+def accept_loop(srv: socket.socket, connect: Connect) -> None:
     while True:
         try:
             client, _ = srv.accept()
@@ -51,8 +54,8 @@ def accept_loop(srv: socket.socket, connect) -> None:
         threading.Thread(target=bridge, args=(client, connect), daemon=True).start()
 
 
-def to_unix(path: str):
-    def connect():
+def to_unix(path: str) -> Connect:
+    def connect() -> socket.socket:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect(path)
         return s

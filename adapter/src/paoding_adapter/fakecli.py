@@ -21,10 +21,12 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 
-def parse(argv):
-    flags, i = {}, 0
+def parse(argv: list[str]) -> dict[str, Any]:
+    flags: dict[str, Any] = {}
+    i = 0
     booleans = {"--verbose", "--bare", "--restricted", "--strict-mcp-config"}
     while i < len(argv):
         a = argv[i]
@@ -39,12 +41,12 @@ def parse(argv):
     return flags
 
 
-def emit(ev):
+def emit(ev: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(ev, ensure_ascii=False) + "\n")
     sys.stdout.flush()
 
 
-def post(url, body, headers):
+def post(url: str, body: dict[str, Any], headers: dict[str, str]) -> tuple[int, Any]:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(), method="POST", headers={"content-type": "application/json", **headers}
     )
@@ -57,7 +59,7 @@ def post(url, body, headers):
 
 
 class Mcp:
-    def __init__(self, url):
+    def __init__(self, url: str) -> None:
         self.url, self.n = url, 0
         self.rpc(
             "initialize",
@@ -66,7 +68,7 @@ class Mcp:
         post(self.url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, {})
         self.tools = [t["name"] for t in self.rpc("tools/list", {})["tools"]]
 
-    def rpc(self, method, params):
+    def rpc(self, method: str, params: dict[str, Any]) -> Any:
         self.n += 1
         _, out = post(self.url, {"jsonrpc": "2.0", "id": self.n, "method": method, "params": params}, {})
         if "error" in out:
@@ -74,7 +76,7 @@ class Mcp:
         return out["result"]
 
 
-def subst(v, results):
+def subst(v: Any, results: list[Any]) -> Any:
     if isinstance(v, str) and v.startswith("$r") and "." in v:
         n, path = v[2:].split(".", 1)
         cur = results[int(n)]
@@ -88,7 +90,7 @@ def subst(v, results):
     return v
 
 
-def builtin(name, inp, allowed, restricted, cwd):
+def builtin(name: str, inp: dict[str, Any], allowed: list[str], restricted: bool, cwd: Path) -> tuple[bool, str]:
     if name not in allowed:
         return True, f"No such tool available: {name}"
     p = Path(inp.get("file_path") or inp.get("path") or ".")
@@ -106,8 +108,8 @@ def builtin(name, inp, allowed, restricted, cwd):
     return True, f"{name} not simulated"
 
 
-def main():
-    def on_sigint(*_):  # 真 CLI：SIGINT 结束当前回合
+def main() -> None:
+    def on_sigint(*_: object) -> None:  # 真 CLI：SIGINT 结束当前回合
         emit({"type": "result", "subtype": "interrupted", "is_error": True, "result": "interrupted"})
         sys.exit(130)
 
@@ -133,7 +135,8 @@ def main():
             "cwd": str(cwd),
         }
     )
-    results, turns, cost = [], 0, 0.0
+    results: list[Any] = []
+    turns, cost = 0, 0.0
     for step in steps:
         if "exit" in step:
             sys.exit(step["exit"])

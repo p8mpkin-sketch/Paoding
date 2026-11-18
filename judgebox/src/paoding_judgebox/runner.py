@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,11 +26,11 @@ MAX_TRIES = 3  # 同一请求领租约的次数上限：环境一直坏时不空
 class JudgeConfig:
     token: str  # judge 组件令牌
     holder: str = "jr1"
-    registry: dict = field(default_factory=dict)
+    registry: dict[str, Any] = field(default_factory=dict)
     reserve_usd_milli: int = 1
     ttl_s: int = 300
-    bases: dict = field(default_factory=dict)  # Problem.env.base → 镜像
-    judges: dict = field(default_factory=lambda: dict(BUILTINS))  # judge_id → 函数；配置判官的插件位
+    bases: dict[str, Any] = field(default_factory=dict)  # Problem.env.base → 镜像
+    judges: dict[str, Any] = field(default_factory=lambda: dict(BUILTINS))  # judge_id → 函数；配置判官的插件位
 
 
 class JudgeRunner:
@@ -49,7 +49,7 @@ class JudgeRunner:
 
     # ---------- 轮询入口 ----------
 
-    def tick(self, pid: str | None = None) -> list[dict]:
+    def tick(self, pid: str | None = None) -> list[dict[str, Any]]:
         """把 /work 里的 judge 项各跑一遍。rejudge 项（unstable 的复判）先沿用上次请求的输入补一条请求。"""
         done = []
         st = self.reader.state
@@ -79,7 +79,7 @@ class JudgeRunner:
 
     # ---------- 一次请求 ----------
 
-    def run(self, pid: str, rid: str) -> dict | None:
+    def run(self, pid: str, rid: str) -> dict[str, Any] | None:
         st = self.reader.state
         req = st["requests"].get(rid)
         if req is None or req["problem_id"] != pid or req.get("verdict_seq") is not None:
@@ -168,7 +168,7 @@ class JudgeRunner:
                 [{"op": "release", "body": {"lease": lid, "outcome": "done" if verdict_ok else "failed"}}],
             )
 
-    def _spec(self, st: dict, pid: str, req: dict) -> dict:
+    def _spec(self, st: Mapping[str, Any], pid: str, req: Mapping[str, Any]) -> dict[str, Any]:
         return self.cfg.registry.get(req["judge_id"]) or {
             "version": st["problems"][pid]["judge_snapshot"][req["judge_id"]]["version"]
         }
@@ -223,12 +223,12 @@ class JudgeRunner:
             now_ms=now,
             grounded=_grounded(st, req.get("candidate")),
         )
-        o = fn(ctx)
+        o: Outcome = fn(ctx)
         if not o.provenance:
             o.provenance = _builtin_prov(jid, now)
         return o
 
-    def _bytes(self, st: dict, aid: str | None) -> bytes | None:
+    def _bytes(self, st: Mapping[str, Any], aid: str | None) -> bytes | None:
         return self.blobs.get(st["artifacts"][aid]["hash"]) if aid else None
 
     def _register(self, pid: str, rid: str, lid: str, o: Outcome) -> str:
@@ -252,10 +252,11 @@ class JudgeRunner:
         )
         if not out["ok"]:
             raise RuntimeError(f"判官输出登记失败：{out['results']}")
-        return out["results"][0]["id"]
+        aid: str = out["results"][0]["id"]
+        return aid
 
 
-def _grounded(st: dict, aid: str | None) -> tuple:
+def _grounded(st: Mapping[str, Any], aid: str | None) -> tuple[Any, ...]:
     """候选挂进洁净容器时，它算不算"访问过的可采信输入"（§3.3.2）。
 
     算：input 类（人给的材料）；exec 与 judge 类里自身访问摘要非空的（它的内容来自碰过资源的运行）。
@@ -268,7 +269,7 @@ def _grounded(st: dict, aid: str | None) -> tuple:
     return ()
 
 
-def _builtin_prov(jid: str, now: int) -> dict:
+def _builtin_prov(jid: str, now: int) -> dict[str, Any]:
     return {
         "sandbox_id": "builtin",
         "base": "builtin",

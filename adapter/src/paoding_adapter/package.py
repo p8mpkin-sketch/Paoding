@@ -11,22 +11,24 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from paoding_graph.contract import as_of_seq, intent_status, node_levels
+from paoding_graph.contract import State, as_of_seq, intent_status, node_levels
 
 PROMPTS = Path(__file__).resolve().parents[2] / "prompts"
 MEDIA_TYPE = "application/vnd.paoding.task-package+json"
 
 
-def _j(obj) -> str:
+def _j(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
 class Rendered:
-    package: dict  # TaskPackage 的内容形态（各段正文就地给出，留档时整体登记）
+    package: dict[str, Any]  # TaskPackage 的内容形态（各段正文就地给出，留档时整体登记）
     system: str  # ①–⑤：追加系统提示
     user: str  # ⑥⑦：首条用户消息
     prefix: str = ""  # ①–④：同题内只追加的稳定前缀
@@ -43,7 +45,7 @@ def role_prompt(role: str) -> str:
     )
 
 
-def problem_brief(state: dict, pid: str, statement: str, judges_cfg: dict) -> str:
+def problem_brief(state: State, pid: str, statement: str, judges_cfg: dict[str, Any]) -> str:
     p = state["problems"][pid]
     judges = [{"judge_id": j, "grade": judges_cfg.get(j, {}).get("grade")} for j in sorted(p["judges"])]
     return "\n".join(
@@ -59,13 +61,16 @@ def problem_brief(state: dict, pid: str, statement: str, judges_cfg: dict) -> st
     )
 
 
-def listing(state: dict, pid: str) -> str:
-    nodes = [n for c in ("facts", "intents") for n in state[c].values() if n["problem_id"] == pid]
+def listing(state: State, pid: str) -> str:
+    nodes: list[Mapping[str, Any]] = [
+        *[f for f in state["facts"].values() if f["problem_id"] == pid],
+        *[i for i in state["intents"].values() if i["problem_id"] == pid],
+    ]
     nodes.sort(key=lambda n: int(n["id"][2:]))
     return "\n".join(f"{n['id']} {n['title']}" for n in nodes) or "（暂无）"
 
 
-def status(state: dict, pid: str, budget: dict) -> str:
+def status(state: State, pid: str, budget: Mapping[str, Any]) -> str:
     lv = node_levels(state, pid)
     facts = {fid: lv.get(fid) for fid, f in state["facts"].items() if f["problem_id"] == pid}
     intents = {iid: intent_status(state, pid, iid) for iid, i in state["intents"].items() if i["problem_id"] == pid}
@@ -75,16 +80,16 @@ def status(state: dict, pid: str, budget: dict) -> str:
 
 
 def render(
-    state: dict,
+    state: State,
     pid: str,
-    lease: dict,
+    lease: Mapping[str, Any],
     *,
     statement: str,
-    judges_cfg: dict,
-    budget: dict,
-    kits: list[dict] | None = None,
-    focus: dict | None = None,
-    limits: dict | None = None,
+    judges_cfg: dict[str, Any],
+    budget: Mapping[str, Any],
+    kits: list[dict[str, Any]] | None = None,
+    focus: dict[str, Any] | None = None,
+    limits: dict[str, Any] | None = None,
 ) -> Rendered:
     role = lease["kind"]
     kit_index = sorted(

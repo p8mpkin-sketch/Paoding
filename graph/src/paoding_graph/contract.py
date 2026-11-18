@@ -26,10 +26,10 @@ ARTIFACT_CLASSES = frozenset({"exec", "judge", "input", "authored"})
 ADMISSIBLE_CLASSES = frozenset({"exec", "judge", "input"})  # authored 永不入 grounds（I2）
 
 # ---------- 进程内端口（M0 单机；HTTP/Unix socket 绑定在其上，接口相同） ----------
-from typing import BinaryIO, Protocol  # noqa: E402
+from typing import Protocol  # noqa: E402
 
 from . import views  # noqa: E402,F401
-from .blobs import BlobError, BlobNotFound, BlobStore, CorruptBlob  # noqa: E402,F401
+from .blobs import BlobError, BlobNotFound, BlobStore, CorruptBlob, Readable  # noqa: E402,F401
 
 # HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
 from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
@@ -71,7 +71,7 @@ class GraphPort(Protocol):
 class BlobPort(Protocol):
     """PUT /v1/blobs 与 GET /v1/blobs/{hash}。"""
 
-    def put(self, data: bytes | BinaryIO) -> str: ...  # 流：逐块读到 EOF（执行层的大输出）
+    def put(self, data: bytes | Readable) -> str: ...  # 流：逐块读到 EOF（执行层的大输出）
 
     def get(self, h: str, start: int = 0, end: int | None = None) -> bytes: ...
 
