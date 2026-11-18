@@ -1,12 +1,12 @@
-# 庖丁基座规格 v1.3
+# 庖丁基座规格 v1.4
 
-> 状态：v1.1 已裁决，A1 到 A10 全部采纳（[裁决书](./spec-v1.1-adjudication.md)）。本版在它之上并入三批已定的内容：v1.2（裁决书的三项补充与[典故对账](./paoding-jieniu-principles.md)的 D1 到 D6）；[蓝图 v2](./architecture-blueprint-v2.md) 的采纳项与[评审](../reviews/blueprint-v2-review.md)附加条件（[蓝图裁决书](./blueprint-v2-adjudication.md)）；[HMI 设计 v1.1](./hmi-design-v1.md) 的裁决落地项。v1.2 没有单独发布，随本版一并交付。v1.1 见提交 de33acf，它相对 v1.0 的变更表移到附录 C。
+> 状态：v1.1 已裁决，A1 到 A10 全部采纳（[裁决书](./spec-v1.1-adjudication.md)）。v1.3 在它之上并入三批已定的内容：v1.2（裁决书的三项补充与[典故对账](./paoding-jieniu-principles.md)的 D1 到 D6）；[蓝图 v2](./architecture-blueprint-v2.md) 的采纳项与[评审](../reviews/blueprint-v2-review.md)附加条件（[蓝图裁决书](./blueprint-v2-adjudication.md)）；[HMI 设计 v1.1](./hmi-design-v1.md) 的裁决落地项。v1.2 没有单独发布，随 v1.3 一并交付。v1.4 只并入 M0 实施中经裁决的五条勘误（E1 到 E5，见文首第三张表），没有新增机制。v1.1 见提交 de33acf，它相对 v1.0 的变更表移到附录 C。
 > 输入：[调研 v2](../research/agent-architecture-survey-v2.md)（[S#]/[Z#] 编号以其为准）、[官知止总纲 v1.2](./paoding-allegory-mapping.md)、[协调基质](./coordination-substrates.md)。架构 v0 与 v0.1 已归档，与本文不一致处以本文为准（裁决书 §五）。
 > 论断标注：`[证据 S#/Z#]` 有调研来源；`[假设]` 待 M0/M1 验证，`[假设 M#]` 在该里程碑验证；`[观点]` 作者判断；`[待核]` 来源未能一手核对。
 > 结构标注：`[T-0]` 当前必要，且模型再强也需要；`[T-1]` 下一代模型可能吃掉，必须放外壳并带开关。官类按总纲 v1.2 的三类制：感知官、守门官、量具，另带启用条件（2.3）。
 > 瘦基线：按任务书红线 5，取单个 Claude Code 会话。文中"该 CLI"均指它，M0 的 Worker 后端也用它（3.4.2）。
 
-下面两张表是本版相对 v1.1 的全部变更，人可以逐条否决；否决后该条按"位置"一列回退，其余不受影响。编号接 v1.1 的 1 到 8。已有章节的编号没有动，新内容都放在新增的小节与附录里，别处对本文的引用因此仍然有效。
+下面三张表是本版相对 v1.1 的全部变更，人可以逐条否决；否决后该条按"位置"一列回退，其余不受影响。编号接 v1.1 的 1 到 8。已有章节的编号没有动，新内容都放在新增的小节与附录里，别处对本文的引用因此仍然有效。
 
 **v1.2：裁决书补充与 D1 到 D6**
 
@@ -53,6 +53,18 @@
 | 42 | Adapter 把任务包登记为 authored 类 Artifact | 3.4.2 | HMI H4 | M0 的 D4 到 D6 |
 | 43 | 端点代理到模型网关分三阶段；M1 是"端点代理接第二家厂商"，完整网关在 M5 | 3.5.3、4.2、§7 | HMI §12.3、§8 第 7 条；蓝图裁决书 #2 | M0、M1、M5 |
 | 44 | M0 前端取方案 α：只做 `pd` 文本输出的四语域约定，没有网页 | 4.1、§7 | HMI §5、§8 第 1 条 | M0，计入 D10 与 D12 |
+
+**v1.4：M0 实施勘误**
+
+M0 实施中的异议报告 002 经评审方裁决（PR #15）产生四条勘误，另有一条（E5）由人在 2026-11-18 裁决，原清单在 [`docs/m0/errata-v1.4.md`](../m0/errata-v1.4.md)。只改措辞与归属，不动不变量。
+
+| # | 变更 | 位置 | 来源 | 里程碑与开关 |
+| --- | --- | --- | --- | --- |
+| 45 | E1：`inputs` 属于 JudgeRequest（候选在 `claim_done` 时给出），不属于 Check；`add_fact.check` 去掉 `inputs` | 3.4.2 的 Op 定义；3.3.2 的 `JudgeRequest.inputs` 不变 | 异议 002 第 1 项 | M0；无开关 |
+| 46 | E2：回合上限由 Adapter 从事件流计数执行；`--max-budget-usd` 保留为进程内第二道线；预算硬顶仍由端点代理兜底（I6 不变） | 3.4.2 后端绑定表 | 异议 002 第 2 项 | M0；无开关 |
+| 47 | E3：前缀稳定性改为任务包①到④段 100% 字节前缀稳定；⑤到⑦可变段不参与断言；整包公共前缀比例降为遥测读数 | 3.4.5 第 5 条 | 异议 002 第 3 项 | M0；无开关 |
+| 48 | E4：硬顶 = 请求前检查，越界的上界为单次请求的花费；M1 可选按 `max_tokens` 的预估价预扣 | 3.5.2 | 异议 002 第 4 项 | M0；预扣 M1 |
+| 49 | E5：图服务的端点走 HTTP（本机回环），不是 Unix socket | 3.1.2 | HMI §11 方案 A；人的裁决（2026-11-18） | M0；无开关 |
 
 落地时有九处取了读法，同样可以逐条否决：
 
@@ -397,7 +409,7 @@ profile.info          := partial   若 scope 中有被资源插件登记为 exte
 
 画像只在 `open_problem`、范围修订和人工覆盖这三种事件上重算，结果写进事件体，所以重放不依赖注册表。
 
-端点（M0 走本机 Unix socket）：
+端点（M0 走 HTTP，只监听本机回环地址；形状见 [HMI 设计](./hmi-design-v1.md) §11 与 `graph/SPEC.md` 的“HTTP 绑定”）：
 
 ```
 POST /v1/problems                          open_problem
@@ -908,8 +920,8 @@ tool show  (in: { id?: string, layer?: "summary"|"evidence", list?: "frontier"|"
 type Op =
   | { op: "add_fact", tmp_id?: string, claim_type: "observation"|"inference",
       title: string, summary: string, body_path?: string,
-      check?: { judge_id: string, spec_path: string, expect: object, inputs?: ArtifactId[],
-                control?: { inputs: ArtifactId[] | object } },                     // M1：对照判据
+      check?: { judge_id: string, spec_path: string, expect: object,              // 候选产物不在这里：inputs 属于 JudgeRequest，
+                control?: { inputs: ArtifactId[] | object } },                     // 在 claim_done 时给出（3.3.2）。control 是 M1 的对照判据
       premises: string[], grounds: ArtifactId[] }
   | { op: "add_intent", title: string, summary: string, premises: string[],
       risk: "r0"|"r1"|"r2", budget_hint?: Budget, expected_gain?: number,
@@ -947,7 +959,7 @@ M0 的后端绑定（瘦基线所用的同一个 CLI）[证据：该 CLI 2.1 版
 | 工具放行 | `--allowedTools` 列出文件工具与三个代理工具；`--permission-prompts none` 让其余需要人批的调用直接被拒 |
 | 注入任务包 | `--append-system-prompt-file` 放①到⑤，提示词放⑥⑦ |
 | 会话标识与续接 | `--session-id` 取租约派生的 UUID；收尾轮用 `--resume` |
-| 回合与花费上限 | `--max-turns`、`--max-budget-usd`（按客户端估算执行，可能略超） |
+| 回合与花费上限 | 回合上限不交给该 CLI：由 Adapter 从事件流计数，到数即收尾。`--max-budget-usd` 保留为进程内的第二道线（按客户端估算执行，可能略超）；预算硬顶仍由端点代理兜底（I6） |
 | 计量的对照 | 事件流里每步的 `usage` 与末行的 `total_cost_usd`（估算值）；记账以端点代理为准 |
 | 终止 | SIGINT 结束当前回合；SIGTERM 终止进程树，退出码 143 |
 
@@ -971,7 +983,7 @@ M0 的后端绑定（瘦基线所用的同一个 CLI）[证据：该 CLI 2.1 版
 2. 畸形 `submit`：返回 `schema_error`，会话内改正后通过；全程不调用 `submit` 时出现收尾轮，仍无则 `failed(no_output)`。
 3. 任务中途杀掉 CLI：租约到期，Intent 重开，此前提交的论断仍在。
 4. **伪造观察（对抗）**：summary 里写着"输出显示……"但没有 Artifact 引用，被拒；引用了不存在或别题的 id，被拒。
-5. 前缀稳定性：连续两次 Reason 的任务包，在只有新增节点的情况下，公共前缀不少于前一个包的 90% 字节。字节稳定是缓存命中的必要条件而非充分条件，所以集成测试另外断言：同一 `as_of_seq` 下先后启动的两个 Explore 会话，后一个的首次请求缓存读 token 数大于 0。
+5. 前缀稳定性：连续两次 Reason 的任务包，在只有新增节点的情况下，前一个包的①到④段逐字节是后一个包的前缀（100% 字节前缀稳定）；⑤到⑦是可变段，不参与断言。整包的公共前缀比例只作遥测读数，不设阈值。字节稳定是缓存命中的必要条件而非充分条件，所以集成测试另外断言：同一 `as_of_seq` 下先后启动的两个 Explore 会话，后一个的首次请求缓存读 token 数大于 0。
 6. 闲人角色提交 `add_intent`：被图服务拒绝。
 7. 让会话尝试执行命令：除 `exec` 之外没有可用的命令工具；让它读取工作目录之外的文件：被拒。
 
@@ -1012,7 +1024,7 @@ GET /v1/problems/{pid}/budget → BudgetView
 - 验证与判官的花费不超过 `verify_share × cap`。Bootstrap 的预留为 `bootstrap_share × cap`。
 - `spent` 越过 50% 与 80% 时，图服务追加 `budget_mark` 事件。从这个事件起，到其后第一个 reason 租约释放为止，称预算复盘期：`/work` 不给出新的 explore，给出的 reason 带 `reflect` 标志，Adapter 据此在任务包里要求先写出已排除路径、放弃无望的 Intent，再决定是否继续投入。在途任务不受影响。
 - **续期门**（T-1，开关 `extension=always`，M1 起）。进展 := 自 50% 标记以来，有带判据的对象新到 E3，即观察被重放确认，或带判据的 Intent 达成；对照判据启用后，观察要带对照才算（3.3.3），恒真的谓词不再能当作进展。越过 80% 标记时没有进展，`/work` 不再给出新的 explore，题目进入 human 项：人可以用 `pd extend <pid>` 放行，否则在途任务结束后按 unsolved 关闭，余下的预算不花。Goal 的判定不受此限。
-- 任务的软线是预留额的 90%，硬顶是预留额；题的硬顶是 `cap`。硬顶由端点代理执行：超过预留额的任务，新请求被拒。后端自带花费上限时，Adapter 把预留额同时传给它，作为进程内的第二道线。
+- 任务的软线是预留额的 90%，硬顶是预留额；题的硬顶是 `cap`。硬顶由端点代理执行：超过预留额的任务，新请求被拒。硬顶是请求前检查，所以越界的上界是单次请求的花费；M1 可选收紧为按 `max_tokens` 的预估价预扣。后端自带花费上限时，Adapter 把预留额同时传给它，作为进程内的第二道线。
 - 哮天犬是不含任何策略的脚本，每 10 秒读一次 `/budget`：任务越过软线，通知 Adapter 进入收尾轮；越过硬顶或题预算耗尽，终止进程、销毁容器。
 
 #### 3.5.3 完整版
@@ -2148,6 +2160,7 @@ A9 的"事件日志加 reducer"就是协调基质的一种实现 [规格裁决�
 | v1.1 | 2026-11-17 | 提交 de33acf；相对 v1.0 的变更见下表；经裁决 A1 到 A10 全部采纳 |
 | v1.2 | 2026-11-17 | 未单独发布；文首第一张表的第 9 到 19 条 |
 | v1.3 | 2026-11-17 | 文首第二张表的第 20 到 44 条 |
+| v1.4 | 2026-11-18 | 文首第三张表的第 45 到 49 条：M0 实施勘误 E1 到 E5（[清单](../m0/errata-v1.4.md)） |
 
 v1.1 相对 v1.0 的变更：
 

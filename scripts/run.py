@@ -2,8 +2,8 @@
 
     uv run python scripts/run.py --home /tmp/paoding-run --port 8100
 
-配置文件（JSON）缺省读 <home>/config.json，没有就是空配置：会话后端是假 CLI（不需要任何密钥），
-执行层是本机 Docker，司南不开没有脚本的任务种类。形状见 scripts/e2e/config.json。
+配置文件（YAML）缺省读 <home>/config.yaml，没有就是空配置：会话后端是假 CLI（不需要任何密钥），
+执行层是本机 Docker，司南不开没有脚本的任务种类。形状见 scripts/e2e/config.yaml。
 
 Ctrl+C（或 SIGTERM）优雅退出：叫停在途会话、销毁执行容器、关掉全部服务；再按一次立刻退出。
 日志写 stderr，一行一条：时间、组件名、消息。
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         "--home", required=True, type=Path, help="数据目录：g.sqlite、blobs/、vault/、sessions/、human.token"
     )
     ap.add_argument("--port", type=int, default=8100)
-    ap.add_argument("--config", type=Path, help="配置文件（JSON）；缺省 <home>/config.json，没有就是空配置")
+    ap.add_argument("--config", type=Path, help="配置文件（YAML）；缺省 <home>/config.yaml，没有就是空配置")
     ap.add_argument("--static", type=Path, help="前端构建产物；缺省用 web/dist（构建过的话）")
     ap.add_argument("--no-static", action="store_true", help="只起 API，不托管前端")
     ap.add_argument(
