@@ -2,8 +2,13 @@
 // 题内 URL：/p/<pid>?as_of=<seq>&node=<id>（HMI 设计 §10.4）。不带 as_of 即链头实时。
 import { useSyncExternalStore } from "react";
 
+/** 题库筛选：都在 URL 里，空串即不筛。 */
+export type BankFilter = { q: string; terminal: string; judge: string };
+export const NO_FILTER: BankFilter = { q: "", terminal: "", judge: "" };
+
 export type Route =
-  | { page: "problems" }
+  | { page: "home" }
+  | ({ page: "problems" } & Partial<BankFilter>)
   | { page: "new" }
   | { page: "readings" }
   | { page: "problem"; pid: string; asOf: number | null; node: string | null };
@@ -18,12 +23,19 @@ export function parseRoute(pathname: string, search: string): Route {
   }
   if (pathname === "/new") return { page: "new" };
   if (pathname === "/readings") return { page: "readings" };
-  return { page: "problems" };
+  if (pathname === "/problems") return { page: "problems", q: q.get("q") ?? "", terminal: q.get("terminal") ?? "", judge: q.get("judge") ?? "" };
+  return { page: "home" };
 }
 
 export function hrefOf(r: Route): string {
   switch (r.page) {
-    case "problems": return "/";
+    case "home": return "/";
+    case "problems": {
+      const q = new URLSearchParams();
+      for (const k of ["q", "terminal", "judge"] as const) if (r[k]) q.set(k, r[k]!);
+      const s = q.toString();
+      return `/problems${s ? `?${s}` : ""}`;
+    }
     case "new": return "/new";
     case "readings": return "/readings";
     case "problem": {

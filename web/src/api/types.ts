@@ -328,7 +328,15 @@ export type JudgeEntry = { judge_id: string; version: string; grade: Grade; kind
 export type JudgesResponse = { items: JudgeEntry[]; external_resources: string[] };
 export type CatalogItem = { name: string; hash: string; size: number; signature: string | null; data: unknown; text: string };
 export type Catalog = { items: CatalogItem[] };
-export type ProblemItem = ProblemHead & { spent_usd_milli: number; cap_usd_milli: number | null };
+export type ProblemItem = ProblemHead & {
+  spent_usd_milli: number;
+  cap_usd_milli: number | null;
+  closed_ts: number | null;
+  goal_level: Level | null;
+  active: { kind: string; target?: string }[];
+  human_todo: number;
+  wall: { cap_s: number; elapsed_s: number };
+};
 export type ProblemsView = Envelope & {
   items: ProblemItem[];
   totals: { problems: number; solved: number; spent_usd_milli: number; cost_per_solve_usd_milli: number | null };

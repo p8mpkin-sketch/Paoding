@@ -48,6 +48,24 @@ def test_problem_list_terminal_and_cost_per_solve(api):
     assert out["totals"] == {"problems": 2, "solved": 1, "spent_usd_milli": 70, "cost_per_solve_usd_milli": 70}
 
 
+def test_problem_list_rows_carry_dashboard_fields(api):
+    """工作台设计 §6 A 组：等级、在途租约、待人处理数、墙钟、关题时刻，都是现有投影的搬运。"""
+    drive(api, "p1")
+    api.open("p2")
+    out = api.get("/v1/problems")
+    p1, p2 = out["items"]
+    closed = api.get("/v1/problems/p1/events")["events"]
+    close_ev = next(e for e in closed if e["seq"] == p1["closed_seq"])
+    assert p1["closed_ts"] == close_ev["ts"] and p1["goal_level"] == "E3"
+    assert p1["active"] == [] and p1["human_todo"] == 0  # 关了的题没有在途租约
+    assert p1["wall"]["elapsed_s"] == max(0, close_ev["ts"] - p1["opened_ts"]) // 1000
+    assert p2["closed_ts"] is None and p2["goal_level"] in (None, "E0")
+    st = api.get("/v1/problems/p2/status")
+    live = [l for l in st["leases"] if l["active"]]
+    assert p2["active"] == [{"kind": l["kind"], **({"target": l["target"]} if "target" in l else {})} for l in live]
+    assert p2["wall"]["cap_s"] == api.get("/v1/problems/p2/budget")["wall"]["cap_s"]
+
+
 def test_status_is_structured_twin_of_pd_status(api):
     ids = drive(api)
     st = api.get("/v1/problems/p1/status")

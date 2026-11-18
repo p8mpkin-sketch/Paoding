@@ -5,9 +5,15 @@
   --serif: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
   --sans: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
 }
+/* 三套主题（工作台设计 §5）：缺省跟随系统；data-theme 由本机偏好写在 <html> 上。 */
 @media (prefers-color-scheme: dark) {
-  :root { --fg: #e8e6e0; --bg: #161615; --panel: #1f1f1d; --line: #e8e6e0; --soft: #4a4843; --muted: #a09c92; }
+  :root:not([data-theme]) { --fg: #e8e6e0; --bg: #161615; --panel: #1f1f1d; --line: #e8e6e0; --soft: #4a4843; --muted: #a09c92; }
 }
+:root[data-theme="light"] { --fg: #1c1c1c; --bg: #fbfaf7; --panel: #ffffff; --line: #1c1c1c; --soft: #c9c5bb; --muted: #5d5a53; }
+:root[data-theme="dark"] { --fg: #e8e6e0; --bg: #161615; --panel: #1f1f1d; --line: #e8e6e0; --soft: #4a4843; --muted: #a09c92; }
+:root[data-theme="contrast"] { --fg: #000000; --bg: #ffffff; --panel: #ffffff; --line: #000000; --soft: #000000; --muted: #000000; }
+:root[data-theme="contrast"] body { font-weight: 500; }
+:root[data-theme="contrast"] .muted { font-weight: 600; }
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px/1.5 var(--sans); color: var(--fg); background: var(--bg); }
 h2, h3, h4 { margin: 0 0 6px; }
@@ -31,6 +37,49 @@ fieldset { border: 1px solid var(--soft); margin: 6px 0; }
 .plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .site-nav { display: flex; gap: 16px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.site-nav a { text-decoration: none; padding-bottom: 2px; }
+.site-nav a.on { border-bottom: 2px solid var(--line); font-weight: 600; }
+.site-nav .nav-space { flex: 1; }
+.theme-switch { margin: 0; font-size: 12.5px; }
+.theme-switch select { padding: 0 4px; }
+
+/* —— 总览与题库 —— */
+.dashboard { padding: 14px; max-width: 1280px; }
+.page-head { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+.btn-link { display: inline-block; border: 1px solid var(--line); border-radius: 3px; padding: 3px 12px; text-decoration: none; background: var(--panel); }
+.btn-link.primary { background: var(--fg); color: var(--bg); font-weight: 600; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.waiting { border: 2px solid var(--line); padding: 6px 10px; margin-bottom: 12px; }
+.waiting ul { margin: 0; padding-left: 18px; }
+.dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.run-card { border: 1.5px solid var(--line); border-radius: 4px; padding: 8px 10px; background: var(--panel); display: grid; gap: 4px; }
+.run-card header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; font-weight: 600; }
+.run-leases { display: flex; flex-wrap: wrap; gap: 2px; }
+.bar.slim { height: 8px; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.dash-stats { border: 1px solid var(--soft); padding: 8px 10px; background: var(--panel); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tile { border: 1px solid var(--soft); padding: 4px 8px; display: grid; }
+.tile b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.trend { margin: 10px 0 0; }
+.trend figcaption { font-size: 12.5px; margin-bottom: 4px; }
+.trend .t-axis { stroke: var(--soft); stroke-width: 1; }
+.trend .t-mark { fill: var(--fg); }
+.trend .t-hit { fill: transparent; }
+.trend g:hover .t-hit { fill: var(--soft); opacity: 0.35; }
+.trend text { fill: var(--muted); font-size: 10px; }
+.trend .t-val { fill: var(--fg); font-size: 11px; }
+.filters { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: end; margin: 6px 0; }
+.filters label { margin: 0; }
+.table-scroll { overflow-x: auto; }
+@media (max-width: 899.98px) {
+  .dash-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 599.98px) {
+  /* 手机：总览只留待审批与进行中（设计 §5） */
+  .dash-recent, .dash-stats, .quick .btn-link:not(.primary) { display: none; }
+}
 .problems, .readings, .wizard { padding: 14px; max-width: 1100px; }
 
 /* —— 四语域 —— */

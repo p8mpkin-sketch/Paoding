@@ -128,3 +128,27 @@ test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`node=${focused}`));
 });
+
+test("总览：进行中卡片、等你处理、主题切换；手机宽度只留待审批与进行中", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".run-card").first()).toBeVisible();
+  await expect(page.locator("[data-waiting]")).toBeVisible();
+  await expect(page.locator(".dash-stats")).toBeVisible();
+  await page.locator('[data-field="theme"]').selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark"); // 本机偏好
+  await page.setViewportSize({ width: 390, height: 800 });
+  await expect(page.locator(".dash-stats")).toBeHidden();
+  await expect(page.locator(".run-card").first()).toBeVisible();
+});
+
+test("题库：筛选写进 URL，刷新后仍在", async ({ page }) => {
+  await page.goto("/problems");
+  await expect(page.locator("tr[data-problem]").first()).toBeVisible();
+  await page.locator('[data-field="terminal"]').selectOption("running");
+  await expect(page).toHaveURL(/terminal=running/);
+  await page.reload();
+  await expect(page.locator("[data-field=terminal]")).toHaveValue("running");
+  for (const t of await page.locator("td[data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
+});

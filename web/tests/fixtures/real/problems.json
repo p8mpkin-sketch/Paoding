@@ -4,7 +4,7 @@
  "body": {
   "as_of": 36,
   "head": 36,
-  "view_hash": "36891e68248a9ed406af6024ad3a25f4e342f8140e209ae789f4ed800e37c9a4",
+  "view_hash": "ca525975b91300260e61f9873763480871b6352fe86c8c6cc6fdb5d5c1a6e6e3",
   "items": [
    {
     "id": "p1",
@@ -31,7 +31,15 @@
     "opened_ts": 1002,
     "closed_seq": 23,
     "spent_usd_milli": 70,
-    "cap_usd_milli": 5000
+    "cap_usd_milli": 5000,
+    "closed_ts": 1022,
+    "goal_level": "E3",
+    "active": [],
+    "human_todo": 0,
+    "wall": {
+     "cap_s": 3600,
+     "elapsed_s": 0
+    }
    },
    {
     "id": "p2",
@@ -58,7 +66,15 @@
     "opened_ts": 1025,
     "closed_seq": null,
     "spent_usd_milli": 30,
-    "cap_usd_milli": 5000
+    "cap_usd_milli": 5000,
+    "closed_ts": null,
+    "goal_level": "E0",
+    "active": [],
+    "human_todo": 1,
+    "wall": {
+     "cap_s": 3600,
+     "elapsed_s": 0
+    }
    }
   ],
   "totals": {

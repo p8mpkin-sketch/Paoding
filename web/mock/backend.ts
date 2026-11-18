@@ -63,7 +63,7 @@ type Hint = { id: string; seq: number; ts: number; author: string; text: string;
 type Lease = { id: string; kind: string; target?: string; holder: string; reserve: Budget; issued_seq: number; expires_at: number; ended_seq?: number; outcome?: string };
 type Req = { id: string; seq: number; target: string; judge_id: string; candidate?: string; verdict_seq?: number };
 type Verdict = { seq: number; request: string; target: string; result: "pass" | "fail" | "inconclusive"; evidence: string[]; judge: string; version: string; grade: Predicate["grade"]; candidate?: string };
-type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; terminal?: Terminal };
+type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal };
 type State = {
   seq: number; now: number; problem?: Problem; overrides: StatusView["problem"]["profile_overrides"];
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
@@ -111,7 +111,7 @@ function project(events: Event[], pid: string, asOf: number): State {
         if (s.problem) s.problem = { ...s.problem, profile: { ...s.problem.profile, [b.axis]: b.value } };
         break;
       }
-      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.terminal = b.terminal; } break;
+      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
     }
   }
   return s;
@@ -211,12 +211,16 @@ function head(s: State, pid: string): ProblemItem {
     id: pid, title: tag("title", p.title), closed: closed(s), terminal: terminalOf(s), terminal_badge: badge(p.goal.check.judge_id), profile: p.profile,
     opened_seq: p.opened_seq, opened_ts: p.opened_ts, closed_seq: p.closed_seq ?? null,
     spent_usd_milli: s.costs.reduce((a, c) => a + c.usd_milli, 0), cap_usd_milli: p.budget.usd_milli + s.capAdd,
+    closed_ts: p.closed_ts ?? null, goal_level: levelOf(s, "goal"),
+    active: closed(s) ? [] : bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).filter((l) => l.ended_seq === undefined).map((l) => ({ kind: l.kind, ...(l.target !== undefined ? { target: l.target } : {}) })),
+    human_todo: work(s, pid).filter((w) => w.kind === "human").length,
+    wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor(((p.closed_ts ?? s.now) - p.opened_ts) / 1000)) },
   };
 }
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
-  const { spent_usd_milli: _s, cap_usd_milli: _c, ...h } = head(s, pid);
+  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
     problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },

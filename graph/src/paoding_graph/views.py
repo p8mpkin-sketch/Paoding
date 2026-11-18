@@ -309,13 +309,20 @@ def _intents(state: State, pid: str) -> list[Intent]:
 # ---------- 端点投影 ----------
 
 
-def problems(state: State) -> View:
-    """GET /v1/problems：题目列表（终态三值、画像、花费、每解成本）。"""
+def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None) -> View:
+    """GET /v1/problems：题目列表（终态三值、画像、花费、每解成本）。
+
+    每行另带总览要的几项（工作台设计 §6 A 组），都是现有投影的搬运：Goal 的等级、在途租约的种类与目标、
+    待人处理的项数、墙钟。`closed_ts` 是关题那条事件的 ts，由调用方经 `ts_of(pid, seq)` 从日志取；
+    状态里不存它，所以不给 `ts_of` 时为 null。"""
     items, spent_all, solved = [], 0, 0
     for pid in sorted(state["problems"], key=lambda k: state["problems"][k]["opened_seq"]):
         p = state["problems"][pid]
         b = wk.budget_view(state, pid)
         term = _terminal(state, pid)
+        closed_seq = p.get("closed_seq")
+        closed_ts = ts_of(pid, closed_seq) if ts_of and closed_seq is not None else None
+        end = closed_ts if closed_ts is not None else state["now"]
         spent_all += b["spent"]["usd_milli"]
         solved += term == "solved"
         items.append(
@@ -331,6 +338,14 @@ def problems(state: State) -> View:
                 "closed_seq": p.get("closed_seq"),
                 "spent_usd_milli": b["spent"]["usd_milli"],
                 "cap_usd_milli": b["cap"].get("usd_milli"),
+                "closed_ts": closed_ts,
+                "goal_level": _ctx(state, pid)["levels"].get("goal"),
+                "active": [
+                    {"kind": l["kind"], **({"target": l["target"]} if "target" in l else {})}
+                    for l in sorted(wk.active_leases(state, pid), key=lambda l: l["issued_seq"])
+                ],
+                "human_todo": sum(1 for w in wk.work(state, pid) if w["kind"] == "human"),
+                "wall": {"cap_s": p["budget"]["wall_s"], "elapsed_s": max(0, end - p["opened_ts"]) // 1000},
             }
         )
     return {

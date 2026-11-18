@@ -119,3 +119,9 @@
 5. “无证据根”由图服务按整条前提链给出（`no_evidence_root`）；检视只读这个字段，不自己算。**裁决（005-4）已落实**（P2-1）。
 6. 人的令牌只存在本标签页的 `sessionStorage`，带到期时间（缺省 8 小时），只随写请求发出；到期即清，界面回到只读。旧版本留在 `localStorage` 里的令牌读一次就删，不再沿用。**裁决（005-6）已落实**（P2-2）。
 7. 模板目录的 `data`：**裁决**把暂行字段名定为约定，即 `fields.scope`、`fields.goal`、`fields.budget`、`fields.materials`、`judges`；取不到就留空，目录为空时用“不用模板”。
+
+## 工作台（设计：`docs/design/web-workbench-v1.md`；待裁决的出入：`docs/m0/dissent-web-workbench.md`）
+
+- **总览**（`/`）：读 `/v1/problems`（每 5 秒，页面不可见时跳过）。进行中卡片列在途租约的种类（服务端的 `active`），不推断“阶段”；Goal 根结论取 `goal_level`；待人处理数取 `human_todo`；墙钟取 `wall`。最近完成按终态三值筛。今日解题与近 7 日趋势按 `closed_ts` 在本机时区分日计数，成功率 = solved ÷ 当天已关题数；本机时钟由 `app/clock.ts` 注入，视图层不读时钟。
+- **题库**（`/problems?q=&terminal=&judge=`）：搜索与筛选都在 URL 里。标签、难度、领域要 Problem 新字段，暂缺。
+- **主题**：跟随系统、亮色、暗色、高对比，写在 `<html data-theme>`，存本机 `paoding.theme`。等级与终态仍是形状记号加文字，颜色不承载信息。
