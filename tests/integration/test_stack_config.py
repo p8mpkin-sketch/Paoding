@@ -1,4 +1,5 @@
 """全栈配置的装载（P2-4 第 6 项：配置统一为 YAML）。不需要 Docker。"""
+
 from __future__ import annotations
 
 import json

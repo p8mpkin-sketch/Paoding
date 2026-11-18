@@ -1,4 +1,5 @@
 """对外契约接口。其它组件只许 import 本模块（ci/check_deps.py 强制）。"""
+
 from .builtin import BUILTINS, Outcome  # noqa: F401
 from .registry import DEFAULT_DIR, RegistryError, kernel_judges, load_registry  # noqa: F401
 from .runner import JudgeConfig, JudgeRunner  # noqa: F401

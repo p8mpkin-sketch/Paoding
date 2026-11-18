@@ -1,18 +1,26 @@
 """异议 003：内核补齐 M0 的两项人的操作——画像事后覆盖（profile_override）与带理由的拒绝。"""
+
 from conftest import HUMAN, Kernel, reason
 
 from paoding_graph import work as wk
-from paoding_graph.replay import replay, state_hash
 from paoding_graph.reducer import apply, empty_state
+from paoding_graph.replay import replay, state_hash
 
 R = {"usd_milli": 100, "wall_s": 60}
 
 
 def test_profile_override_keeps_trace(k):
-    k.open(resource="remote")          # conftest 的 CFG 把 remote 登记为外部资源
+    k.open(resource="remote")  # conftest 的 CFG 把 remote 登记为外部资源
     assert k.state["problems"]["p1"]["profile"]["info"] == "partial"
-    assert k.submit(HUMAN, "p1", "profile_override", {"axis": "info", "value": "complete",
-                                                      "reason": "题目环境在本机，内容不会变"}) == "ok"
+    assert (
+        k.submit(
+            HUMAN,
+            "p1",
+            "profile_override",
+            {"axis": "info", "value": "complete", "reason": "题目环境在本机，内容不会变"},
+        )
+        == "ok"
+    )
     p = k.state["problems"]["p1"]
     assert p["profile"]["info"] == "complete" and p["derived_profile"]["info"] == "partial"
     [o] = p["profile_overrides"]
@@ -21,19 +29,25 @@ def test_profile_override_keeps_trace(k):
 
 def test_profile_override_rejects(k):
     k.open()
-    sub = lambda b: k.submit(HUMAN, "p1", "profile_override", b)       # noqa: E731
-    assert sub({"axis": "info", "value": "complete"}) == "schema_error"                     # 无理由
+    sub = lambda b: k.submit(HUMAN, "p1", "profile_override", b)  # noqa: E731
+    assert sub({"axis": "info", "value": "complete"}) == "schema_error"  # 无理由
     assert sub({"axis": "mood", "value": "x", "reason": "r"}) == "schema_error"
     assert sub({"axis": "judge", "value": "easy", "reason": "r"}) == "schema_error"
-    assert k.submit(reason(), "p1", "profile_override", {"axis": "info", "value": "complete",
-                                                         "reason": "r"}) == "forbidden_op"  # 只许人
+    assert (
+        k.submit(reason(), "p1", "profile_override", {"axis": "info", "value": "complete", "reason": "r"})
+        == "forbidden_op"
+    )  # 只许人
     assert "profile_overrides" not in k.state["problems"]["p1"]
 
 
 def _needs_human(k):
     k.open(scope_risks=("r0", "r2"))
-    lid = k.submit({"kind": "sinan", "id": "sn1"}, "p1", "lease", {"kind": "bootstrap", "holder": "sn1",
-                                                                    "reserve": R, "ttl_s": 600})
+    lid = k.submit(
+        {"kind": "sinan", "id": "sn1"},
+        "p1",
+        "lease",
+        {"kind": "bootstrap", "holder": "sn1", "reserve": R, "ttl_s": 600},
+    )
     k.submit({"kind": "sinan", "id": "sn1"}, "p1", "release", {"lease": lid, "outcome": "nothing"})
     iid = k.submit(reason(), "p1", "add_intent", {"title": "改写后重启", "premises": [], "risk": "r2", "budget": R})
     assert wk.intent_status(k.state, "p1", iid) == "needs_human"

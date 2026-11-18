@@ -4,6 +4,7 @@
 所以无论命令吐出多少，磁盘占用不超过 `limit`，留下的是头与尾（§3.2.2 的截断约定）。
 `pump` 把一个子进程的输出逐块读进 `Capture`，并在墙钟到点时杀掉它。
 """
+
 from __future__ import annotations
 
 import os
@@ -11,7 +12,7 @@ import select
 import subprocess
 import tempfile
 import time
-from typing import Iterator
+from collections.abc import Iterator
 
 CHUNK = 64 * 1024
 
@@ -23,8 +24,8 @@ class Capture:
         self.limit, self.half = limit, limit // 2
         self._tail = limit - self.half
         self._f = tempfile.TemporaryFile(dir=spool_dir)
-        self._ring = 0                    # 环里下一个写入位置；进入环之后也是最旧字节的位置
-        self.total = 0                    # 命令实际吐出的字节数
+        self._ring = 0  # 环里下一个写入位置；进入环之后也是最旧字节的位置
+        self.total = 0  # 命令实际吐出的字节数
 
     @property
     def stored(self) -> int:
@@ -36,13 +37,13 @@ class Capture:
 
     def write(self, chunk: bytes) -> None:
         mv = memoryview(chunk)
-        if self.total < self.limit:                           # 顺序段：文件内容就是输出本身
+        if self.total < self.limit:  # 顺序段：文件内容就是输出本身
             n = min(len(mv), self.limit - self.total)
             self._f.seek(self.total)
             self._f.write(mv[:n])
             self.total += n
             mv = mv[n:]
-        while len(mv):                                        # 环：只保留最后 _tail 字节
+        while len(mv):  # 环：只保留最后 _tail 字节
             n = min(len(mv), self._tail - self._ring)
             self._f.seek(self.half + self._ring)
             self._f.write(mv[:n])
@@ -76,14 +77,14 @@ class Capture:
     def read(self, start: int = 0, end: int | None = None) -> bytes:
         return b"".join(self.chunks(start, end))
 
-    def reader(self) -> "_Reader":
+    def reader(self) -> _Reader:
         """留存内容的只读流，交给 Blob 仓库逐块写入。"""
         return _Reader(self)
 
     def close(self) -> None:
         self._f.close()
 
-    def __enter__(self) -> "Capture":
+    def __enter__(self) -> Capture:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -120,7 +121,7 @@ def pump(argv: list[str], cap: Capture, deadline_s: float) -> tuple[int | None, 
             if not ready:
                 continue
             chunk = os.read(fd, CHUNK)
-            if not chunk:                                     # 写端全部关闭：命令及其后代都结束了
+            if not chunk:  # 写端全部关闭：命令及其后代都结束了
                 break
             cap.write(chunk)
     finally:

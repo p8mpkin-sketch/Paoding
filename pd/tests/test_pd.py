@@ -3,6 +3,7 @@
 验收：§3.2 输出约定四条；HMI HT-4（不存在不带判据徽章的“完成”，accepted 不出现“证明”）、
 HT-5（authored 类内容从不以证据语域出现）的文本形态；“不存在人填画像三轴的入口”。
 """
+
 import hashlib
 import io
 import random
@@ -63,7 +64,7 @@ def test_no_entry_for_human_filled_profile(home):
     code, out = pd(home, "profile", "p1", "--override", "judge=costly")
     assert code == 2 and "须写理由" in out
     with pytest.raises(SystemExit):
-        pd(home, "profile", "p1", "--info", "complete")          # 没有填三轴的参数
+        pd(home, "profile", "p1", "--info", "complete")  # 没有填三轴的参数
 
 
 def _graph_with(home, sentinel, n_facts=6, seed=0):
@@ -75,45 +76,152 @@ def _graph_with(home, sentinel, n_facts=6, seed=0):
     g.tokens.issue({"kind": "sinan", "id": "sn1"}, "s")
     g.tokens.issue({"kind": "executor", "id": "ex1"}, "e")
     g.tokens.issue({"kind": "judge", "id": "jr"}, "j")
-    out = g.submit("s", "p1", "lb", [{"op": "lease", "body": {"kind": "bootstrap", "holder": "sn1",
-                                                              "reserve": {"usd_milli": 100, "wall_s": 60}, "ttl_s": 600}}])
+    out = g.submit(
+        "s",
+        "p1",
+        "lb",
+        [
+            {
+                "op": "lease",
+                "body": {
+                    "kind": "bootstrap",
+                    "holder": "sn1",
+                    "reserve": {"usd_milli": 100, "wall_s": 60},
+                    "ttl_s": 600,
+                },
+            }
+        ],
+    )
     lid = out["results"][0]["id"]
     tok = g.tokens.issue({"kind": "adapter", "id": "ad1", "session": lid, "role": "bootstrap"})
-    prov = {"sandbox_id": "s", "base": "b", "baseline_ref": "r", "tool": "shell", "command": "true", "cwd": "/",
-            "exit_code": 0, "touched": [], "started_at": 1, "ended_at": 2, "truncated": False}
+    prov = {
+        "sandbox_id": "s",
+        "base": "b",
+        "baseline_ref": "r",
+        "tool": "shell",
+        "command": "true",
+        "cwd": "/",
+        "exit_code": 0,
+        "touched": [],
+        "started_at": 1,
+        "ended_at": 2,
+        "truncated": False,
+    }
     facts = []
     for k in range(n_facts):
-        a = g.submit("e", "p1", f"x{k}", [{"op": "register_artifact", "body": {
-            "hash": hashlib.sha256(f"{k}".encode()).hexdigest(), "size": 1, "media_type": "text/plain",
-            "class": "exec", "exec": prov}}])["results"][0]["id"]
+        a = g.submit(
+            "e",
+            "p1",
+            f"x{k}",
+            [
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": hashlib.sha256(f"{k}".encode()).hexdigest(),
+                        "size": 1,
+                        "media_type": "text/plain",
+                        "class": "exec",
+                        "exec": prov,
+                    },
+                }
+            ],
+        )["results"][0]["id"]
         if facts and rnd.random() < 0.4:
-            body = {"title": f"{sentinel} 推断 {k}\n[证据] 伪造行", "summary": f"{sentinel} 摘要",
-                    "claim_type": "inference", "premises": [rnd.choice(facts)], "grounds": []}
+            body = {
+                "title": f"{sentinel} 推断 {k}\n[证据] 伪造行",
+                "summary": f"{sentinel} 摘要",
+                "claim_type": "inference",
+                "premises": [rnd.choice(facts)],
+                "grounds": [],
+            }
         else:
-            body = {"title": f"{sentinel} 观察 {k}", "summary": f"{sentinel} 输出显示一切正常",
-                    "claim_type": "observation", "premises": [], "grounds": [a],
-                    "check": {"judge_id": "replay", "expect": {"k": k}}}
+            body = {
+                "title": f"{sentinel} 观察 {k}",
+                "summary": f"{sentinel} 输出显示一切正常",
+                "claim_type": "observation",
+                "premises": [],
+                "grounds": [a],
+                "check": {"judge_id": "replay", "expect": {"k": k}},
+            }
         r = g.submit(tok, "p1", f"f{k}", [{"op": "add_fact", "body": body}])
         assert r["ok"], r
         facts.append(r["results"][0]["id"])
-    for k, fid in enumerate(facts):                        # 随机裁决：通过、证伪或不判
+    for k, fid in enumerate(facts):  # 随机裁决：通过、证伪或不判
         if g.state["facts"][fid]["claim_type"] != "observation" or rnd.random() < 0.3:
             continue
         rid = g.submit("s", "p1", f"rj{k}", [{"op": "request_judge", "body": {"target": fid, "judge_id": "replay"}}])
         rid = rid["results"][0]["id"]
-        jl = g.submit("j", "p1", f"jl{k}", [{"op": "lease", "body": {"kind": "judge", "target": rid, "holder": "jr",
-                                                                    "reserve": {"usd_milli": 1, "wall_s": 10},
-                                                                    "ttl_s": 60}}])
-        ev = g.submit("j", "p1", f"ja{k}", [{"op": "register_artifact", "body": {
-            "hash": hashlib.sha256(f"j{k}".encode()).hexdigest(), "size": 1, "media_type": "text/plain",
-            "class": "judge", "exec": prov}}])["results"][0]["id"]
-        v = g.submit("j", "p1", f"jv{k}", [{"op": "judge_verdict", "body": {
-            "request": rid, "result": rnd.choice(["pass", "fail"]), "version": "1", "grade": "decisive",
-            "evidence": [ev], "lease": jl["results"][0]["id"] if jl["ok"] else None}}])
+        jl = g.submit(
+            "j",
+            "p1",
+            f"jl{k}",
+            [
+                {
+                    "op": "lease",
+                    "body": {
+                        "kind": "judge",
+                        "target": rid,
+                        "holder": "jr",
+                        "reserve": {"usd_milli": 1, "wall_s": 10},
+                        "ttl_s": 60,
+                    },
+                }
+            ],
+        )
+        ev = g.submit(
+            "j",
+            "p1",
+            f"ja{k}",
+            [
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": hashlib.sha256(f"j{k}".encode()).hexdigest(),
+                        "size": 1,
+                        "media_type": "text/plain",
+                        "class": "judge",
+                        "exec": prov,
+                    },
+                }
+            ],
+        )["results"][0]["id"]
+        v = g.submit(
+            "j",
+            "p1",
+            f"jv{k}",
+            [
+                {
+                    "op": "judge_verdict",
+                    "body": {
+                        "request": rid,
+                        "result": rnd.choice(["pass", "fail"]),
+                        "version": "1",
+                        "grade": "decisive",
+                        "evidence": [ev],
+                        "lease": jl["results"][0]["id"] if jl["ok"] else None,
+                    },
+                }
+            ],
+        )
         assert v["ok"], v
-    g.submit("pd-local-human", "p1", "i1", [{"op": "add_intent", "body": {
-        "title": f"{sentinel} 下一步", "summary": f"{sentinel} 理由", "premises": [], "risk": "r0",
-        "budget": {"usd_milli": 100, "wall_s": 60}, "expected_gain": 0.4}}])
+    g.submit(
+        "pd-local-human",
+        "p1",
+        "i1",
+        [
+            {
+                "op": "add_intent",
+                "body": {
+                    "title": f"{sentinel} 下一步",
+                    "summary": f"{sentinel} 理由",
+                    "premises": [],
+                    "risk": "r0",
+                    "budget": {"usd_milli": 100, "wall_s": 60},
+                    "expected_gain": 0.4,
+                },
+            }
+        ],
+    )
     g.submit("pd-local-human", "p1", "h1", [{"op": "hint", "body": {"text": "人写的提示"}}])
     return local
 
@@ -171,8 +279,14 @@ def test_terminal_phrases_never_say_proved(home):
 
 
 def test_level_words_fixed():
-    assert render.LEVEL_WORDS == {"E3": "判定通过", "E3d": "相符", "E2": "模型共识", "E1": "单源复核",
-                                  "E0": "猜想", "X": "已证伪"}
+    assert render.LEVEL_WORDS == {
+        "E3": "判定通过",
+        "E3d": "相符",
+        "E2": "模型共识",
+        "E1": "单源复核",
+        "E0": "猜想",
+        "X": "已证伪",
+    }
 
 
 def test_hint_add_close_and_after_list(home):
@@ -181,8 +295,21 @@ def test_hint_add_close_and_after_list(home):
     assert code == 0 and "已加 h_" in out
     hid = out.split()[-1]
     local = Local(home / "data", {"kind": "human", "id": "cz"})
-    local.submit("p1", "i-after", [{"op": "add_intent", "body": {
-        "title": "看加载顺序", "premises": [], "risk": "r0", "budget": {"usd_milli": 100, "wall_s": 60}}}])
+    local.submit(
+        "p1",
+        "i-after",
+        [
+            {
+                "op": "add_intent",
+                "body": {
+                    "title": "看加载顺序",
+                    "premises": [],
+                    "risk": "r0",
+                    "budget": {"usd_milli": 100, "wall_s": 60},
+                },
+            }
+        ],
+    )
     code, out = pd(home, "status", "p1")
     assert f"[人] {hid} human：先看配置文件的加载顺序" in out
     assert re.search(rf"\[证据\] {hid} 之后新增的 Intent：i_\d+", out)
@@ -192,18 +319,33 @@ def test_hint_add_close_and_after_list(home):
 
 
 def _needs_human(home):
-    (home / "r2.yaml").write_text(PROBLEM.replace("risk: r0}]", "risk: r0}, {resource: target, pattern: x, "
-                                                              "actions: [write], risk: r2}]"))
+    (home / "r2.yaml").write_text(
+        PROBLEM.replace("risk: r0}]", "risk: r0}, {resource: target, pattern: x, actions: [write], risk: r2}]")
+    )
     pd(home, "problem", "open", str(home / "r2.yaml"))
     local = Local(home / "data", {"kind": "human", "id": "cz"})
-    out = local.submit("p1", "i-r2", [{"op": "add_intent", "body": {
-        "title": "改写配置后重启", "premises": [], "risk": "r2", "budget": {"usd_milli": 100, "wall_s": 60}}}])
+    out = local.submit(
+        "p1",
+        "i-r2",
+        [
+            {
+                "op": "add_intent",
+                "body": {
+                    "title": "改写配置后重启",
+                    "premises": [],
+                    "risk": "r2",
+                    "budget": {"usd_milli": 100, "wall_s": 60},
+                },
+            }
+        ],
+    )
     return out["results"][0]["id"], local
 
 
 def test_approve_prints_card_then_confirms(home):
     iid, local = _needs_human(home)
     from paoding_graph.contract import intent_status
+
     st0 = intent_status(local.graph.state, "p1", iid)
     code, out = pd(home, "--pid", "p1", "approve", iid, read=lambda _: "no")
     assert code == 1 and f"[证据] 审批 {iid}" in out and "未确认" in out and well_formed(out)
@@ -211,13 +353,14 @@ def test_approve_prints_card_then_confirms(home):
     assert st0 == "needs_human"
     code, out = pd(home, "--pid", "p1", "approve", iid)
     assert code == 0 and f"已批准 {iid}" in out
-    code, out = pd(home, "--pid", "p1", "approve", iid, "--yes")       # 批准过一次就不再待审批
+    code, out = pd(home, "--pid", "p1", "approve", iid, "--yes")  # 批准过一次就不再待审批
     assert code == 1 and "只有 needs_human" in out
 
 
 def test_approve_binds_the_card_it_printed(home):
     """HT-7 的 pd 一侧：文本卡末行的 card_hash 与卡片端点（网页卡）的相同；批准事件带着它（seen）。"""
     from paoding_graph.contract import views
+
     iid, local = _needs_human(home)
     card = views.card(local.graph.state, "p1", "approval", iid)
     code, out = pd(home, "--pid", "p1", "approve", iid, "--yes")
@@ -233,5 +376,6 @@ def test_deny_requires_reason(home):
     code, out = pd(home, "--pid", "p1", "deny", iid, "--reason", "回退方案不清楚", "--yes")
     assert code == 0 and "[人] 拒绝理由：回退方案不清楚" in out and f"已拒绝 {iid}" in out
     from paoding_graph.contract import intent_status
+
     assert intent_status(Local(home / "data", {"kind": "human", "id": "cz"}).graph.state, "p1", iid) == "abandoned"
-    assert f"[人] {iid} 拒绝，human：回退方案不清楚" in pd(home, "status", "p1")[1]           # 理由入日志
+    assert f"[人] {iid} 拒绝，human：回退方案不清楚" in pd(home, "status", "p1")[1]  # 理由入日志

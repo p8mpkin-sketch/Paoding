@@ -10,6 +10,7 @@ pid 取 --pid 或环境变量 PD_PROBLEM。数据目录取 --home 或 PD_HOME（
 M0 的骨架以本机进程内方式打开图服务；图服务独立成进程后改走 HTTP/Unix socket 绑定（接口相同，D10）。
 输出遵守四语域标记、等级词表与判据徽章（render.py）。不存在人填画像三轴的入口：画像只能事后覆盖。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,9 +29,11 @@ HUMAN_TOKEN = "pd-local-human"
 
 def default_judges() -> dict:
     """M0 内建判官（异议 001 裁决：只有这三个不含领域词的）。配置判官随 judgebox 落地后从 judges.d 读。"""
-    return {"replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
-            "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
-            "seal_check": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0}}
+    return {
+        "replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
+        "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
+        "seal_check": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
+    }
 
 
 class Local:
@@ -48,8 +51,10 @@ class Local:
 def _input(local: Local, pid: str, path: Path) -> dict:
     data = path.read_bytes()
     h = local.blobs.put(data)
-    return {"op": "register_artifact", "body": {"hash": h, "size": len(data), "media_type": "text/plain",
-                                                 "class": "input"}}
+    return {
+        "op": "register_artifact",
+        "body": {"hash": h, "size": len(data), "media_type": "text/plain", "class": "input"},
+    }
 
 
 def _fail(out: dict) -> str:
@@ -67,10 +72,15 @@ def cmd_open(local: Local, a, w) -> int:
     base = path.parent
     ops = [_input(local, pid, base / spec["statement"])]
     ops += [_input(local, pid, base / m) for m in spec.get("materials", [])]
-    body = {"title": spec["title"],
-            "origin": {"statement_ref": "$0", "materials": [f"${k + 1}" for k in range(len(spec.get("materials", [])))]},
-            "goal": spec["goal"], "scope": spec["scope"], "budget": spec["budget"], "env": spec["env"],
-            "judges": spec["judges"]}
+    body = {
+        "title": spec["title"],
+        "origin": {"statement_ref": "$0", "materials": [f"${k + 1}" for k in range(len(spec.get("materials", [])))]},
+        "goal": spec["goal"],
+        "scope": spec["scope"],
+        "budget": spec["budget"],
+        "env": spec["env"],
+        "judges": spec["judges"],
+    }
     out = local.submit(pid, f"pd-open:{pid}", ops + [{"op": "open_problem", "body": body}])
     if not out["ok"]:
         w(f"[证据] 开题被拒：{_fail(out)}\n")
@@ -120,8 +130,11 @@ def cmd_profile(local: Local, a, w) -> int:
             w("[证据] 覆盖须写理由：--reason\n")
             return 2
         n = len(local.graph.state["problems"][pid].get("profile_overrides", []))
-        out = local.submit(pid, f"pd-override:{pid}:{n}", [{"op": "profile_override", "body": {
-            "axis": axis, "value": value, "reason": a.reason}}])
+        out = local.submit(
+            pid,
+            f"pd-override:{pid}:{n}",
+            [{"op": "profile_override", "body": {"axis": axis, "value": value, "reason": a.reason}}],
+        )
         if not out["ok"]:
             w(f"[证据] 被拒：{_fail(out)}\n")
             return 1
@@ -140,7 +153,9 @@ def cmd_hint(local: Local, a, w) -> int:
     if not out["ok"]:
         w(f"[证据] 被拒：{_fail(out)}\n")
         return 1
-    w(f"[证据] {'已加' if a.action == 'add' else '已关闭'} {out['results'][0]['id'] if a.action == 'add' else a.text}\n")
+    w(
+        f"[证据] {'已加' if a.action == 'add' else '已关闭'} {out['results'][0]['id'] if a.action == 'add' else a.text}\n"  # noqa: E501
+    )
     return 0
 
 
@@ -158,9 +173,21 @@ def cmd_decide(local: Local, a, w, decision: str, read=input) -> int:
         if ans.strip() != "yes":
             w("[证据] 未确认，未提交\n")
             return 1
-    out = local.submit(pid, f"pd-{decision}:{a.intent}:{st['seq']}", [{"op": "approve", "body": {
-        "intent": a.intent, "decision": decision, "seen": seen_card(st, pid, "approval", a.intent),
-        **({"reason": a.reason} if a.reason else {})}}])       # seen 取自上面打印的那份快照（H2）
+    out = local.submit(
+        pid,
+        f"pd-{decision}:{a.intent}:{st['seq']}",
+        [
+            {
+                "op": "approve",
+                "body": {
+                    "intent": a.intent,
+                    "decision": decision,
+                    "seen": seen_card(st, pid, "approval", a.intent),
+                    **({"reason": a.reason} if a.reason else {}),
+                },
+            }
+        ],
+    )  # seen 取自上面打印的那份快照（H2）
     if not out["ok"]:
         w(f"[证据] 被拒：{_fail(out)}\n")
         if any(r.get("code") == "stale_view" for r in out["results"]):

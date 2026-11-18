@@ -16,9 +16,9 @@ TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，
 - real：真 CLI，缺省在模型容器里起（规格 §3.4.2）。镜像由 backend.image 给出；真实密钥从环境变量读
   （backend.api_key_env，缺省 ANTHROPIC_API_KEY），只交给端点代理，不进配置文件、日志与任何容器。
 """
+
 from __future__ import annotations
 
-import json
 import logging
 import os
 import secrets
@@ -34,19 +34,30 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from paoding_adapter.contract import (FAKE_CLI, AdapterConfig, CliBinding, ContainerLauncher,  # noqa: E402
-                                      EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, SessionRunner,
-                                      ToolEndpoint, fake_program, local_launcher)
-from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_graph.contract import (BlobStore, Config, GraphHttp, GraphService, HttpConfig,  # noqa: E402
-                                    TokenRegistry)
 from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
-from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
+
+from paoding_adapter.contract import (  # noqa: E402
+    FAKE_CLI,
+    AdapterConfig,
+    CliBinding,
+    ContainerLauncher,
+    EndpointProxy,
+    FakeUpstream,
+    PriceTable,
+    ProxyConfig,
+    SessionRunner,
+    ToolEndpoint,
+    fake_program,
+    local_launcher,
+)
+from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
+from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry  # noqa: E402
+from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
 TASK_KINDS = ("bootstrap", "reason", "explore")
-DEV_ORIGIN = "http://127.0.0.1:5173"               # web/ 的 vite 开发服务器（只监听回环）
+DEV_ORIGIN = "http://127.0.0.1:5173"  # web/ 的 vite 开发服务器（只监听回环）
 
 
 def log(component: str) -> logging.Logger:
@@ -69,6 +80,7 @@ class _OneLine(logging.Formatter):
 
 # ---------- 配置 ----------
 
+
 @dataclass
 class StackConfig:
     home: Path
@@ -78,22 +90,22 @@ class StackConfig:
     # 会话后端：fake | real。scripts：任务种类 → 假 CLI 脚本路径；缺的种类司南不开（只对 fake 有意义）
     backend: str = "fake"
     scripts: dict = field(default_factory=dict)
-    launcher: str = ""                              # container | local；缺省 real → container，fake → local
-    cli_image: str = ""                             # 模型容器的镜像：real 必填；fake + container 缺省用通用镜像
-    upstream: str = "https://api.anthropic.com"     # real 的模型端点；fake 用本机假上游
-    api_key_env: str = "ANTHROPIC_API_KEY"          # real：真实密钥所在的环境变量名（密钥本身不进配置）
-    usage: dict | None = None                       # 假上游每个请求回报的 usage
-    executor: str = "docker"                        # docker | none（none：没有 exec，只适合看界面）
+    launcher: str = ""  # container | local；缺省 real → container，fake → local
+    cli_image: str = ""  # 模型容器的镜像：real 必填；fake + container 缺省用通用镜像
+    upstream: str = "https://api.anthropic.com"  # real 的模型端点；fake 用本机假上游
+    api_key_env: str = "ANTHROPIC_API_KEY"  # real：真实密钥所在的环境变量名（密钥本身不进配置）
+    usage: dict | None = None  # 假上游每个请求回报的 usage
+    executor: str = "docker"  # docker | none（none：没有 exec，只适合看界面）
     bases: dict = field(default_factory=lambda: {"basic": "python:3.12-slim"})
-    poll_s: float = 0.5                             # 司南与判官的轮询间隔
+    poll_s: float = 0.5  # 司南与判官的轮询间隔
     dog_interval_s: float = 2.0
     ttl_s: int = 600
-    max_sessions: int = 3                           # 每道题同时在途的会话上限（司南的线程池大小）；1 即串行
+    max_sessions: int = 3  # 每道题同时在途的会话上限（司南的线程池大小）；1 即串行
     renew_s: float = 60.0
     stall_s: float = 120.0
 
     @classmethod
-    def load(cls, home: Path, path: Path | None = None, **over) -> "StackConfig":
+    def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
         """配置文件（YAML）可省：没有就是空配置——假 CLI 后端、没有脚本、Docker 执行层。
         文件里的相对路径相对配置文件所在目录。缺省读 <home>/config.yaml；只有旧的 config.json 时照样读
         （JSON 是 YAML 的子集），两份都在则报错，不猜用哪份。"""
@@ -115,15 +127,29 @@ class StackConfig:
         ex = raw.get("executor", {})
         if isinstance(ex, str):
             ex = {"kind": ex}
-        cfg = cls(home=home,
-                  backend=be.get("kind", "fake"),
-                  scripts={k: str((base / v).resolve()) for k, v in be.get("scripts", {}).items()},
-                  usage=be.get("usage"),
-                  **{k: be[src] for k, src in (("launcher", "launcher"), ("cli_image", "image"),
-                                               ("upstream", "upstream"), ("api_key_env", "api_key_env")) if src in be},
-                  executor=ex.get("kind", "docker"),
-                  **({"bases": ex["bases"]} if "bases" in ex else {}),
-                  **{k: raw[k] for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s", "max_sessions") if k in raw})
+        cfg = cls(
+            home=home,
+            backend=be.get("kind", "fake"),
+            scripts={k: str((base / v).resolve()) for k, v in be.get("scripts", {}).items()},
+            usage=be.get("usage"),
+            **{
+                k: be[src]
+                for k, src in (
+                    ("launcher", "launcher"),
+                    ("cli_image", "image"),
+                    ("upstream", "upstream"),
+                    ("api_key_env", "api_key_env"),
+                )
+                if src in be
+            },
+            executor=ex.get("kind", "docker"),
+            **({"bases": ex["bases"]} if "bases" in ex else {}),
+            **{
+                k: raw[k]
+                for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s", "max_sessions")
+                if k in raw
+            },
+        )
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
@@ -140,6 +166,7 @@ def docker_available() -> bool:
 
 # ---------- 组装 ----------
 
+
 class Stack:
     def __init__(self, cfg: StackConfig):
         if cfg.backend not in ("fake", "real"):
@@ -151,7 +178,9 @@ class Stack:
         if cfg.backend == "real":
             api_key = os.environ.get(cfg.api_key_env, "")
             if not api_key:
-                raise StackError(f"真实后端要模型密钥：环境变量 {cfg.api_key_env} 没有设。密钥只交给端点代理，不进任何容器")
+                raise StackError(
+                    f"真实后端要模型密钥：环境变量 {cfg.api_key_env} 没有设。密钥只交给端点代理，不进任何容器"
+                )
             if self.launch_mode == "container" and not cfg.cli_image:
                 raise StackError("真实后端在模型容器里起 CLI：配置里要给 backend.image（装有该 CLI 的镜像）")
         if self.launch_mode == "container" and not docker_available():
@@ -159,11 +188,15 @@ class Stack:
         if cfg.executor not in ("docker", "none"):
             raise StackError(f"执行层取 docker 或 none，不是 {cfg.executor!r}")
         if cfg.executor == "docker" and not docker_available():
-            raise StackError("执行层要 Docker，但 docker info 失败。先起 dockerd，或在配置里写 \"executor\": \"none\"（没有 exec，只适合看界面）")
+            raise StackError(
+                '执行层要 Docker，但 docker info 失败。先起 dockerd，或在配置里写 "executor": "none"（没有 exec，只适合看界面）'  # noqa: E501
+            )
         self.cfg = cfg
         self.stop_event = threading.Event()
         self.threads: list[threading.Thread] = []
         self.workers: dict[str, threading.Thread] = {}
+        self.crashed: list[dict] = []  # 因缺陷退出的组件线程（_thread_died 记下）
+        self._prev_hook = threading.excepthook
         self._stopped = False
         home = cfg.home
         home.mkdir(parents=True, exist_ok=True)
@@ -176,96 +209,169 @@ class Stack:
         self.human_token = tf.read_text(encoding="utf-8").strip()
         self.tokens = TokenRegistry()
         self.tokens.issue({"kind": "human", "id": "human"}, self.human_token)
-        self.tok = {k: self.tokens.issue({"kind": k, "id": f"{k[:2]}1"}) for k in
-                    ("sinan", "judge", "adapter", "executor", "watchdog")}
+        self.tok = {
+            k: self.tokens.issue({"kind": k, "id": f"{k[:2]}1"})
+            for k in ("sinan", "judge", "adapter", "executor", "watchdog")
+        }
 
         # 图服务
         self.registry = load_registry()
         self.judges = kernel_judges(self.registry)
         self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges), self.tokens)
         self.blobs = BlobStore(home / "blobs")
-        self.http = GraphHttp(self.graph, self.blobs, HttpConfig(
-            port=cfg.port, allowed_origins=tuple(cfg.allow_origins), static_dir=cfg.static_dir,
-            heartbeat_s=5.0))
+        self.http = GraphHttp(
+            self.graph,
+            self.blobs,
+            HttpConfig(
+                port=cfg.port, allowed_origins=tuple(cfg.allow_origins), static_dir=cfg.static_dir, heartbeat_s=5.0
+            ),
+        )
         self.vault = Vault(home / "vault")
 
         # 执行层
-        self.executor = (DockerExecutor(self.graph, self.blobs, self.tok["executor"], spool_dir=str(home / "spool"))
-                         if cfg.executor == "docker" else None)
+        self.executor = (
+            DockerExecutor(self.graph, self.blobs, self.tok["executor"], spool_dir=str(home / "spool"))
+            if cfg.executor == "docker"
+            else None
+        )
 
         # Adapter：上游（假上游或真模型端点）→ 端点代理 → 工具端点 → 会话运行器
         real = cfg.backend == "real"
         self.upstream = None if real else FakeUpstream(cfg.usage)
         self.upstream_url = cfg.upstream if real else self.upstream.url
-        self.proxy = EndpointProxy(ProxyConfig(self.upstream_url, api_key, self.tok["adapter"]),
-                                   PriceTable.load(PRICES), self.graph, reader=self.graph)
+        self.proxy = EndpointProxy(
+            ProxyConfig(self.upstream_url, api_key, self.tok["adapter"]),
+            PriceTable.load(PRICES),
+            self.graph,
+            reader=self.graph,
+        )
         if self.proxy.restored["global"]:
-            log("adapter").info("端点代理从账本恢复累计花费：全局 %d 毫美元，%d 道题", self.proxy.restored["global"],
-                                sum(1 for v in self.proxy.restored["problems"].values() if v))
+            log("adapter").info(
+                "端点代理从账本恢复累计花费：全局 %d 毫美元，%d 道题",
+                self.proxy.restored["global"],
+                sum(1 for v in self.proxy.restored["problems"].values() if v),
+            )
         self.endpoint = ToolEndpoint()
         # 端点先起：模型容器的启动器要知道它们在本机回环上的端口
         proxy_port = self.proxy.serve()[1]
         mcp_port = int(self.endpoint.serve().rsplit(":", 1)[1])
         if real:
-            self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")     # 真实后端三类任务都开；这张表只对假 CLI 有意义
+            self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")  # 真实后端三类任务都开；这张表只对假 CLI 有意义
             binding, env_for = CliBinding(), None
         else:
             binding = CliBinding(program=fake_program(in_container=self.launch_mode == "container"))
             env_for = lambda lease: {"PD_FAKE_SCRIPT": cfg.scripts.get(lease["kind"], "")}  # noqa: E731
         if self.launch_mode == "container":
             # 假 CLI + 容器：通用镜像里挂进假 CLI 与各类任务的脚本（只读）；真 CLI 的镜像自带 CLI，不挂任何东西
-            mounts = () if real else ((str(FAKE_CLI), "/opt/paoding/fakecli.py"),
-                                      *[(v, v) for v in sorted(set(cfg.scripts.values())) if v])
-            self.launcher = ContainerLauncher(cfg.cli_image or cfg.bases.get("basic", "python:3.12-slim"),
-                                              proxy_port, mcp_port, mounts=mounts)
+            mounts = (
+                ()
+                if real
+                else (
+                    (str(FAKE_CLI), "/opt/paoding/fakecli.py"),
+                    *[(v, v) for v in sorted(set(cfg.scripts.values())) if v],
+                )
+            )
+            self.launcher = ContainerLauncher(
+                cfg.cli_image or cfg.bases.get("basic", "python:3.12-slim"), proxy_port, mcp_port, mounts=mounts
+            )
         else:
             self.launcher = local_launcher
         self.adapter_cfg = AdapterConfig(
-            root=home / "sessions", renew_s=cfg.renew_s, stall_s=cfg.stall_s, judges_cfg=self.judges,
-            binding=binding, bases=dict(cfg.bases), env_for=env_for)
-        self.runner = SessionRunner(self.adapter_cfg, self.graph, self.graph, self.blobs, self.tokens,
-                                    self.proxy, self.endpoint, self.executor, launcher=self.launcher)
+            root=home / "sessions",
+            renew_s=cfg.renew_s,
+            stall_s=cfg.stall_s,
+            judges_cfg=self.judges,
+            binding=binding,
+            bases=dict(cfg.bases),
+            env_for=env_for,
+        )
+        self.runner = SessionRunner(
+            self.adapter_cfg,
+            self.graph,
+            self.graph,
+            self.blobs,
+            self.tokens,
+            self.proxy,
+            self.endpoint,
+            self.executor,
+            launcher=self.launcher,
+        )
 
         # 判官运行器、哮天犬
-        self.judge = JudgeRunner(JudgeConfig(token=self.tok["judge"], registry=self.registry, bases=dict(cfg.bases)),
-                                 self.graph, self.graph, self.blobs, self.vault, self.executor)
-        self.dog = Watchdog(DogConfig(token=self.tok["watchdog"], interval_s=cfg.dog_interval_s), self.graph,
-                            self.graph, control=self.runner,
-                            sweep=sweep_orphans if self.executor is not None else None)
+        self.judge = JudgeRunner(
+            JudgeConfig(token=self.tok["judge"], registry=self.registry, bases=dict(cfg.bases)),
+            self.graph,
+            self.graph,
+            self.blobs,
+            self.vault,
+            self.executor,
+        )
+        self.dog = Watchdog(
+            DogConfig(token=self.tok["watchdog"], interval_s=cfg.dog_interval_s),
+            self.graph,
+            self.graph,
+            control=self.runner,
+            sweep=sweep_orphans if self.executor is not None else None,
+        )
         self.url = ""
 
     # ---------- 起 ----------
 
     def start(self) -> str:
         """按次序起：图服务 → 判官运行器 → 司南 → 哮天犬。返回图服务的地址。"""
+        threading.excepthook = self._thread_died
         self.url = self.http.serve()
-        log("graph").info("HTTP + SSE 在 %s（链头 seq=%d，题 %d 道；人的令牌在 %s）", self.url, self.graph.head(),
-                          len(self.graph.state["problems"]), self.cfg.home / "human.token")
+        log("graph").info(
+            "HTTP + SSE 在 %s（链头 seq=%d，题 %d 道；人的令牌在 %s）",
+            self.url,
+            self.graph.head(),
+            len(self.graph.state["problems"]),
+            self.cfg.home / "human.token",
+        )
         self._spawn("events", self._follow_events)
         self._spawn("judge", self._judge_loop)
-        log("judge").info("判官运行器已起：%s", ", ".join(f"{k}@{v['version']}" for k, v in sorted(self.judges.items())))
+        log("judge").info(
+            "判官运行器已起：%s", ", ".join(f"{k}@{v['version']}" for k, v in sorted(self.judges.items()))
+        )
         self._spawn("sinan", self._sinan_supervisor)
         missing = [k for k in TASK_KINDS if not self.cfg.scripts.get(k)]
         where = "模型容器" if self.launch_mode == "container" else "宿主子进程"
         if self.launch_mode == "local" and self.cfg.backend == "real":
             log("sinan").warning("真 CLI 以宿主子进程运行（launcher: local）：没有模型容器的隔离，只适合本机调试")
-        log("sinan").info("司南已起：后端 %s（%s；上游 %s）%s", self.cfg.backend, where, self.upstream_url,
-                          f"；没有脚本的任务种类不开：{', '.join(missing)}" if missing else "")
+        log("sinan").info(
+            "司南已起：后端 %s（%s；上游 %s）%s",
+            self.cfg.backend,
+            where,
+            self.upstream_url,
+            f"；没有脚本的任务种类不开：{', '.join(missing)}" if missing else "",
+        )
         self._spawn("watchdog", self._dog_loop)
-        log("watchdog").info("哮天犬已起：每 %.1f 秒一轮%s", self.cfg.dog_interval_s,
-                             "" if self.executor else "（执行层 none，不清扫容器）")
+        log("watchdog").info(
+            "哮天犬已起：每 %.1f 秒一轮%s",
+            self.cfg.dog_interval_s,
+            "" if self.executor else "（执行层 none，不清扫容器）",
+        )
         return self.url
 
     def _spawn(self, name: str, fn) -> None:
-        t = threading.Thread(target=self._guarded, args=(name, fn), name=name, daemon=True)
+        t = threading.Thread(target=fn, name=name, daemon=True)
         self.threads.append(t)
         t.start()
 
-    def _guarded(self, name: str, fn) -> None:
-        try:
-            fn()
-        except Exception:
-            log(name).exception("线程异常退出")
+    def _thread_died(self, a: threading.ExceptHookArgs) -> None:
+        """组件线程里没被接住的异常就是缺陷：记下栈与线程名，留在 crashed 里，不吞掉（审计 P1-4）。
+
+        不在线程顶层宽接 Exception：那样缺陷与环境故障混在一起，只剩一行日志。司南的每题线程退出后
+        由监管循环按原样重起；判官、哮天犬与事件跟随线程不重起，死了就是死了，看 crashed 与日志。"""
+        name = a.thread.name if a.thread is not None else "?"
+        if a.exc_type is SystemExit or not any(t is a.thread for t in [*self.threads, *self.workers.values()]):
+            self._prev_hook(a)
+            return
+        self.crashed.append({"thread": name, "error": f"{a.exc_type.__name__}: {a.exc_value}"})
+        log(name.split("-", 1)[0]).error(
+            "线程因缺陷退出",
+            exc_info=(a.exc_type, a.exc_value, a.exc_traceback),
+        )
 
     # ---------- 事件流：每条落盘事件一行日志 ----------
 
@@ -287,9 +393,15 @@ class Stack:
         while not self.stop_event.is_set():
             try:
                 for d in self.judge.tick():
-                    L.info("%s 请求 %s → %s（%s）%s", d.get("status"), d.get("request"), d.get("result", "-"),
-                           d.get("reason", d.get("code", "")), "" if d.get("status") == "judged" else d)
-            except Exception:
+                    L.info(
+                        "%s 请求 %s → %s（%s）%s",
+                        d.get("status"),
+                        d.get("request"),
+                        d.get("result", "-"),
+                        d.get("reason", d.get("code", "")),
+                        "" if d.get("status") == "judged" else d,
+                    )
+            except (OSError, subprocess.SubprocessError):  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
             self.stop_event.wait(self.cfg.poll_s)
 
@@ -301,8 +413,7 @@ class Stack:
                 t = self.workers.get(pid)
                 if p.get("closed") or (t is not None and t.is_alive()):
                     continue
-                t = threading.Thread(target=self._guarded, args=("sinan", lambda pid=pid: self._sinan_loop(pid)),
-                                     name=f"sinan-{pid}", daemon=True)
+                t = threading.Thread(target=self._sinan_loop, args=(pid,), name=f"sinan-{pid}", daemon=True)
                 self.workers[pid] = t
                 t.start()
             self.stop_event.wait(self.cfg.poll_s)
@@ -310,15 +421,27 @@ class Stack:
     def _sinan_loop(self, pid: str) -> None:
         """一道题一个司南实例：调度在本线程，会话在它的线程池里并行（至多 max_sessions 个）。"""
         L = log("sinan")
-        sinan = Sinan(SinanConfig(token=self.tok["sinan"], ttl_s=self.cfg.ttl_s, max_sessions=self.cfg.max_sessions),
-                      self.graph, self.graph, self.blobs, self.runner)
+        sinan = Sinan(
+            SinanConfig(token=self.tok["sinan"], ttl_s=self.cfg.ttl_s, max_sessions=self.cfg.max_sessions),
+            self.graph,
+            self.graph,
+            self.blobs,
+            self.runner,
+        )
         last = None
         L.info("%s 开始调度（并发上限 %d）", pid, self.cfg.max_sessions)
         try:
             while not self.stop_event.is_set():
                 for r in sinan.collect(0):
-                    L.info("%s %s 会话结束：租约 %s，%s，release=%s%s", pid, r["did"]["kind"], r["lease"], r["status"],
-                           r["outcome"], f"（{r['detail']}）" if r.get("detail") else "")
+                    L.info(
+                        "%s %s 会话结束：租约 %s，%s，release=%s%s",
+                        pid,
+                        r["did"]["kind"],
+                        r["lease"],
+                        r["status"],
+                        r["outcome"],
+                        f"（{r['detail']}）" if r.get("detail") else "",
+                    )
                     last = None
                 choice = sinan.pick(pid)
                 if choice.get("stop") == "closed":
@@ -331,16 +454,22 @@ class Stack:
                     r = sinan.dispatch(pid) if "do" in choice else choice
                     if "started" in r:
                         w = r["started"]
-                        L.info("%s %s 会话开始：租约 %s%s（在途 %d）", pid, w["kind"], r["lease"],
-                               f" → {w['target']}" if w.get("target") else "", len(sinan.in_flight()))
+                        L.info(
+                            "%s %s 会话开始：租约 %s%s（在途 %d）",
+                            pid,
+                            w["kind"],
+                            r["lease"],
+                            f" → {w['target']}" if w.get("target") else "",
+                            len(sinan.in_flight()),
+                        )
                         last = None
-                        continue                        # 还有空位就接着开下一项
+                        continue  # 还有空位就接着开下一项
                     note = _note(r)
                 if note != last:
                     L.info("%s %s", pid, note)
                     last = note
                 if sinan.in_flight():
-                    sinan.collect(self.cfg.poll_s)      # 有会话跑完就立刻醒
+                    sinan.collect(self.cfg.poll_s)  # 有会话跑完就立刻醒
                 else:
                     self.stop_event.wait(self.cfg.poll_s)
         finally:
@@ -353,8 +482,14 @@ class Stack:
             deadline = time.monotonic() + 30
             while sinan.in_flight() and time.monotonic() < deadline:
                 for r in sinan.collect(self.cfg.poll_s):
-                    L.info("%s %s 会话结束：租约 %s，%s，release=%s", pid, r["did"]["kind"], r["lease"], r["status"],
-                           r["outcome"])
+                    L.info(
+                        "%s %s 会话结束：租约 %s，%s，release=%s",
+                        pid,
+                        r["did"]["kind"],
+                        r["lease"],
+                        r["status"],
+                        r["outcome"],
+                    )
             sinan.close()
 
     # ---------- 哮天犬 ----------
@@ -367,7 +502,7 @@ class Stack:
                 for k in ("expired", "soft", "killed", "closed", "swept", "alerts"):
                     if getattr(r, k):
                         L.info("%s: %s", k, getattr(r, k))
-            except Exception:
+            except (OSError, subprocess.SubprocessError):  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
             self.stop_event.wait(self.cfg.dog_interval_s)
 
@@ -400,7 +535,11 @@ class Stack:
         if self.upstream is not None:
             self.upstream.close()
         self.http.close()
+        if threading.excepthook == self._thread_died:
+            threading.excepthook = self._prev_hook
         L.info("已停：链头 seq=%d", self.graph.head())
+        if self.crashed:
+            L.error("有组件线程因缺陷退出：%s", self.crashed)
 
 
 def _who(actor: dict) -> str:
@@ -411,7 +550,7 @@ def _gist(ev: dict) -> str:
     b = ev.get("body") or {}
     k = ev["kind"]
     if k == "lease":
-        return f"（{b.get('kind')}{' → ' + b['target'] if b.get('target') else ''}，预留 {b.get('reserve', {}).get('usd_milli')} 毫美元）"
+        return f"（{b.get('kind')}{' → ' + b['target'] if b.get('target') else ''}，预留 {b.get('reserve', {}).get('usd_milli')} 毫美元）"  # noqa: E501
     if k == "release":
         return f"（{b.get('lease')}：{b.get('outcome')}）"
     if k == "judge_verdict":
@@ -441,4 +580,3 @@ def _note(r: dict) -> str:
 def default_static() -> Path | None:
     d = ROOT / "web" / "dist"
     return d if (d / "index.html").is_file() else None
-

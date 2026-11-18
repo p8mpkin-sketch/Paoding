@@ -3,6 +3,7 @@
 能力按风险注入：只取 risk 不高于上限的规则；r2 规则另须该 Intent 已获批准。
 内核不理解 resource，由资源种类插件解释（RESOURCE_KINDS）。M0 只有网络地址一种，外加 workspace（M3）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from paoding_graph.contract import RESOURCE_EXTERNAL
 
 class ScopeError(ValueError):
     pass
+
 
 RISK_RANK = {"r0": 0, "r1": 1, "r2": 2}
 
@@ -25,7 +27,7 @@ class ResourceKind:
         raise NotImplementedError
 
 
-CONNECT_ACTIONS = frozenset({"connect", "*"})      # 放行出站连接的动作；其余动作 M0 没有执行手段，一律不开通路
+CONNECT_ACTIONS = frozenset({"connect", "*"})  # 放行出站连接的动作；其余动作 M0 没有执行手段，一律不开通路
 
 
 def split_address(pattern: str) -> tuple[str, int]:
@@ -45,8 +47,10 @@ class NetAddress(ResourceKind):
     def compile(self, rule: dict) -> dict:
         split_address(rule["pattern"])
         actions = tuple(sorted({str(a) for a in rule.get("actions") or ()}))
-        return {"egress": [rule["pattern"]] if CONNECT_ACTIONS & set(actions) else [],
-                "rules": [(rule["pattern"], actions)]}
+        return {
+            "egress": [rule["pattern"]] if CONNECT_ACTIONS & set(actions) else [],
+            "rules": [(rule["pattern"], actions)],
+        }
 
 
 class Workspace(ResourceKind):
@@ -77,15 +81,22 @@ class ExecSpec:
     image: str
     baseline_ref: str
     workspace: str
-    egress_allow: tuple = ()               # 放行出站连接的 host:port
+    egress_allow: tuple = ()  # 放行出站连接的 host:port
     credentials: tuple = ()
     limits: Limits = field(default_factory=Limits)
-    egress_rules: tuple = ()               # ((host:port, (动作…)), …)：闸门据此逐端口执行；同一地址的动作取并集
+    egress_rules: tuple = ()  # ((host:port, (动作…)), …)：闸门据此逐端口执行；同一地址的动作取并集
 
 
-def compile_spec(spec_id: str, scope: list[dict], env: dict, ceiling: str, approved_r2: bool,
-                 workspace: str, limits: Limits = Limits(),
-                 kinds: dict[str, ResourceKind] = RESOURCE_KINDS) -> ExecSpec:
+def compile_spec(
+    spec_id: str,
+    scope: list[dict],
+    env: dict,
+    ceiling: str,
+    approved_r2: bool,
+    workspace: str,
+    limits: Limits = Limits(),
+    kinds: dict[str, ResourceKind] = RESOURCE_KINDS,
+) -> ExecSpec:
     """ceiling：所服务 Intent 的 risk（Bootstrap 取 r0；判官容器取被判对象的风险但不超过 r1）。"""
     if ceiling not in RISK_RANK:
         raise ScopeError(f"上限非法：{ceiling}")
@@ -105,6 +116,13 @@ def compile_spec(spec_id: str, scope: list[dict], env: dict, ceiling: str, appro
         creds += out.get("credentials", [])
         for pattern, actions in out.get("rules", []):
             rules.setdefault(pattern, set()).update(actions)
-    return ExecSpec(id=spec_id, image=env["base"], baseline_ref=env["baseline_ref"], workspace=workspace,
-                    egress_allow=tuple(sorted(set(egress))), credentials=tuple(sorted(set(creds))),
-                    limits=limits, egress_rules=tuple((p, tuple(sorted(a))) for p, a in sorted(rules.items())))
+    return ExecSpec(
+        id=spec_id,
+        image=env["base"],
+        baseline_ref=env["baseline_ref"],
+        workspace=workspace,
+        egress_allow=tuple(sorted(set(egress))),
+        credentials=tuple(sorted(set(creds))),
+        limits=limits,
+        egress_rules=tuple((p, tuple(sorted(a))) for p, a in sorted(rules.items())),
+    )
