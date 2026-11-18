@@ -2,7 +2,8 @@
 
 验收：3.4.5 的 1（exec 的输出由执行层在容器外采集登记，submit 的论断进图）、7（会话没有命令工具）；
 3.5.5 的 3（预算穿透：执行容器里没有密钥、连不到模型端点；任务结束后容器已销毁、任务令牌作废）；
-3.6.4 的 2（r0 Intent 的容器里没有 r1 规则放行的通路）、4（执行容器一侧）；8 KB 回显截断与 show 按区间读全文。
+3.6.4 的 2（r0 Intent 的容器里没有 r1 规则放行的通路；声明了 touches 时只有其中规则的通路）、
+4（执行容器一侧）；8 KB 回显截断与 show 按区间读全文。
 """
 
 import json
@@ -46,7 +47,7 @@ def results(rec):
     ]
 
 
-def explore(drig, pid, risk="r0", approve=False):
+def explore(drig, pid, risk="r0", approve=False, **extra):
     lid = lease_bootstrap(drig.graph, pid)
     assert drig.graph.submit(
         "tok-sinan", pid, "rel-b", [{"op": "release", "body": {"lease": lid, "outcome": "nothing"}}]
@@ -55,7 +56,7 @@ def explore(drig, pid, risk="r0", approve=False):
         "tok-human",
         pid,
         "int-1",
-        [{"op": "add_intent", "body": {"title": "取值", "premises": [], "risk": risk, "budget": R}}],
+        [{"op": "add_intent", "body": {"title": "取值", "premises": [], "risk": risk, "budget": R, **extra}}],
     )["results"][0]["id"]
     if approve:
         assert drig.graph.submit(
@@ -175,6 +176,24 @@ def test_r0_intent_sandbox_has_no_r1_route(drig):
     _, lid = explore(drig, "p3", "r1")
     high = results(drig.run(lid, "p3"))
     assert high[0]["exit_code"] == 0 and high[1]["exit_code"] == 0
+
+
+def test_touches_narrow_the_sandbox_to_the_declared_rules(drig):
+    """v1.5 增量 11：r1 Intent 只声明读 r0 规则时，容器里没有 r1 规则的通路；执行层只按 add_intent
+    校验过的那份 touches 编译，不另查。"""
+    a, b = drig.target({"value": "a"}), drig.target({"value": "b"})
+    open_net_problem(drig.graph, "p2", [(a, "r0"), (b, "r1")])
+    _, lid = explore(drig, "p2", "r1", touches=[{"rule": 0, "mode": "read"}])
+    drig.script_for(
+        "explore",
+        [
+            {"tool": EXEC, "input": {"cmd": PROBE.format(h=a, p=8080)}},
+            {"tool": EXEC, "input": {"cmd": PROBE.format(h=b, p=8080)}},
+            sub(final={"outcome": "nothing"}),
+        ],
+    )
+    r = results(drig.run(lid, "p2"))
+    assert r[0]["exit_code"] == 0 and r[1]["exit_code"] != 0
 
 
 def test_reason_session_launches_no_sandbox(drig):

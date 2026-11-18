@@ -23,6 +23,10 @@ def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: i
         return Reject("schema_error", "ttl_s 必须为正")
     if wk.in_flight(state, pid, kind, target) is not None:
         return Reject("conflict_leased", "目标上已有在途租约")
+    if kind == "explore" and target in state["intents"]:
+        hit = wk.resource_conflict(state, pid, target)
+        if hit is not None:
+            return Reject("conflict_leased", f"规则 {hit[1]} 正被在途租约 {hit[0]['id']} 写占用，排队等它结束")
     item = {"kind": kind, **({"target": target} if target is not None else {})}
     offered = [{k: v for k, v in w.items() if k in ("kind", "target")} for w in wk.work(state, pid)]
     if item not in offered:
