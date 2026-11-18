@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../src/App";
-import { navOf } from "../src/shell/AppShell";
+import { hasNewButton, navOf } from "../src/shell/AppShell";
 import { rig } from "./helpers";
 
 // jsdom 没有 ResizeObserver 与 scrollIntoView，命令面板要用
@@ -19,6 +19,8 @@ describe("导航归属", () => {
     expect(navOf({ page: "import" }).key).toBe("tasks");
     expect(navOf({ page: "readings" }).key).toBe("readings");
     expect(navOf({ page: "problem", pid: "p1", asOf: null, node: null })).toMatchObject({ key: null, crumbs: ["任务", "p1"] });
+    expect(hasNewButton({ page: "problem", pid: "p1", asOf: null, node: null })).toBe(false);
+    expect(hasNewButton({ page: "problems" })).toBe(true);
   });
 });
 
@@ -41,7 +43,7 @@ describe("外壳", () => {
     await waitFor(() => expect(container.querySelector(".shell-status")!.textContent).toContain("只读"));
   });
 
-  it("Ctrl+K 打开命令面板，选一页即跳转；C 去新建任务", async () => {
+  it("Ctrl+K 打开命令面板，选一页即跳转；C 只在有“新建任务”按钮的页面去新建", async () => {
     const r = rig();
     render(<App cfg={r.cfg} />);
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
@@ -49,6 +51,11 @@ describe("外壳", () => {
     fireEvent.change(input, { target: { value: "读数" } });
     fireEvent.click(await screen.findByText("读数", { selector: "[cmdk-item] span" }));
     await waitFor(() => expect(window.location.pathname).toBe("/readings"));
+    fireEvent.keyDown(document.body, { key: "c" });                     // 读数页顶栏没有“新建任务”，C 不生效
+    expect(window.location.pathname).toBe("/readings");
+    window.history.pushState(null, "", "/problems");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(document.querySelector('[data-nav="tasks"].on')).not.toBeNull());
     fireEvent.keyDown(document.body, { key: "c" });
     await waitFor(() => expect(window.location.pathname).toBe("/new"));
   });

@@ -10,6 +10,7 @@ type Props = { open: boolean; onOpenChange: (v: boolean) => void; problems: Prob
 
 const PAGES: { word: string; to: Route; key?: string }[] = [
   { word: "今日", to: { page: "home" } },
+  { word: "待办", to: { page: "inbox" } },
   { word: "任务库", to: { page: "problems" } },
   { word: "新建任务", to: { page: "new" }, key: "C" },
   { word: "导入任务集", to: { page: "import" } },

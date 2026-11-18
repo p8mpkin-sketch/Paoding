@@ -32,8 +32,24 @@ function cspPlugin(): Plugin {
   };
 }
 
+// 自托管字体只留 woff2：@fontsource 的样式表同时列了 woff 兜底，现在的浏览器都不会用它，留着只占部署体积。
+function woff2Only(): Plugin {
+  return {
+    name: "paoding-woff2-only",
+    apply: "build",
+    generateBundle(_, bundle) {
+      for (const [name, out] of Object.entries(bundle)) {
+        if (name.endsWith(".woff")) delete bundle[name];
+        else if (out.type === "asset" && name.endsWith(".css") && typeof out.source === "string") {
+          out.source = out.source.replace(/,\s*url\([^)]*\.woff\)\s*format\(["']woff["']\)/g, "");
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
-  plugins: [react(), tailwindcss(), cspPlugin(), ...(api ? [] : [mockPlugin()])],
+  plugins: [woff2Only(), react(), tailwindcss(), cspPlugin(), ...(api ? [] : [mockPlugin()])],
   // 只有"开发服务器 + 内置假后端"才预置令牌；构建产物与连真图服务时都要人自己填
   define: { "import.meta.env.VITE_DEV_TOKEN": JSON.stringify(command === "serve" && !api && !process.env.VITEST ? "mock-human-token" : "") },
   server: {

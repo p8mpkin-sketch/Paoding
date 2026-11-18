@@ -1,11 +1,11 @@
 // 待办（守门官的载体；HMI 设计 §4 左栏）：/work 的 human 项。类别取自服务端给的 why，前端不推断。
 import type { TodoItem } from "../model/viewmodel";
 
-const WHY: Record<string, string> = {
+export const WHY: Record<string, string> = {
   needs_human: "审批", extension: "续期门", dispute: "争议待裁决", closeout: "验收与四顾", stalled: "停滞：等待 Hint 或人工关闭",
 };
 /** F1 实现了卡片的待办类别；其余只列出，处理走 pd。 */
-const HAS_CARD = new Set(["needs_human", "extension"]);
+export const HAS_CARD = new Set(["needs_human", "extension"]);
 
 export const todoKey = (t: TodoItem) => `${t.why}:${t.target}`;
 

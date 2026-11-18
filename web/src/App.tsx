@@ -8,6 +8,7 @@ import { useNow } from "./app/clock";
 import { Cockpit } from "./pages/Cockpit";
 import { Dashboard } from "./pages/Dashboard";
 import { Import } from "./pages/Import";
+import { Inbox } from "./pages/Inbox";
 import { Problems, useProblems } from "./pages/Problems";
 import { Readings } from "./pages/Readings";
 import { Wizard } from "./pages/Wizard";
@@ -52,6 +53,7 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
       {route.page === "new" && <Wizard key={route.from ?? ""} from={route.from} />}
       {route.page === "import" && <Import />}
       {route.page === "readings" && <Readings />}
+      {route.page === "inbox" && <Inbox />}
       {route.page === "problem" && <Cockpit key={route.pid} pid={route.pid} asOf={route.asOf} node={route.node} />}
     </AppShell>
   );
