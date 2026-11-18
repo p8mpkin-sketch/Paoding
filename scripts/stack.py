@@ -156,7 +156,8 @@ class Stack:
         self.vault = Vault(home / "vault")
 
         # 执行层
-        self.executor = DockerExecutor(self.graph, self.blobs, self.tok["executor"]) if cfg.executor == "docker" else None
+        self.executor = (DockerExecutor(self.graph, self.blobs, self.tok["executor"], spool_dir=str(home / "spool"))
+                         if cfg.executor == "docker" else None)
 
         # Adapter：假上游 → 端点代理 → 工具端点 → 会话运行器（假 CLI）
         self.upstream = FakeUpstream(cfg.usage)

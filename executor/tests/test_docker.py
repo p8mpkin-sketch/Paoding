@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from paoding_executor.compile import compile_spec
+from paoding_executor.compile import Limits, compile_spec
 from paoding_executor.runtime import ECHO_LIMIT, DockerExecutor
 
 IMAGE = "python:3.12-slim"
@@ -43,6 +43,7 @@ class MemBlobs:
         self.d = {}
 
     def put(self, data):
+        data = data if isinstance(data, bytes) else data.read()      # 执行层给的是只读流
         h = hashlib.sha256(data).hexdigest()
         self.d[h] = data
         return h
@@ -98,7 +99,51 @@ def test_exec_capture_and_register(ex, tmp_path, targets):
 def test_timeout(ex, tmp_path, targets):
     sid = ex.launch(compile_spec("t2", _scope(targets), ENV, "r0", False, str(tmp_path)), "l_1")
     r = ex.exec(sid, "echo start; sleep 30", "p1", "k1", timeout_s=2)
-    assert r.exit_code is None and "start" in r.output
+    assert r.exit_code is None and "start" in r.output and r.ended_by == "timeout"
+    assert ex.exec(sid, "exit 137", "p1", "k2").ended_by == "killed"      # 没到点的 137 不算超时
+
+
+def test_oom_is_told_apart_from_timeout(ex, tmp_path):
+    """P1-2：触到内存上限被杀与超时是两种结束方式；依据是守护进程的 oom 事件。"""
+    spec = compile_spec("t2m", [], ENV, "r0", False, str(tmp_path), limits=Limits(mem_mb=64))
+    sid = ex.launch(spec, "l_1")
+    r = ex.exec(sid, "echo start; exec python -c 'x = bytearray(400 * 1024 * 1024); print(len(x))'", "p1", "k1")
+    assert (r.exit_code, r.ended_by) == (137, "oom") and "start" in r.output
+    assert "内存上限 64 MB" in r.output
+    ok = ex.exec(sid, "echo still-here", "p1", "k2")                      # 容器还在，后续命令照常
+    assert (ok.exit_code, ok.ended_by) == (0, "exit")
+
+
+def test_capture_keeps_head_and_tail_while_streaming(tmp_path):
+    """P1-2：上限在读的过程中生效：超过上限只留头尾，Blob 不超过上限。"""
+    os.chmod(tmp_path, 0o777)
+    with DockerExecutor(FakeGraph(), MemBlobs(), "tok-exec", max_capture=1 << 20) as e:
+        sid = e.launch(compile_spec("t2c", [], ENV, "r0", False, str(tmp_path)), "l_1")
+        r = e.exec(sid, "python -c \"import sys; sys.stdout.write('H'*1000 + 'x'*3000000 + 'T'*1000)\"", "p1", "k1")
+        data = e.blobs.get(r.blob)
+        assert len(data) == 1 << 20 and data.startswith(b"H" * 1000 + b"x") and data.endswith(b"x" + b"T" * 1000)
+        assert r.truncated and r.provenance["truncated"] and r.exit_code == 0
+        assert e.graph.calls[0][3][0]["body"]["size"] == 1 << 20
+
+
+def test_huge_output_does_not_land_in_memory(tmp_path):
+    """P1-2 验收：300 MB 的输出，本进程的内存峰值几乎不动；落盘的 Blob 正好是 256 MB 上限。"""
+    import resource
+
+    from paoding_executor.runtime import MAX_CAPTURE
+    from paoding_graph.contract import BlobStore
+    os.chmod(tmp_path, 0o777)
+    blobs = BlobStore(tmp_path / "blobs")
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    with DockerExecutor(FakeGraph(), blobs, "tok-exec", spool_dir=str(spool)) as e:
+        sid = e.launch(compile_spec("t2h", [], ENV, "r0", False, str(tmp_path)), "l_1")
+        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        r = e.exec(sid, "head -c 314572800 /dev/zero", "p1", "k1", timeout_s=120)
+        grown_mb = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) / 1024
+    assert r.exit_code == 0 and r.truncated and r.provenance["truncated"]
+    assert blobs.size(r.blob) == MAX_CAPTURE and list(spool.iterdir()) == []
+    assert grown_mb < 32, f"采集让进程内存涨了 {grown_mb:.0f} MB"
 
 
 def test_scope_enforced_by_risk(ex, tmp_path, targets):
