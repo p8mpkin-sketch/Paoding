@@ -40,3 +40,26 @@ for (const theme of THEMES) {
     expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
   });
 }
+
+// 工作区的几个状态：审批卡打开、图视图、给出指导打开（第三期）
+for (const theme of THEMES) {
+  test(`axe：工作区卡片、图与指导（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => { localStorage.setItem("paoding.theme", t); localStorage.setItem("paoding.graph_view", "always"); }, theme);
+    await page.goto("/p/demo-1?node=goal");
+    await expect(page.locator("[data-conn-label]")).toHaveText("实时");
+    const scan = async (what: string) => {
+      await page.waitForTimeout(200);
+      const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+    };
+    await page.locator("[data-todo-item] button").first().click();
+    await expect(page.locator(".main > .sheet")).toBeVisible();
+    await scan("卡片");
+    await page.locator('[data-action="tab-graph"]').click();
+    await expect(page.locator(".graph-wrap")).toBeVisible();
+    await scan("图");
+    await page.locator('[data-action="open-inject"]').click();
+    await expect(page.locator('[data-card="hint-inject"]')).toBeVisible();
+    await scan("指导");
+  });
+}

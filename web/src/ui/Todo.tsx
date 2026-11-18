@@ -12,8 +12,7 @@ export const todoKey = (t: TodoItem) => `${t.why}:${t.target}`;
 export function Todo({ items, open, onOpen }: { items: TodoItem[]; open: string | null; onOpen: (key: string | null) => void }) {
   return (
     <div className="todo" data-todo>
-      <h3>待办 <span className="muted">{items.length}</span></h3>
-      {items.length === 0 ? <p className="muted">没有等人处理的事项。</p> : (
+      {items.length === 0 ? <p className="t2">没有等你处理的事。</p> : (
         <ul>
           {items.map((t) => {
             const k = todoKey(t);
@@ -21,9 +20,12 @@ export function Todo({ items, open, onOpen }: { items: TodoItem[]; open: string 
             return (
               <li key={k} data-todo-item={k}>
                 {HAS_CARD.has(t.why) ? (
-                  <button type="button" className="chip" aria-pressed={open === k} onClick={() => onOpen(open === k ? null : k)}>{word} · {t.target}</button>
+                  <button type="button" className="todo-card" aria-pressed={open === k} onClick={() => onOpen(open === k ? null : k)}>
+                    <span className="todo-word">{word} <span className="k-mono">{t.target}</span></span>
+                    <span className="t2">{open === k ? "卡片已在主区打开" : "点开在主区处理"}</span>
+                  </button>
                 ) : (
-                  <span>{word} · {t.target} <span className="muted">（本阶段网页不处理，请用 pd）</span></span>
+                  <div className="todo-card off"><span className="todo-word">{word} <span className="k-mono">{t.target}</span></span><span className="t2">网页暂不处理这一类，请用 pd</span></div>
                 )}
               </li>
             );
