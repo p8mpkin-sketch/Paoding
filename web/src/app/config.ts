@@ -78,7 +78,30 @@ export const prefs = {
       /* 存不了就只在本次会话有效 */
     }
   },
+  /** 工作区布局（工作台设计 §3）：中心视图、右侧 Tab、左右栏收起。只存本机，不进 URL 以外的任何地方。 */
+  workspace: (): WorkspacePrefs => {
+    try {
+      const v = JSON.parse(read("paoding.workspace") ?? "{}") as Partial<WorkspacePrefs>;
+      return {
+        center: v.center === "graph" || v.center === "timeline" ? v.center : "list",
+        tab: v.tab === "log" || v.tab === "cost" ? v.tab : "detail",
+        leftOpen: v.leftOpen !== false,
+        rightOpen: v.rightOpen !== false,
+        groupByLevel: v.groupByLevel === true,
+      };
+    } catch {
+      return { center: "list", tab: "detail", leftOpen: true, rightOpen: true, groupByLevel: false };
+    }
+  },
+  setWorkspace(v: WorkspacePrefs) {
+    try {
+      globalThis.localStorage?.setItem("paoding.workspace", JSON.stringify(v));
+    } catch {
+      /* 存不了就只在本页 */
+    }
+  },
   /** H5 的界面使用读数是否记录；可整体关闭。 */
   usage: (): boolean => read("paoding.usage") !== "off",
 };
+export type WorkspacePrefs = { center: "list" | "graph" | "timeline"; tab: "detail" | "log" | "cost"; leftOpen: boolean; rightOpen: boolean; groupByLevel: boolean };
 export const GRAPH_MIN_NODES = 50;

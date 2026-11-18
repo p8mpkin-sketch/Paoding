@@ -44,6 +44,8 @@ export type BudgetVM = {
   markLines: number[];
   review: boolean;
 };
+/** 在途会话：status.leases 里 active 的那些。since_ms 用事件时钟（签发那条事件的 ts 到本序号的 now_ts），不读本机时钟。 */
+export type SessionRow = { id: string; kind: string; target: string | null; holder: string; issued_seq: number; reserve_usd_milli: number; since_ms: number | null };
 export type ViewModel = {
   pid: string;
   seq: number;
@@ -61,6 +63,7 @@ export type ViewModel = {
   hints: HintRow[];
   frontier: FrontierGroup[];
   todo: TodoItem[];
+  sessions: SessionRow[];
   budget: BudgetVM;
   ticks: Tick[];
   layout: Layout;
@@ -132,6 +135,16 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     .filter((w): w is TodoItem => w.kind === "human")
     .sort((a, b) => cmp(a.why, b.why) || cmp(a.target, b.target));
 
+  const tsOf = new Map(ticks.map((t) => [t.seq, t.ts]));
+  const now = status.problem.now_ts;
+  const sessions: SessionRow[] = status.leases
+    .filter((l) => l.active)
+    .sort((a, b) => a.issued_seq - b.issued_seq || cmp(a.id, b.id))
+    .map((l) => {
+      const at = tsOf.get(l.issued_seq);
+      return { id: l.id, kind: l.kind, target: l.target ?? null, holder: l.holder, issued_seq: l.issued_seq, reserve_usd_milli: l.reserve.usd_milli, since_ms: at === undefined ? null : Math.max(0, now - at) };
+    });
+
   const cap = budget.cap.usd_milli ?? 0;
   const budgetVM: BudgetVM = {
     spent: budget.spent.usd_milli, reserved: budget.reserved.usd_milli, cap,
@@ -152,13 +165,37 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     profile: status.problem.profile, derivedProfile: status.problem.derived_profile, profileOverrides: status.problem.profile_overrides,
     scope: status.problem.scope,
     goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept },
-    rows, hints, frontier, todo, budget: budgetVM,
+    rows, hints, frontier, todo, sessions, budget: budgetVM,
     ticks: ticksOf(ticks, seq),
     layout: layout({
       nodes: rows.map((r) => ({ id: r.id, kind: r.kind, created_seq: r.created_seq, premises: r.premises })),
       hints: hints.map((h) => ({ id: h.id, created_seq: h.created_seq, about: h.about ?? undefined })),
     }),
   };
+}
+
+/**
+ * 图的聚焦与高亮（工作台设计 §5）：只沿服务端给的 premises 边取闭包，只改样式，不改布局坐标（HT-14）。
+ * chain：start 及其全部上游（支撑它的那条链）；focus：再加上全部下游（以它为前提的节点）。
+ */
+export function emphasisOf(rows: readonly NodeRow[], start: string, mode: "chain" | "focus"): Set<string> {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const out = new Set<string>([start, ...premiseChain(byId, start).map((x) => x.row.id)]);
+  if (mode === "focus") {
+    const users = new Map<string, string[]>();
+    for (const r of rows) for (const p of r.premises) users.set(p, [...(users.get(p) ?? []), r.id]);
+    const stack = [start];
+    while (stack.length) {
+      for (const u of users.get(stack.pop()!) ?? []) if (!out.has(u)) { out.add(u); stack.push(u); }
+    }
+  }
+  return out;
+}
+
+/** 按等级分组（列表视图的另一种排法）：顺序固定 X、E3、E3d、E2、E1、E0、无等级；组内按创建序号。 */
+export const LEVEL_ORDER = ["X", "E3", "E3d", "E2", "E1", "E0", null] as const;
+export function byLevel(rows: readonly NodeRow[]): { level: Level | null; rows: NodeRow[] }[] {
+  return LEVEL_ORDER.map((level) => ({ level, rows: rows.filter((r) => r.level === level) })).filter((g) => g.rows.length > 0);
 }
 
 /**

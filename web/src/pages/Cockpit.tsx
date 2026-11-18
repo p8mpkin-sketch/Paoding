@@ -1,6 +1,7 @@
-// 题内驾驶舱（HMI 设计 §4、§10.2）。每个面板都是 view(as_of) 的排版；写操作只在链头且实时的时候可用。
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { GRAPH_MIN_NODES, prefs } from "../app/config";
+// 题内工作区（HMI 设计 §4、§10.2；工作台设计 §1 模块三、线框 f4）。每个面板都是 view(as_of) 的排版；写操作只在链头且实时的时候可用。
+// 左：在途会话与待办；中：列表 / 图 / 时间线；右：详情 / 日志 / 成本；底：时间轴与快捷操作。布局偏好只存本机。
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { GRAPH_MIN_NODES, prefs, type WorkspacePrefs } from "../app/config";
 import { useServices } from "../app/context";
 import { hrefOf, navigate } from "../app/router";
 import { canWrite, ProblemSession } from "../app/session";
@@ -10,13 +11,15 @@ import { ApprovalCard } from "../ui/ApprovalCard";
 import { CostMeter } from "../ui/CostMeter";
 import { TerminalBadge } from "../ui/criterion";
 import { ExtensionDialog } from "../ui/ExtensionDialog";
-import { Frontier } from "../ui/Frontier";
+import { Frontier, LevelGroups } from "../ui/Frontier";
 import { GraphView } from "../ui/GraphView";
 import { HintInject, HintTraceCard } from "../ui/Hints";
 import { Inspector } from "../ui/Inspector";
 import { Plain, Text } from "../ui/registers";
 import { Timeline } from "../ui/Timeline";
 import { Todo, todoKey } from "../ui/Todo";
+import { CostPanel, EventLogPanel, EventTimeline, QuickActions, Sessions } from "../ui/Workspace";
+import { emphasisOf } from "../model/viewmodel";
 
 type Sheet = { kind: "todo"; key: string } | { kind: "hint"; id: string } | { kind: "inject" } | null;
 
@@ -39,16 +42,19 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
     if (session.getState().asOf !== asOf) void session.setAsOf(asOf);
   }, [session, asOf]);
   const s = useSyncExternalStore(session.subscribe, session.getState);
-  const [tab, setTab] = useState<"frontier" | "graph">("frontier");
+  const [ws, setWsState] = useState<WorkspacePrefs>(prefs.workspace);
+  const setWs = (patch: Partial<WorkspacePrefs>) => setWsState((cur) => { const n = { ...cur, ...patch }; prefs.setWorkspace(n); return n; });
+  const [emph, setEmph] = useState<"chain" | "focus" | null>(null);
   const [graphPref, setGraphPref] = useState(prefs.graphView());
   const [sheet, setSheet] = useState<Sheet>(null);
   const [panel, setPanel] = useState<"left" | "main" | "right">("main");
 
   const vm = s.vm;
+  const emphasis = useMemo(() => (vm && emph && node && vm.rows.some((r) => r.id === node) ? emphasisOf(vm.rows, node, emph) : null), [vm, emph, node]);
   const writable = canWrite(s) && cfg.token !== null;
   const go = (patch: { asOf?: number | null; node?: string | null }) =>
     navigate({ page: "problem", pid, asOf: patch.asOf !== undefined ? patch.asOf : asOf, node: patch.node !== undefined ? patch.node : node });
-  const select = (id: string) => { countUsage("inspect"); setPanel("right"); go({ node: id }); };
+  const select = (id: string) => { countUsage("inspect"); setPanel("right"); if (!ws.rightOpen || ws.tab !== "detail") setWs({ rightOpen: true, tab: "detail" }); go({ node: id }); };
 
   if (!vm) return <p className={s.error ? "error" : "muted"}>{s.error ? <>读不到题目 <Plain text={pid} />：<Plain text={s.error} /></> : "读取中…"}</p>;
 
@@ -59,7 +65,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const link = window.location.origin + hrefOf({ page: "problem", pid, asOf: vm.seq, node });
 
   return (
-    <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel}>
+    <div className="cockpit" data-left={ws.leftOpen ? "open" : "closed"} data-right={ws.rightOpen ? "open" : "closed"} data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel}>
       {/* 顶栏分主次（P2-2）：一眼要看的放主栏——题名、终态与判官、连接、花费；其余收进“详情”。 */}
       <header className="topbar">
         <div className="topbar-primary">
@@ -99,10 +105,14 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
       </nav>
 
       <div className="columns">
-        <aside className="left">
+        <aside className="left" data-collapsed={!ws.leftOpen}>
+          <button type="button" className="btn-small collapse" aria-expanded={ws.leftOpen} data-action="toggle-left" onClick={() => setWs({ leftOpen: !ws.leftOpen })}>{ws.leftOpen ? "收起 «" : "»"}</button>
+          {ws.leftOpen && <>
+          <Sessions rows={vm.sessions} onSelect={select} />
           <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); if (k) setPanel("main"); }} />
           <button type="button" data-action="open-inject" onClick={() => setSheet(sheet?.kind === "inject" ? null : { kind: "inject" })}>注入 Hint…</button>
           {!writable && <p className="muted" data-readonly-note>{asOf !== null ? "回放中：写操作全部禁用，人的决定只能针对链头。" : vm.closed ? "题目已关闭。" : cfg.token === null ? "还没有配置人的令牌（页面右上角）：现在只读。" : "未连到链头：写操作暂时禁用。"}</p>}
+          </>}
         </aside>
 
         <main className="main">
@@ -116,29 +126,56 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
               {sheet.kind === "todo" && !openTodo && <p className="muted">这一项已不在待办里。</p>}
             </div>
           )}
-          <nav className="tabs">
-            <button type="button" aria-pressed={tab === "frontier"} onClick={() => setTab("frontier")}>前沿</button>
-            <button type="button" aria-pressed={tab === "graph"} disabled={!graphEnabled} data-action="tab-graph" onClick={() => { countUsage("graph"); setTab("graph"); }}>
+          <nav className="tabs" aria-label="中心视图">
+            <button type="button" aria-pressed={ws.center === "list"} data-center="list" onClick={() => setWs({ center: "list" })}>前沿</button>
+            <button type="button" aria-pressed={ws.center === "graph" && graphEnabled} disabled={!graphEnabled} data-action="tab-graph" data-center="graph" onClick={() => { countUsage("graph"); setWs({ center: "graph" }); }}>
               图{graphEnabled ? "" : `（节点超过 ${GRAPH_MIN_NODES} 个时启用，现有 ${vm.rows.length}）`}
             </button>
+            <button type="button" aria-pressed={ws.center === "timeline"} data-center="timeline" onClick={() => { countUsage("event_timeline"); setWs({ center: "timeline" }); }}>时间线</button>
+            {ws.center === "list" && (
+              <label className="muted"><input type="checkbox" checked={ws.groupByLevel} data-action="group-by-level" onChange={(e) => setWs({ groupByLevel: e.target.checked })} /> 按等级分组</label>
+            )}
             <label className="muted">
-              <input type="checkbox" checked={graphPref === "always"} data-action="graph-always" onChange={(e) => { const v = e.target.checked ? "always" : "auto"; prefs.setGraphView(v); setGraphPref(v); if (v === "auto" && vm.rows.length <= GRAPH_MIN_NODES) setTab("frontier"); }} />
+              <input type="checkbox" checked={graphPref === "always"} data-action="graph-always" onChange={(e) => { const v = e.target.checked ? "always" : "auto"; prefs.setGraphView(v); setGraphPref(v); }} />
               {" "}不足 {GRAPH_MIN_NODES} 个节点也显示图（本机开关）
             </label>
           </nav>
-          {tab === "graph" && graphEnabled
-            ? <GraphView vm={vm} selected={node} onSelect={select} />
-            : <Frontier vm={vm} selected={node} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })} />}
+          {ws.center === "graph" && graphEnabled ? (
+            <GraphView
+              vm={vm} selected={node} onSelect={select} emphasis={emphasis}
+              toolbar={(
+                <span className="emph" role="group" aria-label="突出显示">
+                  <button type="button" className="btn-small" aria-pressed={emph === "chain"} disabled={!node} data-action="emph-chain" title="选中节点及其全部前提" onClick={() => { countUsage("focus"); setEmph(emph === "chain" ? null : "chain"); }}>高亮支撑链</button>
+                  <button type="button" className="btn-small" aria-pressed={emph === "focus"} disabled={!node} data-action="emph-focus" title="选中节点的上游与下游" onClick={() => { countUsage("focus"); setEmph(emph === "focus" ? null : "focus"); }}>聚焦子图</button>
+                  {!node && <span className="muted">先选一个节点</span>}
+                </span>
+              )}
+            />
+          ) : ws.center === "timeline" ? (
+            <EventTimeline ticks={session.log.ticks} seq={vm.seq} head={s.head} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} />
+          ) : ws.groupByLevel ? (
+            <LevelGroups vm={vm} selected={node} onSelect={select} />
+          ) : (
+            <Frontier vm={vm} selected={node} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })} />
+          )}
         </main>
 
-        <aside className="right">
-          <h3>检视</h3>
-          <Inspector vm={vm} nodeId={node} />
+        <aside className="right" data-collapsed={!ws.rightOpen}>
+          <nav className="tabs" aria-label="右侧面板">
+            <button type="button" className="btn-small collapse" aria-expanded={ws.rightOpen} data-action="toggle-right" onClick={() => setWs({ rightOpen: !ws.rightOpen })}>{ws.rightOpen ? "» 收起" : "«"}</button>
+            {ws.rightOpen && (["detail", "log", "cost"] as const).map((t) => (
+              <button key={t} type="button" aria-pressed={ws.tab === t} data-right-tab={t} onClick={() => setWs({ tab: t })}>{{ detail: "详情", log: "日志", cost: "成本" }[t]}</button>
+            ))}
+          </nav>
+          {ws.rightOpen && ws.tab === "detail" && <><h3>检视</h3><Inspector vm={vm} nodeId={node} /></>}
+          {ws.rightOpen && ws.tab === "log" && <EventLogPanel ticks={session.log.ticks} seq={vm.seq} />}
+          {ws.rightOpen && ws.tab === "cost" && <CostPanel vm={vm} />}
         </aside>
       </div>
 
       <footer className="bottom">
         <Timeline ticks={session.log.ticks} head={s.head} asOf={asOf} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} link={link} />
+        <QuickActions pid={pid} canWrite={writable} onInject={() => { setPanel("main"); setSheet({ kind: "inject" }); }} />
       </footer>
     </div>
   );
