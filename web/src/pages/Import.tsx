@@ -1,4 +1,4 @@
-// 导入题集（工作台设计 §1 模块二、线框 f3）：JSON 或 CSV 在本机解析成草稿，逐题走与向导相同的提交路径，
+// 导入任务集（视觉重做第二期；工作台设计 §1 模块二、线框 f3）：JSON 或 CSV 在本机解析成草稿，逐题走与向导相同的提交路径，
 // 逐题回显结果（seq 或拒绝码）。YAML 要解析库，本轮不做（异议 web-workbench 第 1 条）。
 import { useEffect, useState } from "react";
 import { newIdemKey } from "../api/client";
@@ -10,6 +10,8 @@ import { draftFromTemplate, problemsOf, STEPS, type Draft } from "../model/wizar
 import { Plain } from "../ui/registers";
 import { rejectText } from "../ui/useProposal";
 import { toast } from "sonner";
+import { FileUp } from "lucide-react";
+import { Mark, Mast, SectionHead, btnClass, type MarkTone } from "../kit";
 import { Link } from "./Problems";
 
 type Row = { draft: Draft; state: "ready" | "invalid" | "busy" | "done" | "failed"; note: string };
@@ -93,27 +95,36 @@ export function Import() {
   const ready = rows.filter((r) => r.state === "ready" || r.state === "failed").length;
   return (
     <div className="importer" data-page="import">
-      <h2>导入题集</h2>
-      <p className="muted">在本机解析，逐题先存材料、再开题，与向导走同一条路；每题的结果单独显示，失败的可重试。</p>
-      <div className="import-controls">
-        <label>文件（.json 或 .csv）<input type="file" accept=".json,.csv,application/json,text/csv" data-field="import-file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void load(f); }} /></label>
-        <label>缺省值取自模板
-          <select value={tpl} data-field="import-template" onChange={(e) => setTpl(e.target.value)}>
-            <option value="">不用模板</option>
-            {templates?.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-          </select>
-        </label>
-        <label>缺省目标陈述（题目没写时用）<input value={goal} data-field="import-goal" onChange={(e) => setGoal(e.target.value)} /></label>
-      </div>
-      <details className="sample"><summary>JSON 格式示例</summary><pre className="output">{SAMPLE}</pre>
-        <p className="muted">没写的字段（判官、scope、预算、env）取自所选模板。答案类的判定条件应进 vault，只填引用。</p></details>
-      {err && <p className="error" data-import-error><Plain text={err} /></p>}
+      <Mast vol={["卷三", "导入"]} cap="导入任务集" title="把一批任务一次开好" dek="文件在本机解析，逐个先存材料、再开题，与向导走同一条路；每个任务的结果单独显示，失败的可以重试。" />
+      <section className="today-sec">
+        <SectionHead title="选文件与缺省值" note="JSON 或 CSV" />
+        <div className="import-grid">
+          <label className="drop" data-has-file={rows.length > 0 || !!csv}>
+            <FileUp aria-hidden="true" />
+            <span className="drop-main">选择文件</span>
+            <span className="t2">.json 或 .csv，只在本机读取</span>
+            <input type="file" accept=".json,.csv,application/json,text/csv" data-field="import-file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void load(f); }} />
+          </label>
+          <div className="import-defaults">
+            <label>缺省值取自模板
+              <select value={tpl} data-field="import-template" onChange={(e) => setTpl(e.target.value)}>
+                <option value="">不用模板</option>
+                {templates?.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            </label>
+            <label>缺省目标陈述<span className="t2">任务里没写时用</span><input value={goal} data-field="import-goal" onChange={(e) => setGoal(e.target.value)} /></label>
+            <details className="sample"><summary>JSON 格式示例</summary><pre className="output">{SAMPLE}</pre>
+              <p className="t2">没写的字段（判定器、范围、预算、环境）取自所选模板。答案类的判定条件应进 vault，只填引用。</p></details>
+          </div>
+        </div>
+        {err && <p className="error" data-import-error><Plain text={err} /></p>}
+      </section>
 
       {csv && map && (
-        <section data-csv-mapping>
-          <h3>CSV 列映射</h3>
-          <table className="mini">
-            <thead><tr><th>Problem 字段</th><th>取自 CSV 列</th></tr></thead>
+        <section className="today-sec" data-csv-mapping>
+          <SectionHead title="CSV 列映射" note="其余字段取自模板；答案列不要映射" />
+          <table className="bank map">
+            <thead><tr><th>任务字段</th><th>取自 CSV 列</th></tr></thead>
             <tbody>
               {CSV_TARGETS.map((t) => (
                 <tr key={t.key}>
@@ -128,32 +139,45 @@ export function Import() {
               ))}
             </tbody>
           </table>
-          <p className="muted">其余字段（判官、scope、预算、env）取自所选模板。CSV 里的答案列不要映射，答案应进 vault。</p>
         </section>
       )}
 
       {rows.length > 0 && (
-        <section data-import-queue>
-          <h3>待导入（{rows.length}）</h3>
+        <section className="today-sec" data-import-queue>
+          <SectionHead title="待导入" note={`${rows.length} 个`} right={
+            <span className="row">
+              {cfg.token === null && <span className="t2">开题是写操作，先在左下角配置令牌</span>}
+              <button type="button" className={btnClass("zhu", "sm")} data-action="import-all" disabled={running || ready === 0 || cfg.token === null} onClick={runAll}>{running ? "导入中…" : `导入 ${ready} 个`}</button>
+            </span>
+          } />
           <div className="table-scroll">
-            <table className="mini wide">
-              <thead><tr><th>题目 id</th><th>题名</th><th>状态</th><th>说明</th></tr></thead>
+            <table className="bank">
+              <thead><tr><th></th><th>编号</th><th>任务</th><th>说明</th></tr></thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} data-import-row={r.draft.id || i} data-state={r.state}>
-                    <td>{r.state === "done" ? <Link to={{ page: "problem", pid: r.draft.id, asOf: null, node: null }}><Plain text={r.draft.id} /></Link> : <Plain text={r.draft.id || "—"} />}</td>
-                    <td><Plain text={r.draft.title || "—"} /></td>
-                    <td>{{ ready: "待提交", invalid: "✕ 缺项", busy: "…", done: "✓ 已开题", failed: "✕ 被拒" }[r.state]}</td>
-                    <td><Plain text={r.note} /></td>
-                  </tr>
-                ))}
+                {rows.map((r, i) => {
+                  const m = STATE_MARK[r.state];
+                  return (
+                    <tr key={i} data-import-row={r.draft.id || i} data-state={r.state}>
+                      <td><Mark ch={m.ch} tone={m.tone} label={m.word} /></td>
+                      <td className="k-mono">{r.state === "done" ? <Link to={{ page: "problem", pid: r.draft.id, asOf: null, node: null }}><Plain text={r.draft.id} /></Link> : <Plain text={r.draft.id || "—"} />}</td>
+                      <td className="title"><Plain text={r.draft.title || "—"} /></td>
+                      <td className="note"><span className="sr-only">{m.word}：</span><Plain text={r.note} /></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <button type="button" data-action="import-all" disabled={running || ready === 0 || cfg.token === null} onClick={runAll}>{running ? "导入中…" : `导入 ${ready} 题`}</button>
-          {cfg.token === null && <span className="muted"> 开题是写操作：先在页面右上角配置人的令牌。</span>}
         </section>
       )}
     </div>
   );
 }
+
+const STATE_MARK: Record<Row["state"], { ch: string; tone: MarkTone; word: string }> = {
+  ready: { ch: "待", tone: "wei", word: "待提交" },
+  invalid: { ch: "缺", tone: "dai", word: "缺项" },
+  busy: { ch: "行", tone: "xing", word: "提交中" },
+  done: { ch: "开", tone: "jie", word: "已开题" },
+  failed: { ch: "拒", tone: "dai", word: "被拒" },
+};

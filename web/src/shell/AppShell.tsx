@@ -13,22 +13,24 @@ import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
 
-export type NavKey = "home" | "tasks" | "readings";
+export type NavKey = "home" | "inbox" | "tasks" | "readings";
 type NavItem = { key: NavKey; no: string; word: string; to: Route };
 export const NAV: NavItem[] = [
   { key: "home", no: "01", word: "今日", to: { page: "home" } },
-  { key: "tasks", no: "02", word: "任务", to: { page: "problems" } },
-  { key: "readings", no: "03", word: "读数", to: { page: "readings" } },
+  { key: "inbox", no: "02", word: "待办", to: { page: "inbox" } },
+  { key: "tasks", no: "03", word: "任务", to: { page: "problems" } },
+  { key: "readings", no: "04", word: "读数", to: { page: "readings" } },
 ];
 
 /** 路由归哪个导航项、属于第几卷（竖排卷签与状态行用）。 */
 export function navOf(r: Route): { key: NavKey | null; vol: string; crumbs: string[] } {
   switch (r.page) {
     case "home": return { key: "home", vol: "卷一", crumbs: ["今日"] };
-    case "problems": return { key: "tasks", vol: "卷二", crumbs: ["任务"] };
-    case "new": return { key: "tasks", vol: "卷二", crumbs: ["任务", r.from ? "克隆" : "新建"] };
-    case "import": return { key: "tasks", vol: "卷二", crumbs: ["任务", "导入任务集"] };
-    case "readings": return { key: "readings", vol: "卷三", crumbs: ["读数"] };
+    case "inbox": return { key: "inbox", vol: "卷二", crumbs: ["待办"] };
+    case "problems": return { key: "tasks", vol: "卷三", crumbs: ["任务"] };
+    case "new": return { key: "tasks", vol: "卷三", crumbs: ["任务", r.from ? "克隆" : "新建"] };
+    case "import": return { key: "tasks", vol: "卷三", crumbs: ["任务", "导入任务集"] };
+    case "readings": return { key: "readings", vol: "卷四", crumbs: ["读数"] };
     case "problem": return { key: null, vol: "工作区", crumbs: ["任务", r.pid] };
   }
 }
@@ -72,6 +74,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
   const narrow = route.page === "problem";
   const openPid = route.page === "problem" ? route.pid : null;
   const running = problems ? runningOf(problems.items) : [];
+  const waiting = running.reduce((a, p) => a + p.human_todo, 0);
 
   // 全局快捷键：⌘K / Ctrl+K 命令面板；C 新建任务（在输入框里不触发）
   useEffect(() => {
@@ -105,6 +108,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
               <span className="no" aria-hidden="true">{narrow ? n.word.slice(0, 1) : n.no}</span>
               <span className={narrow ? "sr-only" : "word"}>{n.word}</span>
               {!narrow && n.key === "tasks" && problems && <span className="ct num">{problems.items.length}</span>}
+              {!narrow && n.key === "inbox" && waiting > 0 && <span className="ct hot num">{waiting}<span className="sr-only"> 项等你处理</span></span>}
             </Link>
           ))}
         </nav>
@@ -151,7 +155,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
           <i aria-hidden="true">/</i><span>{canWrite ? "令牌有效 · 可写" : "未配置令牌 · 只读"}</span>
           {problems && <>
             <i aria-hidden="true">/</i><span>在途 {running.length}</span>
-            <i aria-hidden="true">/</i><span>等你 {running.reduce((a, p) => a + p.human_todo, 0)}</span>
+            <i aria-hidden="true">/</i><span>等你 {waiting}</span>
             <i aria-hidden="true">/</i><span>累计花费 {usd(problems.totals.spent_usd_milli)}</span>
           </>}
           <span className="grow" />

@@ -143,17 +143,29 @@ test("总览：进行中卡片、等你处理、主题切换；手机宽度只�
   await expect(page.locator(".run-card").first()).toBeVisible();
 });
 
+test("待办：侧栏数量与页面一致，去处理进工作区并定位节点", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('[data-nav="inbox"]').click();
+  await expect(page).toHaveURL(/\/inbox$/);
+  const items = page.locator("[data-inbox-item]");
+  await expect(items.first()).toBeVisible();
+  await expect(page.locator('[data-nav="inbox"] .ct')).toHaveText(new RegExp(`^${await items.count()}\\D`));
+  await items.first().locator("a").click();
+  await expect(page).toHaveURL(/\/p\/.+node=/);
+  await expect(page.locator(".cockpit")).toBeVisible();
+});
+
 test("题库：筛选写进 URL，刷新后仍在", async ({ page }) => {
   await page.goto("/problems");
   await expect(page.locator("tr[data-problem]").first()).toBeVisible();
-  await page.locator('[data-field="terminal"]').selectOption("running");
+  await page.locator('[data-tab="running"]').click();
   await expect(page).toHaveURL(/terminal=running/);
   await page.reload();
-  await expect(page.locator("[data-field=terminal]")).toHaveValue("running");
+  await expect(page.locator('[data-tab="running"]')).toHaveAttribute("aria-selected", "true");
   for (const t of await page.locator("td[data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
 });
 
-test("向导：六页走完，文字材料与初始提示，开题后进工作区；草稿刷新不丢", async ({ page }) => {
+test("向导：四步走完，文字材料与初始提示，开题后进工作区；草稿刷新不丢", async ({ page }) => {
   await page.goto("/new");
   await page.locator('[data-field="id"]').fill("e2e-wiz");
   await page.locator('[data-field="title"]').fill("浏览器里开的题");
@@ -161,13 +173,13 @@ test("向导：六页走完，文字材料与初始提示，开题后进工作�
   await page.reload();
   await expect(page.locator("[data-restored]")).toBeVisible();
   await expect(page.locator('[data-field="title"]')).toHaveValue("浏览器里开的题");
-  await page.locator('[data-action="next"]').click();
   await page.locator('[data-material="0"] [data-kind="text"]').click();
   await page.locator('[data-text-slot="0"]').fill("题面：登录后页面上有一串答案");
+  await expect(page.locator(".sheet-title")).toHaveText("浏览器里开的题"); // 右侧任务单随填随变
   await page.locator('[data-action="next"]').click();
   await page.locator('[data-action="next"]').click();
   await page.locator('[data-rule="0"] input').nth(1).fill("target:8080");
-  await page.locator('[data-step-tab="5"]').click();
+  await page.locator('[data-step-tab="3"]').click();
   await page.locator('[data-field="hint"]').fill("先看登录页源码");
   await expect(page.locator("[data-profile-preview] [data-axis]")).toHaveCount(3);
   await page.locator('[data-action="open-problem"]').click();
@@ -181,6 +193,6 @@ test("题库：克隆一道题进向导，id 留空、判据与 scope 已预填"
   await expect(page).toHaveURL(/\/new\?from=/);
   await expect(page.locator("[data-cloned-from]")).toBeVisible();
   await expect(page.locator('[data-field="id"]')).toHaveValue("");
-  await page.locator('[data-step-tab="3"]').click();
+  await page.locator('[data-step-tab="2"]').click();
   await expect(page.locator('[data-rule="0"] input').nth(1)).not.toHaveValue("");
 });
