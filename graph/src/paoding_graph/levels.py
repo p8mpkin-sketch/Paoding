@@ -6,8 +6,6 @@
 """
 from __future__ import annotations
 
-from typing import Any
-
 from . import refmodel as rm
 from .state import State
 

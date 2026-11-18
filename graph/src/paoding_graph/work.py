@@ -5,7 +5,8 @@
 """
 from __future__ import annotations
 
-from typing import Any, Mapping, TypedDict, cast
+from collections.abc import Mapping
+from typing import Any, TypedDict, cast
 
 from . import levels as lv
 from . import refmodel as rm

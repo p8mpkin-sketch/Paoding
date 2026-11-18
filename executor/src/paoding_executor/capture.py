@@ -11,7 +11,7 @@ import select
 import subprocess
 import tempfile
 import time
-from typing import Iterator
+from collections.abc import Iterator
 
 CHUNK = 64 * 1024
 
@@ -76,14 +76,14 @@ class Capture:
     def read(self, start: int = 0, end: int | None = None) -> bytes:
         return b"".join(self.chunks(start, end))
 
-    def reader(self) -> "_Reader":
+    def reader(self) -> _Reader:
         """留存内容的只读流，交给 Blob 仓库逐块写入。"""
         return _Reader(self)
 
     def close(self) -> None:
         self._f.close()
 
-    def __enter__(self) -> "Capture":
+    def __enter__(self) -> Capture:
         return self
 
     def __exit__(self, *exc: object) -> None:

@@ -11,8 +11,8 @@ import pytest
 from conftest import ADAPTER, CFG, EXECUTOR, HUMAN, JUDGE, Kernel, explore, reason
 
 from paoding_graph import levels as lv
-from paoding_graph.replay import replay, state_hash
 from paoding_graph.reducer import apply, empty_state
+from paoding_graph.replay import replay, state_hash
 from paoding_graph.tokens import TokenRegistry, UnknownToken
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -134,7 +134,7 @@ def test_unknown_ref_cycle_impossible(k):
 def test_random_logs_terminate_and_replay(k):
     """随机操作序列：重算总在有限步内结束，重放状态哈希一致。"""
     rng = random.Random(11)
-    for trial in range(30):
+    for _ in range(30):
         kk = Kernel()
         kk.open()
         facts, observed = [], []

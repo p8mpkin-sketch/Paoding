@@ -11,8 +11,7 @@ import urllib.error
 import urllib.request
 
 import pytest
-from adapter_rig import (FETCH, PROBE, docker_ok, drig, graph, lease_bootstrap, open_net_problem,  # noqa: F401
-                         upstream)
+from adapter_rig import FETCH, PROBE, docker_ok, drig, graph, lease_bootstrap, open_net_problem, upstream  # noqa: F401
 
 from paoding_graph.contract import seen_card
 

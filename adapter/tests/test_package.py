@@ -4,11 +4,10 @@
 """
 import json
 import os
-
-import pytest
 from pathlib import Path
 
-from adapter_rig import CFG, graph, lease_bootstrap  # noqa: F401（fixture）
+import pytest
+from adapter_rig import CFG, graph, lease_bootstrap  # noqa: F401  fixture
 
 from paoding_adapter import backend as be
 from paoding_adapter.package import common_prefix_ratio, render

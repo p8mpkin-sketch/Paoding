@@ -7,10 +7,12 @@ import io
 import json
 import urllib.request
 
-from test_pd import PROBLEM  # noqa: F401
-from test_pd import home  # noqa: F401（fixture）
+from test_pd import (
+    PROBLEM,  # noqa: F401
+    home,  # noqa: F401  fixture
+)
 
-from paoding_graph.contract import (REGISTER, BlobStore, Config, GraphHttp, GraphService, TokenRegistry, views)
+from paoding_graph.contract import REGISTER, BlobStore, Config, GraphHttp, GraphService, TokenRegistry, views
 from paoding_pd import render
 from paoding_pd.cli import default_judges, main
 

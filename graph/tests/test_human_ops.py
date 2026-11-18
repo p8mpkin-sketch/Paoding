@@ -2,8 +2,8 @@
 from conftest import HUMAN, Kernel, reason
 
 from paoding_graph import work as wk
-from paoding_graph.replay import replay, state_hash
 from paoding_graph.reducer import apply, empty_state
+from paoding_graph.replay import replay, state_hash
 
 R = {"usd_milli": 100, "wall_s": 60}
 

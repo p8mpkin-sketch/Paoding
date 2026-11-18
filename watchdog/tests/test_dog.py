@@ -6,9 +6,9 @@
 import hashlib
 
 import pytest
+from paoding_watchdog.contract import DogConfig, Watchdog
 
 from paoding_graph.contract import Config, GraphService, TokenRegistry
-from paoding_watchdog.contract import DogConfig, Watchdog
 
 CFG = Config(judges={"replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
                      "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0}})

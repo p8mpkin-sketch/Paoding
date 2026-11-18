@@ -14,8 +14,9 @@ IO 前置条件不在这里：Blob 是否存在、哈希是否相符由服务层
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 from . import cards
 from . import levels as lv
@@ -25,8 +26,27 @@ from .envelope import sha256_hex
 from .jcs import JCSError, canonicalize
 from .parse import BadBody, Obj
 from .resources import external_resources
-from .state import (Actor, Amount, Artifact, Body, Check, Cost, Done, Event, Fact, Hint, Intent, JudgeEntry, Lease,
-                    Problem, Profile, Request, ScopeRule, State, Verdict)
+from .state import (
+    Actor,
+    Amount,
+    Artifact,
+    Body,
+    Check,
+    Cost,
+    Done,
+    Event,
+    Fact,
+    Hint,
+    Intent,
+    JudgeEntry,
+    Lease,
+    Problem,
+    Profile,
+    Request,
+    ScopeRule,
+    State,
+    Verdict,
+)
 
 RISKS = ("r0", "r1", "r2")
 RISK_RANK = {r: i for i, r in enumerate(RISKS)}

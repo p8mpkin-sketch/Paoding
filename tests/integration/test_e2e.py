@@ -20,12 +20,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "adapter" / "tests"))
 
 from adapter_rig import CFG, FETCH, IMAGE, DockerRig, Rig, docker_ok, graph, upstream  # noqa: E402,F401
+from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, load_registry  # noqa: E402
 
 from paoding_adapter.proxy import ledger_diff  # noqa: E402
 from paoding_executor.contract import ExecResult  # noqa: E402
-from paoding_graph.contract import (GraphHttp, GraphService, HttpConfig, intent_status,  # noqa: E402
-                                    node_levels)
-from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, load_registry  # noqa: E402
+from paoding_graph.contract import GraphHttp, GraphService, HttpConfig, intent_status, node_levels  # noqa: E402
 from paoding_pd import render  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 

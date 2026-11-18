@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from paoding_graph.contract import BlobPort, GraphPort, GraphReader
 
@@ -118,7 +119,7 @@ class JudgeRunner:
             cand = self._bytes(st, req.get("candidate"))
             spec_art = st["artifacts"].get(check.get("spec_ref") or "")
             spec_bytes = self.blobs.get(spec_art["hash"]) if spec_art else None       # 读取时校验哈希：被改过即拒
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  读不到输入一律是环境错误（无结论，不进裁决序列）
             return Outcome("inconclusive", "env_error", f"判官输入读取失败：{type(e).__name__}".encode(),
                            _builtin_prov(jid, now))
         ctx = Ctx(spec=spec, check=check, problem=p, target=target, target_risk=risk, candidate=cand,

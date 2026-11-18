@@ -6,7 +6,8 @@ hash = sha256(JCS(除 hash 外的全部字段))；prev_hash 指同题上一条�
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Iterable, Mapping, cast
+from collections.abc import Iterable, Mapping
+from typing import Any, cast
 
 from .jcs import canonicalize
 from .state import Event

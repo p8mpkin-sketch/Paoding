@@ -44,7 +44,7 @@ class Vault:
         try:
             content, salt = p.read_bytes(), p.with_name(p.name + ".salt").read_bytes()
         except OSError:
-            raise VaultError(f"保密库里没有 {ref.get('vault')!r}")
+            raise VaultError(f"保密库里没有 {ref.get('vault')!r}") from None
         if hashlib.sha256(salt + content).hexdigest() != ref.get("digest"):
             raise VaultError("保密库内容与登记的摘要不符")
         return content

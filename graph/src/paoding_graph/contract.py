@@ -16,21 +16,37 @@ ADMISSIBLE_CLASSES = frozenset({"exec", "judge", "input"})   # authored 永不�
 # ---------- 进程内端口（M0 单机；HTTP/Unix socket 绑定在其上，接口相同） ----------
 from typing import BinaryIO, Protocol  # noqa: E402
 
+from . import views  # noqa: E402,F401
 from .blobs import BlobStore, CorruptBlob  # noqa: E402,F401
+
+# HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
+from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
 
 # 组装根（pd、测试台）构造服务用。组件之间仍只经下面的端口协议交互。
 from .reducer import Config  # noqa: E402,F401
 from .service import GraphService  # noqa: E402,F401
-from .tokens import TokenRegistry, UnknownToken  # noqa: E402,F401
-
-# HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
-from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
-from .views import LEVEL_WORDS, REGISTER, REGISTERS  # noqa: E402,F401
-from . import views  # noqa: E402,F401
 
 # 状态与事件的类型（TypedDict；运行时仍是普通 dict）
-from .state import (Actor, Amount, Artifact, Body, Check, Cost, Event, Fact, Hint, Intent, Lease,  # noqa: E402,F401
-                    Problem, Request, State, Support, Verdict)
+from .state import (  # noqa: E402,F401
+    Actor,
+    Amount,
+    Artifact,
+    Body,
+    Check,
+    Cost,
+    Event,
+    Fact,
+    Hint,
+    Intent,
+    Lease,
+    Problem,
+    Request,
+    State,
+    Support,
+    Verdict,
+)
+from .tokens import TokenRegistry, UnknownToken  # noqa: E402,F401
+from .views import LEVEL_WORDS, REGISTER, REGISTERS  # noqa: E402,F401
 from .work import BudgetView  # noqa: E402,F401
 
 

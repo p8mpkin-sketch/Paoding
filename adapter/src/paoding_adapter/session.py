@@ -18,9 +18,9 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from paoding_executor.contract import ExecPort, compile_spec
 from paoding_graph.contract import BlobPort, GraphPort, GraphReader, TokenIssuer

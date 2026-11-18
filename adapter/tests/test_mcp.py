@@ -2,7 +2,7 @@
 import http.client
 import json
 
-from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: F401（fixture）
+from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: F401  fixture
 
 from paoding_adapter.tools import Session, ToolHost
 

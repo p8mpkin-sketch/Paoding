@@ -6,7 +6,7 @@ import http.client
 import json
 
 import pytest
-from adapter_rig import PRICES, graph, lease_bootstrap, open_problem, upstream  # noqa: F401（fixture）
+from adapter_rig import PRICES, graph, lease_bootstrap, open_problem, upstream  # noqa: F401  fixture
 
 from paoding_adapter.proxy import EndpointProxy, PriceTable, ProxyConfig, ledger_diff
 
@@ -196,6 +196,7 @@ def test_problem_cap_still_holds_after_restart(proxy, graph, upstream):
 def test_restore_counts_closed_problems_and_survives_log_replay(proxy, graph, upstream, tmp_path):
     """图服务也重启（状态由日志重放得到）、题已关：花掉的钱仍计入全局。"""
     from adapter_rig import CFG
+
     from paoding_graph.contract import GraphService
     lid = lease_bootstrap(graph)
     proxy.register_task("t", lid, "p1", 1000)

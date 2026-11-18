@@ -11,8 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "adapter" / "tests"))
 
-from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: E402,F401（fixture）
-
+from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: E402,F401  fixture
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
 
 

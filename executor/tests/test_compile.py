@@ -48,6 +48,7 @@ def test_resource_kinds_single_source():
 def test_owner_alive():
     import os
     import socket
+
     from paoding_executor.runtime import owner_alive, owner_id
     assert owner_alive(owner_id()) is True
     assert owner_alive(f"{socket.gethostname()}:{os.getpid()}:0") is False      # pid 复用

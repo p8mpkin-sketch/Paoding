@@ -56,11 +56,19 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web"]
+# problems/ 是题目环境（数据），不是组件代码，不归这里管
+extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web", "problems"]
 
 [tool.ruff.lint]
 # E/W/F：基本错误；I：导入顺序；B：常见缺陷；UP：过时写法；BLE：不许宽接 Exception（审计 P1-4）
 select = ["E", "W", "F", "I", "B", "UP", "BLE"]
+# E741：l、I 这类单字母名在本仓库里是惯用写法（lease、Intent），不改；UP031：% 格式化照用
+ignore = ["E741", "UP031"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest 的 fixture 靠导入生效、靠同名参数取用，在 ruff 看来是“未使用”与“重定义”
+"**/tests/**" = ["F401", "F811"]
+"**/contract.py" = ["F401", "E402"]         # 契约模块就是再导出
 
 [tool.ruff.lint.isort]
 known-first-party = ["paoding_graph", "paoding_adapter", "paoding_executor", "paoding_judge", "paoding_sinan", "paoding_pd"]

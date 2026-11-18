@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Callable, Iterator, cast
+from typing import cast
 
 from .envelope import GENESIS, seal, verify_chain
 from .state import Actor, Body, Event
@@ -106,7 +107,7 @@ class EventLog:
                 if not hasattr(e, "batch_results"):
                     raise
                 db.execute("ROLLBACK TO batch")
-                results = cast(Body, getattr(e, "batch_results"))
+                results = cast(Body, e.batch_results)
             db.execute("RELEASE batch")
             db.execute("INSERT INTO proposals (problem_id, idem_key, results) VALUES (?,?,?)",
                        (problem_id, idem_key, json.dumps(results, ensure_ascii=False)))

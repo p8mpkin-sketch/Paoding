@@ -4,7 +4,7 @@
 不出工作目录）；3.4.4 的心跳与回合上限；3.5.5 的 3（代理侧：预留用尽即拒，任务以 budget_exhausted 释放）。
 真 CLI 的同一组断言留到密钥到位（D4 真机）。
 """
-from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: F401（fixture）
+from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: F401  fixture
 
 R = {"usd_milli": 1000, "wall_s": 600}
 

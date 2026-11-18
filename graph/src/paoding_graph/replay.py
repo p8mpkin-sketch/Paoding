@@ -6,7 +6,8 @@ apply 不读时钟、不做 IO、不调用模型；唯一的时钟是事件里�
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from .envelope import sha256_hex, verify_chain
 from .jcs import canonicalize

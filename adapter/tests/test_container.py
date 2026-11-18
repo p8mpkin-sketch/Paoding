@@ -15,12 +15,10 @@ import threading
 import time
 
 import pytest
-from adapter_rig import (FETCH, IMAGE, DockerRig, docker_ok, graph, lease_bootstrap,  # noqa: F401（fixture）
-                         open_net_problem, upstream)
+from adapter_rig import FETCH, IMAGE, DockerRig, docker_ok, graph, lease_bootstrap, open_net_problem, upstream  # noqa: F401  fixture
 
 from paoding_adapter import backend as be
-from paoding_adapter.container import (MCP_PORT, PROXY_PORT, RELAY_ALIAS, ContainerLauncher, ContainerProc,
-                                       UnixBridge)
+from paoding_adapter.container import MCP_PORT, PROXY_PORT, RELAY_ALIAS, ContainerLauncher, ContainerProc, UnixBridge
 
 EXEC, SUBMIT, SHOW = "mcp__paoding__exec", "mcp__paoding__submit", "mcp__paoding__show"
 REAL_KEY = "sk-fake-upstream"                       # 测试台交给端点代理的“真实密钥”（假的）：不得出现在容器里
@@ -308,7 +306,7 @@ def test_launch_failure_leaves_nothing_behind(tmp_path, upstream):  # noqa: F811
     try:
         ws = tmp_path / "l_9" / "workspace"
         ws.mkdir(parents=True)
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017  起不来就行，不约束异常种类
             launcher(["true"], {}, ws)
         assert leftovers() == []
     finally:

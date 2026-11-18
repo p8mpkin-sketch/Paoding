@@ -107,7 +107,7 @@ def common_prefix_ratio(a: str, b: str) -> float:
     """b 与 a 的公共前缀占 a 的字节比例。遥测读数，不设阈值（异议 002 第 3 项裁决）。"""
     x, y = a.encode(), b.encode()
     n = 0
-    for n, (p, q) in enumerate(zip(x, y)):
+    for n, (p, q) in enumerate(zip(x, y, strict=False)):  # noqa: B007  n 在循环后使用
         if p != q:
             break
     else:

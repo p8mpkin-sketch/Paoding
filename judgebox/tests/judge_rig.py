@@ -5,10 +5,10 @@ import subprocess
 from dataclasses import replace
 
 import pytest
+from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry
 
 from paoding_executor.contract import ExecResult
 from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry
-from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry
 
 IMAGE = "python:3.12-slim"
 REG = load_registry()

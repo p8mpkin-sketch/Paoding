@@ -13,7 +13,7 @@ import urllib.parse
 
 import pytest
 from conftest import CFG
-from http_rig import R, Api, drive
+from http_rig import Api, R, drive
 
 from paoding_graph import views
 from paoding_graph.envelope import verify_chain
@@ -259,7 +259,7 @@ def test_as_of_bounds(api):
     st, body, _ = api.req("GET", "/v1/problems/p1/status?as_of=abc")
     assert st == 400
     assert api.get("/v1/problems/p1/status?as_of=2")["facts"] == []
-    assert api.get(f"/v1/problems/p1/events?as_of=5")["events"][-1]["seq"] == 5
+    assert api.get("/v1/problems/p1/events?as_of=5")["events"][-1]["seq"] == 5
 
 
 def test_state_at_cache_is_consistent(api):

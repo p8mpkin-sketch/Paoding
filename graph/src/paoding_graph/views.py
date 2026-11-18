@@ -8,8 +8,9 @@
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, cast
 
 from . import cards
 from . import levels as lv

@@ -36,7 +36,7 @@ class PriceTable:
     models: dict
 
     @classmethod
-    def load(cls, path: str | Path) -> "PriceTable":
+    def load(cls, path: str | Path) -> PriceTable:
         d = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         return cls(d["version"], d["models"])
 
@@ -236,7 +236,7 @@ class EndpointProxy:
             self.server.server_close()
 
 
-def ledger_diff(proxy: "EndpointProxy", state: dict) -> list[dict]:
+def ledger_diff(proxy: EndpointProxy, state: dict) -> list[dict]:
     """对账（3.5.5 的 4、5）：代理自记的逐任务花费与图里 source=proxy 的 cost 事件之和逐项比较。
     返回不一致的条目；空表示对上。图是账本，代理是计量点，两者独立累计。
     代理启动时从账本恢复过基线的，只对恢复之后（seq 大于恢复时链头）的事件逐任务比较，合计加上基线。"""

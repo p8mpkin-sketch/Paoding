@@ -9,8 +9,7 @@ import os
 
 import pytest
 from judge_rig import REG, FakeBox, JRig, jr, with_flake  # noqa: F401
-
-from paoding_judgebox.contract import (BUILTINS, RegistryError, Vault, VaultError, kernel_judges, load_registry)
+from paoding_judgebox.contract import BUILTINS, RegistryError, Vault, VaultError, kernel_judges, load_registry
 
 EM = "exact_match"
 

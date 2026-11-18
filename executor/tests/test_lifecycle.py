@@ -187,7 +187,7 @@ def test_env_start_reset_stop(envs, ex, tmp_path):
     with pytest.raises(ValueError):
         envs.start(name, IMAGE, command=SERVE)
     sid = ex.launch(spec_for(tmp_path, name), "l_1")
-    fetch = "python -c \"import urllib.request as u;print(u.urlopen('http://%s:8080/%%s').read().decode().strip())\"" % name
+    fetch = f"python -c \"import urllib.request as u;print(u.urlopen('http://{name}:8080/%s').read().decode().strip())\""
     assert ex.exec(sid, fetch % "seed", "p1", "a").output.strip() == "s3cr3t-seed"
     subprocess.run(["docker", "exec", name, "sh", "-c", "echo dirty > /tmp/hits"], check=True)
     assert ex.exec(sid, fetch % "hits", "p1", "b").output.strip() == "dirty"

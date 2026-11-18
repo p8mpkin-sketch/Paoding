@@ -32,15 +32,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from paoding_adapter.contract import (FAKE_CLI, AdapterConfig, CliBinding, ContainerLauncher,  # noqa: E402
-                                      EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, SessionRunner,
-                                      ToolEndpoint, fake_program, local_launcher)
-from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_graph.contract import (BlobStore, Config, GraphHttp, GraphService, HttpConfig,  # noqa: E402
-                                    TokenRegistry)
 from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
-from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
+
+from paoding_adapter.contract import (  # noqa: E402
+    FAKE_CLI,
+    AdapterConfig,
+    CliBinding,
+    ContainerLauncher,
+    EndpointProxy,
+    FakeUpstream,
+    PriceTable,
+    ProxyConfig,
+    SessionRunner,
+    ToolEndpoint,
+    fake_program,
+    local_launcher,
+)
+from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
+from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry  # noqa: E402
+from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
 TASK_KINDS = ("bootstrap", "reason", "explore")
@@ -91,7 +102,7 @@ class StackConfig:
     stall_s: float = 120.0
 
     @classmethod
-    def load(cls, home: Path, path: Path | None = None, **over) -> "StackConfig":
+    def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
         """配置文件（JSON）可省：没有就是空配置——假 CLI 后端、没有脚本、Docker 执行层。
         文件里的相对路径相对配置文件所在目录。"""
         raw: dict = {}
@@ -254,7 +265,7 @@ class Stack:
     def _guarded(self, name: str, fn) -> None:
         try:
             fn()
-        except Exception:
+        except Exception:  # noqa: BLE001  线程顶层：记下栈，不让一个组件带倒整个进程
             log(name).exception("线程异常退出")
 
     # ---------- 事件流：每条落盘事件一行日志 ----------
@@ -279,7 +290,7 @@ class Stack:
                 for d in self.judge.tick():
                     L.info("%s 请求 %s → %s（%s）%s", d.get("status"), d.get("request"), d.get("result", "-"),
                            d.get("reason", d.get("code", "")), "" if d.get("status") == "judged" else d)
-            except Exception:
+            except Exception:  # noqa: BLE001  循环顶层：记下栈，下一轮照常
                 L.exception("tick 失败")
             self.stop_event.wait(self.cfg.poll_s)
 
@@ -357,7 +368,7 @@ class Stack:
                 for k in ("expired", "soft", "killed", "closed", "swept", "alerts"):
                     if getattr(r, k):
                         L.info("%s: %s", k, getattr(r, k))
-            except Exception:
+            except Exception:  # noqa: BLE001  循环顶层：记下栈，下一轮照常
                 L.exception("tick 失败")
             self.stop_event.wait(self.cfg.dog_interval_s)
 

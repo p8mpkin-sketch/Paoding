@@ -195,7 +195,7 @@ class DockerExecutor:
         for sid in list(self._live):
             self.destroy(sid)
 
-    def __enter__(self) -> "DockerExecutor":
+    def __enter__(self) -> DockerExecutor:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -357,7 +357,7 @@ class EnvManager:
         for name in list(self._envs):
             self.stop(name)
 
-    def __enter__(self) -> "EnvManager":
+    def __enter__(self) -> EnvManager:
         return self
 
     def __exit__(self, *exc) -> None:

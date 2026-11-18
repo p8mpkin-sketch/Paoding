@@ -23,10 +23,11 @@ import sys
 import threading
 import traceback
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any
 
 from . import views
 from .blobs import BlobError, BlobNotFound, BlobStore, CorruptBlob
