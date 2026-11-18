@@ -100,4 +100,4 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 
 ## License
 
-TBD
+[Apache License 2.0](LICENSE)。

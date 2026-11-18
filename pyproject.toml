@@ -1,5 +1,6 @@
 [project]
 name = "paoding"
+license = "Apache-2.0"
 version = "0.0.0"
 description = "庖丁基座 M0（monorepo 根，EDR-001 D-4）"
 requires-python = ">=3.12"
