@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from paoding_executor.contract import SandboxGone, ScopeError, compile_spec
+from paoding_graph.contract import RESOURCE_EXTERNAL
 
 from .vault import Vault, VaultError
 
@@ -46,6 +47,7 @@ class Ctx:
     lease_id: str
     bases: dict
     now_ms: int
+    grounded: tuple = ()  # 挂入洁净容器、且自身有出处的 Artifact（见 runner._grounded）
 
 
 def _prov(tool: str, command: str, exit_code: int | None, now: int, touched: list[str] | None = None) -> dict:
@@ -170,15 +172,33 @@ def _replay_once(c: Ctx, n: int) -> Outcome:
         return Outcome("inconclusive", "env_error", str(e).encode())
     finally:
         c.executor.destroy(sid)
-    prov = {**r.provenance, "tool": "replay", "command": f"sh /workspace/spec  # spec={c.spec_hash or c.candidate_ref}"}
+    # 访问摘要：执行层记下的真实连接，加上挂入的、自身有出处的 Artifact。规格脚本本身是 Worker 写的，不算。
+    touched = sorted({*r.provenance.get("touched", []), *(f"artifact:{a}" for a in c.grounded)})
+    prov = {
+        **r.provenance,
+        "tool": "replay",
+        "touched": touched,
+        "command": f"sh /workspace/spec  # spec={c.spec_hash or c.candidate_ref}",
+    }
     wall = max(0, (r.provenance["ended_at"] - r.provenance["started_at"]) // 1000)
     data = _blob(c, r)
     if r.exit_code is None:
         return Outcome("inconclusive", "timeout", data, prov, wall)
-    if c.spec.get("params", {}).get("require_touch") and not r.provenance.get("touched"):
+    if needs_touch(c) and not prov["touched"]:
         return Outcome("inconclusive", "untouched", data, prov, wall)  # 空谓词：运行没碰任何授权资源
     ok = _matches(c.check.get("expect") or {}, r.exit_code, data.decode("utf-8", "replace"))
     return Outcome("pass" if ok else "fail", "ok", data, prov, wall)
+
+
+def needs_touch(c: Ctx) -> bool:
+    """这次重放要不要求"碰过资源"（§3.3.2 的 require_touch）。
+
+    判官配置打开它，且题目的授权范围里有外部资源时要求：观察对象在题目之外，一条什么都没访问的规格
+    说明不了它的任何事。只有 workspace 这类非外部资源的题是纯计算，没有可碰的东西，不要求。
+    没有登记过的资源种类按外部资源算（异议报告 006 第 4 项）。"""
+    if not c.spec.get("params", {}).get("require_touch"):
+        return False
+    return any(RESOURCE_EXTERNAL.get(rule.get("resource"), True) for rule in c.problem.get("scope", []))
 
 
 def _blob(c: Ctx, r) -> bytes:

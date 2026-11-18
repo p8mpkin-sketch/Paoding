@@ -10,6 +10,11 @@ from dataclasses import dataclass, field
 
 from paoding_graph.contract import RESOURCE_EXTERNAL
 
+
+class ScopeError(ValueError):
+    pass
+
+
 RISK_RANK = {"r0": 0, "r1": 1, "r2": 2}
 
 
@@ -22,11 +27,30 @@ class ResourceKind:
         raise NotImplementedError
 
 
+CONNECT_ACTIONS = frozenset({"connect", "*"})  # 放行出站连接的动作；其余动作 M0 没有执行手段，一律不开通路
+
+
+def split_address(pattern: str) -> tuple[str, int]:
+    """host:port → (host, port)。端口必须写明：出站放行到端口为止，没有"整台主机"这一档（异议报告 006 第 1 项）。"""
+    host, sep, port = str(pattern).rpartition(":")
+    if not sep or not host or not port.isdigit() or not 0 < int(port) < 65536:
+        raise ScopeError(f"net 规则的 pattern 必须是 host:port：{pattern!r}")
+    return host, int(port)
+
+
 class NetAddress(ResourceKind):
-    """pattern 是 host 或 host:port。只放行到这些地址的出站；其余一律不通。"""
+    """pattern 是 host:port。只放行到这些地址的出站连接；同一主机的其他端口与其余地址一律不通。
+
+    egress：actions 含 connect（或 *）的地址，出站闸门为它开转发。
+    rules：全部地址连同各自的 actions，原样交给闸门，由闸门决定开不开（不含 connect 的不开）。"""
 
     def compile(self, rule: dict) -> dict:
-        return {"egress": [rule["pattern"]]}
+        split_address(rule["pattern"])
+        actions = tuple(sorted({str(a) for a in rule.get("actions") or ()}))
+        return {
+            "egress": [rule["pattern"]] if CONNECT_ACTIONS & set(actions) else [],
+            "rules": [(rule["pattern"], actions)],
+        }
 
 
 class Workspace(ResourceKind):
@@ -57,13 +81,10 @@ class ExecSpec:
     image: str
     baseline_ref: str
     workspace: str
-    egress_allow: tuple = ()
+    egress_allow: tuple = ()  # 放行出站连接的 host:port
     credentials: tuple = ()
     limits: Limits = field(default_factory=Limits)
-
-
-class ScopeError(ValueError):
-    pass
+    egress_rules: tuple = ()  # ((host:port, (动作…)), …)：闸门据此逐端口执行；同一地址的动作取并集
 
 
 def compile_spec(
@@ -81,6 +102,7 @@ def compile_spec(
         raise ScopeError(f"上限非法：{ceiling}")
     egress: list[str] = []
     creds: list[str] = []
+    rules: dict[str, set[str]] = {}
     for rule in scope:
         if RISK_RANK[rule["risk"]] > RISK_RANK[ceiling]:
             continue
@@ -92,6 +114,8 @@ def compile_spec(
         out = kind.compile(rule)
         egress += out.get("egress", [])
         creds += out.get("credentials", [])
+        for pattern, actions in out.get("rules", []):
+            rules.setdefault(pattern, set()).update(actions)
     return ExecSpec(
         id=spec_id,
         image=env["base"],
@@ -100,4 +124,5 @@ def compile_spec(
         egress_allow=tuple(sorted(set(egress))),
         credentials=tuple(sorted(set(creds))),
         limits=limits,
+        egress_rules=tuple((p, tuple(sorted(a))) for p, a in sorted(rules.items())),
     )

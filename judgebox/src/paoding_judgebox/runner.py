@@ -221,6 +221,7 @@ class JudgeRunner:
             lease_id=lid,
             bases=self.cfg.bases,
             now_ms=now,
+            grounded=_grounded(st, req.get("candidate")),
         )
         o = fn(ctx)
         if not o.provenance:
@@ -252,6 +253,19 @@ class JudgeRunner:
         if not out["ok"]:
             raise RuntimeError(f"判官输出登记失败：{out['results']}")
         return out["results"][0]["id"]
+
+
+def _grounded(st: dict, aid: str | None) -> tuple:
+    """候选挂进洁净容器时，它算不算"访问过的可采信输入"（§3.3.2）。
+
+    算：input 类（人给的材料）；exec 与 judge 类里自身访问摘要非空的（它的内容来自碰过资源的运行）。
+    不算：authored 类（Worker 自己写的）；访问摘要为空的 exec 输出，否则 `echo ok` 的输出换个身份就能充数。"""
+    art = st["artifacts"].get(aid or "")
+    if art is None:
+        return ()
+    if art["class"] == "input" or (art["class"] in ("exec", "judge") and art.get("exec", {}).get("touched")):
+        return (aid,)
+    return ()
 
 
 def _builtin_prov(jid: str, now: int) -> dict:

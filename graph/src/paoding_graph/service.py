@@ -19,7 +19,7 @@ from typing import Any
 
 from . import views
 from . import work as wk
-from .eventlog import Append, EventLog
+from .eventlog import Append, BatchRejected, EventLog
 from .reducer import Config, Ok, apply, empty_state, result_id, validate
 from .replay import replay
 from .state import Actor, Body, Event, State
@@ -174,10 +174,9 @@ class GraphService:
         return wk.budget_view(self.state, pid)
 
 
-class _Abort(Exception):
+class _Abort(BatchRejected):
     def __init__(self, results: list[Body]) -> None:
-        super().__init__("batch rejected")
-        self.batch_results = {"ok": False, "results": results}
+        super().__init__({"ok": False, "results": results})
 
 
 def _subst(v: Any, ids: list[str | None]) -> Any:

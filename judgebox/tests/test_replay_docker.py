@@ -8,10 +8,10 @@ import subprocess
 import pytest
 from judge_rig import IMAGE, JRig, docker_ok
 
-from paoding_executor.contract import DockerExecutor, compile_spec
+from paoding_executor.contract import DockerExecutor, EnvManager, compile_spec
 
-# 一条 r1 规则：r0 的任务与判官容器都不编入它，所以这些容器没有任何出站通路
-QUIET = [{"resource": "net", "pattern": "nowhere:1", "actions": ["connect"], "risk": "r1"}]
+# 纯计算的题：授权范围里只有工作区，任务与判官容器都没有任何出站通路，重放也不要求碰过资源
+QUIET = [{"resource": "workspace", "pattern": "*", "actions": ["read", "write"], "risk": "r0"}]
 pytestmark = pytest.mark.skipif(not docker_ok(), reason="需要 Docker 与本地镜像 python:3.12-slim")
 
 
@@ -91,3 +91,52 @@ def test_missing_image_is_an_environment_error(dj):
     fid, rid = fact(dj, "true", {})
     [done] = dj.runner.tick()
     assert (done["result"], done["reason"]) == ("inconclusive", "env_error") and containers(dj) == []
+
+
+# ---------- 恒真谓词（P0-3）：真闸门、真访问摘要 ----------
+
+
+@pytest.fixture
+def target():
+    import uuid
+
+    with EnvManager() as envs:
+        boot = "mkdir -p /srv && cd /srv && echo ready > status && exec python -m http.server 8080"
+        yield envs.start(f"pdt-{uuid.uuid4().hex[:8]}", IMAGE, command=["sh", "-c", boot], ready_port=8080)
+
+
+def test_echo_ok_does_not_reach_e3_on_a_real_sandbox(dj, target):
+    """验收：题目的观察对象是外部资源；一条 `echo ok`、期望含 ok 的观察类论断，重放没碰任何资源，到不了 E3。"""
+    dj.open(scope=[{"resource": "net", "pattern": f"{target}:8080", "actions": ["connect"], "risk": "r0"}])
+    lid, tok = dj.session()
+    fid, rid = dj.fact(
+        tok, {"judge_id": "replay", "spec_ref": dj.spec("echo ok"), "expect": {"stdout_contains": "ok", "exit_code": 0}}
+    )
+    [done] = dj.runner.tick()
+    assert (done["result"], done["reason"]) == ("inconclusive", "untouched"), done
+    assert dj.level("p1", fid) == "E0" and containers(dj) == [target]  # 判官容器与闸门都拆了
+    ev = dj.state["artifacts"][done["evidence"]]
+    assert ev["exec"]["touched"] == [] and b"ok" in dj.blobs.get(ev["hash"])
+    # 嘴上说连过也不算：访问摘要来自闸门，不来自输出
+    fid2, _ = dj.fact(
+        tok,
+        {
+            "judge_id": "replay",
+            "spec_ref": dj.spec(f"echo connected to {target}:8080; echo ok"),
+            "expect": {"stdout_contains": "ok"},
+        },
+        title="目标在线",
+    )
+    [again] = dj.runner.tick()
+    assert again["reason"] == "untouched" and dj.level("p1", fid2) == "E0"
+
+
+def test_a_spec_that_really_reads_the_target_reaches_e3(dj, target):
+    """对照：规格真的去读了授权目标，访问摘要里有这条连接，论断升到 E3。"""
+    dj.open(scope=[{"resource": "net", "pattern": f"{target}:8080", "actions": ["connect"], "risk": "r0"}])
+    read = f"python -c \"import urllib.request as u;print(u.urlopen('http://{target}:8080/status',timeout=5).read().decode())\""
+    fid, rid = fact(dj, read, {"stdout_contains": "ready", "exit_code": 0})
+    [done] = dj.runner.tick()
+    assert done["result"] == "pass", done
+    assert dj.level("p1", fid) == "E3" and containers(dj) == [target]
+    assert dj.state["artifacts"][done["evidence"]]["exec"]["touched"] == [f"net:{target}:8080"]

@@ -40,6 +40,14 @@ CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
 """
 
 
+class BatchRejected(Exception):
+    """build 以此表示整批被拒：本批事件撤回，batch_results 照样记下，重放返回同一结果。"""
+
+    def __init__(self, batch_results: Body) -> None:
+        super().__init__("batch rejected")
+        self.batch_results = batch_results
+
+
 class EventLog:
     def __init__(self, path: str | Path):
         self._db = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
@@ -92,7 +100,7 @@ class EventLog:
 
         build 收到一个 append(kind, body, actor, ts, idem) 函数，返回结果列表（可 JSON 化）。
         同一 (problem_id, idem_key) 已提交过时不调用 build，直接返回首次结果（恰好一次）。
-        build 抛出带 batch_results 的异常表示整批被拒：本批事件撤回，结果照样记下，重放返回同一结果。
+        build 抛出 BatchRejected 表示整批被拒：本批事件撤回，结果照样记下，重放返回同一结果。
         其它异常整体回滚，日志与结果表都不留痕。
         """
         db = self._db
@@ -129,11 +137,9 @@ class EventLog:
             db.execute("SAVEPOINT batch")
             try:
                 results = build(append)
-            except Exception as e:  # 整批被拒：撤回本批事件，只记下结果
-                if not hasattr(e, "batch_results"):
-                    raise
+            except BatchRejected as e:  # 整批被拒：撤回本批事件，只记下结果
                 db.execute("ROLLBACK TO batch")
-                results = cast(Body, e.batch_results)
+                results = e.batch_results
             db.execute("RELEASE batch")
             db.execute(
                 "INSERT INTO proposals (problem_id, idem_key, results) VALUES (?,?,?)",
