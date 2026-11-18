@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hmac
 import secrets
+from typing import cast
 
 from .envelope import check_actor
+from .state import Actor
 
 
 class UnknownToken(Exception):
@@ -18,20 +20,20 @@ class UnknownToken(Exception):
 
 class TokenRegistry:
     def __init__(self) -> None:
-        self._by_token: dict[str, dict] = {}
+        self._by_token: dict[str, Actor] = {}
 
-    def issue(self, actor: dict, token: str | None = None) -> str:
+    def issue(self, actor: Actor, token: str | None = None) -> str:
         """token 只在测试与重启恢复时显式给出；缺省随机生成。"""
         check_actor(actor)
         tok = token or secrets.token_urlsafe(32)
-        self._by_token[tok] = dict(actor)
+        self._by_token[tok] = cast(Actor, dict(actor))
         return tok
 
     def revoke(self, token: str) -> None:
         self._by_token.pop(token, None)
 
-    def resolve(self, token: str) -> dict:
+    def resolve(self, token: str) -> Actor:
         for known, actor in self._by_token.items():
             if hmac.compare_digest(known, token):
-                return dict(actor)
+                return cast(Actor, dict(actor))
         raise UnknownToken("未知令牌")

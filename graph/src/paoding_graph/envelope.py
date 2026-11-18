@@ -6,9 +6,10 @@ hash = sha256(JCS(除 hash 外的全部字段))；prev_hash 指同题上一条�
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import Any, Iterable, Mapping, cast
 
 from .jcs import canonicalize
+from .state import Event
 
 SCHEMA_VERSION = 1
 GENESIS = "0" * 64
@@ -25,7 +26,7 @@ def sha256_hex(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
-def event_hash(ev: dict[str, Any]) -> str:
+def event_hash(ev: Mapping[str, Any]) -> str:
     return sha256_hex(canonicalize({k: v for k, v in ev.items() if k != "hash"}))
 
 
@@ -39,8 +40,8 @@ def check_actor(actor: Any) -> None:
         raise EnvelopeError(f"role 非法：{actor['role']!r}")
 
 
-def seal(*, seq: int, problem_id: str, ts: int, actor: dict, kind: str, body: dict,
-         idem_key: str, prev_hash: str) -> dict[str, Any]:
+def seal(*, seq: int, problem_id: str, ts: int, actor: Any, kind: str, body: dict[str, Any],
+         idem_key: str, prev_hash: str) -> Event:
     """组装一条事件并算出 hash。只由图服务调用；ts 由图服务在追加时写入。"""
     check_actor(actor)
     if not isinstance(body, dict) or not kind or not idem_key:
@@ -48,10 +49,10 @@ def seal(*, seq: int, problem_id: str, ts: int, actor: dict, kind: str, body: di
     ev = {"v": SCHEMA_VERSION, "seq": seq, "problem_id": problem_id, "ts": ts, "actor": actor,
           "kind": kind, "body": body, "idem_key": idem_key, "prev_hash": prev_hash}
     ev["hash"] = event_hash(ev)
-    return ev
+    return cast(Event, ev)
 
 
-def verify_chain(events: list[dict[str, Any]]) -> None:
+def verify_chain(events: Iterable[Mapping[str, Any]]) -> None:
     """校验一题的事件序列：hash 自洽、prev_hash 首尾相接、seq 严格递增。失败抛 ChainError。"""
     prev, last_seq = GENESIS, -1
     for ev in events:

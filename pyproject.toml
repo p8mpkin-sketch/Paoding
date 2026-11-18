@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=8",
+    "ruff>=0.17.5",
+]
 
 [tool.uv.sources]
 paoding-pd = { workspace = true }
@@ -32,3 +36,19 @@ members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval",
 
 [tool.pytest.ini_options]
 testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "ci/tests", "tests/integration"]
+
+# 类型检查（P1-4）：graph/ 全量 strict。refmodel.py 是参考模型的逐字节副本（CI 比对），不在这里改它，
+# 所以它自身的报错不看，对它的调用也不算"调用无类型函数"。
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["graph/src/paoding_graph"]
+untyped_calls_exclude = ["paoding_graph.refmodel"]
+
+[[tool.mypy.overrides]]
+module = "paoding_graph.refmodel"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true

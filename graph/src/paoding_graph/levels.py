@@ -9,9 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 from . import refmodel as rm
+from .state import State
 
 
-def to_refstate(state: dict[str, Any], pid: str) -> rm.State:
+def to_refstate(state: State, pid: str) -> rm.State:
     facts = {fid: rm.Fact(fid, f["claim_type"], tuple(f["premises"]), f.get("session") or "",
                           f.get("body_ref"))
              for fid, f in state["facts"].items() if f["problem_id"] == pid}
@@ -29,23 +30,23 @@ def to_refstate(state: dict[str, Any], pid: str) -> rm.State:
                     leases={k: list(v) for k, v in state.get("lease_seqs", {}).items() if k in intents},
                     abandoned={k for k in state.get("abandoned", []) if k in intents},
                     now=state.get("now", 0),
-                    closed=bool(state["problems"].get(pid, {}).get("closed")))
+                    closed=pid in state["problems"] and state["problems"][pid]["closed"])
 
 
-def compute(state: dict[str, Any], pid: str) -> tuple[rm.State, rm.Result]:
+def compute(state: State, pid: str) -> tuple[rm.State, rm.Result]:
     st = to_refstate(state, pid)
     return st, rm.compute(st)
 
 
-def levels(state: dict[str, Any], pid: str) -> dict[str, str]:
+def levels(state: State, pid: str) -> dict[str, str]:
     return compute(state, pid)[1].levels
 
 
-def intent_state(state: dict[str, Any], pid: str, iid: str) -> str:
+def intent_state(state: State, pid: str, iid: str) -> str:
     st, res = compute(state, pid)
     return rm.intent_state(st, res, st.intents[iid])
 
 
-def gate(state: dict[str, Any], pid: str, iid: str) -> bool:
+def gate(state: State, pid: str, iid: str) -> bool:
     st, res = compute(state, pid)
     return rm.gate(st, res, st.intents[iid])

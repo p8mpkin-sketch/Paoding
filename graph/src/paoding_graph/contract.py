@@ -27,11 +27,16 @@ from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
 from .views import LEVEL_WORDS, REGISTER, REGISTERS  # noqa: E402,F401
 from . import views  # noqa: E402,F401
 
+# 状态与事件的类型（TypedDict；运行时仍是普通 dict）
+from .state import (Actor, Amount, Artifact, Body, Check, Cost, Event, Fact, Hint, Intent, Lease,  # noqa: E402,F401
+                    Problem, Request, State, Support, Verdict)
+from .work import BudgetView  # noqa: E402,F401
+
 
 class GraphPort(Protocol):
     """POST /v1/problems/{pid}/proposals 的进程内形态：令牌决定身份，整批原子，同 idem_key 恰好一次。"""
 
-    def submit(self, token: str, pid: str, idem_key: str, ops: list[dict]) -> dict: ...
+    def submit(self, token: str, pid: str, idem_key: str, ops: list[Body]) -> Body: ...
 
 
 class BlobPort(Protocol):
@@ -45,7 +50,7 @@ class BlobPort(Protocol):
 class TokenIssuer(Protocol):
     """会话令牌的签发与作废（§3.2.4 第 2 层）。Adapter 为每个租约签一枚 actor 带 session 与 role 的令牌。"""
 
-    def issue(self, actor: dict, token: str | None = None) -> str: ...
+    def issue(self, actor: Actor, token: str | None = None) -> str: ...
 
     def revoke(self, token: str) -> None: ...
 
@@ -53,31 +58,31 @@ class TokenIssuer(Protocol):
 class GraphReader(Protocol):
     """GET 只读端点的进程内形态：show 与任务包渲染读这里。state 是 reducer 状态的只读快照。"""
 
-    state: dict
+    state: State
 
-    def work(self, pid: str) -> list[dict]: ...
+    def work(self, pid: str) -> list[Body]: ...
 
-    def budget(self, pid: str) -> dict: ...
+    def budget(self, pid: str) -> BudgetView: ...
 
 
-def node_levels(state: dict, pid: str) -> dict:
+def node_levels(state: State, pid: str) -> dict[str, str]:
     """等级每次读时重算（I3），经参考模型的等级函数；只读端点与任务包渲染用。"""
     from .levels import levels
     return levels(state, pid)
 
 
-def intent_status(state: dict, pid: str, iid: str) -> str:
+def intent_status(state: State, pid: str, iid: str) -> str:
     """Intent 的派生状态（open/leased/done/abandoned/needs_human/…），只读端点与任务包渲染用。"""
     from .work import intent_status as _st
     return _st(state, pid, iid)
 
 
-def seen_card(state: dict, pid: str, kind: str, target: str) -> dict:
+def seen_card(state: State, pid: str, kind: str, target: str) -> Body:
     """人的决策操作要带的 seen {seq, card_hash}：取自调用方展示给人的那份状态快照（§3.1.9）。"""
     from .cards import seen
     return seen(state, pid, kind, target)
 
 
-def as_of_seq(state: dict) -> int:
+def as_of_seq(state: State) -> int:
     """状态快照对应的最后一个事件序号：任务包的 as_of_seq。"""
-    return state.get("seq", 0)
+    return state["seq"]

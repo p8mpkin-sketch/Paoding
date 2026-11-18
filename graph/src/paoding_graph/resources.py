@@ -12,5 +12,5 @@ RESOURCE_EXTERNAL: dict[str, bool] = {
 }
 
 
-def external_resources() -> frozenset:
+def external_resources() -> frozenset[str]:
     return frozenset(k for k, ext in RESOURCE_EXTERNAL.items() if ext)
