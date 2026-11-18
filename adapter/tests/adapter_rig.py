@@ -1,8 +1,6 @@
 """adapter 测试台：真图服务（SQLite 临时文件）+ 本机假上游。不碰真密钥、真模型。"""
 import hashlib
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -54,56 +52,7 @@ def lease_bootstrap(svc, pid="p1", reserve=1000):
     return out["results"][0]["id"]
 
 
-class FakeUpstream:
-    """假模型端点：记录收到的请求头，按请求体 stream 字段回 JSON 或 SSE，usage 由测试指定。"""
-
-    def __init__(self):
-        self.seen: list[dict] = []
-        self.usage = {"input_tokens": 1000, "output_tokens": 200,
-                      "cache_read_input_tokens": 5000, "cache_creation_input_tokens": 100}
-        self.model = "claude-sonnet-5-5"
-        up = self
-
-        class H(BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.1"
-
-            def log_message(self, *a):
-                pass
-
-            def do_POST(self):
-                body = json.loads(self.rfile.read(int(self.headers["content-length"])))
-                up.seen.append({"path": self.path, "headers": dict(self.headers), "body": body})
-                if body.get("stream"):
-                    u_in = {k: v for k, v in up.usage.items() if k != "output_tokens"}
-                    events = [
-                        ("message_start", {"type": "message_start", "message": {
-                            "id": "m1", "model": up.model, "usage": {**u_in, "output_tokens": 1}}}),
-                        ("content_block_delta", {"type": "content_block_delta", "index": 0,
-                                                 "delta": {"type": "text_delta", "text": "hi"}}),
-                        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
-                                           "usage": {"output_tokens": up.usage["output_tokens"]}}),
-                        ("message_stop", {"type": "message_stop"}),
-                    ]
-                    data = b"".join(b"event: %s\ndata: %s\n\n" % (n.encode(), json.dumps(d).encode())
-                                    for n, d in events)
-                    ctype = "text/event-stream"
-                else:
-                    data = json.dumps({"id": "m1", "type": "message", "model": up.model,
-                                       "content": [{"type": "text", "text": "hi"}], "usage": up.usage}).encode()
-                    ctype = "application/json"
-                self.send_response(200)
-                self.send_header("content-type", ctype)
-                self.send_header("content-length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.url = "http://127.0.0.1:%d" % self.server.server_address[1]
-
-    def close(self):
-        self.server.shutdown()
-        self.server.server_close()
+from paoding_adapter.fakeupstream import FakeUpstream  # noqa: E402,F401  （与组装根共用一份）
 
 
 @pytest.fixture

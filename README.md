@@ -30,6 +30,15 @@
 | [sinan/](sinan/SPEC.md) | 司南（调度，外壳） | §4.1 |
 | [web/](web/SPEC.md) | 网页前端（F1）：前沿、检视与下钻、时间轴回放、成本仪表、开题向导、Hint、审批卡 | HMI §3、§4、§10、§11 |
 
+全栈一键启动（假 CLI、空配置即可；执行层要本机 Docker）：
+
+```
+uv run python scripts/run.py --home /tmp/paoding-run --port 8100   # Ctrl+C 干净退出
+scripts/test-e2e.sh                                                # 起全栈 → 开一道题 → 等 solved → 摘要 → 清理
+```
+
+配置（`<home>/config.json`，可省）的形状见 `scripts/e2e/config.json`；构建过 `web/dist` 的话，网页就在同一端口。
+
 ```
 uv run pytest -q                      # 单元与对抗测试
 python ci/check_domain_words.py       # 红线 3

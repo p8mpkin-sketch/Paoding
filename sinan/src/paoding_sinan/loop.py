@@ -45,11 +45,15 @@ class Sinan:
         if p.get("closed"):
             return {"stop": "closed"}
         work = self.reader.work(pid)
-        if self.cfg.wait_for_judges and any(w["kind"] in ("judge", "rejudge") for w in work):
+        # 判定未决 = /work 里还有 judge 项，或判官已领走、裁决还没落盘（领走后它就不在 /work 里了）。
+        # 多线程部署里判官与司南并行，只看 /work 会让 Reason 读到裁决之前的图。
+        judging = any(w["kind"] in ("judge", "rejudge") for w in work) or any(
+            l["active"] and l["kind"] == "judge" for l in st["leases"].values() if l["problem_id"] == pid)
+        if self.cfg.wait_for_judges and judging:
             return {"wait": "judge"}
         tasks = [w for w in work if w["kind"] in TASK_ORDER]
         if not tasks:
-            if any(w["kind"] in ("judge", "rejudge") for w in work):
+            if judging:
                 return {"wait": "judge"}
             if any(l["active"] for l in st["leases"].values() if l["problem_id"] == pid):
                 return {"wait": "in_flight"}

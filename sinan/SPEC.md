@@ -18,9 +18,11 @@
 - 预留：bootstrap 与 reason 取配置值（bootstrap 不超过 `bootstrap_share × cap`）；explore 取 Intent 的预算，不超过 `explore_cap`。
 - 题面从 Origin 的 `statement_ref` 读出，交给会话。
 
-司南提交的只有 `lease`（I8）；judge 项不归它领。M0 的循环在进程内经 `GraphPort`、`GraphReader` 读写，与 HTTP 的 `/work`、`/leases` 是同一个投影与同一条提议通道；独立进程形态随 D11 之后的部署工作。
+司南提交的只有 `lease`（I8）；judge 项不归它领。M0 的循环在进程内经 `GraphPort`、`GraphReader` 读写，与 HTTP 的 `/work`、`/leases` 是同一个投影与同一条提议通道。
 
-T-1 开关（`SinanConfig`）：`order_by_gain`（关掉后按 `/work` 的顺序）、`wait_for_judges`（判定未决时不开新任务）、`thin_bootstrap`（Bootstrap 的预留封顶）。
+部署形态：`scripts/run.py`（组装根 `scripts/stack.py`）在一个进程里起图服务、判官运行器、司南、哮天犬，各自一个循环并行；司南每道未关的题一个循环，`pick` → `step`，等待与停机原因只在变化时记一行日志。判官与司南并行，所以 `wait_for_judges` 也看在途的判官租约。
+
+T-1 开关（`SinanConfig`）：`order_by_gain`（关掉后按 `/work` 的顺序）、`wait_for_judges`（判定未决时不开新任务；“未决”= `/work` 里还有 judge 项，或判官已领走请求而裁决未落盘）、`thin_bootstrap`（Bootstrap 的预留封顶）。
 
 端到端纵切在 `tests/integration/test_e2e.py`：开题（HTTP）→ Bootstrap → 判定 → Reason → Explore → 判定 → 图服务自动关题，替身执行层与真 Docker 各一条。
 
