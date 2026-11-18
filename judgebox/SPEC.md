@@ -9,6 +9,37 @@
 - 洁净重放：从 `baseline_ref` 新建容器；抖动策略与次数上限。
 - 保密库：含密级资产（`VaultRef`）只在判官容器内解引用；`show` 对其返回 `forbidden_op`。
 
+## 已落地（M0）
+
+| 模块 | 内容 |
+| --- | --- |
+| `registry.py` | `load_registry(dir)` 读 `judges.d/*.yaml`；`kernel_judges()` 给出图服务 `Config.judges` 的形状（version、grade、kind、max_cost 抄进题目快照） |
+| `vault.py` | `Vault.put(key, content) → VaultRef{vault, digest}`，摘要加盐；`open(ref)` 校验摘要，资产被换过即拒。目录 0700、文件 0600，内容不进日志、Blob 与任何容器 |
+| `builtin.py` | `exact_match`：答案取自 `Check.sealed`（保密库）或公开的 `expect.sha256`，输出只有候选摘要与结论；`replay`：洁净容器（不挂工作区、上限不超过 r1）里执行 `spec_ref`，没有规格时执行候选，按 `expect {exit_code, stdout_contains, stdout_regex}` 比对 |
+| `runner.py` | `JudgeRunner.tick()`：从 `/work` 领 judge 租约 → 运行 → 输出登记为 judge 类 → `judge_verdict` → `cost(source=judge)` 计入验证池 → 释放。同一请求最多领 3 次租约 |
+
+裁决取值：`pass`、`fail`、`flaky`（一次请求内 `1 + flake.reruns` 次不一致）、`inconclusive`（原因码 `timeout`、`env_error`、`unsupported`、`untouched`）。
+`inconclusive` 在内核里只给请求结案，不进裁决序列，等级不变（§3.3.4）；成本照记。
+
+拒绝运行的三种情况，都报 `inconclusive(env_error)`：注册表版本与开题快照不一致；规格 Blob 的哈希对不上；保密库内容与登记的摘要不符。
+
+读过保密库的判官输出在出处里记 `touched: ["vault:<键>"]`，Adapter 的 `show` 据此返回 `forbidden_op`。
+
+已知缺口：执行层 M0 没有逐连接的访问摘要（`touched` 恒空），所以 `require_touch` 在真容器上打开后恒为 `untouched`；内建配置里默认关闭，逻辑由替身执行层的测试覆盖。`seal_check`、对照判据（`control`）、评审团判官随 M1/M3。
+
+## 验收对应（3.3.5）
+
+| 编号 | 测试 |
+| --- | --- |
+| 1 超时 | `test_replay_timeout_is_inconclusive_and_still_costs`、`test_replay_timeout_kills_the_container`（Docker） |
+| 2 抖动 | `test_replay_flaky_when_reruns_disagree`、`test_replay_majority_policy` |
+| 3 伪造证据 | `test_forged_workspace_file_does_not_survive_replay`（Docker） |
+| 4 错误候选与次数上限 | `test_wrong_candidate_does_not_raise_level`、`test_candidate_quota_is_enforced_by_the_kernel` |
+| 5 任务令牌不能裁决 | `test_task_tokens_cannot_submit_verdicts`、`…_register_judge_class`、`…_take_judge_leases` |
+| 6 规格被改 | `test_tampered_spec_is_refused` |
+| 8 空谓词 | `test_replay_untouched_predicate`、`test_replay_touching_the_resource_counts` |
+| 9 保密库不可见 | `test_judge_output_never_contains_the_answer`、`test_problem_carries_only_the_vault_reference`、adapter 的 `test_show_refuses_judge_output_that_read_the_vault` |
+
 ## 官的声明
 
 | 结构 | 官 | 标签 | 启用条件 | 长存依据 |

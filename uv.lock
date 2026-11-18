@@ -107,6 +107,12 @@ source = { editable = "graph" }
 name = "paoding-judgebox"
 version = "0.0.0"
 source = { editable = "judgebox" }
+dependencies = [
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
 
 [[package]]
 name = "paoding-pd"

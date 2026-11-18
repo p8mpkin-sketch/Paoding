@@ -1,0 +1,11 @@
+# 内建判官：候选与答案逐字节相同（去掉首尾空白）。答案是含密级资产，只在判官运行器内解引用。
+id: exact_match
+version: "1"
+kind: deterministic
+grade: decisive
+applies_to: [goal, intent]
+runner: {type: builtin, base: builtin}
+timeout_s: 10
+max_cost: {usd_milli: 0, wall_s: 10}
+auto: true
+flake: {reruns: 0, require: all}
