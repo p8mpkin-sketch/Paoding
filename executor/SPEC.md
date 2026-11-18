@@ -26,6 +26,20 @@
 - `runtime.py`：Docker 实现。每个沙箱一张 `--internal` 网络，只接入白名单里的本机题目容器；`--cap-drop ALL`、`no-new-privileges`、pids/内存/CPU 上限，不传任何凭据类环境变量。判官的洁净容器不挂 Worker 工作区。exec 合并 stdout 与 stderr（保序），容器外采集，写 Blob，用执行层令牌登记为 exec 类；判官模式只交回出处字段，由判官运行器登记。回显超过 8 KB 只回头尾。
 - 依赖：`paoding_graph.contract` 的 `GraphPort` 与 `BlobPort`。
 
+## 容器生命周期（创建、销毁、重置、清理）
+
+| 动作 | 接口 | 保证 |
+| --- | --- | --- |
+| 创建 | `DockerExecutor.launch(spec, lease_id)` | 一张内部网络加一个容器；任一步失败把已建的拆掉，不留半成品。容器带 `paoding.sandbox`、`paoding.owner`、`paoding.lease`、`paoding.role=sandbox` 四个标签；到 `limits.wall_s` 自己退出 |
+| 销毁 | `destroy(sid)`、`destroy_lease(lease_id)`、`close()`（也是上下文管理器的出口） | 幂等。本实例不认识的 sid（进程重启之后）按标签找到网络与接入的目标再拆；不带本层标签的容器一律不碰 |
+| 重置 | `reset(sid)` | 销毁后从同一镜像重建，**沙箱 id 不变**，白名单照旧；工作区是共享挂载，不重置 |
+| 清理 | `reap(在途租约集合)`、`sweep_orphans()` | 前者回收本实例名下租约已结束的沙箱；后者回收属主进程已死的容器与网络（含题目环境容器），网络上还接着目标容器也删得掉 |
+| 状态 | `sandboxes()` | 本实例名下的沙箱：sid、租约、目标、是否仍在运行 |
+
+沙箱已停止或不存在时 `exec` 抛 `SandboxGone`，不采集、不登记。
+
+`EnvManager` 管题目环境容器（执行容器的出站目标）：`start(name, image, env, command, ready_port)` 等端口就绪，`reset(name)` 删除后按同一参数重建，`stop(name)` 幂等且只删本层建的。启动参数（含环境变量）只留在本进程内存里，不写日志、不进 Blob、不进任何沙箱。
+
 ## 已知缺口（D3 正式日补齐，需要题目容器一起验）
 
 1. **`scope_violation` 尚未产生。** `--internal` 网络对越界连接是静默丢弃，执行层看不到，所以 3.6.4 的 1 只验了"连接被拒"，没验"日志里出现 `scope_violation`"。计划：沙箱的唯一出口改为一个出站闸门容器（DNS 加 TCP 转发），白名单外的名字或地址在闸门处拒绝并上报，执行层据此追加事件；同一任务累计 3 次交哮天犬终止。

@@ -392,14 +392,19 @@ def _v_request_judge(state, actor, pid, body, cfg):
     return Ok({"target": target, "judge_id": judge, "candidate": candidate})
 
 
+INCONCLUSIVE_REASONS = ("timeout", "env_error", "unsupported", "untouched")   # §3.3.2 reason_code 的无结论各项
+
+
 def _v_judge_verdict(state, actor, pid, body, cfg):
     req = state["requests"].get(body["request"])
     if req is None or req["problem_id"] != pid:
         return Reject("unknown_ref", "判官请求不存在")
     if req.get("verdict_seq") is not None:
         return Reject("schema_error", "该请求已裁决")
-    if body["result"] not in ("pass", "fail", "flaky"):
-        return Reject("schema_error", "result 只取 pass、fail、flaky")
+    if body["result"] not in ("pass", "fail", "flaky", "inconclusive"):
+        return Reject("schema_error", "result 只取 pass、fail、flaky、inconclusive")
+    if body["result"] == "inconclusive" and body.get("reason") not in INCONCLUSIVE_REASONS:
+        return Reject("schema_error", f"inconclusive 须带原因码 {INCONCLUSIVE_REASONS}")
     for ref in body.get("evidence", []):
         a = state["artifacts"].get(ref)
         if a is None:
@@ -643,11 +648,13 @@ def apply(state: dict, ev: dict) -> dict:
         s["requests"] = {**s["requests"], rid: {**body, "id": rid, "problem_id": pid}}
     elif kind == "judge_verdict":
         req = s["requests"][body["request"]]
-        s["requests"] = {**s["requests"], req["id"]: {**req, "verdict_seq": seq}}
-        s["verdicts"] = s["verdicts"] + [{
-            "seq": seq, "problem_id": pid, "target": req["target"], "judge": req["judge_id"],
-            "version": body["version"], "grade": body["grade"], "result": body["result"],
-            "candidate": req["candidate"], "request": req["id"], "evidence": body["evidence"]}]
+        s["requests"] = {**s["requests"], req["id"]: {**req, "verdict_seq": seq, **(
+            {"inconclusive": body["reason"]} if body["result"] == "inconclusive" else {})}}
+        if body["result"] != "inconclusive":      # 抖动以外的无结论裁决不进裁决序列（§3.1.2），等级不变
+            s["verdicts"] = s["verdicts"] + [{
+                "seq": seq, "problem_id": pid, "target": req["target"], "judge": req["judge_id"],
+                "version": body["version"], "grade": body["grade"], "result": body["result"],
+                "candidate": req["candidate"], "request": req["id"], "evidence": body["evidence"]}]
     elif kind == "lease":
         lid = f"l_{seq}"
         rec = {**body, "id": lid, "problem_id": pid, "issued_seq": seq, "active": True,

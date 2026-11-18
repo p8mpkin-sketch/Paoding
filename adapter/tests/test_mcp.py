@@ -75,3 +75,21 @@ def test_show_reads_artifact_range_same_problem_only(rig):
     foreign = rig.put_input(b"p2 only", pid="p2")
     assert h.call("show", {"artifact": foreign})["code"] == "unknown_ref"
     assert h.call("show", {"list": "budget"})["cap"]["usd_milli"] == 5000
+
+
+def test_show_refuses_judge_output_that_read_the_vault(rig):
+    """3.3.5-9：读过保密库的判官输出不向会话开放；没碰保密库的判官输出照常可读。"""
+    rig.graph.tokens.issue({"kind": "judge", "id": "jr1"}, "tok-judge")
+    h = _host(rig)
+    ids = {}
+    for name, touched in (("sealed", ["vault:answer"]), ("plain", [])):
+        data = f"judge output {name}".encode()
+        prov = {"sandbox_id": "builtin", "base": "builtin", "baseline_ref": "builtin", "tool": "exact_match",
+                "command": "exact_match", "cwd": "", "exit_code": 1, "touched": touched, "started_at": 1,
+                "ended_at": 2, "truncated": False}
+        out = rig.graph.submit("tok-judge", "p1", f"jo-{name}", [{"op": "register_artifact", "body": {
+            "hash": rig.blobs.put(data), "size": len(data), "media_type": "text/plain", "class": "judge", "exec": prov}}])
+        assert out["ok"], out
+        ids[name] = out["results"][0]["id"]
+    assert h.call("show", {"artifact": ids["sealed"]})["code"] == "forbidden_op"
+    assert h.call("show", {"artifact": ids["plain"]})["text"] == "judge output plain"

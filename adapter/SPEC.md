@@ -34,6 +34,14 @@
 | `fakecli.py` | 脚本化假 CLI：接受同一组参数，经代理发请求、经工具端点调工具、输出 stream-json |
 | `session.py` | 会话运行器：状态机、续租、停滞判定、回合上限、收尾轮、`failed(no_output)`、会话记录留档、释放与令牌作废 |
 
+### 会话接管沙箱（组装）
+
+`SessionRunner.run` 在带 `exec` 的会话（bootstrap、explore）开始时按租约编译授权并起执行容器，结束时销毁；reason 会话不起容器。上限取所服务 Intent 的 `risk`，Bootstrap 取 r0，r2 规则只在该 Intent 已获批准时编入（规格 §3.6.2）。调用方显式给 `sandbox_id` 时沿用旧行为（测试台的假执行层）。`Problem.env.base` 是基础规格名，经 `AdapterConfig.bases` 映射到镜像。
+
+对外契约（`contract.py`）：`SessionPort`（司南按租约启动会话的入口）、`SessionRunner`、`AdapterConfig`、`SessionRecord`、`EndpointProxy`、`ProxyConfig`、`PriceTable`、`ToolEndpoint`、`CliBinding`、`fake_program`。
+
+集成测试 `tests/test_integration.py`（需要 Docker）：假 CLI 经端点代理与工具端点，落到真的执行层与真的图服务。
+
 ### 实现取值（待评审方确认）
 
 1. **计量取整**：每个请求按价目表折成毫美元后向上取整；价目表里没有的模型按最贵档计。cache 写入按输入价的 1.25 倍（价目表 `cache_write` 字段，密钥到位后与官网核对）。cost 事件没有 cache 写入的 token 字段，它只体现在 `usd_milli` 里。
@@ -43,6 +51,7 @@
 5. **终局映射**：`final.outcome` 的 found→done，nothing 与 unsolved→nothing，failed→failed；交过 submit 而没给 final→done。
 6. **幂等键**带工具宿主的实例号：同一租约换了宿主也不会撞上旧结果（测试里真撞上过一次，返回了前一个宿主的缓存结果）。
 7. **⑤状态**只列非 open 的 Intent 与论断等级，让⑤随图增长得慢一些。
+8. **工作区权限**：执行容器丢了全部能力，容器内的 root 写不了别人的目录，所以会话起沙箱前把工作区目录置为 777。M0 单机单用户可接受；多用户时改为容器内固定 uid 加属主映射。
 
 ### 已知缺口
 

@@ -1,0 +1,12 @@
+# 内建判官：在洁净容器里重新执行规格，按 expect 比对。require_touch 在观察对象是外部资源时打开。
+id: replay
+version: "1"
+kind: programmatic
+grade: decisive
+applies_to: [goal, intent, observation]
+runner: {type: container, base: basic}
+timeout_s: 60
+max_cost: {usd_milli: 10, wall_s: 120}
+auto: true
+flake: {reruns: 0, require: all}
+params: {require_touch: false}

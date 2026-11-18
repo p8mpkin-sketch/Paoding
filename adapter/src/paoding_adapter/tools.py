@@ -228,6 +228,8 @@ class ToolHost:
             art = st["artifacts"].get(a["artifact"])
             if art is None or art["problem_id"] != pid:
                 return _err("unknown_ref", "没有这个 Artifact")
+            if art["class"] == "judge" and any(str(t).startswith("vault:") for t in art.get("exec", {}).get("touched", [])):
+                return _err("forbidden_op", "读过保密库的判官输出不向会话开放")
             lo, hi = (a.get("range") or [0, SHOW_RANGE_MAX])
             lo, hi = max(0, int(lo)), min(int(hi), int(lo) + SHOW_RANGE_MAX)
             data = self.blobs.get(art["hash"], lo, hi)
