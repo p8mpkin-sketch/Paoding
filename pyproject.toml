@@ -45,7 +45,7 @@ testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judg
 [tool.coverage.run]
 branch = true
 source = ["pd/src", "graph/src", "adapter/src", "executor/src", "judgebox/src", "watchdog/src", "eval/src", "sinan/src", "scripts"]
-omit = ["scripts/e2e/*"]
+omit = ["scripts/e2e/*", "scripts/bench/*"]  # 压测脚本只手动跑
 
 [tool.coverage.report]
 skip_empty = true
