@@ -5,6 +5,7 @@
 人只做开题这一件事；之后的每条事件都由组件写入。输出一行 JSON：终态、事件数、耗时、预算消耗。
 只用标准库，可以在任何 Python 3.12 下跑。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,17 +32,48 @@ def call(url: str, path: str, body=None, token: str | None = None, raw: bytes | 
 
 def open_problem(url: str, token: str, pid: str) -> dict:
     h = call(url, "/v1/blobs", token=token, raw=STATEMENT)["hash"]
-    return call(url, "/v1/problems", {"id": pid, "idem_key": f"open-{pid}", "ops": [
-        {"op": "register_artifact", "body": {"hash": h, "size": len(STATEMENT), "media_type": "text/plain; charset=utf-8",
-                                              "class": "input"}},
-        {"op": "open_problem", "body": {
-            "title": "算出 6×7", "origin": {"statement_ref": "$0", "materials": []},
-            "goal": {"statement": "提交 6 乘 7 的结果",
-                     "check": {"judge_id": "exact_match", "expect": {"sha256": hashlib.sha256(ANSWER).hexdigest()}},
-                     "max_attempts": 3, "accept": "judge"},
-            "scope": [{"resource": "workspace", "pattern": "*", "actions": ["read", "write"], "risk": "r0"}],
-            "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
-            "env": {"base": "basic", "baseline_ref": "basic@1"}, "judges": ["exact_match", "replay"]}}]}, token=token)
+    return call(
+        url,
+        "/v1/problems",
+        {
+            "id": pid,
+            "idem_key": f"open-{pid}",
+            "ops": [
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": h,
+                        "size": len(STATEMENT),
+                        "media_type": "text/plain; charset=utf-8",
+                        "class": "input",
+                    },
+                },
+                {
+                    "op": "open_problem",
+                    "body": {
+                        "title": "算出 6×7",
+                        "origin": {"statement_ref": "$0", "materials": []},
+                        "goal": {
+                            "statement": "提交 6 乘 7 的结果",
+                            "check": {
+                                "judge_id": "exact_match",
+                                "expect": {"sha256": hashlib.sha256(ANSWER).hexdigest()},
+                            },
+                            "max_attempts": 3,
+                            "accept": "judge",
+                        },
+                        "scope": [
+                            {"resource": "workspace", "pattern": "*", "actions": ["read", "write"], "risk": "r0"}
+                        ],
+                        "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
+                        "env": {"base": "basic", "baseline_ref": "basic@1"},
+                        "judges": ["exact_match", "replay"],
+                    },
+                },
+            ],
+        },
+        token=token,
+    )
 
 
 def wait_terminal(url: str, pid: str, timeout_s: float) -> dict:
@@ -62,11 +94,19 @@ def summary(url: str, pid: str, t0: float) -> dict:
     for e in evs:
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
     close = next((e for e in evs if e["kind"] == "close_problem"), None)
-    return {"pid": pid, "terminal": st["problem"].get("terminal"), "closed": bool(st["problem"].get("closed")),
-            "closed_by": close["actor"]["kind"] if close else None,
-            "events": len(evs), "by_kind": kinds, "elapsed_s": round(time.monotonic() - t0, 2),
-            "spent_usd_milli": b["spent"]["usd_milli"], "reserved_usd_milli": b["reserved"]["usd_milli"],
-            "cap_usd_milli": b["cap"]["usd_milli"], "by_task_kind": b["by_kind"]}
+    return {
+        "pid": pid,
+        "terminal": st["problem"].get("terminal"),
+        "closed": bool(st["problem"].get("closed")),
+        "closed_by": close["actor"]["kind"] if close else None,
+        "events": len(evs),
+        "by_kind": kinds,
+        "elapsed_s": round(time.monotonic() - t0, 2),
+        "spent_usd_milli": b["spent"]["usd_milli"],
+        "reserved_usd_milli": b["reserved"]["usd_milli"],
+        "cap_usd_milli": b["cap"]["usd_milli"],
+        "by_task_kind": b["by_kind"],
+    }
 
 
 def main() -> int:

@@ -31,6 +31,7 @@
 - 读是 GET，全部是状态的纯函数（`views.py`，进 I1 的 AST 纯度检查）。每个视图端点可带 `as_of=<seq>`，由唯一的 reducer 重放得到（`GraphService.state_at`，不另写解释器）。应答外壳：`{as_of, head, view_hash, …视图}`，`view_hash = sha256(JCS(视图))`；加 `state_hash=1` 另给该序号的状态哈希。
 - 写是 POST，全部落到 `GraphService.submit`，与 `pd` 同一条提议通道。身份只来自 `Authorization: Bearer <令牌>`；没有令牌 401，未知令牌 403，都不进日志。写操作带 `idem_key`。
 - 错误体：`{ok:false, code, detail}`。`unknown_ref` 404，`schema_error` 400，`forbidden_op` 401/403，后续里程碑的端点 404 `not_enabled`。一批提议被内核拒绝仍是 200，逐条结果在 `results` 里。
+- 服务端自己的缺陷是 500 `{ok:false, code:"internal", detail:<异常类名>}`，栈打到标准错误；不再把 `KeyError`、`TypeError`、`ValueError` 一律说成 400 `schema_error`（审计 P1-4）。分发处只认 `HttpError`、`views.NotFound`、`views.NotEnabled` 与解析层的 `BadBody`。
 - 四语域：凡文字内容都是 `{src, register, value}`，`register` 由 `src`（出处类别）查 `views.REGISTER` 得到，取值 `证据｜叙述｜人｜估`。结构字段（id、等级、状态、账目）恒属证据。`pd` 的行首标记读同一张表。
 - 只对本机：`Host` 不是回环名拒绝；带 `Origin` 且非同源的请求一律 403，除非在 `--allow-origin` 白名单。读端点不要令牌（M1 本机单用户；`EventSource` 也带不了头）。
 - 排序只用创建 seq；时间只取事件 `ts`。
@@ -73,6 +74,13 @@
 ## 依赖
 
 不依赖任何其它组件。其它组件经 `paoding_graph.contract` 与本机 socket 访问它。
+
+## 类型与异常的去向（审计 P1-4）
+
+- `state.py`：reducer 状态与事件的类型（`Problem`、`Fact`、`Intent`、`Lease`、`Verdict`＝M0 的 `Support` 等），全部是 `TypedDict`。运行时仍是普通 dict，状态哈希、重放、序列化不变。
+- `parse.py`：未经校验的提议体只经 `Obj` 读；字段缺失、类型不对抛 `BadBody`。`reducer.validate` 只接 `BadBody` 与 `JCSError`（提议体里不能规范化的值）并转成 `schema_error`。校验函数其余部分抛出的异常是内核缺陷，原样暴露。
+- CI：`ruff check`（含 BLE，不许宽接 `Exception`）、`ruff format --check`、`mypy --strict`（`graph/src/paoding_graph` 全部；`refmodel.py` 是参考模型的逐字节副本，不检查、不改）。
+- 性质测试：`tests/test_malformed.py`（随机坏提议体，`validate` 不抛错、通过的事件体能落盘）、`tests/test_http_errors.py`（随机坏请求不出 500；注入的缺陷是 500 不是 400）。
 
 ## 实现取值（规格未定、在此钉死）
 

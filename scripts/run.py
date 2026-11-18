@@ -8,6 +8,7 @@
 Ctrl+C（或 SIGTERM）优雅退出：叫停在途会话、销毁执行容器、关掉全部服务；再按一次立刻退出。
 日志写 stderr，一行一条：时间、组件名、消息。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,19 +25,28 @@ from stack import Stack, StackConfig, StackError, default_static, log, setup_log
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="run.py", description="庖丁全栈（M0 单机）")
-    ap.add_argument("--home", required=True, type=Path, help="数据目录：g.sqlite、blobs/、vault/、sessions/、human.token")
+    ap.add_argument(
+        "--home", required=True, type=Path, help="数据目录：g.sqlite、blobs/、vault/、sessions/、human.token"
+    )
     ap.add_argument("--port", type=int, default=8100)
     ap.add_argument("--config", type=Path, help="配置文件（JSON）；缺省 <home>/config.json，没有就是空配置")
     ap.add_argument("--static", type=Path, help="前端构建产物；缺省用 web/dist（构建过的话）")
     ap.add_argument("--no-static", action="store_true", help="只起 API，不托管前端")
-    ap.add_argument("--allow-origin", action="append", help="放行的跨源来源；缺省只放 vite 开发服务器 http://127.0.0.1:5173")
+    ap.add_argument(
+        "--allow-origin", action="append", help="放行的跨源来源；缺省只放 vite 开发服务器 http://127.0.0.1:5173"
+    )
     ap.add_argument("--ready-file", type=Path, help="起好后把图服务地址写到这个文件（脚本等它用）")
     a = ap.parse_args(argv)
     setup_logging()
     static = None if a.no_static else (a.static or default_static())
     try:
-        cfg = StackConfig.load(a.home.resolve(), a.config.resolve() if a.config else None, port=a.port,
-                               static_dir=static, allow_origins=tuple(a.allow_origin) if a.allow_origin else None)
+        cfg = StackConfig.load(
+            a.home.resolve(),
+            a.config.resolve() if a.config else None,
+            port=a.port,
+            static_dir=static,
+            allow_origins=tuple(a.allow_origin) if a.allow_origin else None,
+        )
         stack = Stack(cfg)
         url = stack.start()
     except StackError as e:
@@ -52,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def on_signal(signum, _frame):
         hits[0] += 1
-        if hits[0] > 1:                                 # 第二下：不等了
+        if hits[0] > 1:  # 第二下：不等了
             log("stack").warning("再次收到 %s：立刻退出", signal.Signals(signum).name)
             for lid in list(stack.runner.live):
                 stack.runner.kill(lid, "shutdown")

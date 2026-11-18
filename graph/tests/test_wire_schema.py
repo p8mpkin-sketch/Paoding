@@ -3,12 +3,13 @@
 前端的 web/src/api/types.ts 由 wire_schema 生成；这里用同一份 schema 严格校验图服务的真应答：
 缺键、类型不符、多出 schema 没列的键都算失败。于是 schema、服务、前端类型三方一致。
 """
+
 import importlib.util
 import json
 from pathlib import Path
 
 import pytest
-from http_rig import R, Api, drive
+from http_rig import Api, R, drive
 
 from paoding_graph import wire_schema as ws
 
@@ -46,17 +47,28 @@ def test_every_read_endpoint_matches_the_schema(api):
         ok("Event", e)
     for nid in (ids["fact"], ids["intent"], ids["hint"]):
         ok("NodeEvidence", api.get(f"/v1/nodes/{nid}?layer=evidence"))
-    ok("FactNode", {k: v for k, v in api.get(f"/v1/nodes/{ids['fact']}").items()
-                    if k not in ("as_of", "head", "view_hash", "state_hash", "problem_id")})
+    ok(
+        "FactNode",
+        {
+            k: v
+            for k, v in api.get(f"/v1/nodes/{ids['fact']}").items()
+            if k not in ("as_of", "head", "view_hash", "state_hash", "problem_id")
+        },
+    )
     for aid in (ids["exec"], ids["candidate"], ids["judge_out"]):
         ok("ArtifactView", api.get(f"/v1/artifacts/{aid}"))
     ok("HintTrace", api.get(f"/v1/hints/{ids['hint']}/trace"))
     ok("JudgesResponse", api.get("/v1/judges"))
     ok("Catalog", api.get("/v1/templates"))
     ok("HealthResponse", api.get("/v1/health"))
-    st, prev, _ = api.req("POST", "/v1/profile/preview", {
-        "scope": [{"resource": "target", "pattern": "*", "actions": ["read"], "risk": "r1"}],
-        "goal": {"check": {"judge_id": "exact_match"}}})
+    st, prev, _ = api.req(
+        "POST",
+        "/v1/profile/preview",
+        {
+            "scope": [{"resource": "target", "pattern": "*", "actions": ["read"], "risk": "r1"}],
+            "goal": {"check": {"judge_id": "exact_match"}},
+        },
+    )
     assert st == 200
     ok("ProfilePreview", prev)
 
@@ -86,7 +98,7 @@ def test_the_open_problem_body_the_tests_use_matches_problem_input(api):
     """ProblemInput 是请求方向：拿测试实际提交的 open_problem 事件体对一遍。"""
     api.open()
     body = next(e["body"] for e in api.get("/v1/problems/p1/events")["events"] if e["kind"] == "open_problem")
-    added = {"id", "profile", "judge_snapshot"}                       # 内核写日志时补上的，提交方不给
+    added = {"id", "profile", "judge_snapshot"}  # 内核写日志时补上的，提交方不给
     ok("ProblemInput", {k: v for k, v in body.items() if k not in added})
 
 

@@ -1,4 +1,5 @@
 """CI 检查器自身的正反样例：确保检查不是空转。"""
+
 import pathlib
 import shutil
 import sys

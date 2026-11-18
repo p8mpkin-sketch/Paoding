@@ -12,6 +12,7 @@
 
 中继到 Adapter 进程之间走 Unix 套接字：端点代理与工具端点仍只监听本机回环，不对任何网络接口开放。
 """
+
 from __future__ import annotations
 
 import os
@@ -66,12 +67,12 @@ class UnixBridge:
 
     def _connect(self) -> socket.socket:
         s = socket.create_connection(("127.0.0.1", self.port), timeout=10)
-        s.settimeout(None)                                  # 超时只管建连：流式响应可以很久没有字节
+        s.settimeout(None)  # 超时只管建连：流式响应可以很久没有字节
         return s
 
     def close(self) -> None:
         try:
-            self.srv.shutdown(socket.SHUT_RDWR)             # 叫醒卡在 accept 里的线程
+            self.srv.shutdown(socket.SHUT_RDWR)  # 叫醒卡在 accept 里的线程
         except OSError:
             pass
         self.srv.close()
@@ -115,23 +116,35 @@ class ContainerLauncher:
     env_paths：环境变量里出现的宿主路径若在某个挂载之下，换成容器内的路径（argv 同样处理）。
     """
 
-    def __init__(self, image: str, proxy_port: int, mcp_port: int, *, relay_image: str = "python:3.12-slim",
-                 mounts: tuple = (), sock_dir: Path | None = None, memory: str = "2g", pids: int = 512):
+    def __init__(
+        self,
+        image: str,
+        proxy_port: int,
+        mcp_port: int,
+        *,
+        relay_image: str = "python:3.12-slim",
+        mounts: tuple = (),
+        sock_dir: Path | None = None,
+        memory: str = "2g",
+        pids: int = 512,
+    ):
         if not shutil.which("docker"):
             raise LaunchError("模型容器要 Docker，但找不到 docker 命令")
         self.image, self.relay_image, self.mounts = image, relay_image, tuple(mounts)
         self.memory, self.pids = memory, pids
         self.owner = _owner()
-        self.user = f"{os.getuid()}:{os.getgid()}"         # 容器内与 Adapter 同一 uid：工作区文件的属主一致
+        self.user = f"{os.getuid()}:{os.getgid()}"  # 容器内与 Adapter 同一 uid：工作区文件的属主一致
         # 套接字路径有 108 字节上限，所以放在短路径下，不放数据目录里
         self._own_sock_dir = sock_dir is None
         self.sock_dir = Path(sock_dir or tempfile.mkdtemp(prefix="pd-ep-"))
         self.sock_dir.chmod(0o700)
-        self._bridges = [UnixBridge(self.sock_dir / "proxy.sock", proxy_port),
-                         UnixBridge(self.sock_dir / "mcp.sock", mcp_port)]
+        self._bridges = [
+            UnixBridge(self.sock_dir / "proxy.sock", proxy_port),
+            UnixBridge(self.sock_dir / "mcp.sock", mcp_port),
+        ]
         self._sessions: dict[str, dict] = {}
         self._lock = threading.Lock()
-        self._isolated: bool | None = None                  # 这台 Docker 认不认隔离网关（27.1 起）
+        self._isolated: bool | None = None  # 这台 Docker 认不认隔离网关（27.1 起）
 
     # ---------- 会话运行器读的两个地址：模型容器里看到的端点 ----------
 
@@ -156,25 +169,60 @@ class ContainerLauncher:
         if s is not None:
             return s
         n = self.names(lease_id)
-        labels = ["--label", f"{LABEL}={n['model']}", "--label", f"{OWNER}={self.owner}", "--label", f"{LEASE}={lease_id}"]
+        labels = [
+            "--label",
+            f"{LABEL}={n['model']}",
+            "--label",
+            f"{OWNER}={self.owner}",
+            "--label",
+            f"{LEASE}={lease_id}",
+        ]
         try:
             self._network(n["net"], labels)
-            _docker("run", "-d", "--name", n["relay"], *labels, "--label", f"{ROLE}=endpoints",
-                    "--network", n["net"], "--network-alias", RELAY_ALIAS, "--user", self.user,
-                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only",
-                    "--pids-limit", "256", "--memory", "128m",
-                    "--mount", f"type=bind,src={self.sock_dir},dst=/run/pd,readonly",
-                    "--mount", f"type=bind,src={Path(__file__).with_name('relay.py')},dst=/opt/paoding/relay.py,readonly",
-                    self.relay_image, "python", "-I", "/opt/paoding/relay.py",
-                    f"{PROXY_PORT}=/run/pd/proxy.sock", f"{MCP_PORT}=/run/pd/mcp.sock")
-            probe = ("import socket,sys,time\n"
-                     "for _ in range(100):\n"
-                     "    try:\n"
-                     f"        [socket.create_connection(('127.0.0.1', p), 1).close() for p in ({PROXY_PORT}, {MCP_PORT})]\n"
-                     "        sys.exit(0)\n"
-                     "    except OSError:\n"
-                     "        time.sleep(0.05)\n"
-                     "sys.exit(1)\n")
+            _docker(
+                "run",
+                "-d",
+                "--name",
+                n["relay"],
+                *labels,
+                "--label",
+                f"{ROLE}=endpoints",
+                "--network",
+                n["net"],
+                "--network-alias",
+                RELAY_ALIAS,
+                "--user",
+                self.user,
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--read-only",
+                "--pids-limit",
+                "256",
+                "--memory",
+                "128m",
+                "--mount",
+                f"type=bind,src={self.sock_dir},dst=/run/pd,readonly",
+                "--mount",
+                f"type=bind,src={Path(__file__).with_name('relay.py')},dst=/opt/paoding/relay.py,readonly",
+                self.relay_image,
+                "python",
+                "-I",
+                "/opt/paoding/relay.py",
+                f"{PROXY_PORT}=/run/pd/proxy.sock",
+                f"{MCP_PORT}=/run/pd/mcp.sock",
+            )
+            probe = (
+                "import socket,sys,time\n"
+                "for _ in range(100):\n"
+                "    try:\n"
+                f"        [socket.create_connection(('127.0.0.1', p), 1).close() for p in ({PROXY_PORT}, {MCP_PORT})]\n"
+                "        sys.exit(0)\n"
+                "    except OSError:\n"
+                "        time.sleep(0.05)\n"
+                "sys.exit(1)\n"
+            )
             if _docker("exec", n["relay"], "python", "-I", "-c", probe, check=False).returncode != 0:
                 logs = _docker("logs", "--tail", "20", n["relay"], check=False)
                 raise LaunchError(f"端点中继未就绪：{(logs.stdout + logs.stderr).decode('utf-8', 'replace')[-400:]}")
@@ -193,7 +241,7 @@ class ContainerLauncher:
             if p.returncode == 0:
                 self._isolated = True
                 return
-            if self._isolated:                              # 之前成功过：这次是别的毛病
+            if self._isolated:  # 之前成功过：这次是别的毛病
                 raise LaunchError(f"建网络失败：{p.stderr.decode('utf-8', 'replace').strip()[-400:]}")
             self._isolated = False
             _docker("network", "rm", net, check=False)
@@ -211,23 +259,39 @@ class ContainerLauncher:
         sdir = workspace.parent
         lease_id = sdir.name
         n = self._ensure(lease_id)
-        _docker("rm", "-f", "-v", n["model"], check=False)          # 收尾轮复用同一个名字
-        table = [(str(workspace), WORKSPACE), (str(sdir / "home"), HOME), (str(sdir), SESSION),
-                 *[(str(src), dst) for src, dst in self.mounts]]
-        table.sort(key=lambda kv: -len(kv[0]))                      # 最长前缀优先
+        _docker("rm", "-f", "-v", n["model"], check=False)  # 收尾轮复用同一个名字
+        table = [
+            (str(workspace), WORKSPACE),
+            (str(sdir / "home"), HOME),
+            (str(sdir), SESSION),
+            *[(str(src), dst) for src, dst in self.mounts],
+        ]
+        table.sort(key=lambda kv: -len(kv[0]))  # 最长前缀优先
 
         def inside(v: str) -> str:
             for src, dst in table:
                 if v == src or v.startswith(src + "/"):
-                    return dst + v[len(src):]
+                    return dst + v[len(src) :]
             return v
+
         cmd = be.container_argv(
-            self.image, n["model"], n["net"], workspace, sdir, [inside(a) for a in argv],
-            {k: inside(str(v)) for k, v in env.items()}, home=sdir / "home", user=self.user,
+            self.image,
+            n["model"],
+            n["net"],
+            workspace,
+            sdir,
+            [inside(a) for a in argv],
+            {k: inside(str(v)) for k, v in env.items()},
+            home=sdir / "home",
+            user=self.user,
             labels={LABEL: n["model"], OWNER: self.owner, LEASE: lease_id, ROLE: "model"},
-            mounts=self.mounts, memory=self.memory, pids=self.pids)
-        popen = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                                 start_new_session=True)
+            mounts=self.mounts,
+            memory=self.memory,
+            pids=self.pids,
+        )
+        popen = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True
+        )
         return ContainerProc(n["model"], popen)
 
     def release(self, lease_id: str) -> None:

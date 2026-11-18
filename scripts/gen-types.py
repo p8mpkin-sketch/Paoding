@@ -16,12 +16,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "graph" / "src"))
 
-from paoding_graph.wire_schema import D, SECTIONS  # noqa: E402
+from paoding_graph.wire_schema import SECTIONS, D  # noqa: E402
 
 OUT = ROOT / "web" / "src" / "api" / "types.ts"
 WIDTH = 110
-KNOWN = {"type", "properties", "required", "additionalProperties", "propertyNames", "items", "anyOf", "allOf",
-         "const", "enum", "$ref", "description", "x-ts-param", "x-ts-args", "x-ts-params"}
+KNOWN = {
+    "type",
+    "properties",
+    "required",
+    "additionalProperties",
+    "propertyNames",
+    "items",
+    "anyOf",
+    "allOf",
+    "const",
+    "enum",
+    "$ref",
+    "description",
+    "x-ts-param",
+    "x-ts-args",
+    "x-ts-params",
+}
 
 HEADER = """\
 // 线格式类型：图服务 HTTP 绑定的应答与请求（graph/SPEC.md「HTTP 绑定」，HMI 设计 §11.2、§14）。
@@ -135,7 +150,10 @@ def main() -> int:
     text = render()
     if a.check:
         if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
-            print(f"{OUT.relative_to(ROOT)} 与 schema 不一致；跑 uv run python scripts/gen-types.py 重新生成", file=sys.stderr)
+            print(
+                f"{OUT.relative_to(ROOT)} 与 schema 不一致；跑 uv run python scripts/gen-types.py 重新生成",
+                file=sys.stderr,
+            )
             return 1
         print(f"{OUT.relative_to(ROOT)} 与 schema 一致")
         return 0

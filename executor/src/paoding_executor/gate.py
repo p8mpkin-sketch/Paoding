@@ -13,6 +13,7 @@
   {"event": "connect", "dst": "host:port", "ok": 上游是否接通, "t": 毫秒}
   {"event": "deny", "dst": "host:port", "why": "source", "src": 来源地址, "t": 毫秒}
 """
+
 import json
 import socket
 import struct
