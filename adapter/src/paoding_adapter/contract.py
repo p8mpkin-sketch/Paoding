@@ -1,6 +1,6 @@
 """对外契约接口。其它组件只许 import 本模块（ci/check_deps.py 强制）。"""
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from .backend import FAKE_CLI, CliBinding, fake_program  # noqa: F401
 from .container import ContainerLauncher, LaunchError  # noqa: F401
@@ -21,7 +21,7 @@ class SessionPort(Protocol):
         lease_id: str,
         *,
         statement: str,
-        kits: list | None = None,
-        focus: dict | None = None,
+        kits: list[Any] | None = None,
+        focus: dict[str, Any] | None = None,
         sandbox_id: str | None = None,
     ) -> SessionRecord: ...

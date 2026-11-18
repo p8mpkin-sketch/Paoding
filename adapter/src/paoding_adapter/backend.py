@@ -14,6 +14,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 FILE_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")  # 文件读写与检索；不含任何命令执行工具
 PROXY_TOOLS = ("exec", "submit", "show")
@@ -36,7 +37,7 @@ class LaunchPlan:
     system_prompt_file: Path  # ①–⑤
     user_prompt: str  # ⑥⑦，或收尾轮提示
     mcp_config_file: Path
-    proxy_tools: tuple = PROXY_TOOLS  # reason 不挂 exec
+    proxy_tools: tuple[Any, ...] = PROXY_TOOLS  # reason 不挂 exec
     proxy_url: str = ""
     task_token: str = ""
     max_budget_usd: float = 0.0
@@ -46,10 +47,10 @@ class LaunchPlan:
 
 @dataclass
 class CliBinding:
-    program: list = field(default_factory=lambda: ["claude"])
+    program: list[Any] = field(default_factory=lambda: ["claude"])
     max_turns_flag: bool = False  # 帮助文本未列出 --max-turns；D4 真机核对前不传
     model: str = ""  # 非空时传 --model（例如 Anthropic 兼容端点上的别家模型名）
-    path_prefix: tuple = ()  # 加在 CLI 进程 PATH 前面的目录（宿主子进程：CLI 与它要的 node 所在目录）
+    path_prefix: tuple[Any, ...] = ()  # 加在 CLI 进程 PATH 前面的目录（宿主子进程：CLI 与它要的 node 所在目录）
 
     def command(self, plan: LaunchPlan) -> tuple[list[str], dict[str, str]]:
         allowed = list(FILE_TOOLS) + [f"mcp__{MCP_NAME}__{t}" for t in plan.proxy_tools]
@@ -107,8 +108,8 @@ def container_argv(
     *,
     home: Path | None = None,
     user: str | None = None,
-    labels: dict | None = None,
-    mounts: tuple = (),
+    labels: dict[str, Any] | None = None,
+    mounts: tuple[Any, ...] = (),
     memory: str | None = None,
     pids: int | None = None,
 ) -> list[str]:

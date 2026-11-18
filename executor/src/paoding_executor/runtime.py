@@ -29,6 +29,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from paoding_graph.contract import BlobPort, GraphPort
 
@@ -111,11 +112,11 @@ class ExecResult:
     exit_code: int | None
     output: str  # 截断后的回显
     truncated: bool  # 回显或采集是否截断
-    provenance: dict  # exec 出处字段（§3.2.2），judge 模式下交给判官运行器
+    provenance: dict[str, Any]  # exec 出处字段（§3.2.2），judge 模式下交给判官运行器
     ended_by: str = "exit"  # exit | timeout | oom | killed
 
 
-def _docker(*args: str, check: bool = True, timeout: float | None = 120) -> subprocess.CompletedProcess:
+def _docker(*args: str, check: bool = True, timeout: float | None = 120) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(["docker", *args], capture_output=True, check=check, timeout=timeout)
 
 
@@ -174,7 +175,7 @@ class DockerExecutor:
             Path(spool_dir).mkdir(parents=True, exist_ok=True)
         self.gate_image = gate_image
         self.owner = owner_id()
-        self._live: dict[str, dict] = {}
+        self._live: dict[str, dict[str, Any]] = {}
 
     # ---------- 生命周期 ----------
 
@@ -242,7 +243,14 @@ class DockerExecutor:
         return sid
 
     def _start_gates(
-        self, sid: str, net: str, up: str, hosts: dict[str, list[dict]], labels: list[str], lease_id: str, wall_s: int
+        self,
+        sid: str,
+        net: str,
+        up: str,
+        hosts: dict[str, list[dict[str, Any]]],
+        labels: list[str],
+        lease_id: str,
+        wall_s: int,
     ) -> list[str]:
         """每台授权主机一个闸门：在沙箱网络上顶着主机名，另一只脚在上游网络。等它们都开始监听再返回。"""
         if not hosts:
@@ -330,7 +338,7 @@ class DockerExecutor:
             self.destroy(sid)
         return gone
 
-    def sandboxes(self) -> list[dict]:
+    def sandboxes(self) -> list[dict[str, Any]]:
         """本实例名下的沙箱：sid、租约、是否仍在运行。只读，供状态页与清理决策用。"""
         out = []
         for sid, i in sorted(self._live.items()):
@@ -354,10 +362,10 @@ class DockerExecutor:
     def __enter__(self) -> DockerExecutor:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _info(self, sid: str) -> dict:
+    def _info(self, sid: str) -> dict[str, Any]:
         info = self._live.get(sid)
         if info is None:
             raise SandboxGone(f"没有沙箱 {sid}")
@@ -365,7 +373,7 @@ class DockerExecutor:
 
     # ---------- exec ----------
 
-    def _touched(self, info: dict, started_ms: int, ended_ms: int) -> list[str]:
+    def _touched(self, info: dict[str, Any], started_ms: int, ended_ms: int) -> list[str]:
         """访问摘要（§3.2.2）：这次运行期间经闸门连到过的授权目标，形如 net:host:port，去重排序。
 
         来源是闸门在容器之外的逐连接记录，不取命令输出里的任何说法。目标端口没开、上游没接通的连接也算：
@@ -457,10 +465,10 @@ class DockerExecutor:
         )
 
 
-def _by_host(spec: ExecSpec) -> dict[str, list[dict]]:
+def _by_host(spec: ExecSpec) -> dict[str, list[dict[str, Any]]]:
     """授权规则按主机分组：host → [{port, actions}]。手工构造、只给了 egress_allow 的 ExecSpec 按 connect 处理。"""
     rules = spec.egress_rules or tuple((addr, ("connect",)) for addr in spec.egress_allow)
-    out: dict[str, list[dict]] = {}
+    out: dict[str, list[dict[str, Any]]] = {}
     for addr, actions in rules:
         host, port = split_address(addr)
         out.setdefault(host, []).append({"port": port, "actions": list(actions)})
@@ -476,13 +484,13 @@ def _ip(name: str, net: str) -> str:
         f'{{{{(index .NetworkSettings.Networks "{net}").IPAddress}}}}',
         name,
     )
-    ip = p.stdout.decode().strip()
+    ip: str = p.stdout.decode().strip()
     if not ip:
         raise RuntimeError(f"{name} 在网络 {net} 上没有地址")
     return ip
 
 
-def gate_log(gate: str, since_ms: int | None = None) -> list[dict]:
+def gate_log(gate: str, since_ms: int | None = None) -> list[dict[str, Any]]:
     """闸门的逐连接记录（它的标准输出，由本进程在容器之外读）。不是 JSON 的行忽略。
     since_ms：只读这个时刻（留一秒余量）之后的记录，长会话里不必每次读全量。"""
     since = [] if since_ms is None else ["--since", f"{since_ms / 1000 - 1:.3f}"]
@@ -559,7 +567,7 @@ class EnvManager:
 
     def __init__(self) -> None:
         self.owner = owner_id()
-        self._envs: dict[str, dict] = {}
+        self._envs: dict[str, dict[str, Any]] = {}
 
     def start(
         self,
@@ -662,7 +670,7 @@ class EnvManager:
     def __enter__(self) -> EnvManager:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()
 
 

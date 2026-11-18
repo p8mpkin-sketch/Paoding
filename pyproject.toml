@@ -50,17 +50,23 @@ omit = ["scripts/e2e/*"]
 [tool.coverage.report]
 skip_empty = true
 
-# 类型检查（P1-4）：graph/ 全量 strict。refmodel.py 是参考模型的逐字节副本（CI 比对），不在这里改它，
+# 类型检查（P1-4；阶段一第 4 项扩到 executor、adapter、judgebox）：四个包全量 strict。refmodel.py 是参考模型的逐字节副本（CI 比对），不在这里改它，
 # 所以它自身的报错不看，对它的调用也不算"调用无类型函数"。
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["graph/src/paoding_graph"]
+files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox"]
 untyped_calls_exclude = ["paoding_graph.refmodel"]
 
 [[tool.mypy.overrides]]
 module = "paoding_graph.refmodel"
 ignore_errors = true
+
+# 各组件的 contract.py 就是再导出（ci/check_deps.py 只许跨组件 import 它）：在这些模块上放开隐式再导出，
+# 不用把每个名字改写成 `import X as X`。
+[[tool.mypy.overrides]]
+module = ["paoding_graph.contract", "paoding_executor.contract", "paoding_adapter.contract", "paoding_judgebox.contract"]
+implicit_reexport = true
 
 [[tool.mypy.overrides]]
 module = "yaml"

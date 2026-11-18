@@ -20,12 +20,13 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import IO, Any
 
-from paoding_executor.contract import ExecPort, compile_spec
-from paoding_graph.contract import BlobPort, GraphPort, GraphReader, TokenIssuer
+from paoding_executor.contract import SandboxPort, compile_spec
+from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import backend as be
 from .mcp import ToolEndpoint
@@ -37,7 +38,7 @@ LOG = logging.getLogger("adapter")
 CLI_STDERR = "cli.stderr.log"  # 会话目录里：CLI 的 stderr（两轮追加写）。CLI 出错时只在这里留话
 
 
-def stderr_file(cwd: Path):
+def stderr_file(cwd: Path) -> IO[bytes]:
     """CLI 的 stderr 落到会话目录（cwd 是工作区，它的上一级）。调用方把返回的文件交给 Popen 后自己关掉。"""
     return open(cwd.parent / CLI_STDERR, "ab")  # noqa: SIM115  交给子进程后由调用方关
 
@@ -54,25 +55,27 @@ class AdapterConfig:
     stall_s: float = 600.0
     max_turns: int = 100  # 真实测试：40 回合不够“探索+提取+验证+提交”全流程
     binding: be.CliBinding = field(default_factory=be.CliBinding)
-    extra_env: dict = field(default_factory=dict)  # 只供假 CLI 的脚本路径等测试用途
-    judges_cfg: dict = field(default_factory=dict)
-    bases: dict = field(default_factory=dict)  # Problem.env.base（基础规格名）→ 镜像；没有登记的按原名用
-    env_for: Callable[[dict], dict] | None = None  # 按租约追加 CLI 进程的环境变量（假 CLI 按角色取脚本）
+    extra_env: dict[str, Any] = field(default_factory=dict)  # 只供假 CLI 的脚本路径等测试用途
+    judges_cfg: dict[str, Any] = field(default_factory=dict)
+    bases: dict[str, Any] = field(default_factory=dict)  # Problem.env.base（基础规格名）→ 镜像；没有登记的按原名用
+    env_for: Callable[[Mapping[str, Any]], dict[str, Any]] | None = (
+        None  # 按租约追加 CLI 进程的环境变量（假 CLI 按角色取脚本）
+    )
 
 
 @dataclass
 class SessionRecord:
     lease_id: str
     status: str = "leased"
-    events: list = field(default_factory=list)
+    events: list[Any] = field(default_factory=list)
     rounds: int = 0
-    exit_codes: list = field(default_factory=list)
+    exit_codes: list[Any] = field(default_factory=list)
     package_ref: str | None = None
     transcript_ref: str | None = None
-    release: dict | None = None
+    release: dict[str, Any] | None = None
 
 
-def local_launcher(argv: list[str], env: dict, cwd: Path) -> subprocess.Popen:
+def local_launcher(argv: list[str], env: dict[str, Any], cwd: Path) -> subprocess.Popen[Any]:
     """宿主机子进程：只给假 CLI 的测试台与空配置的组装根用。真实后端走 container.py 的 ContainerLauncher。
 
     launcher 的约定：调用返回与 Popen 同形的对象（stdout、poll、wait）。它还可以带三样可选的东西，
@@ -101,14 +104,14 @@ class SessionRunner:
         issuer: TokenIssuer,
         proxy: EndpointProxy,
         endpoint: ToolEndpoint,
-        executor: ExecPort | None = None,
-        launcher: Callable[[list, dict, Path], subprocess.Popen] = local_launcher,
+        executor: SandboxPort | None = None,
+        launcher: Callable[[list[Any], dict[str, Any], Path], subprocess.Popen[Any]] = local_launcher,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.cfg, self.graph, self.reader, self.blobs = cfg, graph, reader, blobs
         self.issuer, self.proxy, self.endpoint, self.executor = issuer, proxy, endpoint, executor
         self.launcher, self.clock = launcher, clock
-        self.live: dict[str, dict] = {}  # 在途会话：哮天犬经 soft_line / kill 操作它们
+        self.live: dict[str, dict[str, Any]] = {}  # 在途会话：哮天犬经 soft_line / kill 操作它们
 
     # ---------- 哮天犬的两个动作（watchdog.contract.TaskControl，结构化实现） ----------
 
@@ -137,14 +140,14 @@ class SessionRunner:
         lease_id: str,
         *,
         statement: str,
-        kits: list | None = None,
-        focus: dict | None = None,
+        kits: list[Any] | None = None,
+        focus: dict[str, Any] | None = None,
         sandbox_id: str | None = None,
     ) -> SessionRecord:
         rec = SessionRecord(lease_id, "preparing")
         lease = self.reader.state["leases"][lease_id]
         role = lease["kind"]
-        actor = {"kind": "adapter", "id": self.cfg.adapter_id, "session": lease_id, "role": role}
+        actor: Actor = {"kind": "adapter", "id": self.cfg.adapter_id, "session": lease_id, "role": role}
         token = self.issuer.issue(actor)
         task_token = "pdt-" + secrets.token_urlsafe(24)
         sdir = self.cfg.root / lease_id
@@ -262,10 +265,10 @@ class SessionRunner:
             self.proxy.revoke(task_token)
             self.endpoint.unmount(url)
             self.issuer.revoke(token)
-            if owned is not None:
+            if owned is not None and self.executor is not None:  # owned 只在起过执行容器时才有
                 self.executor.destroy(owned)
 
-    def _launch_sandbox(self, pid: str, lease: dict, ws: Path) -> str:
+    def _launch_sandbox(self, pid: str, lease: Mapping[str, Any], ws: Path) -> str:
         """按租约编译授权并起执行容器（§3.6.2）。上限取所服务 Intent 的 risk，Bootstrap 取 r0；
         r2 规则只在该 Intent 已获批准时编入。reason 会话不走到这里。"""
         st = self.reader.state
@@ -276,7 +279,9 @@ class SessionRunner:
         env = {**p["env"], "base": self.cfg.bases.get(p["env"]["base"], p["env"]["base"])}
         ws.chmod(0o777)  # 容器内进程丢了全部能力，靠目录权限写工作区
         spec = compile_spec(lease["id"].replace("_", "-"), p["scope"], env, ceiling, approved, str(ws))
-        return self.executor.launch(spec, lease["id"])
+        assert self.executor is not None  # 调用方已查过 executor 有 launch
+        sid: str = self.executor.launch(spec, lease["id"])
+        return sid
 
     # ---------- 一轮 CLI ----------
 
@@ -300,8 +305,11 @@ class SessionRunner:
         last = [self.clock()]
         turns = [0]
 
-        def reader():
-            for line in proc.stdout:
+        stdout = proc.stdout
+        assert stdout is not None  # 启动器总以 stdout=PIPE 起 CLI
+
+        def reader() -> None:
+            for line in stdout:
                 last[0] = self.clock()
                 try:
                     ev = json.loads(line)
@@ -365,14 +373,15 @@ class SessionRunner:
         )
         if not out["ok"]:
             raise RegisterRefused(f"登记失败：{out['results']}")
-        return out["results"][0]["id"]
+        aid: str = out["results"][0]["id"]
+        return aid
 
 
 class RegisterRefused(RuntimeError):
     pass
 
 
-def _signal(proc: subprocess.Popen | None, sig: int) -> None:
+def _signal(proc: subprocess.Popen[Any] | None, sig: int) -> None:
     if proc is None or proc.poll() is not None:
         return
     if sig == signal.SIGINT and hasattr(proc, "interrupt"):  # 模型容器：信号要送进容器
@@ -384,7 +393,7 @@ def _signal(proc: subprocess.Popen | None, sig: int) -> None:
         pass
 
 
-def _terminate(proc: subprocess.Popen) -> None:
+def _terminate(proc: subprocess.Popen[Any]) -> None:
     """终止：SIGTERM 终止进程树（真 CLI 退出码 143），5 秒不退再 SIGKILL。"""
     if hasattr(proc, "terminate") and not isinstance(proc, subprocess.Popen):  # 模型容器：停容器，不只是停客户端
         proc.terminate()

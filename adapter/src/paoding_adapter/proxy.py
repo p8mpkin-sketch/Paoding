@@ -102,14 +102,14 @@ HOP = {
 @dataclass
 class PriceTable:
     version: str
-    models: dict
+    models: dict[str, Any]
 
     @classmethod
     def load(cls, path: str | Path) -> PriceTable:
         d = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         return cls(d["version"], d["models"])
 
-    def usd_milli(self, model: str, u: dict) -> int:
+    def usd_milli(self, model: str, u: dict[str, Any]) -> int:
         p = self.models.get(model)
         if p is None:  # 未知模型按最贵档计，宁多勿少
             p = max(self.models.values(), key=lambda x: x["output"])
@@ -139,7 +139,7 @@ class ProxyConfig:
     api_key: str  # 真实密钥，只在本进程
     adapter_token: str  # 向图服务提交 cost 事件用的组件令牌
     global_cap_usd_milli: int = 500_000  # M0 总额上限，暂定 500 美元
-    problem_caps: dict = field(default_factory=dict)  # pid → usd_milli
+    problem_caps: dict[str, Any] = field(default_factory=dict)  # pid → usd_milli
 
 
 class EndpointProxy:
@@ -161,7 +161,7 @@ class EndpointProxy:
 
     # ---------- 启动恢复 ----------
 
-    def restore(self, reader: GraphReader) -> dict:
+    def restore(self, reader: GraphReader) -> dict[str, Any]:
         """从图服务的账本投影（GET /budget 的进程内形态）恢复累计花费。在开始收请求之前调用。
 
         图是账本，代理只是计量点：进程重启后，按题花费取各题 /budget 的 spent.usd_milli，全局花费取各题之和
@@ -205,7 +205,7 @@ class EndpointProxy:
             t.requests += 1
             return 200, "ok", t, t.requests
 
-    def charge(self, t: Task, n: int, model: str, usage: dict, estimated: bool = False) -> int:
+    def charge(self, t: Task, n: int, model: str, usage: dict[str, Any], estimated: bool = False) -> int:
         """n 取自 admit，做幂等键：同一请求重复上报只记一次。usage 是 normalize_usage 之后的形状。"""
         usd = self.prices.usd_milli(model, usage)
         with self._lock:
@@ -243,7 +243,7 @@ class EndpointProxy:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
-            def log_message(self, *a):  # 不把请求打到 stderr
+            def log_message(self, *a: Any) -> None:  # 不把请求打到 stderr
                 pass
 
             def _token(self) -> str | None:
@@ -260,10 +260,10 @@ class EndpointProxy:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def do_GET(self):
+            def do_GET(self) -> None:
                 self._forward(None)
 
-            def do_POST(self):
+            def do_POST(self) -> None:
                 if "chunked" in self.headers.get("transfer-encoding", "").lower():
                     body = _read_chunked(self.rfile)  # 不读完的话，剩下的字节会被当成下一个请求，连接就卡住
                 else:
@@ -276,6 +276,7 @@ class EndpointProxy:
                 if status != 200:
                     LOG.warning("代理：%s %s → %d %s", self.command, self.path, status, why)
                     return self._reject(status, why)
+                assert task is not None  # admit 放行（200）时必给任务
                 up = urllib.parse.urlsplit(proxy.cfg.upstream)
                 conn: http.client.HTTPConnection
                 if up.scheme == "https":
@@ -388,7 +389,7 @@ class EndpointProxy:
 
         self.server = ThreadingHTTPServer((host, port), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        h, p = self.server.server_address[:2]
+        h, p = str(self.server.server_address[0]), int(self.server.server_address[1])  # AF_INET：(主机, 端口)
         self.url = f"http://{h}:{p}"
         LOG.info(
             "端点代理在 %s，上游 %s（https 的 CA 来源：%s）",
@@ -404,7 +405,7 @@ class EndpointProxy:
             self.server.server_close()
 
 
-def ledger_diff(proxy: EndpointProxy, state: dict) -> list[dict]:
+def ledger_diff(proxy: EndpointProxy, state: dict[str, Any]) -> list[dict[str, Any]]:
     """对账（3.5.5 的 4、5）：代理自记的逐任务花费与图里 source=proxy 的 cost 事件之和逐项比较。
     返回不一致的条目；空表示对上。图是账本，代理是计量点，两者独立累计。
     代理启动时从账本恢复过基线的，只对恢复之后（seq 大于恢复时链头）的事件逐任务比较，合计加上基线。"""
@@ -427,7 +428,7 @@ def ledger_diff(proxy: EndpointProxy, state: dict) -> list[dict]:
     return diffs
 
 
-def normalize_usage(raw: dict) -> dict[str, int]:
+def normalize_usage(raw: dict[str, Any]) -> dict[str, int]:
     """把各家 Anthropic 兼容端点的 usage 折成代理计价用的四个字段；取不到的字段不出现。
 
     - Anthropic：input_tokens（不含缓存命中）、output_tokens、cache_read_input_tokens、cache_creation_input_tokens
@@ -456,8 +457,9 @@ def normalize_usage(raw: dict) -> dict[str, int]:
     inp = num("input_tokens")
     if inp is None:
         inp = num("prompt_cache_miss_tokens")
-    if inp is None and num("prompt_tokens") is not None:
-        inp = max(0, num("prompt_tokens") - (hit or 0))  # prompt_tokens 含命中部分，命中另按缓存价计
+    prompt = num("prompt_tokens")
+    if inp is None and prompt is not None:
+        inp = max(0, prompt - (hit or 0))  # prompt_tokens 含命中部分，命中另按缓存价计
     outs = [v for v in (num("output_tokens"), num("completion_tokens")) if v is not None]
     out = max(outs) if outs else None  # 两种名字都出现（各在一个事件里）时取大的，宁多勿少
     u = {
@@ -502,7 +504,8 @@ class _Meter:
     哪边给了什么字段都收，值为 null 的不覆盖已有的数。上游压缩了的先解压（只用于计量，转发的字节不动）。"""
 
     def __init__(self, sse: bool, encoding: str = ""):
-        self.sse, self.buf, self.model, self.usage = sse, b"", "", {}
+        self.sse, self.buf, self.model = sse, b"", ""
+        self.usage: dict[str, Any] = {}
         self.size = 0  # 解压后的响应字节数，估算用
         enc = encoding.strip().lower()
         self._z = (
@@ -545,7 +548,8 @@ class _Meter:
             return
         if not isinstance(d, dict):
             return
-        m = d.get("message") if isinstance(d.get("message"), dict) else {}
+        msg = d.get("message")
+        m: dict[str, Any] = msg if isinstance(msg, dict) else {}
         if isinstance(m.get("model"), str):
             self.model = m["model"]
         elif isinstance(d.get("model"), str):

@@ -13,6 +13,7 @@ import sys
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 from .tools import ToolHost, as_text, tool_schemas
 
@@ -36,7 +37,7 @@ class ToolEndpoint:
         with self._lock:
             self._hosts.pop(url.rsplit("/", 1)[-1], None)
 
-    def handle(self, key: str, msg: dict) -> dict | None:
+    def handle(self, key: str, msg: dict[str, Any]) -> dict[str, Any] | None:
         host = self._hosts.get(key)
         mid, method = msg.get("id"), msg.get("method", "")
         if host is None:
@@ -82,10 +83,10 @@ class ToolEndpoint:
         class H(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
-            def log_message(self, *a):
+            def log_message(self, *a: Any) -> None:
                 pass
 
-            def _send(self, code: int, obj: dict | None) -> None:
+            def _send(self, code: int, obj: dict[str, Any] | list[dict[str, Any]] | None) -> None:
                 data = b"" if obj is None else json.dumps(obj, ensure_ascii=False).encode()
                 self.send_response(code)
                 if obj is not None:
@@ -94,7 +95,7 @@ class ToolEndpoint:
                 self.end_headers()
                 self.wfile.write(data)
 
-            def do_POST(self):
+            def do_POST(self) -> None:
                 parts = self.path.split("/")
                 if len(parts) != 3 or parts[1] != "mcp":
                     return self._send(404, _rpc_err(None, -32001, "未知路径"))
@@ -108,15 +109,15 @@ class ToolEndpoint:
                 out = ep.handle(parts[2], msg)
                 self._send(202, None) if out is None else self._send(200, out)
 
-            def do_GET(self):  # 不提供服务端推送流
+            def do_GET(self) -> None:  # 不提供服务端推送流
                 self._send(405, None)
 
-            def do_DELETE(self):
+            def do_DELETE(self) -> None:
                 self._send(200, None)
 
         self.server = ThreadingHTTPServer((host, port), H)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        h, p = self.server.server_address[:2]
+        h, p = str(self.server.server_address[0]), int(self.server.server_address[1])  # AF_INET：(主机, 端口)
         self.base = f"http://{h}:{p}"
         return self.base
 
@@ -126,5 +127,5 @@ class ToolEndpoint:
             self.server.server_close()
 
 
-def _rpc_err(mid, code: int, msg: str) -> dict:
+def _rpc_err(mid: Any, code: int, msg: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": msg}}

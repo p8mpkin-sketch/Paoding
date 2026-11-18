@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,15 +27,15 @@ class Outcome:
     result: str  # pass | fail | flaky | inconclusive
     reason: str = "ok"  # ok | timeout | env_error | flaky | unsupported | untouched
     output: bytes = b""  # 判官输出：登记为 judge 类 Artifact 的正文
-    provenance: dict = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
     wall_s: int = 0
 
 
 @dataclass
 class Ctx:
-    spec: dict  # 注册表条目
-    check: dict  # 登记在目标上的判据
-    problem: dict
+    spec: dict[str, Any]  # 注册表条目
+    check: Mapping[str, Any]  # 登记在目标上的判据
+    problem: Mapping[str, Any]
     target: str
     target_risk: str
     candidate: bytes | None
@@ -45,12 +46,12 @@ class Ctx:
     executor: Any  # SandboxPort；内建的纯计算判官不用
     request_id: str
     lease_id: str
-    bases: dict
+    bases: dict[str, Any]
     now_ms: int
-    grounded: tuple = ()  # 挂入洁净容器、且自身有出处的 Artifact（见 runner._grounded）
+    grounded: tuple[Any, ...] = ()  # 挂入洁净容器、且自身有出处的 Artifact（见 runner._grounded）
 
 
-def _prov(tool: str, command: str, exit_code: int | None, now: int, touched: list[str] | None = None) -> dict:
+def _prov(tool: str, command: str, exit_code: int | None, now: int, touched: list[str] | None = None) -> dict[str, Any]:
     return {
         "sandbox_id": "builtin",
         "base": "builtin",
@@ -66,7 +67,7 @@ def _prov(tool: str, command: str, exit_code: int | None, now: int, touched: lis
     }
 
 
-def _report(**kw) -> bytes:
+def _report(**kw: Any) -> bytes:
     return json.dumps(kw, ensure_ascii=False, sort_keys=True).encode()
 
 
@@ -122,7 +123,7 @@ def exact_match(c: Ctx) -> Outcome:
     )
 
 
-def _matches(expect: dict, exit_code: int | None, text: str) -> bool:
+def _matches(expect: dict[str, Any], exit_code: int | None, text: str) -> bool:
     keys = {"exit_code", "stdout_contains", "stdout_regex"} & set(expect)
     if not keys:
         return exit_code == 0  # 没写期望：以正常退出为准
@@ -201,9 +202,10 @@ def needs_touch(c: Ctx) -> bool:
     return any(RESOURCE_EXTERNAL.get(rule.get("resource"), True) for rule in c.problem.get("scope", []))
 
 
-def _blob(c: Ctx, r) -> bytes:
+def _blob(c: Ctx, r: Any) -> bytes:
     get = getattr(getattr(c.executor, "blobs", None), "get", None)
-    return get(r.blob) if get else r.output.encode()
+    data: bytes = get(r.blob) if get else r.output.encode()
+    return data
 
 
 def replay(c: Ctx) -> Outcome:

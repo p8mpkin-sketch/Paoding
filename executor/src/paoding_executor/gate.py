@@ -20,19 +20,20 @@ import struct
 import sys
 import threading
 import time
+from typing import Any
 
 OPEN_ACTIONS = {"connect", "*"}
 _lock = threading.Lock()
 
 
-def log(**kw):
+def log(**kw: Any) -> None:
     kw["t"] = int(time.time() * 1000)
     with _lock:
         sys.stdout.write(json.dumps(kw, sort_keys=True) + "\n")
         sys.stdout.flush()
 
 
-def reset(conn):
+def reset(conn: socket.socket) -> None:
     """立刻以 RST 关闭：对端看到的是连接被重置，不是正常结束。"""
     try:
         conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
@@ -41,7 +42,7 @@ def reset(conn):
     conn.close()
 
 
-def pipe(src, dst):
+def pipe(src: socket.socket, dst: socket.socket) -> None:
     try:
         while True:
             data = src.recv(65536)
@@ -57,7 +58,7 @@ def pipe(src, dst):
             pass
 
 
-def handle(conn, peer, cfg, port):
+def handle(conn: socket.socket, peer: tuple[str, int], cfg: dict[str, Any], port: int) -> None:
     dst = f"{cfg['host']}:{port}"
     if peer[0] != cfg["allow_src"]:
         log(event="deny", dst=dst, why="source", src=peer[0])
@@ -79,14 +80,14 @@ def handle(conn, peer, cfg, port):
     up.close()
 
 
-def serve(sock, cfg, port):
+def serve(sock: socket.socket, cfg: dict[str, Any], port: int) -> None:
     while True:
         conn, peer = sock.accept()
         threading.Thread(target=handle, args=(conn, peer, cfg, port), daemon=True).start()
 
 
-def main(cfg):
-    socks = []
+def main(cfg: dict[str, Any]) -> None:
+    socks: list[tuple[socket.socket, int]] = []
     for rule in cfg["rules"]:
         opened = bool(OPEN_ACTIONS & set(rule["actions"]))
         log(event="rule", dst=f"{cfg['host']}:{rule['port']}", actions=sorted(rule["actions"]), open=opened)

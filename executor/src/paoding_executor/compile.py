@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from paoding_graph.contract import RESOURCE_EXTERNAL
 
@@ -23,7 +25,7 @@ class ResourceKind:
     kind: str
     external: bool
 
-    def compile(self, rule: dict) -> dict:
+    def compile(self, rule: Mapping[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
 
@@ -44,7 +46,7 @@ class NetAddress(ResourceKind):
     egress：actions 含 connect（或 *）的地址，出站闸门为它开转发。
     rules：全部地址连同各自的 actions，原样交给闸门，由闸门决定开不开（不含 connect 的不开）。"""
 
-    def compile(self, rule: dict) -> dict:
+    def compile(self, rule: Mapping[str, Any]) -> dict[str, Any]:
         split_address(rule["pattern"])
         actions = tuple(sorted({str(a) for a in rule.get("actions") or ()}))
         return {
@@ -56,7 +58,7 @@ class NetAddress(ResourceKind):
 class Workspace(ResourceKind):
     """只放行本题工作区，不开任何出站（蓝图 C1，M3 正式启用）。"""
 
-    def compile(self, rule: dict) -> dict:
+    def compile(self, rule: Mapping[str, Any]) -> dict[str, Any]:
         return {}
 
 
@@ -81,16 +83,16 @@ class ExecSpec:
     image: str
     baseline_ref: str
     workspace: str
-    egress_allow: tuple = ()  # 放行出站连接的 host:port
-    credentials: tuple = ()
+    egress_allow: tuple[Any, ...] = ()  # 放行出站连接的 host:port
+    credentials: tuple[Any, ...] = ()
     limits: Limits = field(default_factory=Limits)
-    egress_rules: tuple = ()  # ((host:port, (动作…)), …)：闸门据此逐端口执行；同一地址的动作取并集
+    egress_rules: tuple[Any, ...] = ()  # ((host:port, (动作…)), …)：闸门据此逐端口执行；同一地址的动作取并集
 
 
 def compile_spec(
     spec_id: str,
-    scope: list[dict],
-    env: dict,
+    scope: Sequence[Mapping[str, Any]],
+    env: dict[str, Any],
     ceiling: str,
     approved_r2: bool,
     workspace: str,

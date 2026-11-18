@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -19,8 +20,8 @@ class RegistryError(ValueError):
     pass
 
 
-def load_registry(directory: str | Path = DEFAULT_DIR) -> dict[str, dict]:
-    out: dict[str, dict] = {}
+def load_registry(directory: str | Path = DEFAULT_DIR) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
     for f in sorted(Path(directory).glob("*.y*ml")):
         spec = yaml.safe_load(f.read_text(encoding="utf-8"))
         if not isinstance(spec, dict) or not isinstance(spec.get("id"), str):
@@ -40,7 +41,7 @@ def load_registry(directory: str | Path = DEFAULT_DIR) -> dict[str, dict]:
     return out
 
 
-def kernel_judges(registry: dict[str, dict]) -> dict[str, dict]:
+def kernel_judges(registry: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """图服务 Config.judges 的形状：judge_id → {version, grade, kind, max_cost（美元）}。"""
     return {
         jid: {

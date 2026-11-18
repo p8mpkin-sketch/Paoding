@@ -12,7 +12,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import BinaryIO
+from typing import Protocol
 
 MAX_BLOB = 256 * 1024 * 1024
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -45,7 +45,7 @@ class BlobStore:
             raise BlobNotFound(f"不是 sha256：{h!r}")
         return self.root / h[:2] / h[2:]
 
-    def put(self, data: bytes | BinaryIO) -> str:
+    def put(self, data: bytes | Readable) -> str:
         stream = _as_stream(data)
         hasher, size = hashlib.sha256(), 0
         fd, tmp = tempfile.mkstemp(dir=self.root / "tmp")
@@ -90,7 +90,13 @@ class BlobStore:
         return self.path(h).stat().st_size
 
 
-def _as_stream(data: bytes | BinaryIO) -> BinaryIO:
+class Readable(Protocol):
+    """put 只要一个能逐块 read 的东西：文件、BytesIO，或执行层的捕获读取器。"""
+
+    def read(self, n: int = -1, /) -> bytes: ...
+
+
+def _as_stream(data: bytes | Readable) -> Readable:
     if isinstance(data, (bytes, bytearray, memoryview)):
         import io
 
