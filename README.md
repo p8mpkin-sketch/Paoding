@@ -91,6 +91,7 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 | [docs/m0/dissent-003-human-ops.md](docs/m0/dissent-003-human-ops.md) | 异议 003：内核补齐两项人的操作（已落实） |
 | [docs/m0/dissent-004-http-api.md](docs/m0/dissent-004-http-api.md) | 异议 004：HTTP 绑定的九处缝隙（待裁决） |
 | [docs/m0/dissent-005-web-f1.md](docs/m0/dissent-005-web-f1.md) | 异议 005：网页前端 F1 的十二处缝隙（待裁决） |
+| [docs/m0/adjudication-004-005.md](docs/m0/adjudication-004-005.md) | 异议 004、005 的逐条裁决（建议稿，待确认） |
 | 各组件的 `SPEC.md` | 该组件实现了哪些契约、官的声明、与规格的偏差和进度（见上文代码表） |
 
 ## 命名体系
