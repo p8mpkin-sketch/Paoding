@@ -111,6 +111,93 @@ def test_scope_enforced_by_risk(ex, tmp_path, targets):
     assert ex.exec(sid1, PROBE.format(h=targets[1], p=80), "p1", "d").exit_code == 0
 
 
+TWO_PORTS = ("import http.server,threading\n"
+             "for p in (8080, 8081):\n"
+             "    threading.Thread(target=http.server.ThreadingHTTPServer(('', p), "
+             "http.server.SimpleHTTPRequestHandler).serve_forever).start()\n")
+GET = "python -c \"import urllib.request as u;print(u.urlopen('http://{h}:{p}/',timeout=5).status)\""
+
+
+@pytest.fixture(scope="module")
+def duo():
+    """一台目标、两个端口都在监听：8080 与 8081。"""
+    name = f"pdt-{uuid.uuid4().hex[:6]}-duo"
+    subprocess.run(["docker", "run", "-d", "--name", name, IMAGE, "python", "-c", TWO_PORTS], check=True,
+                   capture_output=True)
+    yield name
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+
+
+def _addresses(name):
+    fmt = "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}"
+    return subprocess.run(["docker", "inspect", "--format", fmt, name], capture_output=True).stdout.decode().split()
+
+
+def test_egress_is_port_level(ex, tmp_path, duo):
+    """P0-4 验收：r0 规则只放行 duo:8080；同一容器的 8081 被拒，绕过名字直连目标地址也不通。"""
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"},
+             {"resource": "net", "pattern": f"{duo}:8081", "actions": ["connect"], "risk": "r1"}]
+    sid = ex.launch(compile_spec("pl", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    assert ex.exec(sid, GET.format(h=duo, p=8080), "p1", "a").output.strip() == "200"      # 内容真的转发到了
+    assert ex.exec(sid, PROBE.format(h=duo, p=8081), "p1", "b").exit_code == 7
+    assert "refused" in ex.exec(sid, GET.format(h=duo, p=8081), "p1", "c").output.lower()
+    for ip in _addresses(duo):                                # 目标的真实地址（默认网桥、上游网络）
+        for port in (8080, 8081):
+            assert ex.exec(sid, PROBE.format(h=ip, p=port), "p1", f"d{ip}{port}").exit_code == 7
+    hi = ex.launch(compile_spec("pl1", scope, ENV, "r1", False, str(tmp_path)), "l_2")     # 上限抬到 r1：两个端口都通
+    assert ex.exec(hi, GET.format(h=duo, p=8081), "p1", "e").output.strip() == "200"
+
+
+def test_gate_enforces_actions(ex, tmp_path, duo):
+    """P0-4：actions 由闸门执行。含 connect（或 *）的端口才开；只写了别的动作的规则不开通路。"""
+    from paoding_executor.runtime import gate_log
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["read"], "risk": "r0"},
+             {"resource": "net", "pattern": f"{duo}:8081", "actions": ["*"], "risk": "r0"}]
+    spec = compile_spec("ga", scope, ENV, "r0", False, str(tmp_path))
+    assert spec.egress_allow == (f"{duo}:8081",)
+    sid = ex.launch(spec, "l_1")
+    assert ex.exec(sid, PROBE.format(h=duo, p=8080), "p1", "a").exit_code == 7
+    assert ex.exec(sid, GET.format(h=duo, p=8081), "p1", "b").output.strip() == "200"
+    [gate] = ex._live[sid]["gates"]
+    log = gate_log(gate)
+    rules = {e["dst"]: e["open"] for e in log if e["event"] == "rule"}
+    assert rules == {f"{duo}:8080": False, f"{duo}:8081": True}
+    assert [(e["dst"], e["ok"]) for e in log if e["event"] == "connect"] == [(f"{duo}:8081", True)]
+
+
+def test_gate_only_serves_the_sandbox(ex, tmp_path, duo):
+    """闸门只认执行容器的源地址：别的容器即使接进沙箱网络，也拿不到目标的内容（3.6.4 的 4 的网络一侧）。"""
+    from paoding_executor.runtime import gate_log
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"}]
+    sid = ex.launch(compile_spec("gs", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    other = f"pdt-{uuid.uuid4().hex[:6]}-other"
+    try:
+        p = subprocess.run(["docker", "run", "--rm", "--name", other, "--network", f"{sid}-net", IMAGE, "sh", "-c",
+                            GET.format(h=duo, p=8080)], capture_output=True)
+        assert p.returncode != 0 and b"200" not in p.stdout
+    finally:
+        subprocess.run(["docker", "rm", "-f", other], capture_output=True)
+    [gate] = ex._live[sid]["gates"]
+    assert [e["why"] for e in gate_log(gate) if e["event"] == "deny"] == ["source"]
+    assert ex.exec(sid, GET.format(h=duo, p=8080), "p1", "a").output.strip() == "200"
+
+
+def test_gate_is_hardened(ex, tmp_path, duo):
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"}]
+    sid = ex.launch(compile_spec("gh", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    [gate] = ex._live[sid]["gates"]
+    fmt = "{{.HostConfig.CapDrop}}|{{.HostConfig.SecurityOpt}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.User}}|{{len .Mounts}}|{{.Config.Env}}"
+    got = subprocess.run(["docker", "inspect", "--format", fmt, gate], capture_output=True).stdout.decode().strip()
+    assert got.startswith("[ALL]|[no-new-privileges]|true|65534:65534|0|")
+    assert not any(w in got.upper() for w in ("ANTHROPIC", "API_KEY", "TOKEN", "SECRET"))
+    nets = subprocess.run(["docker", "inspect", "--format", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}",
+                           gate], capture_output=True).stdout.decode().split()
+    assert sorted(nets) == [f"{sid}-net", f"{sid}-up-net"]      # 两张都是内部网络：闸门自己也出不了外网
+    ex.destroy(sid)
+    left = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True).stdout.decode()
+    assert gate not in left and duo in left
+
+
 def test_no_keys_no_model_endpoint(ex, tmp_path, targets):
     """3.6.4 的 4（执行容器一侧）：没有任何密钥类环境变量；连不到模型端点。"""
     sid = ex.launch(compile_spec("t4", _scope(targets), ENV, "r0", False, str(tmp_path)), "l_1")

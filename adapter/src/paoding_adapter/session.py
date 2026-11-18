@@ -155,10 +155,17 @@ class SessionRunner:
                           "exit_codes": rec.exit_codes, "events": rec.events, "tool_calls": s.calls,
                           "final": s.final, "package_ref": rec.package_ref,
                           "proxy": {"requests": t.requests if t else 0, "usd_milli": t.spent_usd_milli if t else 0}}
-            rec.transcript_ref = self._register(token, pid, f"transcript:{lease_id}",
-                                                json.dumps(transcript, ensure_ascii=False, sort_keys=True).encode(),
-                                                "application/vnd.paoding.session-record+json")
-            body = {"lease": lease_id, "outcome": outcome, "transcript_ref": rec.transcript_ref}
+            body = {"lease": lease_id, "outcome": outcome}
+            try:
+                rec.transcript_ref = body["transcript_ref"] = self._register(
+                    token, pid, f"transcript:{lease_id}",
+                    json.dumps(transcript, ensure_ascii=False, sort_keys=True).encode(),
+                    "application/vnd.paoding.session-record+json")
+            except RuntimeError:
+                # 会话收尾时题目可能刚被判官的裁决关掉（候选通过即关题）：关题后不再接受登记，但租约仍要释放，
+                # 否则预留悬着、调度线程带着异常退出。会话记录的 Blob 已写入，只是没有登记。
+                if not self.reader.state["problems"].get(pid, {}).get("closed"):
+                    raise
             if s.final and s.final.get("suggestions"):
                 body["suggestions"] = s.final["suggestions"]
             out = self.graph.submit(token, pid, f"release:{lease_id}", [{"op": "release", "body": body}])
