@@ -23,6 +23,7 @@ import os
 import shlex
 import socket
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass
@@ -58,16 +59,44 @@ def owner_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{_start_time(os.getpid())}"
 
 
+def _has_proc() -> bool:
+    return Path("/proc/self/stat").exists()
+
+
 def owner_alive(owner: str) -> bool | None:
-    """True/False：本机属主是否存活；None：不是本机的属主或格式不明，不由本机判断。"""
+    """True/False：本机属主是否存活；None：不是本机的属主、格式不明，或本机没有 /proc（macOS 等），不由本机判断。
+
+    没有 /proc 时取不到进程启动时刻，活着的属主也会被判成“已死”，孤儿清扫就会误杀在用的沙箱与模型容器；
+    这时一律答 None（宁漏勿误杀），清扫只在有 /proc 的平台上生效。"""
     try:
         host, pid, started = owner.rsplit(":", 2)
         pid_i = int(pid)
     except ValueError:
         return None
-    if host != socket.gethostname():
+    if host != socket.gethostname() or not _has_proc():
         return None
     return _start_time(pid_i) == started
+
+
+def host_path(p: str | Path) -> str:
+    """交给 Docker 的宿主路径。macOS 上 /var、/tmp 是 /private/var、/private/tmp 的符号链接，解析过的路径带
+    /private/ 前缀；Docker Desktop 的共享目录按 /var/folders、/tmp 登记，带前缀的挂载会被拒。去掉前缀即可。
+    其它平台原样返回（Linux 上 /private/ 没有这层含义）。"""
+    s = str(p)
+    if sys.platform == "darwin" and s.startswith("/private/"):
+        return s[len("/private"):]
+    return s
+
+
+def bind_args(src: str | Path, dst: str, readonly: bool = False) -> list[str]:
+    """绑定挂载用 `-v 宿主:容器[:ro]`，不用 `--mount type=bind`（macOS 的 Docker Desktop 上后者对这些路径失败，
+    真实环境验证过）。`-v` 遇到不存在的宿主路径会悄悄建一个空目录：这里先查存在，保留 `--mount` 那样的当场报错。"""
+    s = host_path(src)
+    if ":" in s or ":" in dst:
+        raise ValueError(f"挂载路径里不能有冒号（-v 的分隔符）：{s!r} → {dst!r}")
+    if not Path(src).exists():
+        raise FileNotFoundError(f"挂载源不存在：{src}")
+    return ["-v", f"{s}:{dst}" + (":ro" if readonly else "")]
 
 
 class SandboxGone(RuntimeError):
@@ -148,7 +177,7 @@ class DockerExecutor:
                     "--pids-limit", str(lim.pids), "--memory", f"{lim.mem_mb}m", "--cpus", str(lim.cpu),
                     "--env", "HOME=/tmp", "-w", "/workspace"]
             if mount_workspace:
-                args += ["--mount", f"type=bind,source={spec.workspace},target=/workspace"]
+                args += bind_args(spec.workspace, "/workspace")
             else:
                 args += ["--tmpfs", "/workspace"]
             # 墙钟上限：容器自己到点退出，不靠外面记得来杀（limits.wall_s，§3.6.2）

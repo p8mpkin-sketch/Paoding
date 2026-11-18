@@ -14,7 +14,12 @@ TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，
 - fake：脚本化假 CLI（adapter/src/paoding_adapter/fakecli.py），模型端点是本机的假上游，不需要任何密钥；
   每类任务的脚本由配置给出。缺省在宿主上起子进程；`"launcher": "container"` 时在模型容器里起（同一条容器路径）。
 - real：真 CLI，缺省在模型容器里起（规格 §3.4.2）。镜像由 backend.image 给出；真实密钥从环境变量读
-  （backend.api_key_env，缺省 ANTHROPIC_API_KEY），只交给端点代理，不进配置文件、日志与任何容器。
+  （backend.api_key_env，缺省 ANTHROPIC_API_KEY），只交给端点代理，不进日志与任何容器。
+  其余可选项（macOS + DeepSeek 真实测试里验证过）：
+    program   CLI 的命令（字符串按 shell 规则切分，或列表），缺省 claude
+    api_base  模型端点，等同 upstream，例如 https://api.deepseek.com/anthropic
+    model     传给 CLI 的 --model
+    api_key   密钥直接写在配置里。环境变量有值时以环境变量为准；用它会记一条警告，配置文件要自己收好权限
 """
 from __future__ import annotations
 
@@ -22,6 +27,7 @@ import json
 import logging
 import os
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -79,7 +85,10 @@ class StackConfig:
     launcher: str = ""                              # container | local；缺省 real → container，fake → local
     cli_image: str = ""                             # 模型容器的镜像：real 必填；fake + container 缺省用通用镜像
     upstream: str = "https://api.anthropic.com"     # real 的模型端点；fake 用本机假上游
-    api_key_env: str = "ANTHROPIC_API_KEY"          # real：真实密钥所在的环境变量名（密钥本身不进配置）
+    api_key_env: str = "ANTHROPIC_API_KEY"          # real：真实密钥所在的环境变量名
+    api_key: str = ""                               # real：配置里直接给的密钥（环境变量有值时不用）；不进日志
+    program: tuple = ()                             # real：CLI 命令；空则用 CliBinding 的缺省（claude）
+    model: str = ""                                 # real：传给 CLI 的 --model
     usage: dict | None = None                       # 假上游每个请求回报的 usage
     executor: str = "docker"                        # docker | none（none：没有 exec，只适合看界面）
     bases: dict = field(default_factory=lambda: {"basic": "python:3.12-slim"})
@@ -110,7 +119,10 @@ class StackConfig:
                   scripts={k: str((base / v).resolve()) for k, v in be.get("scripts", {}).items()},
                   usage=be.get("usage"),
                   **{k: be[src] for k, src in (("launcher", "launcher"), ("cli_image", "image"),
-                                               ("upstream", "upstream"), ("api_key_env", "api_key_env")) if src in be},
+                                               ("upstream", "upstream"), ("upstream", "api_base"),
+                                               ("api_key_env", "api_key_env"), ("api_key", "api_key"),
+                                               ("model", "model")) if src in be},
+                  **({"program": _program(be["program"])} if be.get("program") else {}),
                   executor=ex.get("kind", "docker"),
                   **({"bases": ex["bases"]} if "bases" in ex else {}),
                   **{k: raw[k] for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s", "max_sessions") if k in raw})
@@ -118,6 +130,15 @@ class StackConfig:
             if v is not None:
                 setattr(cfg, k, v)
         return cfg
+
+
+def _program(v) -> tuple:
+    """backend.program：字符串按 shell 规则切分（可带参数），列表原样。"""
+    if isinstance(v, str):
+        return tuple(shlex.split(v))
+    if isinstance(v, list) and v and all(isinstance(x, str) for x in v):
+        return tuple(v)
+    raise StackError(f"backend.program 取字符串或字符串列表，不是 {v!r}")
 
 
 class StackError(RuntimeError):
@@ -140,8 +161,13 @@ class Stack:
         api_key = "sk-fake-upstream"
         if cfg.backend == "real":
             api_key = os.environ.get(cfg.api_key_env, "")
+            if not api_key and cfg.api_key:
+                api_key = cfg.api_key
+                log("stack").warning("模型密钥取自配置文件的 backend.api_key（环境变量 %s 没有设）：配置文件请只给自己读",
+                                     cfg.api_key_env)
             if not api_key:
-                raise StackError(f"真实后端要模型密钥：环境变量 {cfg.api_key_env} 没有设。密钥只交给端点代理，不进任何容器")
+                raise StackError(f"真实后端要模型密钥：环境变量 {cfg.api_key_env} 没有设，配置里也没有 backend.api_key。"
+                                 "密钥只交给端点代理，不进任何容器")
             if self.launch_mode == "container" and not cfg.cli_image:
                 raise StackError("真实后端在模型容器里起 CLI：配置里要给 backend.image（装有该 CLI 的镜像）")
         if self.launch_mode == "container" and not docker_available():
@@ -198,7 +224,8 @@ class Stack:
         mcp_port = int(self.endpoint.serve().rsplit(":", 1)[1])
         if real:
             self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")     # 真实后端三类任务都开；这张表只对假 CLI 有意义
-            binding, env_for = CliBinding(), None
+            binding = CliBinding(model=cfg.model, **({"program": list(cfg.program)} if cfg.program else {}))
+            env_for = None
         else:
             binding = CliBinding(program=fake_program(in_container=self.launch_mode == "container"))
             env_for = lambda lease: {"PD_FAKE_SCRIPT": cfg.scripts.get(lease["kind"], "")}  # noqa: E731
