@@ -13,7 +13,8 @@
 计量要兼容 Anthropic 兼容端点的方言（真实测试报告 P0-C：DeepSeek 上全程记 $0.000）：
 - 向上游只要未压缩的响应（accept-encoding: identity）；上游仍压缩的（gzip、deflate）边转发边解压来计量，
   转给客户端的字节不变。
-- SSE 的事件分隔认 \n\n、\r\n\r\n 与 \r\r；usage 在 message_start、message_delta 任一处或两处都行，值为 null 的字段不算。
+- SSE 的事件分隔认 \n\n、\r\n\r\n 与 \r\r；usage 在 message_start、message_delta 任一处或两处都行，
+  值为 null 的字段不算。
 - 字段名认 Anthropic 的 input/output/cache_read_input/cache_creation_input_tokens，也认 OpenAI 式的
   prompt/completion_tokens 与 DeepSeek 的 prompt_cache_hit/miss_tokens（见 normalize_usage）。
 - 成功的 /v1/messages 响应里一个用量字段都取不到时，按字节数估 token（宁多勿少）再乘价目表，
@@ -110,6 +111,7 @@ class EndpointProxy:
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
         self.boot = secrets.token_hex(4)  # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
+        self.boot = secrets.token_hex(4)
         self.global_spent = 0
         self.problem_spent: dict[str, int] = {}
         # 启动时从账本恢复的基线：seq 是恢复时的链头，对账只比它之后的事件

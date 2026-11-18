@@ -10,7 +10,7 @@ import json
 import logging
 
 import pytest
-from adapter_rig import PRICES, graph, lease_bootstrap, open_problem  # noqa: F401（fixture）
+from adapter_rig import PRICES, graph, lease_bootstrap, open_problem  # noqa: F401  fixture
 
 from paoding_adapter.fakeupstream import FakeUpstream
 from paoding_adapter.proxy import EndpointProxy, PriceTable, ProxyConfig, ledger_diff, normalize_usage
