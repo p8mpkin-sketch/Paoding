@@ -120,7 +120,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
       </div>
 
       <footer className="bottom">
-        <Timeline events={session.log.events} head={s.head} asOf={asOf} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} link={link} />
+        <Timeline ticks={session.log.ticks} head={s.head} asOf={asOf} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} link={link} />
       </footer>
     </div>
   );

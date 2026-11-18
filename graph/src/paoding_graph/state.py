@@ -244,6 +244,7 @@ class Hint(TypedDict):
     id: str
     problem_id: str
     seq: int
+    ts: int
     author: str
     closed: bool
     text: str

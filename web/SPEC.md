@@ -64,7 +64,9 @@
 
 ## 目录
 
-- `src/api/`：线格式类型、客户端、人的操作的事件体、SSE。
+- `src/api/`：线格式类型（生成物）、客户端、人的操作的事件体、SSE。
+
+数据路径（P2-1）：冷启动取一次 `/ticks`（时间轴）和一次 `/snapshot`（四份投影）。事件流里的事件只追加到刻度表；每批之后的 `event: view` 帧带四份投影的哈希，会话只对哈希变了的那几份发一次 `snapshot?parts=`，没变的沿用，`as_of` 与上一帧相同则不发请求。
 - `src/model/`：视图模型、布局、刻度、等级词、语域、向导草稿，都是纯函数。
 - `src/app/`：本机配置、路由、题目会话（事件流加视图模型）、使用读数。
 - `src/ui/`、`src/pages/`：组件与页面。
@@ -93,10 +95,10 @@
 
 ## 实现取值（异议 005 已于 2026-11-18 裁决，见 `docs/m0/adjudication-004-005.md`）
 
-1. 线格式类型是手写的，靠契约测试对着真应答核；HMI §14 的 JSON Schema 导出就绪后整体替换。
+1. 线格式类型由图服务的 JSON Schema 生成（`graph/src/paoding_graph/wire_schema.py` → `scripts/gen-types.py` → `src/api/types.ts`，不手改；CI 带 `--check`）。契约测试照旧对着真应答核。
 2. 批准与拒绝都带 `seen {seq, card_hash}`。图服务在链头重算卡片哈希，不等即 `stale_view` 并附最新卡片；前端的差异高亮只是便利，判定以服务端为准。
 3. 续期门、争议卡、暂停与恢复随 M1：图服务返回 `not_enabled` 时如实显示“暂不可用”；暂停与恢复没有做按钮。
 4. r2 而没有回退声明时禁用批准（HMI H1 的字面）。**裁决：要改**，只听卡面的 `approve_enabled`，与 `pd` 一致，卡面标出“未声明回退”；改动在 P2-2。
-5. “无证据根”按结构沿前提链判断（只走 `premises`，不算等级）；图服务的 `no_evidence_root` 只看直接的 grounds。**裁决：要改**，由图服务给链级字段，前端删掉展开；改动在 P2-1。
+5. “无证据根”由图服务按整条前提链给出（`no_evidence_root`）；检视只读这个字段，不自己算。**裁决（005-4）已落实**（P2-1）。
 6. 人的令牌存在本机 `localStorage`，只随写请求发出。**裁决**：改为 `sessionStorage` 加过期时间；改动在 P2-2。
 7. 模板目录的 `data`：**裁决**把暂行字段名定为约定，即 `fields.scope`、`fields.goal`、`fields.budget`、`fields.materials`、`judges`；取不到就留空，目录为空时用“不用模板”。

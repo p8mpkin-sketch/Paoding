@@ -20,6 +20,8 @@ jobs:
         run: python ci/check_domain_words.py
       - name: 依赖方向：只走契约接口
         run: python ci/check_deps.py
+      - name: 前端类型与线格式 schema 一致（types.ts 是生成物）
+        run: python scripts/gen-types.py --check
       - name: ruff lint（含 BLE：不许宽接 Exception）
         run: uv run --frozen ruff check
       - name: ruff format

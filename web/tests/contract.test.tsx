@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ApiError, createApi, newIdemKey } from "../src/api/client";
 import { ops } from "../src/api/ops";
-import type { ArtifactView, BudgetResponse, CardResponse, Event, GraphView, HintTrace, NodeEvidence, ProblemsView, ProfilePreview, StatusView, WorkView } from "../src/api/types";
+import type { ArtifactView, BudgetResponse, CardResponse, Event, GraphView, HintTrace, NodeEvidence, ProblemsView, ProfilePreview, StatusView, TicksResponse, WorkView } from "../src/api/types";
 import { EventLog } from "../src/model/eventlog";
 import { buildViewModel } from "../src/model/viewmodel";
 import { ApprovalCard } from "../src/ui/ApprovalCard";
@@ -32,7 +32,7 @@ const replay: typeof fetch = async (input) => {
 const real = { cfg: { base: "", token: "t", fetch: replay }, api: createApi({ base: "", token: "t", fetch: replay }) };
 
 const vmOf = (pid: string) =>
-  buildViewModel(pid, { status: body<StatusView>(`${pid}-status`), view: body<GraphView>(`${pid}-view`), budget: body<BudgetResponse>(`${pid}-budget`), work: body<WorkView>(`${pid}-work`) }, body<{ events: Event[] }>(`${pid}-events`).events);
+  buildViewModel(pid, { status: body<StatusView>(`${pid}-status`), view: body<GraphView>(`${pid}-view`), budget: body<BudgetResponse>(`${pid}-budget`), work: body<WorkView>(`${pid}-work`) }, body<TicksResponse>(`${pid}-ticks`).ticks);
 
 /** 一个对象的键集合（数组取并集）。 */
 function keys(v: unknown): string[] {
@@ -69,8 +69,10 @@ describe("真图服务的应答", () => {
   it("事件：按题的哈希链接得上", () => {
     for (const pid of ["p1", "p2"]) {
       const log = new EventLog();
-      expect(log.fill(body<{ events: Event[] }>(`${pid}-events`).events)).toBe(true);
-      expect(log.events.every((e) => e.problem_id === pid)).toBe(true);
+      const evs = body<{ events: Event[] }>(`${pid}-events`).events;
+      expect(evs.every((e) => e.problem_id === pid)).toBe(true);
+      expect(log.fill(evs)).toBe(true);
+      expect(log.ticks.map((t) => t.seq)).toEqual(evs.map((e) => e.seq));
     }
   });
 

@@ -3,7 +3,7 @@
 // 不带游标的话图服务从链头之后开始），断连的时刻也要自己看得见。读端点不带令牌。
 import type { ApiConfig } from "./client";
 import { SseParser } from "./sse";
-import type { Event } from "./types";
+import type { Event, ViewFrame } from "./types";
 
 export type StreamHandle = { close(): void };
 export type StreamOptions = {
@@ -12,6 +12,8 @@ export type StreamOptions = {
   onEvent(ev: Event): void;
   /** 落后超过补发窗口时图服务先发一帧快照再续流：中间的事件没有逐条送来，调用方要自己补。 */
   onSnapshot?(asOf: number): void;
+  /** 一批事件之后（以及刚连上时）图服务发一帧 view：该序号上四份投影各自的 view_hash。 */
+  onView?(frame: ViewFrame): void;
   /** live：连接已建立；disconnected：断开，正在重试。 */
   onState(state: "live" | "disconnected"): void;
   /** 重连前的等待；测试里注入。 */
@@ -43,6 +45,10 @@ export function openStream(cfg: ApiConfig, pid: string, opts: StreamOptions): St
         if (msg.event === "snapshot") {
           const asOf = (JSON.parse(msg.data) as { as_of: number }).as_of;
           opts.onSnapshot?.(asOf);
+          continue;
+        }
+        if (msg.event === "view") {
+          opts.onView?.(JSON.parse(msg.data) as ViewFrame);
           continue;
         }
         if (msg.event !== null) continue; // 不认识的具名帧

@@ -153,6 +153,33 @@ def _grounds(state: State, ids: list[str]) -> list[View]:
     return out
 
 
+def evidence_rooted(state: State, nid: str) -> bool:
+    """H6 的“有证据根”（裁决 005-4）：从 nid 出发沿前提链（只走 premises，不算等级）向上，
+    链上任何一个论断或 Intent 自己登记了 grounds，或者有一次带证据的判官裁决，就算有根。
+    链经过 Intent 时照样往上走，Intent 自己不算根，除非它的判据裁决带了证据。"""
+    verdict_targets = {v["target"] for v in state["verdicts"] if v.get("evidence")}
+    seen: set[str] = set()
+    todo = [nid]
+    while todo:
+        cur = todo.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        n = state["facts"].get(cur) or state["intents"].get(cur)
+        if n is None:
+            continue
+        if n.get("grounds") or cur in verdict_targets:
+            return True
+        todo.extend(n.get("premises", []))
+    return False
+
+
+def snapshot(state: State, pid: str, view_doc: View) -> dict[str, View]:
+    """GET /v1/problems/{pid}/snapshot 的四份投影（P2-1）：status、view（layer=title）、budget、work，
+    各自就是对应端点的视图。view 由调用方给（它带服务端开关），其余三份在这里算。"""
+    return {"status": status(state, pid), "view": view_doc, "budget": budget(state, pid), "work": work(state, pid)}
+
+
 def _fact(state: State, pid: str, f: Fact, ctx: View, layer: str) -> View:
     level = ctx["levels"].get(f["id"])
     out: dict[str, Any] = {
@@ -181,7 +208,7 @@ def _fact(state: State, pid: str, f: Fact, ctx: View, layer: str) -> View:
     )
     if layer in ("evidence", "full"):
         out["grounds"] = _grounds(state, f.get("grounds", []))
-        out["no_evidence_root"] = not out["grounds"]  # H6：“无证据根”标记
+        out["no_evidence_root"] = not evidence_rooted(state, f["id"])  # H6：整条前提链上的“无证据根”
         out["body_ref"] = f.get("body_ref")
     return out
 
@@ -230,6 +257,7 @@ def _intent(state: State, pid: str, i: Intent, ctx: View, layer: str) -> View:
     out["expected_gain"] = tag("estimate", i["expected_gain"]) if "expected_gain" in i else None
     if layer in ("evidence", "full"):
         out["leases"] = [l["id"] for l in sorted(leases, key=lambda l: l["issued_seq"])]
+        out["no_evidence_root"] = not evidence_rooted(state, i["id"])
     return out
 
 
@@ -238,6 +266,7 @@ def _hint(h: Hint) -> View:
         "id": h["id"],
         "type": "hint",
         "seq": h["seq"],
+        "ts": h.get("ts"),
         "author": h["author"],
         "closed": bool(h.get("closed")),
         "about": h.get("about"),

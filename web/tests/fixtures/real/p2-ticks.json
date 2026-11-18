@@ -1,0 +1,72 @@
+{
+ "path": "/v1/problems/p2/ticks",
+ "status": 200,
+ "body": {
+  "as_of": 36,
+  "head": 36,
+  "ticks": [
+   {
+    "seq": 25,
+    "ts": 1024,
+    "kind": "register_artifact"
+   },
+   {
+    "seq": 26,
+    "ts": 1025,
+    "kind": "open_problem"
+   },
+   {
+    "seq": 27,
+    "ts": 1026,
+    "kind": "lease"
+   },
+   {
+    "seq": 28,
+    "ts": 1027,
+    "kind": "register_artifact"
+   },
+   {
+    "seq": 29,
+    "ts": 1028,
+    "kind": "add_fact"
+   },
+   {
+    "seq": 30,
+    "ts": 1029,
+    "kind": "add_fact"
+   },
+   {
+    "seq": 31,
+    "ts": 1030,
+    "kind": "cost"
+   },
+   {
+    "seq": 32,
+    "ts": 1031,
+    "kind": "release"
+   },
+   {
+    "seq": 33,
+    "ts": 1032,
+    "kind": "lease"
+   },
+   {
+    "seq": 34,
+    "ts": 1033,
+    "kind": "add_intent"
+   },
+   {
+    "seq": 35,
+    "ts": 1034,
+    "kind": "release"
+   },
+   {
+    "seq": 36,
+    "ts": 1035,
+    "kind": "hint"
+   }
+  ],
+  "last_seq": 36,
+  "head_hash": "5ae4cc951d279084c24f23df2fed212a74d6fb8496dfa204f8e1b2736958f54d"
+ }
+}

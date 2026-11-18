@@ -4,7 +4,7 @@
  "body": {
   "as_of": 36,
   "head": 36,
-  "view_hash": "0eb313802948ded2860a87b012f68482d615ab5b0d3b8f786be071e1bcb602b9",
+  "view_hash": "6ca636e6cf8cf6859f6d455ed1928b3243bf44728dc5735a527e1d0eb193eb69",
   "problem_id": "p1",
   "id": "i_9",
   "type": "intent",
@@ -44,6 +44,7 @@
   },
   "leases": [
    "l_15"
-  ]
+  ],
+  "no_evidence_root": false
  }
 }

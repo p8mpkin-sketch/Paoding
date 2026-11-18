@@ -28,7 +28,15 @@ export function mockFetch(mock: Mock): MockFetch {
       let close = () => {};
       const rs = new ReadableStream<Uint8Array>({
         start(ctrl) {
-          off = mock.subscribe(decodeURIComponent(stream[1]), Number(headers["last-event-id"] ?? 0), (e) => ctrl.enqueue(enc.encode(`id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`)));
+          const pid = decodeURIComponent(stream[1]);
+          // 与图服务相同：每条事件之后跟一帧 view（该序号上四份投影的 view_hash），刚连上时也先发一帧
+          const view = (seq: number) => {
+            const h = seq > 0 ? mock.partsHash(pid, seq) : null;
+            if (h) ctrl.enqueue(enc.encode(`id: ${seq}\nevent: view\ndata: ${JSON.stringify({ as_of: seq, parts_hash: h })}\n\n`));
+          };
+          let last = Number(headers["last-event-id"] ?? 0);
+          off = mock.subscribe(pid, last, (e) => { ctrl.enqueue(enc.encode(`id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`)); last = e.seq; view(e.seq); });
+          view(last);
           close = () => { off(); open.delete(close); try { ctrl.error(new TypeError("dropped")); } catch { /* 已关 */ } };
           open.add(close);
           init?.signal?.addEventListener("abort", () => { off(); open.delete(close); try { ctrl.close(); } catch { /* 已关 */ } });

@@ -122,9 +122,9 @@
      "ttl_s": 120,
      "attempt": 1
     },
-    "idem_key": "lease:c49012fb1da84bf8808822d2401243c7#0",
+    "idem_key": "lease:2593aff1785543768b5c44d8fbb4b64e#0",
     "prev_hash": "68b9fdd5f10b605c34567fedf6f98272d56db4121d0c98cbb81ef99e403b2516",
-    "hash": "4c5159df6a27333fed3d302951350117d11495bf6b299816fd775fd8fbf8a202"
+    "hash": "5bb7790d5169db2437f55e3270f0638fff5f21a03138459dc41e26c5bc4e2d73"
    },
    {
     "v": 1,
@@ -160,8 +160,8 @@
      }
     },
     "idem_key": "k2#0",
-    "prev_hash": "4c5159df6a27333fed3d302951350117d11495bf6b299816fd775fd8fbf8a202",
-    "hash": "a9076689aa844b973b568aca4265a8be21b852a993385e1026c781eab783bb70"
+    "prev_hash": "5bb7790d5169db2437f55e3270f0638fff5f21a03138459dc41e26c5bc4e2d73",
+    "hash": "49d750786c534a029b207ba36ec7c47251de7c4ed200fc02cfcff76a9979c9f0"
    },
    {
     "v": 1,
@@ -192,8 +192,8 @@
      "content_key": "o:df397ca8a17bfe6d775c9773844dd878cec7e0f59a3ce1b5af2cc73eaa23f35a"
     },
     "idem_key": "k3#0",
-    "prev_hash": "a9076689aa844b973b568aca4265a8be21b852a993385e1026c781eab783bb70",
-    "hash": "fe32642d0560bed12619c13e6f8aed4bee7bf1c49f527a2c872d547b3dfe3cd8"
+    "prev_hash": "49d750786c534a029b207ba36ec7c47251de7c4ed200fc02cfcff76a9979c9f0",
+    "hash": "7f34c2d1d1d8f69452afbdbc6c58b48536251dd3a4bca93b9c1e6cdd095bc5b7"
    },
    {
     "v": 1,
@@ -219,8 +219,8 @@
      "model": "m"
     },
     "idem_key": "k4#0",
-    "prev_hash": "fe32642d0560bed12619c13e6f8aed4bee7bf1c49f527a2c872d547b3dfe3cd8",
-    "hash": "a3bc46de6cd40e643522e0d8b809b239b8da4370e1a16ad0d4e5860c204da338"
+    "prev_hash": "7f34c2d1d1d8f69452afbdbc6c58b48536251dd3a4bca93b9c1e6cdd095bc5b7",
+    "hash": "590e4f54464d7d072a81d32592cc3ce542d4c2275b1ba20b7b7119e18ac2abe5"
    },
    {
     "v": 1,
@@ -236,9 +236,9 @@
      "lease": "l_3",
      "outcome": "done"
     },
-    "idem_key": "release:l_3:4d93c41f4e5a4e18a166b4a1f8a730f2#0",
-    "prev_hash": "a3bc46de6cd40e643522e0d8b809b239b8da4370e1a16ad0d4e5860c204da338",
-    "hash": "e49f5ad53289f258071ba230dcb3deaa40ef5f9b58167f6598c434603f25619d"
+    "idem_key": "release:l_3:0471e54e186541c8a08747144ee2b547#0",
+    "prev_hash": "590e4f54464d7d072a81d32592cc3ce542d4c2275b1ba20b7b7119e18ac2abe5",
+    "hash": "12481be8eb2f391ad0500b7ca9287a9a23ed0c27177669f06a8a6b9e809a0042"
    },
    {
     "v": 1,
@@ -260,9 +260,9 @@
      "ttl_s": 120,
      "attempt": 1
     },
-    "idem_key": "lease:40ffcd638a7e49ce8b655a64b9684c3a#0",
-    "prev_hash": "e49f5ad53289f258071ba230dcb3deaa40ef5f9b58167f6598c434603f25619d",
-    "hash": "d6c0a0e4906f8f3bab9b565c6bbc11c72ef8903eda16ccfb0c27e4e3fe0451b9"
+    "idem_key": "lease:84eb0a0154dc4fb2ae1bf79c43468c53#0",
+    "prev_hash": "12481be8eb2f391ad0500b7ca9287a9a23ed0c27177669f06a8a6b9e809a0042",
+    "hash": "18fb454d07c36b73a8beee612c0f20f557365ffd0bc67275dd19d809ca0e896f"
    },
    {
     "v": 1,
@@ -290,8 +290,8 @@
      "expected_gain": 0.7
     },
     "idem_key": "k5#0",
-    "prev_hash": "d6c0a0e4906f8f3bab9b565c6bbc11c72ef8903eda16ccfb0c27e4e3fe0451b9",
-    "hash": "7016efa0d9eb0407ea85d0b67cac97aa82bfca293137eac029f3968ded214903"
+    "prev_hash": "18fb454d07c36b73a8beee612c0f20f557365ffd0bc67275dd19d809ca0e896f",
+    "hash": "4ab1cd3b4f3573cefa88ec9219d5001f40d6beec75e86a928680f896daf20d41"
    },
    {
     "v": 1,
@@ -307,9 +307,9 @@
      "lease": "l_8",
      "outcome": "done"
     },
-    "idem_key": "release:l_8:ed4fc1c9bce243fc8510d8557432b703#0",
-    "prev_hash": "7016efa0d9eb0407ea85d0b67cac97aa82bfca293137eac029f3968ded214903",
-    "hash": "ae4df75efe9ecac4a5ae9b722fa8c957fb0bad7c8a3eb03d24c08d34a5e423be"
+    "idem_key": "release:l_8:2917bd94dca14bafb924fa24c7b7945f#0",
+    "prev_hash": "4ab1cd3b4f3573cefa88ec9219d5001f40d6beec75e86a928680f896daf20d41",
+    "hash": "418c154da391b2151c62a252eded5e13007a21436069a5c25eb4981bccf661ea"
    },
    {
     "v": 1,
@@ -326,8 +326,8 @@
      "about": "i_9"
     },
     "idem_key": "k6#0",
-    "prev_hash": "ae4df75efe9ecac4a5ae9b722fa8c957fb0bad7c8a3eb03d24c08d34a5e423be",
-    "hash": "c627562324a18cee077b4b5b63d28bb6f1a5b7128e274919b678241cef7f1e87"
+    "prev_hash": "418c154da391b2151c62a252eded5e13007a21436069a5c25eb4981bccf661ea",
+    "hash": "d8c2ada86589ea41b6ddba19996deb1fc91bc6d107ac1565f3c7d2986866c6fe"
    },
    {
     "v": 1,
@@ -349,9 +349,9 @@
      "ttl_s": 120,
      "attempt": 2
     },
-    "idem_key": "lease:2e66f64d26c343e581de8b268911f949#0",
-    "prev_hash": "c627562324a18cee077b4b5b63d28bb6f1a5b7128e274919b678241cef7f1e87",
-    "hash": "e196996b52a25c0b5228279429fe5e05cb9f8d29e00df471226763ab2a77ae71"
+    "idem_key": "lease:48f359d41dff44d38c023c545bc96780#0",
+    "prev_hash": "d8c2ada86589ea41b6ddba19996deb1fc91bc6d107ac1565f3c7d2986866c6fe",
+    "hash": "cb0028d5aa14f66b3c36927c5492ab4b2248df70ffc2d9d63c90ab38e479cecc"
    },
    {
     "v": 1,
@@ -376,8 +376,8 @@
      }
     },
     "idem_key": "k7#0",
-    "prev_hash": "e196996b52a25c0b5228279429fe5e05cb9f8d29e00df471226763ab2a77ae71",
-    "hash": "d8b57439ddd609573a26158c08c7dc544dda4bf627624335ca2ffdb7a0eeb92f"
+    "prev_hash": "cb0028d5aa14f66b3c36927c5492ab4b2248df70ffc2d9d63c90ab38e479cecc",
+    "hash": "9335c2d3005cd0c703a9ff60bcf8b83be68797e760c9f94544673cab4352010e"
    },
    {
     "v": 1,
@@ -393,9 +393,9 @@
      "lease": "l_12",
      "outcome": "done"
     },
-    "idem_key": "release:l_12:ffbde2243d7b4040bf75982021ff0042#0",
-    "prev_hash": "d8b57439ddd609573a26158c08c7dc544dda4bf627624335ca2ffdb7a0eeb92f",
-    "hash": "e4923ba19fc8a45dbe563fe0a83e872a5cc82941b965bee241735b582af1993b"
+    "idem_key": "release:l_12:5b073b3047d54399bc36076e17a90b21#0",
+    "prev_hash": "9335c2d3005cd0c703a9ff60bcf8b83be68797e760c9f94544673cab4352010e",
+    "hash": "cabb727aaeeda0e0d8976e0b8e77a123962d6088e7075d75a4b5c61112f64974"
    },
    {
     "v": 1,
@@ -418,9 +418,9 @@
      "ttl_s": 120,
      "attempt": 1
     },
-    "idem_key": "lease:e8d5f62207b840e4ab767e4810e8145f#0",
-    "prev_hash": "e4923ba19fc8a45dbe563fe0a83e872a5cc82941b965bee241735b582af1993b",
-    "hash": "a4ce88dcc51f0fea521e26b01d3893addc9c5a5fe5e3af02d12129e91491f828"
+    "idem_key": "lease:b3ad997648854b4492f17803ddac9882#0",
+    "prev_hash": "cabb727aaeeda0e0d8976e0b8e77a123962d6088e7075d75a4b5c61112f64974",
+    "hash": "a65e71390275f4de6d86faad9062292c26bc4f54b676b3d965558963da4a407b"
    },
    {
     "v": 1,
@@ -446,8 +446,8 @@
      }
     },
     "idem_key": "k8#0",
-    "prev_hash": "a4ce88dcc51f0fea521e26b01d3893addc9c5a5fe5e3af02d12129e91491f828",
-    "hash": "cce5dce5455eaf7f61f3fb6f30f2fecc7e9b63f688fc105852972552f509e683"
+    "prev_hash": "a65e71390275f4de6d86faad9062292c26bc4f54b676b3d965558963da4a407b",
+    "hash": "22b70fd1dcb8468928e19c32f3b7bcf5ce9696199d6bd03834c2717a640ee986"
    },
    {
     "v": 1,
@@ -467,8 +467,8 @@
      "candidate": "a_16"
     },
     "idem_key": "k8#1",
-    "prev_hash": "cce5dce5455eaf7f61f3fb6f30f2fecc7e9b63f688fc105852972552f509e683",
-    "hash": "3f8e441f9a1b03adef550bba9e5181524c0cf8df6fc20106ace9cb8bbd7bb1d5"
+    "prev_hash": "22b70fd1dcb8468928e19c32f3b7bcf5ce9696199d6bd03834c2717a640ee986",
+    "hash": "2d010b95fc5cc4d450fea65114d6b83417cae333211219c5d3bb0d50c22b8dea"
    },
    {
     "v": 1,
@@ -494,8 +494,8 @@
      "model": "m"
     },
     "idem_key": "k9#0",
-    "prev_hash": "3f8e441f9a1b03adef550bba9e5181524c0cf8df6fc20106ace9cb8bbd7bb1d5",
-    "hash": "e2b7a1b11ac1ba88f22bce648b14facca45d3589346c11735548bbb49a744a2c"
+    "prev_hash": "2d010b95fc5cc4d450fea65114d6b83417cae333211219c5d3bb0d50c22b8dea",
+    "hash": "dffef07172844f585b37a1c7314855655747be61787c58e1be1fe8fd9fc51310"
    },
    {
     "v": 1,
@@ -511,9 +511,9 @@
      "lease": "l_15",
      "outcome": "done"
     },
-    "idem_key": "release:l_15:e54b946de1e5414db32ae4557390112d#0",
-    "prev_hash": "e2b7a1b11ac1ba88f22bce648b14facca45d3589346c11735548bbb49a744a2c",
-    "hash": "aa99e75955755c47e5eefbcb5f68fe6b638903a7a8b6f5976062007ee8304c3b"
+    "idem_key": "release:l_15:bdf6dba9fbea4e6db9ff01f75394b98b#0",
+    "prev_hash": "dffef07172844f585b37a1c7314855655747be61787c58e1be1fe8fd9fc51310",
+    "hash": "b56ea3e2b04d273b2f0fbce48e87293677dda136b972267ee64ba475eb41cb68"
    },
    {
     "v": 1,
@@ -536,9 +536,9 @@
      "ttl_s": 120,
      "attempt": 1
     },
-    "idem_key": "lease:923ab0e334234dbd88389790cc88cc01#0",
-    "prev_hash": "aa99e75955755c47e5eefbcb5f68fe6b638903a7a8b6f5976062007ee8304c3b",
-    "hash": "76aef34b999daab678c6af906bc5e23e1a9702b5993119fcc666c98523b52b10"
+    "idem_key": "lease:0c66629586d443bdae34ce2b4c38fba6#0",
+    "prev_hash": "b56ea3e2b04d273b2f0fbce48e87293677dda136b972267ee64ba475eb41cb68",
+    "hash": "762c8eafe756fc51c3b71c21b05d3275f1e6c77aac7121b480854b0c711f79bc"
    },
    {
     "v": 1,
@@ -574,8 +574,8 @@
      }
     },
     "idem_key": "k10#0",
-    "prev_hash": "76aef34b999daab678c6af906bc5e23e1a9702b5993119fcc666c98523b52b10",
-    "hash": "3e877bbcd9b02192fffc6b1ea3d1a1256eab75ba9d23b452175f20f0c2b5c350"
+    "prev_hash": "762c8eafe756fc51c3b71c21b05d3275f1e6c77aac7121b480854b0c711f79bc",
+    "hash": "077d82f33423fe830626bdf1a4a681a584206378055e951f80512bcea37e78cf"
    },
    {
     "v": 1,
@@ -597,8 +597,8 @@
      ]
     },
     "idem_key": "k11#0",
-    "prev_hash": "3e877bbcd9b02192fffc6b1ea3d1a1256eab75ba9d23b452175f20f0c2b5c350",
-    "hash": "0c2a14f1730510c7b14bf8f9bc6412e2578391eeb08deb7be2bf844d7df215d0"
+    "prev_hash": "077d82f33423fe830626bdf1a4a681a584206378055e951f80512bcea37e78cf",
+    "hash": "7955a69e023f4fccca76615c76f460206364a4265b7cd521ec3ed7045dd34c41"
    },
    {
     "v": 1,
@@ -616,8 +616,8 @@
      "card_hash": null
     },
     "idem_key": "k11#auto-close_problem-1",
-    "prev_hash": "0c2a14f1730510c7b14bf8f9bc6412e2578391eeb08deb7be2bf844d7df215d0",
-    "hash": "0bed501727f490adcac909f75f86c7191c2226e2b7a61df7c202ce1492c4befc"
+    "prev_hash": "7955a69e023f4fccca76615c76f460206364a4265b7cd521ec3ed7045dd34c41",
+    "hash": "46c39233175efbb0472b2ce4b256b1b72743e8bc5fb36ea5962b7d43f649ecf5"
    },
    {
     "v": 1,
@@ -634,9 +634,9 @@
      "outcome": "closed",
      "after_close": true
     },
-    "idem_key": "release:l_20:6230667a58c04f0e8c83c9da0b777802#0",
-    "prev_hash": "0bed501727f490adcac909f75f86c7191c2226e2b7a61df7c202ce1492c4befc",
-    "hash": "82e7984f278d490d26270265f4d2f34a5a994f8aa664050118ad3b2d5421abc0"
+    "idem_key": "release:l_20:ec689575282846d59750877dda9ded98#0",
+    "prev_hash": "46c39233175efbb0472b2ce4b256b1b72743e8bc5fb36ea5962b7d43f649ecf5",
+    "hash": "8e4e9b93a27a1fed98b4c82cf8212b48e4ead52aa1fa0ebd05979c3e07976796"
    }
   ],
   "head": 36,

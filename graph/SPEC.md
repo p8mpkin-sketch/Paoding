@@ -35,6 +35,7 @@
 - 四语域：凡文字内容都是 `{src, register, value}`，`register` 由 `src`（出处类别）查 `views.REGISTER` 得到，取值 `证据｜叙述｜人｜估`。结构字段（id、等级、状态、账目）恒属证据。`pd` 的行首标记读同一张表。
 - 只对本机：`Host` 不是回环名拒绝；带 `Origin` 且非同源的请求一律 403，除非在 `--allow-origin` 白名单。读端点不要令牌（M1 本机单用户；`EventSource` 也带不了头）。
 - 排序只用创建 seq；时间只取事件 `ts`。
+- 线格式的唯一事实源是 `wire_schema.py`（JSON Schema 2020-12）。网页的 `web/src/api/types.ts` 由 `scripts/gen-types.py` 生成，CI 带 `--check`；`tests/test_wire_schema.py` 用同一份 schema 严格校验每个读端点的真应答（缺键、多键、类型不符都失败）。改应答形状先改 schema。
 - 访问日志缺省关（`HttpConfig.access_log`）。打开后每个请求向 `logging` 的 `http` 记一条：方法、路径、状态码、耗时、字节数、对端地址；不记查询串、请求头与请求体。
 
 **端点。**
@@ -48,10 +49,12 @@
 | `GET /v1/problems/{pid}/view?layer=title｜summary&after_seq=&limit=` | 按创建顺序的节点清单，`next_after_seq` 为游标；`frontier`（活跃 Hint、待人处理、未结束 Intent 及其前提、未到终态的论断）。`layer=full` 需服务端开 `view_full_dump` |
 | `GET /v1/problems/{pid}/budget` | 账本投影：`cap、spent、reserved、by_kind、verify_spent、marks、mark_seqs、mark_lines、percent、wall、review` |
 | `GET /v1/problems/{pid}/work` | `items[]`：`bootstrap｜reason｜explore｜judge｜rejudge｜human` |
-| `GET /v1/nodes/{id}?layer=title｜summary｜evidence` | 论断、Intent 或 Hint。`evidence` 层的论断带 `grounds[{id,class,register,hash,size}]`、`no_evidence_root`、`body_ref` |
+| `GET /v1/problems/{pid}/snapshot?as_of=&parts=&state_hash=1` | 合并读：`{as_of, head, view_hash, parts_hash{status,view,budget,work}, status?, view?, budget?, work?}`，四份投影与单独的端点逐字节同形、出自同一序号；`parts=` 用逗号列出只要哪几份，`parts_hash` 恒给全四份。按 `(序号, 份)` 缓存最近 64 份 |
+| `GET /v1/problems/{pid}/ticks?as_of=` | 时间轴刻度：`{as_of, head, ticks[{seq, ts, kind, result?, mark?}], last_seq, head_hash}`，每条事件一格，判官裁决带 `result`，预算标记带 `mark`；`head_hash` 是最后一条的哈希，客户端拿它接续流里事件的 `prev_hash` |
+| `GET /v1/nodes/{id}?layer=title｜summary｜evidence` | 论断、Intent 或 Hint。`evidence` 层的论断带 `grounds[{id,class,register,hash,size}]`、`no_evidence_root`、`body_ref`；Intent 带 `leases`、`no_evidence_root`。`no_evidence_root` 是链级的：沿 `premises`（论断与 Intent）往上，整条链上没有一个节点有 grounds 或判官证据才为真（H6，裁决 005-4）。Hint 带 `ts` |
 | `GET /v1/problems/{pid}/invalidations?node=` | `invalidated[]`（参考模型的搬运函数） |
 | `GET /v1/problems/{pid}/events?after=&limit=&wait=` | 审计日志。有新事件立刻返回，否则最多等 `wait` 秒（上限 30）；带 `as_of` 时只读到该序号、不等 |
-| `GET /v1/problems/{pid}/stream` | SSE。每帧 `id: <seq>`、`data: <事件>`（无 `event` 名，`onmessage` 直接收）；游标取 `Last-Event-ID` 或 `?after=`，都没有则从链头之后；落后超过 5000 条先发一帧 `event: snapshot`（`{as_of, status, budget}`）再续流；空闲时发注释心跳 |
+| `GET /v1/problems/{pid}/stream` | SSE。每帧 `id: <seq>`、`data: <事件>`（无 `event` 名，`onmessage` 直接收）；游标取 `Last-Event-ID` 或 `?after=`，都没有则从链头之后；落后超过 5000 条先发一帧 `event: snapshot`（`{as_of, status, budget}`）再续流；每批事件之后（以及连上时）发一帧 `event: view`，`data: {as_of, parts_hash}`，客户端比对哈希，只取变了的几份（一条事件至多一次 `snapshot?parts=` 请求）；空闲时发注释心跳 |
 | `GET /v1/problems/{pid}/cards/{kind}/{id}` | `{card, card_hash, display}`。人的决策操作带的 `seen.card_hash` 取自这里（不带 `as_of`）。`approval`（id 为 Intent）与 `closeout`（id 为题目 id）；`extension`、`dispute` 随 M1。`card` 与 `card_hash` 出自参考模型，估值不在卡面里 |
 | `GET /v1/hints/{hid}/trace` | `temporal{added, abandoned}` 与 `exposure{sessions, added, abandoned}` 两列 |
 | `GET /v1/artifacts/{id}`、`GET /v1/blobs/{hash}[?range=起-止]` | 登记记录（带 `register`）；字节一律 `attachment` + `nosniff`，读取时校验哈希，坏了返回 500 `corrupt` |

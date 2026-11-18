@@ -148,7 +148,36 @@ def test_inference_has_no_evidence_root_marker(api):
         ],
     )["results"][0]["id"]
     n = api.get(f"/v1/nodes/{f2}?layer=evidence")
-    assert n["no_evidence_root"] is True and n["predicate"] is None and n["premises"] == [f1]
+    # 链级（裁决 005-4）：f2 自己没有 grounds，但前提 f1 有，所以整条链有证据根
+    assert n["no_evidence_root"] is False and n["predicate"] is None and n["premises"] == [f1]
+    assert api.get(f"/v1/nodes/{f1}?layer=evidence")["no_evidence_root"] is False
+
+
+def test_evidence_root_walks_the_whole_premise_chain():
+    """裁决 005-4：链级的“有证据根”，纯函数，直接造状态。内核要求论断带 grounds 或前提，
+    所以没有根的链只能经过不带 grounds 的 Intent；这里把四种情形都摆出来。"""
+    from paoding_graph.views import evidence_rooted
+
+    st = {
+        "facts": {
+            "f1": {"grounds": ["a1"], "premises": []},
+            "f2": {"grounds": [], "premises": ["f1"]},  # 前提有根
+            "f3": {"grounds": [], "premises": ["i1"]},  # 经过 Intent，Intent 的前提有根
+            "f4": {"grounds": [], "premises": ["i2"]},  # 经过 Intent，整条链都没有
+            "f5": {"grounds": [], "premises": ["f5", "i3"]},
+        },  # 自引用不死循环；Intent 带证据的裁决算根
+        "intents": {"i1": {"premises": ["f2"]}, "i2": {"premises": []}, "i3": {"premises": []}},
+        "verdicts": [{"target": "i3", "evidence": ["a9"]}, {"target": "i2", "evidence": []}],
+    }
+    assert [evidence_rooted(st, n) for n in ("f1", "f2", "f3", "f4", "f5", "i2", "nope")] == [
+        True,
+        True,
+        True,
+        False,
+        True,
+        False,
+        False,
+    ]
 
 
 def test_unknown_refs_are_404(api):
@@ -374,6 +403,7 @@ class Sse:
         self.conn.request("GET", path, headers=hs)
         self.resp = self.conn.getresponse()
         self.comments = 0
+        self.views = []  # 具名的 view 帧另存（P2-1），frames() 只数事件帧与快照帧
 
     def frame(self):
         f = {}
@@ -389,12 +419,20 @@ class Sse:
             k, _, v = line.partition(": ")
             f[k] = v
 
+    def frame_into_views(self):
+        f = self.frame()
+        if "data" in f:
+            fr = {"id": int(f["id"]), "event": f.get("event"), "data": json.loads(f["data"])}
+            if fr["event"] == "view":
+                self.views.append(fr)
+
     def frames(self, n):
         out = []
         while len(out) < n:
             f = self.frame()
             if "data" in f:
-                out.append({"id": int(f["id"]), "event": f.get("event"), "data": json.loads(f["data"])})
+                fr = {"id": int(f["id"]), "event": f.get("event"), "data": json.loads(f["data"])}
+                (self.views if fr["event"] == "view" else out).append(fr)
         return out
 
     def close(self):
@@ -1042,6 +1080,97 @@ def test_register_table_is_total_and_four_valued():
         views.REGISTER[f"artifact:{c}"] == ("叙述" if c == "authored" else "证据")
         for c in ("exec", "judge", "input", "authored")
     )
+
+
+# ---------- 合并读端点、刻度端点、流里的 view 帧（P2-1） ----------
+
+
+def test_snapshot_equals_the_four_endpoints_at_every_seq(api):
+    ids = drive(api)
+    head = api.svc.head()
+    opened = api.get("/v1/problems/p1/status")["problem"]["opened_seq"]
+    assert api.req("GET", f"/v1/problems/p1/snapshot?as_of={opened - 1}")[0] == 404  # 开题之前没有这道题
+    for seq in range(opened, head + 1):
+        snap = api.get(f"/v1/problems/p1/snapshot?as_of={seq}&state_hash=1")
+        assert snap["as_of"] == seq and snap["head"] == head
+        for part, path in (
+            ("status", "status?state_hash=1&"),
+            ("view", "view?layer=title&"),
+            ("budget", "budget?"),
+            ("work", "work?"),
+        ):
+            one = api.get(f"/v1/problems/p1/{path}as_of={seq}")
+            assert snap[part] == one, (seq, part)  # 与单独的端点逐字段相同
+            assert snap["parts_hash"][part] == one["view_hash"]
+    assert ids
+
+
+def test_snapshot_parts_and_errors(api):
+    drive(api)
+    s = api.get("/v1/problems/p1/snapshot?parts=budget,work")
+    assert set(s) == {"as_of", "head", "view_hash", "parts_hash", "budget", "work"}
+    assert set(s["parts_hash"]) == {"status", "view", "budget", "work"}
+    assert api.get("/v1/problems/p1/snapshot")["view_hash"] == s["view_hash"]
+    for q, code in (("parts=bogus", 400), ("parts=", 200), (f"as_of={api.svc.head() + 5}", 400)):
+        st, body, _ = api.req("GET", f"/v1/problems/p1/snapshot?{q}")
+        assert st == code, (q, st, body)
+    assert api.req("GET", "/v1/problems/nope/snapshot")[0] == 404
+
+
+def test_ticks_are_light_and_match_the_log(api):
+    drive(api)
+    log = api.get("/v1/problems/p1/events?after=0")["events"]
+    t = api.get("/v1/problems/p1/ticks")
+    assert [x["seq"] for x in t["ticks"]] == [e["seq"] for e in log]
+    assert [(x["ts"], x["kind"]) for x in t["ticks"]] == [(e["ts"], e["kind"]) for e in log]
+    for x, e in zip(t["ticks"], log, strict=True):
+        assert set(x) <= {"seq", "ts", "kind", "result", "mark"}
+        if e["kind"] == "judge_verdict":
+            assert x["result"] == e["body"]["result"]
+        if e["kind"] == "budget_mark":
+            assert x["mark"] == e["body"]["mark"]
+    assert t["last_seq"] == log[-1]["seq"] and t["head_hash"] == log[-1]["hash"]
+    mid = log[len(log) // 2]["seq"]
+    t2 = api.get(f"/v1/problems/p1/ticks?as_of={mid}")
+    assert (
+        t2["as_of"] == mid
+        and t2["ticks"][-1]["seq"] <= mid
+        and t2["head_hash"] == [e for e in log if e["seq"] <= mid][-1]["hash"]
+    )
+    assert len(json.dumps(t)) < len(json.dumps(log)) / 2
+
+
+def test_hints_carry_the_event_ts(api):
+    api.open()
+    hid = api.one("p1", "hint", {"text": "换个入口"})
+    [ev] = [e for e in api.get("/v1/problems/p1/events?after=0")["events"] if e["kind"] == "hint"]
+    [h] = api.get("/v1/problems/p1/status")["hints"]
+    assert h["id"] == hid and h["ts"] == ev["ts"]
+    assert api.get(f"/v1/nodes/{hid}")["ts"] == ev["ts"]
+
+
+def test_stream_sends_a_view_frame_after_each_batch(api):
+    api.open()
+    s = Sse(api, "/v1/problems/p1/stream?after=0")
+    try:
+        s.frames(2)
+        while not s.views:
+            s.frame_into_views()
+        v = s.views[-1]
+        assert v["event"] == "view" and v["id"] == v["data"]["as_of"] == api.svc.head()
+        snap = api.get(f"/v1/problems/p1/snapshot?as_of={v['id']}")
+        assert v["data"]["parts_hash"] == snap["parts_hash"]
+        before = dict(v["data"]["parts_hash"])
+        api.one("p1", "hint", {"text": "a"})
+        s.frames(1)
+        while len(s.views) < 2:
+            s.frame_into_views()
+        after = s.views[-1]["data"]["parts_hash"]
+        assert after["status"] != before["status"]  # Hint 进了 status
+        assert after["view"] != before["view"]  # 也进了前沿
+        assert after["budget"] == before["budget"]  # 账本没动：前端不用重取这一份
+    finally:
+        s.close()
 
 
 # ---------- 运维：/healthz 与访问日志（P2-3） ----------

@@ -27,6 +27,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,7 +40,7 @@ from .jcs import canonicalize
 from .parse import BadBody
 from .replay import state_hash
 from .service import GraphService
-from .state import Actor, Body, JudgeEntry, State
+from .state import Actor, Body, Event, JudgeEntry, State
 from .tokens import UnknownToken
 
 MAX_BODY = 8 * 1024 * 1024  # JSON 请求体上限
@@ -127,6 +128,9 @@ class GraphHttp:
         self.server: ThreadingHTTPServer | None = None
         self.url = ""
         self._closing = threading.Event()
+        self._snap_lock = threading.Lock()
+        # (题, 序号) → 四份投影与各自的 view_hash
+        self._snap_cache: OrderedDict[tuple[str, int], dict[str, Doc]] = OrderedDict()
         g, p = self._get, self._post
         R = re.compile
         self.routes: list[tuple[str, re.Pattern[str], Route]] = [
@@ -137,6 +141,8 @@ class GraphHttp:
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/view"), g(self.v_view)),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget"), g(lambda st, m, q: views.budget(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/work"), g(lambda st, m, q: views.work(st, m["pid"]))),
+            ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/snapshot"), self.r_snapshot),
+            ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/ticks"), self.r_ticks),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/invalidations"), g(self.v_invalidations)),
             (
                 "GET",
@@ -374,6 +380,84 @@ class GraphHttp:
             raise views.NotFound(f"没有 Hint {m['id']}")
         return views.hint_trace(st, self.svc.events(h["problem_id"], 0, upto=st["seq"]), m["id"])
 
+    # ---------- 合并读与刻度（P2-1） ----------
+
+    SNAPSHOT_PARTS = ("status", "view", "budget", "work")
+
+    def _parts(self, pid: str, seq: int | None) -> tuple[int, dict[str, Doc]]:
+        """某序号上四份投影的外壳与各自的 view_hash。按 (题, 序号) 缓存：日志只追加、视图是状态的纯函数，
+        所以缓存永不失效。事件流的 view 帧与随后的 snapshot 请求共用这份缓存，同一序号只算一次。"""
+        state = self.svc.state_at(seq)
+        key = (pid, state["seq"])
+        with self._snap_lock:
+            hit = self._snap_cache.get(key)
+            if hit is not None:
+                self._snap_cache.move_to_end(key)
+                return state["seq"], hit
+        self._known(pid, state)
+        docs = views.snapshot(state, pid, views.view(state, pid, "title", 0, None, self.cfg.view_full_dump))
+        parts = {k: {"view_hash": hashlib.sha256(canonicalize(d)).hexdigest(), "doc": d} for k, d in docs.items()}
+        with self._snap_lock:
+            self._snap_cache[key] = parts
+            while len(self._snap_cache) > 64:
+                self._snap_cache.popitem(last=False)
+        return state["seq"], parts
+
+    def r_snapshot(self, h: Handler, m: Params, q: Params) -> None:
+        """GET /v1/problems/{pid}/snapshot?as_of=&parts=：一次给 status、view（layer=title）、budget、work。
+        每份与单独的端点同形（`{as_of, head, view_hash, …}`），所以前端拿来就能拼视图模型；
+        `parts=status,budget` 只要其中几份（事件流的 view 帧说哪几份变了）。`state_hash=1` 加在 status 上。"""
+        pid = m["pid"]
+        self._known(pid)
+        _, head = self._state(q)
+        seq, parts = self._parts(pid, _int(q, "as_of"))
+        want = [p for p in (q.get("parts") or ",".join(self.SNAPSHOT_PARTS)).split(",") if p]
+        bad = set(want) - set(self.SNAPSHOT_PARTS)
+        if bad or not want:
+            raise HttpError(400, "schema_error", f"parts 只取 {','.join(self.SNAPSHOT_PARTS)}")
+        out: Doc = {
+            "as_of": seq,
+            "head": head,
+            "view_hash": hashlib.sha256(canonicalize({k: v["view_hash"] for k, v in parts.items()})).hexdigest(),
+            "parts_hash": {k: v["view_hash"] for k, v in parts.items()},
+        }
+        for k in self.SNAPSHOT_PARTS:
+            if k in want:
+                out[k] = {"as_of": seq, "head": head, "view_hash": parts[k]["view_hash"], **parts[k]["doc"]}
+        if "status" in want and q.get("state_hash") in ("1", "true"):
+            out["status"]["state_hash"] = state_hash(self.svc.state_at(seq))
+        self._json(h, 200, out)
+
+    def r_ticks(self, h: Handler, m: Params, q: Params) -> None:
+        """GET /v1/problems/{pid}/ticks?as_of=：时间轴只要每条事件的 seq、ts、种类
+        （判官裁决另带 result，预算标记另带 mark），不要事件体。`head_hash` 是这道题到 as_of 为止
+        最后一条事件的哈希，前端拿它核对随后从流里接上的第一条（prev_hash）。"""
+        pid = m["pid"]
+        state, head = self._state(q)
+        self._known(pid, state)
+        ticks: list[Doc] = []
+        last: Event | None = None
+        for ev in self.svc.events(pid, 0, upto=state["seq"]):
+            t: Doc = {"seq": ev["seq"], "ts": ev["ts"], "kind": ev["kind"]}
+            b = ev.get("body") or {}
+            if ev["kind"] == "judge_verdict" and "result" in b:
+                t["result"] = b["result"]
+            if ev["kind"] == "budget_mark" and "mark" in b:
+                t["mark"] = b["mark"]
+            ticks.append(t)
+            last = ev
+        self._json(
+            h,
+            200,
+            {
+                "as_of": state["seq"],
+                "head": head,
+                "ticks": ticks,
+                "last_seq": last["seq"] if last else 0,
+                "head_hash": last["hash"] if last else None,
+            },
+        )
+
     def r_health(self, h: Handler, m: Params, q: Params) -> None:
         self._json(h, 200, {"ok": True, "head": self.svc.head(), "api": "v1"})
 
@@ -471,6 +555,13 @@ class GraphHttp:
                 for ev in evs:
                     self._frame(h, ev, ev["seq"])
                     after = ev["seq"]
+                if evs and not self._closing.is_set():
+                    # 一批事件之后跟一帧 view：最后那个序号上四份投影各自的 view_hash。前端据此只取变了的那几份，
+                    # 一份都没变就不发请求（P2-1）。具名帧，只用 onmessage 的客户端看不见它，事件帧仍等于日志。
+                    seq, parts = self._parts(pid, after)
+                    self._frame(
+                        h, {"as_of": seq, "parts_hash": {k: v["view_hash"] for k, v in parts.items()}}, after, "view"
+                    )
                 h.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
