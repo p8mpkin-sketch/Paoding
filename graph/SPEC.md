@@ -1,13 +1,13 @@
 # graph/：契约 1 解牛图服务 + 契约 2 Artifact 仓库 + 契约 5 预算账本投影
 
-规格：v1.3 §3.1、§3.2、§3.5；不变量 I1、I3、I4、I7、I8。
+规格：v1.4 §3.1、§3.2、§3.5；不变量 I1、I3、I4、I7、I8。
 
 ## 实现的契约接口
 
 - 事件信封 `Event`（§3.1.2），JCS（RFC 8785）规范化，按题哈希链 `prev_hash → hash`。
 - 内核函数 `validate(state, actor, op)` 与 `apply(state, event)`：纯函数，不读时钟、不做 IO、不调用模型（I1）。
 - 等级函数、消费门、Intent 状态：**从参考模型搬运，不重写**（`src/paoding_graph/refmodel.py` 是 `docs/design/reference-model/kernel.py` 的逐字节副本，CI 比对）。参考模型与规格不一致时以规格为准，并写异议报告。
-- 端点（M0 走本机 Unix socket）：§3.1.2 端点表与 §3.2.2 Blob/Artifact 端点。
+- 端点：HTTP/1.1 + JSON，只监听 `127.0.0.1`（HMI §11 方案 A，图服务直出；没有 Unix socket 绑定）。覆盖 §3.1.2 端点表与 §3.2.2 Blob/Artifact 端点，实时推送走 SSE；形状见下文“HTTP 绑定”。同进程的组件（判官运行器、司南、哮天犬）经 `paoding_graph.contract` 的进程内端口调用，与 HTTP 写入落到同一个 `GraphService.submit`。
 - Blob 仓库：本地目录按 sha256 寻址，写入不可变，读取校验哈希（`corrupt`）。
 - 对外契约（`paoding_graph.contract`）：事件信封、拒绝码、Artifact/Check/VaultRef 类型、客户端。
 
