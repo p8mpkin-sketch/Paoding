@@ -190,6 +190,17 @@ def test_authored_as_ground_is_inadmissible(rig):
     assert r["results"][0]["code"] == "inadmissible_class"
 
 
+def test_claim_done_takes_inline_candidate(rig):
+    """P0-A 的提示词让模型写 candidate=答案字符串：不先写文件也能交候选，照样登记为 authored、进判官。"""
+    lid = lease_bootstrap(rig.graph)
+    rig.script([sub({"op": "claim_done", "target": "goal", "candidate": "flag{42}"}, final={"outcome": "found"})])
+    (rig.cfg.root / lid / "workspace").mkdir(parents=True)
+    rig.run(lid)
+    [req] = rig.graph.state["requests"].values()
+    art = rig.graph.state["artifacts"][req["candidate"]]
+    assert art["class"] == "authored" and rig.blobs.get(art["hash"]) == b"flag{42}"
+
+
 # ---------- 3.4.5 的 7：没有命令工具；不出工作目录 ----------
 
 def test_no_command_tool_and_workspace_confined(rig, tmp_path):

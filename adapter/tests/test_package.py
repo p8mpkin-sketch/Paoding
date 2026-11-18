@@ -163,3 +163,18 @@ def test_container_has_no_real_key(tmp_path):
 def test_mcp_config_shape():
     assert json.loads(be.mcp_config("http://h/mcp/k")) == {"mcpServers": {"paoding": {"type": "http",
                                                                                     "url": "http://h/mcp/k"}}}
+
+
+@pytest.mark.parametrize("role", ["bootstrap", "reason", "explore"])
+def test_prompts_say_how_to_finish(role):
+    """真实测试报告（P0-A）：模型找到答案却不知道要 claim_done 提交，题卡在 stalled 等人。
+    每个角色的提示词都要讲清终态怎么达成：bootstrap、explore 自己 claim_done，reason 开“提交答案”的 Intent。"""
+    from paoding_adapter.package import PROMPTS
+    common = (PROMPTS / "common.md").read_text(encoding="utf-8")
+    text = (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
+    assert "claim_done" in common and 'target 填 "goal"' in common
+    assert f"角色：{role}" in text and "final" in text
+    if role == "reason":
+        assert "add_intent" in text and "提交答案" in text and "exec" in text   # reason 没有 exec，交给 explore
+    else:
+        assert "claim_done" in text and 'target="goal"' in text
