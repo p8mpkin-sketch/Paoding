@@ -79,6 +79,7 @@
 
 ## 类型与异常的去向（审计 P1-4）
 
+- `reducer/`：内核的 validate 与 apply，按事件族分子模块：`problem`（开题、登记、画像覆盖）、`fact`、`intent`（含审批与 Hint）、`judge`、`lease`（含用量）、`close`（含预算标记），共用部分在 `common`。每个子模块里校验（`_v_*`）与应用（`_a_*`）分开；`reducer/__init__.py` 只做分派与前置检查。单个文件不超过约 500 行（`test_reducer_modules_stay_small`）。
 - `state.py`：reducer 状态与事件的类型（`Problem`、`Fact`、`Intent`、`Lease`、`Verdict`＝M0 的 `Support` 等），全部是 `TypedDict`。运行时仍是普通 dict，状态哈希、重放、序列化不变。
 - `parse.py`：未经校验的提议体只经 `Obj` 读；字段缺失、类型不对抛 `BadBody`。`reducer.validate` 只接 `BadBody` 与 `JCSError`（提议体里不能规范化的值）并转成 `schema_error`。校验函数其余部分抛出的异常是内核缺陷，原样暴露。
 - CI：`ruff check`（含 BLE，不许宽接 `Exception`）、`ruff format --check`、`mypy --strict`（`graph/src/paoding_graph` 全部；`refmodel.py` 是参考模型的逐字节副本，不检查、不改）。
@@ -115,6 +116,6 @@
 | 日 | 内容 | 验收 |
 | --- | --- | --- |
 | D1（预备） | `jcs.py`、`envelope.py`、`eventlog.py`、`replay.py`、`blobs.py` | 3.1.5 的 1；3.2.5 的 1、4；RFC 8785 附录 B 向量 |
-| D2（预备） | `reducer.py`（六种操作）、`levels.py`、`refmodel.py`（逐字节副本）、`tokens.py` | 迟滞（一败回 E0、两败为 X）；3.1.5 的 4（M0 形态）、6、8、9；3.2.5 的 2 前四种 |
+| D2（预备） | `reducer`（六种操作；当时是单文件 `reducer.py`）、`levels.py`、`refmodel.py`（逐字节副本）、`tokens.py` | 迟滞（一败回 E0、两败为 X）；3.1.5 的 4（M0 形态）、6、8、9；3.2.5 的 2 前四种 |
 | D8/D9 reducer 侧（预备） | 租约四操作、`/work`、Intent 完整状态、审批、Hint、放弃、用量、关题与终态、`budget_mark`；`work.py`；`service.py`（整批原子、幂等、自动追加、崩溃恢复） | 3.1.5 的 2、3（M0 形态）、5、7、9、15；3.3.5 的 7；3.4.5 的 3、6；3.5.5 的 1、2、5 |
 | HTTP 绑定 | `httpapi.py`、`views.py`、`service.state_at`；`pd` 与网页共用四语域表 | 3.1.5 的 18（回放）、5（HTTP 形态）；3.2.5 的 2、4（HTTP 形态）；HT-2、3、5、6、10、16、17；§13.1 第 5 条、§13.3 |
