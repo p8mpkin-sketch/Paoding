@@ -498,6 +498,42 @@ def test_idempotent_replay_over_http(api):
     assert len(api.get("/v1/problems/p1/status")["hints"]) == 1
 
 
+def test_lease_endpoints_require_idem_key(api):
+    """缺幂等键的租约请求返回 schema_error，不替调用方生成键；什么也不落盘。"""
+    api.open()
+    lease = {"kind": "bootstrap", "holder": "sn1", "reserve": R, "ttl_s": 120}
+    head = api.svc.head()
+    st, body, _ = api.req("POST", "/v1/problems/p1/leases", lease, token="tok-sinan")
+    assert (st, body["code"]) == (400, "schema_error") and api.svc.head() == head
+    st, body, _ = api.req("POST", "/v1/problems/p1/leases", {**lease, "idem_key": ""}, token="tok-sinan")
+    assert (st, body["code"]) == (400, "schema_error") and api.svc.head() == head
+    st, b = api.lease("p1", "bootstrap")
+    lid, head = b["lease"]["id"], api.svc.head()
+    for verb, extra in (("renew", {"ttl_s": 300}), ("release", {"outcome": "nothing"})):
+        st, body, _ = api.req("POST", f"/v1/leases/{lid}/{verb}", extra, token="tok-sinan")
+        assert (st, body["code"]) == (400, "schema_error"), (verb, st, body)
+    assert api.svc.head() == head and api.svc.state["leases"][lid]["active"]
+    # 幂等键也可以走请求头
+    st, body, _ = api.req("POST", f"/v1/leases/{lid}/release", {"outcome": "nothing"}, token="tok-sinan",
+                          headers={"Idempotency-Key": "rel-h"})
+    assert st == 200 and not body["lease"]["active"]
+
+
+def test_lease_retry_with_same_key_is_idempotent(api):
+    """同一幂等键重试：拿回同一条租约，日志不增长（修复前缺键时每次重试都是一次新的申请）。"""
+    api.open()
+    st, a = api.lease("p1", "bootstrap", idem="boot-1")
+    head = api.svc.head()
+    st2, b = api.lease("p1", "bootstrap", idem="boot-1")
+    assert (st, st2) == (201, 201) and a["lease"]["id"] == b["lease"]["id"] and api.svc.head() == head
+    lid = a["lease"]["id"]
+    rel = {"idem_key": "rel-1", "outcome": "nothing"}
+    st, x, _ = api.req("POST", f"/v1/leases/{lid}/release", rel, token="tok-sinan")
+    head = api.svc.head()
+    st2, y, _ = api.req("POST", f"/v1/leases/{lid}/release", rel, token="tok-sinan")
+    assert (st, st2) == (200, 200) and x == y and api.svc.head() == head
+
+
 def test_lease_endpoints_201_409(api):
     """3.1.5 的 5 的 HTTP 形态：两个请求抢同一目标，恰好一个 201，另一个 409 conflict_leased。"""
     api.open()
@@ -506,12 +542,14 @@ def test_lease_endpoints_201_409(api):
     st2, b2 = api.lease("p1", "bootstrap")
     assert st2 in (403, 409) and not b2["ok"]
     lid = b["lease"]["id"]
-    st, body, _ = api.req("POST", f"/v1/leases/{lid}/renew", {"ttl_s": 300}, token="tok-sinan")
+    st, body, _ = api.req("POST", f"/v1/leases/{lid}/renew", {"idem_key": "rn1", "ttl_s": 300}, token="tok-sinan")
     assert st == 200 and body["lease"]["expires_at"] > b["lease"]["expires_at"]
-    st, body, _ = api.req("POST", f"/v1/leases/{lid}/release", {"outcome": "nothing"}, token="tok-human")
+    st, body, _ = api.req("POST", f"/v1/leases/{lid}/release", {"idem_key": "rl1", "outcome": "nothing"},
+                          token="tok-human")
     assert st == 409 and body["code"] == "forbidden_op"              # 释放限持有者
     api.release(lid, "nothing")
-    st, body, _ = api.req("POST", "/v1/leases/l_999/release", {"outcome": "done"}, token="tok-sinan")
+    st, body, _ = api.req("POST", "/v1/leases/l_999/release", {"idem_key": "rl2", "outcome": "done"},
+                          token="tok-sinan")
     assert st == 404
     st, b = api.lease("p1", "reason")
     s = api.session(b["lease"]["id"], "reason")

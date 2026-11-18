@@ -57,7 +57,7 @@
 | `PUT /v1/blobs` | 字节 → `{hash, size}` |
 | `POST /v1/problems` | `{id, idem_key, ops}`：若干条 input 类 `register_artifact` 加最后一条 `open_problem`，Origin 用 `"$<下标>"` 指向前面的材料 |
 | `POST /v1/problems/{pid}/proposals` | `{idem_key, ops[]}` → `{ok, results[]}`，整批原子 |
-| `POST /v1/problems/{pid}/leases`、`/v1/leases/{id}/renew｜release`、`POST /v1/artifacts` | 组件用：201 / 409 |
+| `POST /v1/problems/{pid}/leases`、`/v1/leases/{id}/renew｜release`、`POST /v1/artifacts` | 组件用：201 / 409。与其它写操作一样必须带 `idem_key`（或 `Idempotency-Key` 头），缺了返回 400 `schema_error`，服务端不代为生成 |
 
 节点形状（`status`、`view`、`nodes` 共用）：
 
@@ -89,7 +89,9 @@
 - 被拒的批次也记下结果：同一 idem_key 重放返回首次结果，无论首次是否被拒。批内用 `"$<下标>"` 引用前一条产生的 id。
 - **调用方惯例：改正后重交必须换新的 idem_key。** 被拒结果同样被缓存，拿原 idem_key 重交改正过的内容，只会原样拿回首次的拒绝，改正不会生效。idem_key 只用于"同一请求的重试"（网络超时、进程重启后重发同一批）。Adapter 的做法：每次工具调用生成新键（`submit:<租约>:<宿主实例号>:<调用序号>:<条目序号>`），会话内改正自然换键；重试同一调用才复用。
 - 图服务自己追加的事件（`budget_mark`、Goal 到 E3 时的自动 `close_problem`）由 `work.followups` 纯函数算出，与触发它的批次在同一事务里落盘。
-- 关题后只接受 `cost` 与 `release`（在途任务交回用量与释放）；关题即视所有租约结束。
+- 关题后只接受在途任务的交回：`cost`、`release`，以及会话令牌对自己留档的登记（`register_artifact`，限 authored 类，且令牌的会话是本题一条仍在途的租约）。题目常常是被会话自己提交的候选关掉的，判官一通过图服务立刻关题，此时会话还没交回留档；不放行这一步，会话收尾失败，租约就一直不释放。关题后的 `release` 带的 `transcript_ref` 照样挂到租约上。关题即视所有租约结束。
+- 跨题隔离（I7 的推广）：凡是带引用的操作，引用指向别题的对象一律 `scope_mismatch`（引用不存在才是 `unknown_ref`）。这包括 `renew`/`release` 的租约（关题前后都查归属、持有者与在途）、`hint.about`、任务令牌的会话（会话即租约 id，只在租约所属的题内有效）。Goal 的候选次数按题计数。`graph/tests/test_isolation.py` 的性质测试常驻 CI：两题事件随机交错，每题的切片与派生视图等于只重放本题事件的结果。
+- 判官运行器的令牌按身份种类放行续租与释放，但只限 judge 租约；任务租约只认持有者或该租约的会话令牌。
 - 服务层（`service.py`）用一把可重入锁串行化提交与日志读取；新事件落盘后唤醒长轮询与事件流。`state_at(seq)` 的回放缓存永不失效（日志只追加、apply 纯函数）。
 - 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`、`rule`、`extend` 三个操作内核还没有，见异议报告 `docs/m0/dissent-p0-5-seen-binding.md`。
 - 目标陈述（`goal.statement`）的语域取“人”（开题人写下的文字）；规格的四语域表没有列这一项，见异议报告 004。
