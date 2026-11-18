@@ -42,7 +42,7 @@ class AdapterConfig:
     adapter_id: str = "ad1"
     renew_s: float = 60.0
     stall_s: float = 600.0
-    max_turns: int = 100                     # 真实测试：40 回合不够“探索+提取+验证+提交”全流程
+    max_turns: int = 100  # 真实测试：40 回合不够“探索+提取+验证+提交”全流程
     binding: be.CliBinding = field(default_factory=be.CliBinding)
     extra_env: dict = field(default_factory=dict)  # 只供假 CLI 的脚本路径等测试用途
     judges_cfg: dict = field(default_factory=dict)
