@@ -63,7 +63,10 @@ class Backend:
         api_key: str,
         model: str,
         usage: dict[str, Any] | None,
+        pid: str = "",
+        cap_milli: int | None = None,
     ) -> Backend:
+        """cap_milli：一臂的等成本预算。交给代理作这道题的硬顶，全臂的尝试共用：累计花费到额后代理不再放行新请求。"""
         dry = real_program is None
         if dry:
             up = FakeUpstream(usage)
@@ -73,7 +76,15 @@ class Backend:
             b = cls(False, list(real_program or []), model, model)
             url, key = upstream_url, api_key
         b.proxy = EndpointProxy(
-            ProxyConfig(url, key, f"eval-{mode}", global_cap_usd_milli=1_000_000_000), PriceTable.load(PRICES), b.ledger
+            ProxyConfig(
+                url,
+                key,
+                f"eval-{mode}",
+                global_cap_usd_milli=1_000_000_000,
+                problem_caps={pid: cap_milli} if cap_milli is not None else {},
+            ),
+            PriceTable.load(PRICES),
+            b.ledger,
         )
         _, b.proxy_port = b.proxy.serve()
         return b
@@ -82,6 +93,10 @@ class Backend:
         if task_id is None:
             return self.ledger.usd_milli
         return sum(int(c.get("usd_milli", 0)) for c in self.ledger.costs if c.get("task_id") == task_id)
+
+    def max_request_milli(self) -> int:
+        """本臂至今单次请求的最高花费：下一轮按它估每个尝试至少要多少钱。还没有请求时为 0。"""
+        return max((int(c.get("usd_milli", 0)) for c in self.ledger.costs), default=0)
 
     def close(self) -> None:
         if self.proxy is not None:
@@ -142,7 +157,7 @@ def _attempt(
         default = [{"tool": "Write", "input": {"file_path": "answer.txt", "content": spec.answer}}]
         script.write_text(json.dumps({"steps": steps or default}), encoding="utf-8")
     token = secrets.token_urlsafe(16)
-    b.proxy.register_task(token, task_id, spec.id, reserve_usd_milli=max(reserve_milli, 1))
+    b.proxy.register_task(token, task_id, spec.id, reserve_usd_milli=reserve_milli)
     program = list(b.program)
     box: BaselineBox | None = None
     connects: int | None = None
@@ -187,6 +202,23 @@ def _attempt(
         got = produced.read_text(encoding="utf-8").strip() if produced.exists() else None
         terminal = "solved" if got is not None and sha256_hex(got) == spec.expect()["sha256"] else "unsolved"
     return Attempt(rnd, worker, adir, terminal, res["turns"], b.spent_milli(task_id), connects, time.monotonic() - t0)
+
+
+def round_width(
+    workers: int, budget_milli: int | None, spent_milli: int, unit_milli: int, default_reserve: int
+) -> tuple[int, int]:
+    """本轮开几个尝试、每个的代理预留（毫美元）。返回 (0, 0) 表示预算已不够再开一轮。
+
+    没有预算（只给了轮数）时照开 workers 个、预留取缺省。有预算时：剩余 ≤ 0 就停；
+    否则按"至今单次请求的最高花费"（还没有请求时按 1 毫美元）估每个尝试至少要多少钱，剩余不够分给 workers 个
+    就收窄到够分的个数，一个都不够就停。各尝试的预留之和不超过剩余，没有向上兜底。"""
+    if budget_milli is None:
+        return workers, default_reserve
+    left = budget_milli - spent_milli
+    width = min(workers, left // max(unit_milli, 1)) if left > 0 else 0
+    if width <= 0:
+        return 0, 0
+    return width, left // width
 
 
 def merge_notes(shared: str, worker_files: list[tuple[int, str | None]], rnd: int) -> tuple[str, list[int]]:
@@ -240,17 +272,25 @@ def run_arm(
     budget_milli = None if budget_usd is None else int(round(budget_usd * 1000))
     default_reserve = max(int(spec.budget.get("usd_milli", 5000)), 1_000_000)
     b = Backend.open(
-        mode, real_program=real_program, upstream_url=upstream_url, api_key=api_key, model=model, usage=usage
+        mode,
+        real_program=real_program,
+        upstream_url=upstream_url,
+        api_key=api_key,
+        model=model,
+        usage=usage,
+        pid=spec.id,
+        cap_milli=budget_milli,
     )
     attempts: list[Attempt] = []
     shared, rewrote_all, stop = "", [], ""
+    widths: list[int] = []
     try:
         for rnd in range(1, rounds + 1):
-            if budget_milli is not None and b.spent_milli() >= budget_milli:
+            width, reserve = round_width(workers, budget_milli, b.spent_milli(), b.max_request_milli(), default_reserve)
+            if width == 0:
                 stop = "budget"
                 break
-            left = default_reserve if budget_milli is None else budget_milli - b.spent_milli()
-            reserve = left // workers if budget_milli is not None else default_reserve
+            widths.append(width)
             prompt = spec.goal_prompt + ("\n\n" + NOTES_PROMPT if notes else "")
             seed = {NOTES: shared} if notes else None
 
@@ -271,7 +311,7 @@ def run_arm(
                     worker=w,
                 )
 
-            done = _round(go, workers)
+            done = _round(go, width)
             attempts += done
             if notes:
                 files = [(a.worker, _read(a.dir / "workspace" / NOTES)) for a in done]
@@ -314,7 +354,14 @@ def run_arm(
     }
     if mode != "baseline":
         info |= {
-            "arm": {"workers": workers, "rounds_max": rounds, "budget_usd": budget_usd, "stopped_by": stop},
+            "arm": {
+                "workers": workers,
+                "rounds_max": rounds,
+                "budget_usd": budget_usd,
+                "stopped_by": stop,
+                "widths": widths,
+                "over_budget_milli": None if budget_milli is None else max(0, b.spent_milli() - budget_milli),
+            },
             "attempts": [a.summary(log_dir) for a in attempts],
         }
         if notes:

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from paoding_eval.__main__ import main as cli_main
-from paoding_eval.arms import NOTES, merge_notes, run_arm
+from paoding_eval.arms import NOTES, merge_notes, round_width, run_arm
 from paoding_eval.record import Record
 from paoding_eval.spec import DRYRUN
 
@@ -38,12 +38,40 @@ def test_modes_in_record_schema() -> None:
 
 
 def test_bk_stops_at_equal_cost_budget(tmp_path: Path) -> None:
-    """预算 0.012 美元、每次 0.005：第三次开跑时还剩 0.002，跑完即到额，不再开第四次。"""
+    """预算 0.012 美元、每次 0.005：两次后剩 0.002，不够再开一次（按至今单次请求的最高花费估），不越过预算。"""
     rec = run_arm("bk", DRYRUN, 1, out_root=tmp_path / "runs", rounds=20, budget_usd=0.012, fake_steps=WRONG)
     m = meta(tmp_path, rec)
-    assert rec.terminal == "unsolved" and len(m["attempts"]) == 3
-    assert m["arm"]["stopped_by"] == "budget" and rec.cost_usd == pytest.approx(0.015)
-    assert rec.cost_usd <= 0.012 + 0.005  # 至多越过一次请求
+    assert rec.terminal == "unsolved" and len(m["attempts"]) == 2
+    assert m["arm"]["stopped_by"] == "budget" and rec.cost_usd == pytest.approx(0.010)
+    assert m["arm"]["over_budget_milli"] == 0
+
+
+def test_round_width_never_over_allocates() -> None:
+    """各尝试的预留之和不超过剩余；不够分就收窄，一个都不够就停。没有向上兜底。"""
+    assert round_width(3, None, 0, 0, 999) == (3, 999)  # 没有预算：照开
+    assert round_width(3, 16, 0, 0, 999) == (3, 5)  # 还没有请求：按 1 毫美元估
+    assert round_width(3, 16, 6, 4, 999) == (2, 5)  # 剩 10、单次 4：只够开 2 个
+    assert round_width(3, 16, 13, 4, 999) == (0, 0)  # 剩 3 < 单次 4：停
+    assert round_width(3, 16, 16, 0, 999) == (0, 0)
+    for workers, budget, spent, unit in [(3, 16, 0, 0), (3, 16, 5, 6), (4, 100, 37, 9), (2, 7, 6, 1)]:
+        w, r = round_width(workers, budget, spent, unit, 0)
+        assert w * r <= budget - spent
+
+
+def test_bn_cap_is_shared_across_workers(tmp_path: Path) -> None:
+    """预算 0.016、三个 Worker、每次 0.005：第一轮还不知道单次多贵，三个都开；第二轮剩 0.001，停。
+    全臂共用代理的题目硬顶，越过预算的只有第一轮同时在途的请求，并记进 meta。"""
+    rec = run_arm("bn", DRYRUN, 1, out_root=tmp_path / "runs", workers=3, rounds=5, budget_usd=0.016, fake_steps=WRONG)
+    m = meta(tmp_path, rec)
+    assert m["arm"]["widths"] == [3] and m["arm"]["stopped_by"] == "budget"
+    assert rec.cost_usd == pytest.approx(0.015) and m["arm"]["over_budget_milli"] == 0
+
+
+def test_bn_narrows_round_when_budget_cannot_cover_workers(tmp_path: Path) -> None:
+    rec = run_arm("bn", DRYRUN, 1, out_root=tmp_path / "runs", workers=3, rounds=5, budget_usd=0.026, fake_steps=WRONG)
+    m = meta(tmp_path, rec)
+    assert m["arm"]["widths"] == [3, 2] and rec.cost_usd == pytest.approx(0.025)
+    assert m["arm"]["over_budget_milli"] == 0
 
 
 def test_bk_needs_budget_or_rounds(tmp_path: Path) -> None:
@@ -117,3 +145,13 @@ def test_bk_runs_each_attempt_in_its_own_sandbox(tmp_path: Path) -> None:
     assert rec.cost_usd == pytest.approx(0.01)  # 两次尝试都经沙箱里的中继计量
     left = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True).stdout
     assert "pd-eval-" not in left
+
+
+def test_overshoot_bound_is_requests_in_flight(tmp_path: Path) -> None:
+    """已知的界：代理在请求前放行、响应后计费，所以越过预算的只能是预算被越过那一刻同时在途的请求。
+    第一轮还不知道单次多贵：预算 0.012、三个 Worker 各预留 0.004，三个请求同时放行，各花 0.005，越过 0.003。
+    界 = 在途请求数 × 单次最高花费；Bk 每轮只有一个尝试，界就是一次请求。"""
+    rec = run_arm("bn", DRYRUN, 1, out_root=tmp_path / "runs", workers=3, rounds=5, budget_usd=0.012, fake_steps=WRONG)
+    m = meta(tmp_path, rec)
+    assert m["arm"]["widths"] == [3] and m["arm"]["over_budget_milli"] == 3
+    assert m["arm"]["over_budget_milli"] <= m["arm"]["widths"][0] * 5
