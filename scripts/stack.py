@@ -174,6 +174,17 @@ class StackError(RuntimeError):
     pass
 
 
+def _host_program(program: list) -> tuple[list, tuple]:
+    """宿主子进程起真 CLI：CLI 进程的 PATH 只有 /usr/local/bin:/usr/bin:/bin，装在别处的 claude
+    （Homebrew、npm 全局、~/.local/bin）与它的 `#!/usr/bin/env node` 都会找不到，进程起不来或当场退出。
+    这里按启动 run.py 时的 PATH 把命令解析成绝对路径，并把它所在目录（含符号链接指向的目录）放到 PATH 前面。"""
+    found = shutil.which(program[0])
+    if found is None:
+        raise StackError(f"找不到 CLI 命令 {program[0]!r}：在 backend.program 里写绝对路径，或把它加进 PATH")
+    dirs = list(dict.fromkeys([os.path.dirname(found), os.path.dirname(os.path.realpath(found))]))
+    return [found, *program[1:]], tuple(dirs)
+
+
 def _program(v: object) -> tuple:
     """backend.program：字符串按 shell 规则切分（可带参数），列表原样。"""
     if isinstance(v, str):
@@ -295,6 +306,8 @@ class Stack:
         if real:
             self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")  # 真实后端三类任务都开；这张表只对假 CLI 有意义
             binding = CliBinding(model=cfg.model, **({"program": list(cfg.program)} if cfg.program else {}))
+            if self.launch_mode == "local":
+                binding.program, binding.path_prefix = _host_program(binding.program)
             env_for = None
         else:
             binding = CliBinding(program=fake_program(in_container=self.launch_mode == "container"))

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -30,7 +31,12 @@ class FakeUpstream:
     """记录收到的请求头，按请求体 stream 字段回 JSON 或 SSE。"""
 
     def __init__(
-        self, usage: dict | None = None, model: str = "claude-sonnet-5-5", port: int = 0, dialect: dict | None = None
+        self,
+        usage: dict | None = None,
+        model: str = "claude-sonnet-5-5",
+        port: int = 0,
+        dialect: dict | None = None,
+        tls: tuple[str, str] | None = None,
     ):
         self.seen: list[dict] = []
         self.usage = dict(usage or DEFAULT_USAGE)
@@ -100,8 +106,14 @@ class FakeUpstream:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", port), H)
         self.server.daemon_threads = True
+        scheme = "http"
+        if tls is not None:  # (证书, 私钥)：模拟 https 的模型端点
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(*tls)
+            self.server.socket = ctx.wrap_socket(self.server.socket, server_side=True)
+            scheme = "https"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.url = "http://127.0.0.1:%d" % self.server.server_address[1]
+        self.url = "%s://%s:%d" % (scheme, "localhost" if tls else "127.0.0.1", self.server.server_address[1])
 
     def close(self):
         self.server.shutdown()
