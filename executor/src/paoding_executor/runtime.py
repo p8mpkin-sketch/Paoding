@@ -9,8 +9,12 @@
 - 容器 `--cap-drop ALL`、`no-new-privileges`、资源上限；不传任何环境变量，不挂任何密钥。
 - 工作区是唯一的可写挂载；判官的洁净容器不挂 Worker 的工作区（3.6.4 的 3）。
 
-采集：命令在容器里运行，标准输出与标准错误（合并以保序）由本进程在容器之外读取，
-写入 Blob 仓库，再用执行层的组件令牌登记为 exec 类。模型拿到的是 ArtifactId 和截断回显。
+采集：命令在容器里运行，标准输出与标准错误（合并以保序）由本进程在容器之外逐块读取、边读边落盘
+（capture.py：超过上限只留头尾，内存里只有一个读块），再逐块写入 Blob 仓库，
+用执行层的组件令牌登记为 exec 类。模型拿到的是 ArtifactId 和截断回显。
+
+结束方式（ExecResult.ended_by）：exit 正常退出；timeout 到了 timeout_s 被杀；oom 触到内存上限被内核杀掉
+（依据是 Docker 守护进程在这次运行期间为该容器报的 oom 事件，不取容器内的任何说法）；killed 其余被杀的情况。
 """
 from __future__ import annotations
 
@@ -26,10 +30,12 @@ from pathlib import Path
 
 from paoding_graph.contract import BlobPort, GraphPort
 
+from .capture import Capture, pump
 from .compile import ExecSpec, ScopeError, split_address
 
 ECHO_LIMIT = 8 * 1024                  # 回显上限 8 KB，超过只回头尾（§3.4.2）
 MAX_CAPTURE = 256 * 1024 * 1024        # 单个 Blob 上限；超过保留头尾并置 truncated（§3.2.2）
+KILL_GRACE_S = 30                      # 容器内的 timeout 没能收场时，本进程再等这么久就杀掉 docker exec
 LABEL = "paoding.sandbox"
 LEASE = "paoding.lease"                 # 沙箱所服务的租约；按租约回收时用
 ROLE = "paoding.role"                   # sandbox（执行容器）| gate（出站闸门）| env（题目环境容器）
@@ -76,25 +82,45 @@ class ExecResult:
     output: str                       # 截断后的回显
     truncated: bool                   # 回显或采集是否截断
     provenance: dict                  # exec 出处字段（§3.2.2），judge 模式下交给判官运行器
+    ended_by: str = "exit"            # exit | timeout | oom | killed
 
 
 def _docker(*args: str, check: bool = True, timeout: float | None = 120) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=True, check=check, timeout=timeout)
 
 
-def echo(data: bytes, limit: int = ECHO_LIMIT) -> tuple[str, bool]:
-    if len(data) <= limit:
-        return data.decode("utf-8", "replace"), False
+def echo(data: bytes | Capture, limit: int = ECHO_LIMIT) -> tuple[str, bool]:
+    """回显：不超过 limit 原样给出，超过只给头尾。data 是 Capture 时只从盘上读这两段。"""
+    size = data.stored if isinstance(data, Capture) else len(data)
+
+    def part(start: int, end: int) -> str:
+        raw = data.read(start, end) if isinstance(data, Capture) else data[start:end]
+        return raw.decode("utf-8", "replace")
+    if size <= limit:
+        return part(0, size), False
     half = limit // 2
-    skipped = len(data) - 2 * half
-    text = (data[:half].decode("utf-8", "replace") + f"\n…[省略 {skipped} 字节，用 show 按区间读全文]…\n"
-            + data[-half:].decode("utf-8", "replace"))
-    return text, True
+    return part(0, half) + f"\n…[省略 {size - 2 * half} 字节，用 show 按区间读全文]…\n" + part(size - half, size), True
+
+
+def _oom_between(sid: str, since: float, until: float) -> bool:
+    """这段时间里 Docker 守护进程有没有为该容器报过 oom 事件。事件可能比进程退出晚一点到，所以看两次。"""
+    for wait in (0.0, 0.5):
+        time.sleep(wait)
+        p = _docker("events", "--filter", f"container={sid}", "--filter", "event=oom", "--since", f"{since:.3f}",
+                    "--until", f"{until + wait:.3f}", "--format", "{{.Action}}", check=False, timeout=20)
+        if p.returncode == 0 and p.stdout.strip():
+            return True
+    return False
 
 
 class DockerExecutor:
-    def __init__(self, graph: GraphPort, blobs: BlobPort, token: str, gate_image: str = GATE_IMAGE):
+    def __init__(self, graph: GraphPort, blobs: BlobPort, token: str, max_capture: int = MAX_CAPTURE,
+                 spool_dir: str | None = None, gate_image: str = GATE_IMAGE):
+        """spool_dir：采集的落盘位置，缺省用系统临时目录。临时目录是内存盘的机器上应指到真盘。"""
         self.graph, self.blobs, self.token = graph, blobs, token
+        self.max_capture, self.spool_dir = max_capture, spool_dir
+        if spool_dir:
+            Path(spool_dir).mkdir(parents=True, exist_ok=True)
         self.gate_image = gate_image
         self.owner = owner_id()
         self._live: dict[str, dict] = {}
@@ -224,23 +250,25 @@ class DockerExecutor:
         if not _running(sid):
             raise SandboxGone(f"沙箱 {sid} 已停止")
         spec: ExecSpec = info["spec"]
-        started = int(time.time() * 1000)
+        started_s = time.time()
+        started = int(started_s * 1000)
         inner = f"exec 2>&1; timeout -s KILL {int(timeout_s)} sh -c {shlex.quote(cmd)}"
-        try:
-            p = subprocess.run(["docker", "exec", "-w", cwd, sid, "sh", "-c", inner],
-                               capture_output=True, timeout=timeout_s + 30)
-            data, code = p.stdout + p.stderr, p.returncode
-            if code == 137:                                  # timeout -s KILL
-                code = None
-        except subprocess.TimeoutExpired as e:
-            data, code = (e.stdout or b"") + (e.stderr or b""), None
-        ended = int(time.time() * 1000)
-        captured_trunc = len(data) > MAX_CAPTURE
-        if captured_trunc:
-            half = MAX_CAPTURE // 2
-            data = data[:half] + data[-half:]
-        h = self.blobs.put(data)
-        text, echo_trunc = echo(data)
+        with Capture(self.max_capture, self.spool_dir) as cap:
+            code, took = pump(["docker", "exec", "-w", cwd, sid, "sh", "-c", inner], cap, timeout_s + KILL_GRACE_S)
+            ended_s = time.time()
+            ended = int(ended_s * 1000)
+            ended_by = "exit"
+            if code is None or (code == 137 and took >= timeout_s):     # 墙钟到点：本进程杀的，或容器内 timeout -s KILL
+                code, ended_by = None, "timeout"
+            elif code == 137:                                # 没到点就被 SIGKILL：是不是触到了内存上限
+                ended_by = "oom" if _oom_between(sid, started_s, ended_s + 1) else "killed"
+            captured_trunc, size = cap.truncated, cap.stored
+            h = self.blobs.put(cap.reader())                  # 逐块写入，不把整段输出读进内存
+            text, echo_trunc = echo(cap)
+        if ended_by == "timeout":
+            text += f"\n[执行层：超过 {int(timeout_s)} 秒，已终止]"
+        elif ended_by == "oom":
+            text += f"\n[执行层：超过内存上限 {spec.limits.mem_mb} MB，已被终止]"
         prov = {"sandbox_id": sid, "base": spec.image, "baseline_ref": spec.baseline_ref, "tool": "shell",
                 "command": cmd, "cwd": cwd, "exit_code": code,
                 "touched": [],                               # 见 SPEC.md 已知缺口：M0 没有逐连接的访问摘要
@@ -248,13 +276,13 @@ class DockerExecutor:
         aid = None
         if register_as == "exec":
             out = self.graph.submit(self.token, pid, idem_key, [{"op": "register_artifact", "body": {
-                "hash": h, "size": len(data), "media_type": "text/plain; charset=utf-8", "class": "exec",
+                "hash": h, "size": size, "media_type": "text/plain; charset=utf-8", "class": "exec",
                 "exec": prov}}])
             if not out["ok"]:
                 raise RuntimeError(f"登记失败：{out['results']}")
             aid = out["results"][0]["id"]
         return ExecResult(artifact=aid, blob=h, exit_code=code, output=text,
-                          truncated=echo_trunc or captured_trunc, provenance=prov)
+                          truncated=echo_trunc or captured_trunc, provenance=prov, ended_by=ended_by)
 
 
 def _by_host(spec: ExecSpec) -> dict[str, list[dict]]:
