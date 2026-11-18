@@ -1,16 +1,24 @@
 """执行层运行时（§3.6.2）：Docker 容器、出站白名单、exec 的容器外采集与登记。
 
 隔离（M0）：
-- 每个沙箱一张 `--internal` 的 Docker 网络，没有出站路由；只把授权范围编译出的目标容器接进来。
-  所以执行容器只能连到白名单里的本机题目容器，连不到模型端点，也连不到外网（3.6.4 的 1、4）。
+- 每个沙箱一张 `--internal` 的 Docker 网络 `<sid>-net`，没有出站路由，上面只有执行容器与出站闸门。
+  闸门（gate.py，每台授权主机一个容器 `<sid>-gate-N`）在这张网络上顶着目标的主机名，只为授权规则写明的
+  host:port 开转发；目标容器接在另一张内部网络 `<sid>-up-net` 上，只有闸门到得了。
+  所以执行容器只能连到白名单里的 host:port：同一目标的其他端口、目标的真实地址、模型端点、外网都不通
+  （3.6.4 的 1、4）。闸门只认执行容器的源地址，别的容器即使接进 `<sid>-net` 也过不了闸门。
 - 容器 `--cap-drop ALL`、`no-new-privileges`、资源上限；不传任何环境变量，不挂任何密钥。
 - 工作区是唯一的可写挂载；判官的洁净容器不挂 Worker 的工作区（3.6.4 的 3）。
 
-采集：命令在容器里运行，标准输出与标准错误（合并以保序）由本进程在容器之外读取，
-写入 Blob 仓库，再用执行层的组件令牌登记为 exec 类。模型拿到的是 ArtifactId 和截断回显。
+采集：命令在容器里运行，标准输出与标准错误（合并以保序）由本进程在容器之外逐块读取、边读边落盘
+（capture.py：超过上限只留头尾，内存里只有一个读块），再逐块写入 Blob 仓库，
+用执行层的组件令牌登记为 exec 类。模型拿到的是 ArtifactId 和截断回显。
+
+结束方式（ExecResult.ended_by）：exit 正常退出；timeout 到了 timeout_s 被杀；oom 触到内存上限被内核杀掉
+（依据是 Docker 守护进程在这次运行期间为该容器报的 oom 事件，不取容器内的任何说法）；killed 其余被杀的情况。
 """
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import socket
@@ -22,13 +30,18 @@ from pathlib import Path
 
 from paoding_graph.contract import BlobPort, GraphPort
 
-from .compile import ExecSpec, ScopeError
+from .capture import Capture, pump
+from .compile import ExecSpec, ScopeError, split_address
 
 ECHO_LIMIT = 8 * 1024                  # 回显上限 8 KB，超过只回头尾（§3.4.2）
 MAX_CAPTURE = 256 * 1024 * 1024        # 单个 Blob 上限；超过保留头尾并置 truncated（§3.2.2）
+KILL_GRACE_S = 30                      # 容器内的 timeout 没能收场时，本进程再等这么久就杀掉 docker exec
 LABEL = "paoding.sandbox"
 LEASE = "paoding.lease"                 # 沙箱所服务的租约；按租约回收时用
-ROLE = "paoding.role"                   # sandbox（执行容器）| env（题目环境容器）
+ROLE = "paoding.role"                   # sandbox（执行容器）| gate（出站闸门）| env（题目环境容器）
+GATE_IMAGE = "python:3.12-slim"         # 闸门只要一个带 Python 标准库的镜像；与题目、与执行容器的镜像无关
+GATE_SOURCE = Path(__file__).with_name("gate.py").read_text(encoding="utf-8")
+GATE_READY_S = 20.0
 OWNER = "paoding.owner"                 # 属主：<主机名>:<pid>:<进程启动时刻>，孤儿清扫只清属主已不存活的
 
 
@@ -69,47 +82,68 @@ class ExecResult:
     output: str                       # 截断后的回显
     truncated: bool                   # 回显或采集是否截断
     provenance: dict                  # exec 出处字段（§3.2.2），judge 模式下交给判官运行器
+    ended_by: str = "exit"            # exit | timeout | oom | killed
 
 
 def _docker(*args: str, check: bool = True, timeout: float | None = 120) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=True, check=check, timeout=timeout)
 
 
-def echo(data: bytes, limit: int = ECHO_LIMIT) -> tuple[str, bool]:
-    if len(data) <= limit:
-        return data.decode("utf-8", "replace"), False
+def echo(data: bytes | Capture, limit: int = ECHO_LIMIT) -> tuple[str, bool]:
+    """回显：不超过 limit 原样给出，超过只给头尾。data 是 Capture 时只从盘上读这两段。"""
+    size = data.stored if isinstance(data, Capture) else len(data)
+
+    def part(start: int, end: int) -> str:
+        raw = data.read(start, end) if isinstance(data, Capture) else data[start:end]
+        return raw.decode("utf-8", "replace")
+    if size <= limit:
+        return part(0, size), False
     half = limit // 2
-    skipped = len(data) - 2 * half
-    text = (data[:half].decode("utf-8", "replace") + f"\n…[省略 {skipped} 字节，用 show 按区间读全文]…\n"
-            + data[-half:].decode("utf-8", "replace"))
-    return text, True
+    return part(0, half) + f"\n…[省略 {size - 2 * half} 字节，用 show 按区间读全文]…\n" + part(size - half, size), True
+
+
+def _oom_between(sid: str, since: float, until: float) -> bool:
+    """这段时间里 Docker 守护进程有没有为该容器报过 oom 事件。事件可能比进程退出晚一点到，所以看两次。"""
+    for wait in (0.0, 0.5):
+        time.sleep(wait)
+        p = _docker("events", "--filter", f"container={sid}", "--filter", "event=oom", "--since", f"{since:.3f}",
+                    "--until", f"{until + wait:.3f}", "--format", "{{.Action}}", check=False, timeout=20)
+        if p.returncode == 0 and p.stdout.strip():
+            return True
+    return False
 
 
 class DockerExecutor:
-    def __init__(self, graph: GraphPort, blobs: BlobPort, token: str):
+    def __init__(self, graph: GraphPort, blobs: BlobPort, token: str, max_capture: int = MAX_CAPTURE,
+                 spool_dir: str | None = None, gate_image: str = GATE_IMAGE):
+        """spool_dir：采集的落盘位置，缺省用系统临时目录。临时目录是内存盘的机器上应指到真盘。"""
         self.graph, self.blobs, self.token = graph, blobs, token
+        self.max_capture, self.spool_dir = max_capture, spool_dir
+        if spool_dir:
+            Path(spool_dir).mkdir(parents=True, exist_ok=True)
+        self.gate_image = gate_image
         self.owner = owner_id()
         self._live: dict[str, dict] = {}
 
     # ---------- 生命周期 ----------
 
     def launch(self, spec: ExecSpec, lease_id: str, mount_workspace: bool = True, sid: str | None = None) -> str:
-        """新建沙箱：一张内部网络 + 一个容器。sid 只在 reset 重建时显式给出，其余随机生成。
+        """新建沙箱：一张内部网络 + 执行容器 + 每台授权主机一个出站闸门。sid 只在 reset 重建时显式给出。
         任何一步失败都把已建的容器与网络拆掉，不留半成品。"""
         sid = sid or f"pd-{spec.id}-{uuid.uuid4().hex[:8]}"
-        net = f"{sid}-net"
-        _docker("network", "create", "--internal", "--label", f"{LABEL}={sid}", "--label", f"{OWNER}={self.owner}", net)
-        targets = []
+        net, up = f"{sid}-net", f"{sid}-up-net"
+        labels = ["--label", f"{LABEL}={sid}", "--label", f"{OWNER}={self.owner}"]
+        hosts = _by_host(spec)
         try:
-            for addr in spec.egress_allow:
-                host = addr.rsplit(":", 1)[0] if ":" in addr else addr
+            _docker("network", "create", "--internal", *labels, net)
+            if hosts:
+                _docker("network", "create", "--internal", *labels, up)
+            for host in hosts:
                 if _docker("inspect", "--type", "container", host, check=False).returncode != 0:
                     raise ScopeError(f"M0 只支持本机题目容器作为出站目标：{host!r} 不是容器")
-                _docker("network", "connect", "--alias", host, net, host)
-                targets.append(host)
+                _docker("network", "connect", "--alias", host, up, host)       # 目标只接上游网络，沙箱够不着
             lim = spec.limits
-            args = ["run", "-d", "--name", sid, "--label", f"{LABEL}={sid}", "--label", f"{OWNER}={self.owner}",
-                    "--label", f"{LEASE}={lease_id}", "--label", f"{ROLE}=sandbox",
+            args = ["run", "-d", "--name", sid, *labels, "--label", f"{LEASE}={lease_id}", "--label", f"{ROLE}=sandbox",
                     "--network", net, "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                     "--pids-limit", str(lim.pids), "--memory", f"{lim.mem_mb}m", "--cpus", str(lim.cpu),
                     "--env", "HOME=/tmp", "-w", "/workspace"]
@@ -119,12 +153,41 @@ class DockerExecutor:
                 args += ["--tmpfs", "/workspace"]
             # 墙钟上限：容器自己到点退出，不靠外面记得来杀（limits.wall_s，§3.6.2）
             _docker(*args, spec.image, "sleep", str(int(lim.wall_s)))
+            gates = self._start_gates(sid, net, up, hosts, labels, lease_id, lim.wall_s)
         except BaseException:
-            self._teardown(sid, net, targets)
+            _teardown(sid)
             raise
-        self._live[sid] = {"spec": spec, "net": net, "targets": targets, "lease": lease_id,
+        self._live[sid] = {"spec": spec, "net": net, "targets": sorted(hosts), "gates": gates, "lease": lease_id,
                            "mounted": mount_workspace}
         return sid
+
+    def _start_gates(self, sid: str, net: str, up: str, hosts: dict[str, list[dict]], labels: list[str],
+                     lease_id: str, wall_s: int) -> list[str]:
+        """每台授权主机一个闸门：在沙箱网络上顶着主机名，另一只脚在上游网络。等它们都开始监听再返回。"""
+        if not hosts:
+            return []
+        src = _ip(sid, net)
+        gates = []
+        for n, (host, rules) in enumerate(sorted(hosts.items())):
+            gate = f"{sid}-gate-{n}"
+            cfg = {"host": host, "upstream": _ip(host, up), "allow_src": src, "rules": rules}
+            _docker("create", "--name", gate, *labels, "--label", f"{LEASE}={lease_id}", "--label", f"{ROLE}=gate",
+                    "--network", net, "--network-alias", host, "--cap-drop", "ALL",
+                    "--security-opt", "no-new-privileges", "--read-only", "--user", "65534:65534",
+                    "--pids-limit", "512", "--memory", "128m", "--stop-timeout", "1",
+                    self.gate_image, "timeout", "-s", "KILL", str(int(wall_s) + 60),
+                    "python", "-u", "-c", GATE_SOURCE, json.dumps(cfg, sort_keys=True))
+            _docker("network", "connect", up, gate)
+            _docker("start", gate)
+            gates.append(gate)
+        deadline = time.monotonic() + GATE_READY_S
+        for gate in gates:
+            while not any(e.get("event") == "ready" for e in gate_log(gate)):
+                if time.monotonic() > deadline or not _running(gate):
+                    tail = _docker("logs", "--tail", "5", gate, check=False)
+                    raise RuntimeError(f"出站闸门 {gate} 未就绪：{(tail.stdout + tail.stderr).decode('utf-8', 'replace')[-300:]}")
+                time.sleep(0.05)
+        return gates
 
     def reset(self, sid: str) -> str:
         """回到 baseline：销毁后从同一镜像重建，沙箱 id 不变（会话手里的 id 继续有效）。
@@ -134,12 +197,9 @@ class DockerExecutor:
         return self.launch(info["spec"], info["lease"], info["mounted"], sid=sid)
 
     def destroy(self, sid: str) -> None:
-        """幂等。本实例不认识的 sid（例如进程重启之后）按标签找到它的网络与接入的目标再拆。"""
-        info = self._live.pop(sid, None)
-        if info:
-            self._teardown(sid, info["net"], info["targets"])
-        elif _owned(sid) is not None:
-            self._teardown(sid, f"{sid}-net", _net_members(f"{sid}-net", exclude=sid))
+        """幂等。按标签拆：执行容器、闸门、两张网络。本实例不认识的 sid（例如进程重启之后）同样拆得掉。"""
+        if self._live.pop(sid, None) or _owned(sid) is not None or _labelled_nets(sid):
+            _teardown(sid)
 
     def destroy_lease(self, lease_id: str) -> list[str]:
         """销毁某个租约名下的全部沙箱（Worker 的执行容器与判官的洁净容器）。返回销毁的 sid。"""
@@ -181,13 +241,19 @@ class DockerExecutor:
             raise SandboxGone(f"没有沙箱 {sid}")
         return info
 
-    def _teardown(self, sid: str, net: str, targets: list[str]) -> None:
-        _docker("rm", "-f", "-v", sid, check=False)
-        for t in targets:
-            _docker("network", "disconnect", "-f", net, t, check=False)
-        _docker("network", "rm", net, check=False)
-
     # ---------- exec ----------
+
+    def _touched(self, info: dict, started_ms: int, ended_ms: int) -> list[str]:
+        """访问摘要（§3.2.2）：这次运行期间经闸门连到过的授权目标，形如 net:host:port，去重排序。
+
+        来源是闸门在容器之外的逐连接记录，不取命令输出里的任何说法。目标端口没开、上游没接通的连接也算：
+        它确实去碰了授权范围内的地址。白名单外的连接到不了闸门，不会出现在这里。"""
+        seen = set()
+        for gate in info.get("gates", []):
+            for rec in gate_log(gate, since_ms=started_ms):
+                if rec.get("event") == "connect" and started_ms <= rec.get("t", 0) <= ended_ms:
+                    seen.add(f"net:{rec['dst']}")
+        return sorted(seen)
 
     def exec(self, sid: str, cmd: str, pid: str, idem_key: str, timeout_s: int = 60, cwd: str = "/workspace",
              register_as: str = "exec") -> ExecResult:
@@ -196,37 +262,88 @@ class DockerExecutor:
         if not _running(sid):
             raise SandboxGone(f"沙箱 {sid} 已停止")
         spec: ExecSpec = info["spec"]
-        started = int(time.time() * 1000)
+        started_s = time.time()
+        started = int(started_s * 1000)
         inner = f"exec 2>&1; timeout -s KILL {int(timeout_s)} sh -c {shlex.quote(cmd)}"
-        try:
-            p = subprocess.run(["docker", "exec", "-w", cwd, sid, "sh", "-c", inner],
-                               capture_output=True, timeout=timeout_s + 30)
-            data, code = p.stdout + p.stderr, p.returncode
-            if code == 137:                                  # timeout -s KILL
-                code = None
-        except subprocess.TimeoutExpired as e:
-            data, code = (e.stdout or b"") + (e.stderr or b""), None
-        ended = int(time.time() * 1000)
-        captured_trunc = len(data) > MAX_CAPTURE
-        if captured_trunc:
-            half = MAX_CAPTURE // 2
-            data = data[:half] + data[-half:]
-        h = self.blobs.put(data)
-        text, echo_trunc = echo(data)
+        with Capture(self.max_capture, self.spool_dir) as cap:
+            code, took = pump(["docker", "exec", "-w", cwd, sid, "sh", "-c", inner], cap, timeout_s + KILL_GRACE_S)
+            ended_s = time.time()
+            ended = int(ended_s * 1000)
+            ended_by = "exit"
+            if code is None or (code == 137 and took >= timeout_s):     # 墙钟到点：本进程杀的，或容器内 timeout -s KILL
+                code, ended_by = None, "timeout"
+            elif code == 137:                                # 没到点就被 SIGKILL：是不是触到了内存上限
+                ended_by = "oom" if _oom_between(sid, started_s, ended_s + 1) else "killed"
+            captured_trunc, size = cap.truncated, cap.stored
+            h = self.blobs.put(cap.reader())                  # 逐块写入，不把整段输出读进内存
+            text, echo_trunc = echo(cap)
+        if ended_by == "timeout":
+            text += f"\n[执行层：超过 {int(timeout_s)} 秒，已终止]"
+        elif ended_by == "oom":
+            text += f"\n[执行层：超过内存上限 {spec.limits.mem_mb} MB，已被终止]"
         prov = {"sandbox_id": sid, "base": spec.image, "baseline_ref": spec.baseline_ref, "tool": "shell",
                 "command": cmd, "cwd": cwd, "exit_code": code,
-                "touched": [],                               # 见 SPEC.md 已知缺口：M0 没有逐连接的访问摘要
+                "touched": self._touched(info, started, int(time.time() * 1000)),
                 "started_at": started, "ended_at": ended, "truncated": captured_trunc}
         aid = None
         if register_as == "exec":
             out = self.graph.submit(self.token, pid, idem_key, [{"op": "register_artifact", "body": {
-                "hash": h, "size": len(data), "media_type": "text/plain; charset=utf-8", "class": "exec",
+                "hash": h, "size": size, "media_type": "text/plain; charset=utf-8", "class": "exec",
                 "exec": prov}}])
             if not out["ok"]:
                 raise RuntimeError(f"登记失败：{out['results']}")
             aid = out["results"][0]["id"]
         return ExecResult(artifact=aid, blob=h, exit_code=code, output=text,
-                          truncated=echo_trunc or captured_trunc, provenance=prov)
+                          truncated=echo_trunc or captured_trunc, provenance=prov, ended_by=ended_by)
+
+
+def _by_host(spec: ExecSpec) -> dict[str, list[dict]]:
+    """授权规则按主机分组：host → [{port, actions}]。手工构造、只给了 egress_allow 的 ExecSpec 按 connect 处理。"""
+    rules = spec.egress_rules or tuple((addr, ("connect",)) for addr in spec.egress_allow)
+    out: dict[str, list[dict]] = {}
+    for addr, actions in rules:
+        host, port = split_address(addr)
+        out.setdefault(host, []).append({"port": port, "actions": list(actions)})
+    return out
+
+
+def _ip(name: str, net: str) -> str:
+    p = _docker("inspect", "--type", "container", "--format",
+                f'{{{{(index .NetworkSettings.Networks "{net}").IPAddress}}}}', name)
+    ip = p.stdout.decode().strip()
+    if not ip:
+        raise RuntimeError(f"{name} 在网络 {net} 上没有地址")
+    return ip
+
+
+def gate_log(gate: str, since_ms: int | None = None) -> list[dict]:
+    """闸门的逐连接记录（它的标准输出，由本进程在容器之外读）。不是 JSON 的行忽略。
+    since_ms：只读这个时刻（留一秒余量）之后的记录，长会话里不必每次读全量。"""
+    since = [] if since_ms is None else ["--since", f"{since_ms / 1000 - 1:.3f}"]
+    out = []
+    for line in _docker("logs", *since, gate, check=False).stdout.decode("utf-8", "replace").splitlines():
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def _labelled_nets(sid: str) -> list[str]:
+    p = _docker("network", "ls", "--filter", f"label={LABEL}={sid}", "--format", "{{.Name}}", check=False)
+    return [n for n in p.stdout.decode().split() if n]
+
+
+def _teardown(sid: str) -> None:
+    """拆掉一个沙箱名下的全部东西：带它标签的容器（执行容器、闸门）与网络。目标容器只摘网，不删。"""
+    for name in {sid, *_list(f"label={LABEL}={sid}", f"label={ROLE}=sandbox"), *_list(f"label={LABEL}={sid}", f"label={ROLE}=gate")}:
+        _docker("rm", "-f", "-v", name, check=False)
+    for net in _labelled_nets(sid):
+        for member in _net_members(net):
+            _docker("network", "disconnect", "-f", net, member, check=False)
+        _docker("network", "rm", net, check=False)
 
 
 def _running(name: str) -> bool:

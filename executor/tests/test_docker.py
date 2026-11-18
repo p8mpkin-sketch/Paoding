@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from paoding_executor.compile import compile_spec
+from paoding_executor.compile import Limits, compile_spec
 from paoding_executor.runtime import ECHO_LIMIT, DockerExecutor
 
 IMAGE = "python:3.12-slim"
@@ -43,6 +43,7 @@ class MemBlobs:
         self.d = {}
 
     def put(self, data):
+        data = data if isinstance(data, bytes) else data.read()      # 执行层给的是只读流
         h = hashlib.sha256(data).hexdigest()
         self.d[h] = data
         return h
@@ -98,7 +99,51 @@ def test_exec_capture_and_register(ex, tmp_path, targets):
 def test_timeout(ex, tmp_path, targets):
     sid = ex.launch(compile_spec("t2", _scope(targets), ENV, "r0", False, str(tmp_path)), "l_1")
     r = ex.exec(sid, "echo start; sleep 30", "p1", "k1", timeout_s=2)
-    assert r.exit_code is None and "start" in r.output
+    assert r.exit_code is None and "start" in r.output and r.ended_by == "timeout"
+    assert ex.exec(sid, "exit 137", "p1", "k2").ended_by == "killed"      # 没到点的 137 不算超时
+
+
+def test_oom_is_told_apart_from_timeout(ex, tmp_path):
+    """P1-2：触到内存上限被杀与超时是两种结束方式；依据是守护进程的 oom 事件。"""
+    spec = compile_spec("t2m", [], ENV, "r0", False, str(tmp_path), limits=Limits(mem_mb=64))
+    sid = ex.launch(spec, "l_1")
+    r = ex.exec(sid, "echo start; exec python -c 'x = bytearray(400 * 1024 * 1024); print(len(x))'", "p1", "k1")
+    assert (r.exit_code, r.ended_by) == (137, "oom") and "start" in r.output
+    assert "内存上限 64 MB" in r.output
+    ok = ex.exec(sid, "echo still-here", "p1", "k2")                      # 容器还在，后续命令照常
+    assert (ok.exit_code, ok.ended_by) == (0, "exit")
+
+
+def test_capture_keeps_head_and_tail_while_streaming(tmp_path):
+    """P1-2：上限在读的过程中生效：超过上限只留头尾，Blob 不超过上限。"""
+    os.chmod(tmp_path, 0o777)
+    with DockerExecutor(FakeGraph(), MemBlobs(), "tok-exec", max_capture=1 << 20) as e:
+        sid = e.launch(compile_spec("t2c", [], ENV, "r0", False, str(tmp_path)), "l_1")
+        r = e.exec(sid, "python -c \"import sys; sys.stdout.write('H'*1000 + 'x'*3000000 + 'T'*1000)\"", "p1", "k1")
+        data = e.blobs.get(r.blob)
+        assert len(data) == 1 << 20 and data.startswith(b"H" * 1000 + b"x") and data.endswith(b"x" + b"T" * 1000)
+        assert r.truncated and r.provenance["truncated"] and r.exit_code == 0
+        assert e.graph.calls[0][3][0]["body"]["size"] == 1 << 20
+
+
+def test_huge_output_does_not_land_in_memory(tmp_path):
+    """P1-2 验收：300 MB 的输出，本进程的内存峰值几乎不动；落盘的 Blob 正好是 256 MB 上限。"""
+    import resource
+
+    from paoding_executor.runtime import MAX_CAPTURE
+    from paoding_graph.contract import BlobStore
+    os.chmod(tmp_path, 0o777)
+    blobs = BlobStore(tmp_path / "blobs")
+    spool = tmp_path / "spool"
+    spool.mkdir()
+    with DockerExecutor(FakeGraph(), blobs, "tok-exec", spool_dir=str(spool)) as e:
+        sid = e.launch(compile_spec("t2h", [], ENV, "r0", False, str(tmp_path)), "l_1")
+        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        r = e.exec(sid, "head -c 314572800 /dev/zero", "p1", "k1", timeout_s=120)
+        grown_mb = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) / 1024
+    assert r.exit_code == 0 and r.truncated and r.provenance["truncated"]
+    assert blobs.size(r.blob) == MAX_CAPTURE and list(spool.iterdir()) == []
+    assert grown_mb < 32, f"采集让进程内存涨了 {grown_mb:.0f} MB"
 
 
 def test_scope_enforced_by_risk(ex, tmp_path, targets):
@@ -109,6 +154,114 @@ def test_scope_enforced_by_risk(ex, tmp_path, targets):
     assert ex.exec(sid, PROBE.format(h="1.1.1.1", p=443), "p1", "c").exit_code != 0
     sid1 = ex.launch(compile_spec("t3b", _scope(targets), ENV, "r1", False, str(tmp_path)), "l_2")
     assert ex.exec(sid1, PROBE.format(h=targets[1], p=80), "p1", "d").exit_code == 0
+
+
+TWO_PORTS = ("import http.server,threading\n"
+             "for p in (8080, 8081):\n"
+             "    threading.Thread(target=http.server.ThreadingHTTPServer(('', p), "
+             "http.server.SimpleHTTPRequestHandler).serve_forever).start()\n")
+GET = "python -c \"import urllib.request as u;print(u.urlopen('http://{h}:{p}/',timeout=5).status)\""
+
+
+@pytest.fixture(scope="module")
+def duo():
+    """一台目标、两个端口都在监听：8080 与 8081。"""
+    name = f"pdt-{uuid.uuid4().hex[:6]}-duo"
+    subprocess.run(["docker", "run", "-d", "--name", name, IMAGE, "python", "-c", TWO_PORTS], check=True,
+                   capture_output=True)
+    yield name
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+
+
+def _addresses(name):
+    fmt = "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}"
+    return subprocess.run(["docker", "inspect", "--format", fmt, name], capture_output=True).stdout.decode().split()
+
+
+def test_egress_is_port_level(ex, tmp_path, duo):
+    """P0-4 验收：r0 规则只放行 duo:8080；同一容器的 8081 被拒，绕过名字直连目标地址也不通。"""
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"},
+             {"resource": "net", "pattern": f"{duo}:8081", "actions": ["connect"], "risk": "r1"}]
+    sid = ex.launch(compile_spec("pl", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    assert ex.exec(sid, GET.format(h=duo, p=8080), "p1", "a").output.strip() == "200"      # 内容真的转发到了
+    assert ex.exec(sid, PROBE.format(h=duo, p=8081), "p1", "b").exit_code == 7
+    assert "refused" in ex.exec(sid, GET.format(h=duo, p=8081), "p1", "c").output.lower()
+    for ip in _addresses(duo):                                # 目标的真实地址（默认网桥、上游网络）
+        for port in (8080, 8081):
+            assert ex.exec(sid, PROBE.format(h=ip, p=port), "p1", f"d{ip}{port}").exit_code == 7
+    hi = ex.launch(compile_spec("pl1", scope, ENV, "r1", False, str(tmp_path)), "l_2")     # 上限抬到 r1：两个端口都通
+    assert ex.exec(hi, GET.format(h=duo, p=8081), "p1", "e").output.strip() == "200"
+
+
+def test_gate_enforces_actions(ex, tmp_path, duo):
+    """P0-4：actions 由闸门执行。含 connect（或 *）的端口才开；只写了别的动作的规则不开通路。"""
+    from paoding_executor.runtime import gate_log
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["read"], "risk": "r0"},
+             {"resource": "net", "pattern": f"{duo}:8081", "actions": ["*"], "risk": "r0"}]
+    spec = compile_spec("ga", scope, ENV, "r0", False, str(tmp_path))
+    assert spec.egress_allow == (f"{duo}:8081",)
+    sid = ex.launch(spec, "l_1")
+    assert ex.exec(sid, PROBE.format(h=duo, p=8080), "p1", "a").exit_code == 7
+    assert ex.exec(sid, GET.format(h=duo, p=8081), "p1", "b").output.strip() == "200"
+    [gate] = ex._live[sid]["gates"]
+    log = gate_log(gate)
+    rules = {e["dst"]: e["open"] for e in log if e["event"] == "rule"}
+    assert rules == {f"{duo}:8080": False, f"{duo}:8081": True}
+    assert [(e["dst"], e["ok"]) for e in log if e["event"] == "connect"] == [(f"{duo}:8081", True)]
+
+
+def test_touched_comes_from_the_gate(ex, tmp_path, duo):
+    """P0-3：访问摘要是闸门记下的真实连接，逐次运行各算各的；命令自己说连过不算。"""
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"},
+             {"resource": "net", "pattern": f"{duo}:8081", "actions": ["connect"], "risk": "r0"}]
+    sid = ex.launch(compile_spec("tc", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    said = ex.exec(sid, f"echo connected to {duo}:8080; echo ok", "p1", "a")
+    assert said.provenance["touched"] == [] and ex.graph.calls[-1][3][0]["body"]["exec"]["touched"] == []
+    one = ex.exec(sid, GET.format(h=duo, p=8080), "p1", "b")
+    assert one.provenance["touched"] == [f"net:{duo}:8080"]
+    assert ex.graph.calls[-1][3][0]["body"]["exec"]["touched"] == [f"net:{duo}:8080"]      # 登记进了出处
+    both = ex.exec(sid, GET.format(h=duo, p=8081) + "; " + GET.format(h=duo, p=8080) + "; " + GET.format(h=duo, p=8080),
+                   "p1", "c")
+    assert both.provenance["touched"] == [f"net:{duo}:8080", f"net:{duo}:8081"]            # 去重、排序
+    assert ex.exec(sid, "echo quiet", "p1", "d").provenance["touched"] == []               # 上一次的连接不算到这一次
+    off = ex.exec(sid, PROBE.format(h="1.1.1.1", p=443) + "; " + PROBE.format(h=duo, p=9), "p1", "e")
+    assert off.provenance["touched"] == []                                                 # 白名单外的连接到不了闸门
+    judge = ex.launch(compile_spec("tcj", scope, ENV, "r0", False, ""), "l_j", mount_workspace=False)
+    r = ex.exec(judge, GET.format(h=duo, p=8080), "p1", "f", register_as="judge")
+    assert r.provenance["touched"] == [f"net:{duo}:8080"]                                  # 判官的洁净容器同样有
+
+
+def test_gate_only_serves_the_sandbox(ex, tmp_path, duo):
+    """闸门只认执行容器的源地址：别的容器即使接进沙箱网络，也拿不到目标的内容（3.6.4 的 4 的网络一侧）。"""
+    from paoding_executor.runtime import gate_log
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"}]
+    sid = ex.launch(compile_spec("gs", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    other = f"pdt-{uuid.uuid4().hex[:6]}-other"
+    try:
+        p = subprocess.run(["docker", "run", "--rm", "--name", other, "--network", f"{sid}-net", IMAGE, "sh", "-c",
+                            GET.format(h=duo, p=8080)], capture_output=True)
+        assert p.returncode != 0 and b"200" not in p.stdout
+    finally:
+        subprocess.run(["docker", "rm", "-f", other], capture_output=True)
+    [gate] = ex._live[sid]["gates"]
+    assert [e["why"] for e in gate_log(gate) if e["event"] == "deny"] == ["source"]
+    assert ex.exec(sid, GET.format(h=duo, p=8080), "p1", "a").output.strip() == "200"
+
+
+def test_gate_is_hardened(ex, tmp_path, duo):
+    scope = [{"resource": "net", "pattern": f"{duo}:8080", "actions": ["connect"], "risk": "r0"}]
+    sid = ex.launch(compile_spec("gh", scope, ENV, "r0", False, str(tmp_path)), "l_1")
+    [gate] = ex._live[sid]["gates"]
+    fmt = "{{.HostConfig.CapDrop}}|{{.HostConfig.SecurityOpt}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.User}}|{{len .Mounts}}|{{.Config.Env}}"
+    got = subprocess.run(["docker", "inspect", "--format", fmt, gate], capture_output=True).stdout.decode().strip()
+    assert got.startswith("[ALL]|[no-new-privileges]|true|65534:65534|0|")
+    assert not any(w in got.upper() for w in ("ANTHROPIC", "API_KEY", "TOKEN", "SECRET"))
+    nets = subprocess.run(["docker", "inspect", "--format", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}",
+                           gate], capture_output=True).stdout.decode().split()
+    assert sorted(nets) == [f"{sid}-net", f"{sid}-up-net"]      # 两张都是内部网络：闸门自己也出不了外网
+    ex.destroy(sid)
+    left = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True).stdout.decode()
+    assert gate not in left and duo in left
 
 
 def test_no_keys_no_model_endpoint(ex, tmp_path, targets):
