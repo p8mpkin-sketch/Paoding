@@ -57,7 +57,7 @@
 | `PUT /v1/blobs` | 字节 → `{hash, size}` |
 | `POST /v1/problems` | `{id, idem_key, ops}`：若干条 input 类 `register_artifact` 加最后一条 `open_problem`，Origin 用 `"$<下标>"` 指向前面的材料 |
 | `POST /v1/problems/{pid}/proposals` | `{idem_key, ops[]}` → `{ok, results[]}`，整批原子 |
-| `POST /v1/problems/{pid}/leases`、`/v1/leases/{id}/renew｜release`、`POST /v1/artifacts` | 组件用：201 / 409 |
+| `POST /v1/problems/{pid}/leases`、`/v1/leases/{id}/renew｜release`、`POST /v1/artifacts` | 组件用：201 / 409。与其它写操作一样必须带 `idem_key`（或 `Idempotency-Key` 头），缺了返回 400 `schema_error`，服务端不代为生成 |
 
 节点形状（`status`、`view`、`nodes` 共用）：
 
