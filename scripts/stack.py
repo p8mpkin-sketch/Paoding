@@ -162,7 +162,10 @@ class Stack:
         # Adapter：假上游 → 端点代理 → 工具端点 → 会话运行器（假 CLI）
         self.upstream = FakeUpstream(cfg.usage)
         self.proxy = EndpointProxy(ProxyConfig(self.upstream.url, "sk-fake-upstream", self.tok["adapter"]),
-                                   PriceTable.load(PRICES), self.graph)
+                                   PriceTable.load(PRICES), self.graph, reader=self.graph)
+        if self.proxy.restored["global"]:
+            log("adapter").info("端点代理从账本恢复累计花费：全局 %d 毫美元，%d 道题", self.proxy.restored["global"],
+                                sum(1 for v in self.proxy.restored["problems"].values() if v))
         self.endpoint = ToolEndpoint()
         self.adapter_cfg = AdapterConfig(
             root=home / "sessions", renew_s=cfg.renew_s, stall_s=cfg.stall_s, judges_cfg=self.judges,
