@@ -9,7 +9,8 @@ export const NO_FILTER: BankFilter = { q: "", terminal: "", judge: "" };
 export type Route =
   | { page: "home" }
   | ({ page: "problems" } & Partial<BankFilter>)
-  | { page: "new" }
+  | { page: "new"; from?: string }
+  | { page: "import" }
   | { page: "readings" }
   | { page: "problem"; pid: string; asOf: number | null; node: string | null };
 
@@ -21,7 +22,8 @@ export function parseRoute(pathname: string, search: string): Route {
     const n = raw === null ? NaN : Number(raw);
     return { page: "problem", pid: decodeURIComponent(m[1]), asOf: Number.isInteger(n) && n > 0 ? n : null, node: q.get("node") };
   }
-  if (pathname === "/new") return { page: "new" };
+  if (pathname === "/new") return q.get("from") ? { page: "new", from: q.get("from")! } : { page: "new" };
+  if (pathname === "/import") return { page: "import" };
   if (pathname === "/readings") return { page: "readings" };
   if (pathname === "/problems") return { page: "problems", q: q.get("q") ?? "", terminal: q.get("terminal") ?? "", judge: q.get("judge") ?? "" };
   return { page: "home" };
@@ -36,7 +38,8 @@ export function hrefOf(r: Route): string {
       const s = q.toString();
       return `/problems${s ? `?${s}` : ""}`;
     }
-    case "new": return "/new";
+    case "new": return r.from ? `/new?from=${encodeURIComponent(r.from)}` : "/new";
+    case "import": return "/import";
     case "readings": return "/readings";
     case "problem": {
       const q = new URLSearchParams();

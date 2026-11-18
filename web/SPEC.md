@@ -125,3 +125,5 @@
 - **总览**（`/`）：读 `/v1/problems`（每 5 秒，页面不可见时跳过）。进行中卡片列在途租约的种类（服务端的 `active`），不推断“阶段”；Goal 根结论取 `goal_level`；待人处理数取 `human_todo`；墙钟取 `wall`。最近完成按终态三值筛。今日解题与近 7 日趋势按 `closed_ts` 在本机时区分日计数，成功率 = solved ÷ 当天已关题数；本机时钟由 `app/clock.ts` 注入，视图层不读时钟。
 - **题库**（`/problems?q=&terminal=&judge=`）：搜索与筛选都在 URL 里。标签、难度、领域要 Problem 新字段，暂缺。
 - **主题**：跟随系统、亮色、暗色、高对比，写在 `<html data-theme>`，存本机 `paoding.theme`。等级与终态仍是形状记号加文字，颜色不承载信息。
+- **开题向导**（`/new`、克隆 `/new?from=<pid>`）：六页，中间四页即 HMI §3.2 的四步。材料可以是文件、文字或网址（网址只当文字存，`text/uri-list`，不抓取）；文字类材料在提交时先 `PUT /v1/blobs`（本机核对哈希）再进开题批次。初始提示在开题成功后作为第一条 Hint 提交，不进开题批次。草稿存本机 `paoding.wizard_draft`，提交成功即清。克隆从原题的 `status`、`budget`、材料登记预填，材料按哈希重新登记为 input 类。
+- **导入**（`/import`）：JSON（数组或 `{problems: [...]}`）与 CSV（列映射：id、题名、目标陈述、题面文字）在本机解析成草稿，没写的字段取自所选模板；逐题走与向导相同的 `app/submit.ts`，逐题显示 seq 或拒绝码。YAML 暂不支持。

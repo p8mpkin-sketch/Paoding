@@ -8,8 +8,8 @@ import { usd } from "../model/text";
 import { CriterionBadge, Glyph } from "../ui/criterion";
 import { Plain, Text } from "../ui/registers";
 
-export function Link({ to, children, className }: { to: Route; children: React.ReactNode; className?: string }) {
-  return <a className={className} href={hrefOf(to)} onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); navigate(to); }}>{children}</a>;
+export function Link({ to, children, className, ...data }: { to: Route; children: React.ReactNode; className?: string } & { [k: `data-${string}`]: string }) {
+  return <a {...data} className={className} href={hrefOf(to)} onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); navigate(to); }}>{children}</a>;
 }
 
 /** 读一次题目列表；every 给出时按毫秒轮询（页面不可见时跳过）。 */
@@ -52,7 +52,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
     <div className="problems" data-page="bank">
       <header className="page-head">
         <h2>题库</h2>
-        <Link to={{ page: "new" }} className="btn-link">＋ 新建问题</Link>
+        <span><Link to={{ page: "new" }} className="btn-link">＋ 新建问题</Link> <Link to={{ page: "import" }} className="btn-link">导入题集</Link></span>
       </header>
       <form className="filters" role="search" onSubmit={(e) => { e.preventDefault(); set({ q }); }}>
         <label>搜索 <input type="search" value={q} placeholder="题名或 id" data-field="q" onChange={(e) => setQ(e.target.value)} onBlur={() => set({ q })} /></label>
@@ -73,7 +73,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
       {list.length === 0 ? <p className="muted">{view.items.length ? "没有符合筛选的题目。" : "还没有题目。"}</p> : (
         <div className="table-scroll">
           <table className="mini wide">
-            <thead><tr><th>题目</th><th>终态</th><th>Goal 判官</th><th>画像</th><th>已花 / 上限</th><th>开题 seq</th></tr></thead>
+            <thead><tr><th>题目</th><th>终态</th><th>Goal 判官</th><th>画像</th><th>已花 / 上限</th><th>开题 seq</th><th /></tr></thead>
             <tbody>
               {list.map((p) => (
                 <tr key={p.id} data-problem={p.id}>
@@ -83,6 +83,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
                   <td>{p.profile.info} · {p.profile.judge} · {p.profile.reversibility}</td>
                   <td>{usd(p.spent_usd_milli)} / {p.cap_usd_milli === null ? "—" : usd(p.cap_usd_milli)}</td>
                   <td>{p.opened_seq}</td>
+                  <td><Link to={{ page: "new", from: p.id }} className="btn-small" data-action="clone">克隆</Link></td>
                 </tr>
               ))}
             </tbody>
