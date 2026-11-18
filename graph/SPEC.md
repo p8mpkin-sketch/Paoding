@@ -22,6 +22,51 @@
 | 三层视图（`view?layer=`） | 感知官 | T-1 | 常开；开关 `view=full_dump` | 满量导出与下钻版解题率差 ≤1 题且成本不升 |
 | 账本投影、归因记录 | 量具 | T-0 | 常开 | 永不退役，也永不守门 |
 
+## HTTP 绑定（HMI §11 方案 A；`httpapi.py`、`views.py`）
+
+启动：`uv run python -m paoding_graph.httpapi --home .paoding --port 8787 [--static web/dist] [--allow-origin http://localhost:5173]`。只监听 `127.0.0.1`；人的令牌写在 `<home>/human.token`。
+
+**约定。**
+
+- 读是 GET，全部是状态的纯函数（`views.py`，进 I1 的 AST 纯度检查）。每个视图端点可带 `as_of=<seq>`，由唯一的 reducer 重放得到（`GraphService.state_at`，不另写解释器）。应答外壳：`{as_of, head, view_hash, …视图}`，`view_hash = sha256(JCS(视图))`；加 `state_hash=1` 另给该序号的状态哈希。
+- 写是 POST，全部落到 `GraphService.submit`，与 `pd` 同一条提议通道。身份只来自 `Authorization: Bearer <令牌>`；没有令牌 401，未知令牌 403，都不进日志。写操作带 `idem_key`。
+- 错误体：`{ok:false, code, detail}`。`unknown_ref` 404，`schema_error` 400，`forbidden_op` 401/403，后续里程碑的端点 404 `not_enabled`。一批提议被内核拒绝仍是 200，逐条结果在 `results` 里。
+- 四语域：凡文字内容都是 `{src, register, value}`，`register` 由 `src`（出处类别）查 `views.REGISTER` 得到，取值 `证据｜叙述｜人｜估`。结构字段（id、等级、状态、账目）恒属证据。`pd` 的行首标记读同一张表。
+- 只对本机：`Host` 不是回环名拒绝；带 `Origin` 且非同源的请求一律 403，除非在 `--allow-origin` 白名单。读端点不要令牌（M1 本机单用户；`EventSource` 也带不了头）。
+- 排序只用创建 seq；时间只取事件 `ts`。
+
+**端点。**
+
+| 端点 | 说明 |
+| --- | --- |
+| `GET /v1/health` | `{ok, head, api}` |
+| `GET /v1/problems` | `items[]`：`id、title、closed、terminal、terminal_badge、profile、opened_seq、opened_ts、closed_seq、spent_usd_milli、cap_usd_milli`；`totals`：题数、solved 数、总花费、每解成本 |
+| `GET /v1/problems/{pid}/status` | `problem`（画像、推出值与覆盖、scope、env、终态）、`goal{statement, accept, predicate}`、`facts[]`、`intents[]`、`hints[]`、`leases[]`、`requests[]`、`review`、`closeout` |
+| `GET /v1/problems/{pid}/view?layer=title｜summary&after_seq=&limit=` | 按创建顺序的节点清单，`next_after_seq` 为游标；`frontier`（活跃 Hint、待人处理、未结束 Intent 及其前提、未到终态的论断）。`layer=full` 需服务端开 `view_full_dump` |
+| `GET /v1/problems/{pid}/budget` | 账本投影：`cap、spent、reserved、by_kind、verify_spent、marks、mark_seqs、mark_lines、percent、wall、review` |
+| `GET /v1/problems/{pid}/work` | `items[]`：`bootstrap｜reason｜explore｜judge｜rejudge｜human` |
+| `GET /v1/nodes/{id}?layer=title｜summary｜evidence` | 论断、Intent 或 Hint。`evidence` 层的论断带 `grounds[{id,class,register,hash,size}]`、`no_evidence_root`、`body_ref` |
+| `GET /v1/problems/{pid}/invalidations?node=` | `invalidated[]`（参考模型的搬运函数） |
+| `GET /v1/problems/{pid}/events?after=&limit=&wait=` | 审计日志。有新事件立刻返回，否则最多等 `wait` 秒（上限 30）；带 `as_of` 时只读到该序号、不等 |
+| `GET /v1/problems/{pid}/stream` | SSE。每帧 `id: <seq>`、`data: <事件>`（无 `event` 名，`onmessage` 直接收）；游标取 `Last-Event-ID` 或 `?after=`，都没有则从链头之后；落后超过 5000 条先发一帧 `event: snapshot`（`{as_of, status, budget}`）再续流；空闲时发注释心跳 |
+| `GET /v1/problems/{pid}/cards/{kind}/{id}` | `{card, card_hash, display}`。`approval`（id 为 Intent）与 `closeout`（id 为题目 id）；`extension`、`dispute` 随 M1。`card` 与 `card_hash` 出自参考模型，估值不在卡面里 |
+| `GET /v1/hints/{hid}/trace` | `temporal{added, abandoned}` 与 `exposure{sessions, added, abandoned}` 两列 |
+| `GET /v1/artifacts/{id}`、`GET /v1/blobs/{hash}[?range=起-止]` | 登记记录（带 `register`）；字节一律 `attachment` + `nosniff`，读取时校验哈希，坏了返回 500 `corrupt` |
+| `GET /v1/judges`、`/v1/templates`、`/v1/renderers` | 判官注册表；配置目录里的条目（带内容哈希，纯数据） |
+| `POST /v1/profile/preview` | `{scope, goal.check.judge_id}` → `{profile, basis}`，与开题同一个推导函数，不写日志 |
+| `PUT /v1/blobs` | 字节 → `{hash, size}` |
+| `POST /v1/problems` | `{id, idem_key, ops}`：若干条 input 类 `register_artifact` 加最后一条 `open_problem`，Origin 用 `"$<下标>"` 指向前面的材料 |
+| `POST /v1/problems/{pid}/proposals` | `{idem_key, ops[]}` → `{ok, results[]}`，整批原子 |
+| `POST /v1/problems/{pid}/leases`、`/v1/leases/{id}/renew｜release`、`POST /v1/artifacts` | 组件用：201 / 409 |
+
+节点形状（`status`、`view`、`nodes` 共用）：
+
+- 论断：`id、type:"fact"、seq、claim_type、level、level_word、unstable、disputed、stale、title、summary、premises、yielded_by、session、predicate、grounds`。
+- Intent：`id、type:"intent"、seq、status、risk、level、title、summary、premises、budget、needs_scope、gate、approvals、attempts、predicate、decision、expected_gain`（估值单独成字段，语域为“估”）。
+- 判据卡 `predicate`（Goal、带判据的 Intent、观察类论断同形）：`target、judge_id、version、grade、label（judge@version）、spec_ref、spec_hash、expect、max_attempts、attempts_used、level、level_word、fail_means（refuted｜not_yet）、verdicts[]`。
+
+**官类。** 只读投影是感知官的数据面（T-1；`view_full_dump` 开关），卡片投影与 `card_hash` 属守门官，账本投影是量具。
+
 ## 依赖
 
 不依赖任何其它组件。其它组件经 `paoding_graph.contract` 与本机 socket 访问它。
@@ -45,6 +90,8 @@
 - **调用方惯例：改正后重交必须换新的 idem_key。** 被拒结果同样被缓存，拿原 idem_key 重交改正过的内容，只会原样拿回首次的拒绝，改正不会生效。idem_key 只用于"同一请求的重试"（网络超时、进程重启后重发同一批）。Adapter 的做法：每次工具调用生成新键（`submit:<租约>:<宿主实例号>:<调用序号>:<条目序号>`），会话内改正自然换键；重试同一调用才复用。
 - 图服务自己追加的事件（`budget_mark`、Goal 到 E3 时的自动 `close_problem`）由 `work.followups` 纯函数算出，与触发它的批次在同一事务里落盘。
 - 关题后只接受 `cost` 与 `release`（在途任务交回用量与释放）；关题即视所有租约结束。
+- 服务层（`service.py`）用一把可重入锁串行化提交与日志读取；新事件落盘后唤醒长轮询与事件流。`state_at(seq)` 的回放缓存永不失效（日志只追加、apply 纯函数）。
+- 目标陈述（`goal.statement`）的语域取“人”（开题人写下的文字）；规格的四语域表没有列这一项，见异议报告 004。
 - 四顾清单：r0 且 `accept=judge` 的题恒为空（M0 形态）；r1/r2 题先给一条占位项，阻止自动关题，完整清单随 M4。
 
 ## 进度
@@ -54,3 +101,4 @@
 | D1（预备） | `jcs.py`、`envelope.py`、`eventlog.py`、`replay.py`、`blobs.py` | 3.1.5 的 1；3.2.5 的 1、4；RFC 8785 附录 B 向量 |
 | D2（预备） | `reducer.py`（六种操作）、`levels.py`、`refmodel.py`（逐字节副本）、`tokens.py` | 迟滞（一败回 E0、两败为 X）；3.1.5 的 4（M0 形态）、6、8、9；3.2.5 的 2 前四种 |
 | D8/D9 reducer 侧（预备） | 租约四操作、`/work`、Intent 完整状态、审批、Hint、放弃、用量、关题与终态、`budget_mark`；`work.py`；`service.py`（整批原子、幂等、自动追加、崩溃恢复） | 3.1.5 的 2、3（M0 形态）、5、7、9、15；3.3.5 的 7；3.4.5 的 3、6；3.5.5 的 1、2、5 |
+| HTTP 绑定 | `httpapi.py`、`views.py`、`service.state_at`；`pd` 与网页共用四语域表 | 3.1.5 的 18（回放）、5（HTTP 形态）；3.2.5 的 2、4（HTTP 形态）；HT-2、3、5、6、10、16、17；§13.1 第 5 条、§13.3 |

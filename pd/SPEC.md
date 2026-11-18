@@ -42,3 +42,7 @@
 ### 按里程碑走（不在 M0）
 
 `--scope-amend`、`--waive-premise`、`pd extend`，以及 `rule`、`accept`、`judge_revoke`、`intent_done`（变更 #41）。r2 缺回退时禁用批准（HMI H1）随 M4 的 `rollback` 字段落地，M0 卡面只写“未声明回退”。
+
+### 与网页同源（HMI §2、§11）
+
+四语域表 `REGISTER` 与等级词表 `LEVEL_WORDS` 取自 `paoding_graph.contract`，`pd` 的行首标记和 HTTP 视图里的 `register` 是同一张表。`pd/tests/test_pd_http.py` 验 HT-17：同一项人的操作，`pd` 与 HTTP 提议通道写下的事件体逐字段相同。`pd` 自身仍以进程内方式打开图服务，改走 HTTP 绑定留待 D10。
