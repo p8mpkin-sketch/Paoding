@@ -1,11 +1,11 @@
-// 主题（工作台设计 §5）：亮色、暗色、高对比，缺省跟随系统。只存本机，不影响任何派生量。
+// 主题（视觉重做第四版）：宣（纸本亮色）、墨（夜间）、素（高对比），缺省跟随系统。id 沿用旧名，存过的偏好照样生效。只存本机，不影响任何派生量。
 // 等级与终态仍靠形状记号加文字区分，颜色只是第三重编码，所以任何主题下都不丢信息。
 export type Theme = "system" | "light" | "dark" | "contrast";
 export const THEMES: { id: Theme; word: string }[] = [
-  { id: "system", word: "跟随系统" },
-  { id: "light", word: "亮色" },
-  { id: "dark", word: "暗色" },
-  { id: "contrast", word: "高对比" },
+  { id: "system", word: "随 · 跟随系统" },
+  { id: "light", word: "宣 · 纸本" },
+  { id: "dark", word: "墨 · 夜间" },
+  { id: "contrast", word: "素 · 高对比" },
 ];
 const KEY = "paoding.theme";
 

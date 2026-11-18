@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { loadConfig } from "./app/config";
 import { applyTheme, loadTheme } from "./app/theme";
+import "./index.css";
+import "./kit/kit.css";
+import "./shell/shell.css";
 import "./styles.css";
 
 applyTheme(loadTheme()); // 先于首帧，免得闪一下

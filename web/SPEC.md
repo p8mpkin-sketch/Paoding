@@ -60,9 +60,28 @@
 
 ## 依赖
 
-只依赖图服务的 HTTP 接口。运行时依赖只有 React；路由、布局、SSE 解析都是手写的小模块。`src/` 不引用 `mock/`。
+只依赖图服务的 HTTP 接口。路由、布局、SSE 解析仍是手写的小模块。`src/` 不引用 `mock/`。
+
+视觉重做（设计方案：庖丁前端视觉重做设计方案，第四版）推翻了异议 web-workbench 第 1 条“不引 UI 库”。运行时依赖白名单：
+
+| 包 | 用途 |
+| --- | --- |
+| react、react-dom | 界面 |
+| @radix-ui/react-dialog、react-popover、react-tooltip | 无样式的交互骨架（焦点、键盘、读屏器） |
+| cmdk | ⌘K 命令面板 |
+| sonner | 操作反馈提示条（提交中、已记录 seq、被拒） |
+| lucide-react | 图标 |
+| @fontsource/noto-serif-sc、ibm-plex-sans、ibm-plex-mono、ma-shan-zheng、lxgw-wenkai | 自托管字体（CSP 只许同源），中文按 unicode-range 分片 |
+
+构建期：tailwindcss 与 @tailwindcss/vite（产物是普通 CSS）。测试期：@axe-core/playwright。不加状态库，不用 WebSocket。
+
+外观只来自 `src/index.css` 的令牌（宣、墨、素三套主题，缺省跟随系统）与 `src/kit/` 的基础组件；页面不各自定义颜色。
 
 ## 界面（P2-2）
+
+- 外壳（`src/shell/`）：左侧栏（导航、⌘K 搜索、正在运行）、顶栏（面包屑与本页主操作，下沿制图刻度）、内容区（十二栏界栏）、底部状态行（连接、令牌、在途、等你处理、累计花费，全部来自 `/v1/problems`）。工作区把侧栏收成图标栏。快捷键：⌘K 或 Ctrl+K 命令面板，C 新建任务。
+- 写操作的反馈三段式（`src/ui/feedback.ts`）：提交中 → 已记录（带 seq）→ 被拒（拒绝码翻成人话）。仍不做乐观更新。
+- 可访问性：`e2e/a11y.spec.ts` 对每个页面在宣、墨、素三套主题下跑 axe（WCAG 2.1 AA），不许有违规。
 
 - 顶栏分主次：主栏只放题名、终态与判官徽章、连接状态、花费仪表；Goal 尝试次数、画像、状态哈希收在“详情”里。
 - 窄屏（宽度 < 1024px）：三栏改为一栏，顶部一排按钮切换“待办、前沿与图、检视”；选中节点自动切到检视，打开待办自动切到主区。
