@@ -1,7 +1,8 @@
 // 前沿列表（规格 3.1.4 的摘要层；HMI 设计 §10.2 中栏）。主区默认是它，不是图。
 // 节点行的固定格式：[等级徽章] [判据徽章] 谓词摘要 ｜ 叙述标题（引文样式）｜ [估值，折叠]
 import { INTENT_STATE_WORD } from "../model/levels";
-import type { HintRow, NodeRow, ViewModel } from "../model/viewmodel";
+import { byLevel, type HintRow, type NodeRow, type ViewModel } from "../model/viewmodel";
+import { LEVEL_GLYPH } from "../model/levels";
 import { CriterionBadge, LevelBadge } from "./criterion";
 import { Text } from "./registers";
 
@@ -33,6 +34,20 @@ export function HintRowView({ hint, onOpen }: { hint: HintRow; onOpen?: (id: str
       <Text t={hint.text} meta={{ author: hint.author, ts: hint.ts, note: `${hint.id}${hint.about ? ` · about ${hint.about}` : ""}${hint.closed ? " · 已关闭" : ""}` }} />
       {onOpen && <button type="button" className="btn-small" data-action="open-hint" onClick={() => onOpen(hint.id)}>效果追溯</button>}
     </li>
+  );
+}
+
+/** 列表视图的另一种排法：全部节点按等级分组，可折叠（工作台设计 §1 模块三）。 */
+export function LevelGroups({ vm, selected, onSelect }: { vm: ViewModel; selected: string | null; onSelect: (id: string) => void }) {
+  return (
+    <div className="frontier" data-level-groups>
+      {byLevel(vm.rows).map((g) => (
+        <details key={g.level ?? "none"} open data-level-group={g.level ?? "none"}>
+          <summary><h4>{g.level ? <><span aria-hidden="true">{LEVEL_GLYPH[g.level]} </span>{g.level}</> : "无等级"} <span className="muted">{g.rows.length}</span></h4></summary>
+          <ul className="rows">{g.rows.map((r) => <NodeRowView key={r.id} row={r} selected={selected === r.id} onSelect={onSelect} />)}</ul>
+        </details>
+      ))}
+    </div>
   );
 }
 

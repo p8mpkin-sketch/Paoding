@@ -29,7 +29,8 @@ export function zoomAt(v: Viewport, factor: number, cx: number, cy: number): Vie
 }
 const PAN = 60;
 
-export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected: string | null; onSelect: (id: string) => void }) {
+/** emphasis：要突出的节点集合（聚焦子图或解题链）；其余淡出。只改样式，不改坐标。 */
+export function GraphView({ vm, selected, onSelect, emphasis = null, toolbar }: { vm: ViewModel; selected: string | null; onSelect: (id: string) => void; emphasis?: ReadonlySet<string> | null; toolbar?: React.ReactNode }) {
   const { layout } = vm;
   const pos = new Map(layout.nodes.map((n) => [n.id, n]));
   const rows = new Map(vm.rows.map((r) => [r.id, r]));
@@ -94,6 +95,7 @@ export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected:
         <button type="button" className="btn-small" data-action="zoom-fit" onClick={fit}>适合窗口</button>
         <button type="button" className="btn-small" data-action="zoom-reset" onClick={() => setV({ k: 1, x: 0, y: 0 })}>原大</button>
         <span className="muted" data-zoom={v.k.toFixed(2)}>{Math.round(v.k * 100)}%</span>
+        {toolbar}
       </div>
       <div
         className="graph-wrap" ref={box} tabIndex={0} data-graph-viewport aria-label="图：方向键平移，+ − 缩放，0 复原；Tab 逐个节点，Enter 检视"
@@ -109,14 +111,15 @@ export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected:
               const y1 = about ? a.y + 40 : a.y + CELL.h / 2;
               const x2 = about ? b.x + CELL.w / 2 : b.x;
               const y2 = about ? b.y : b.y + CELL.h / 2;
-              return <line key={`${e.from}>${e.to}`} x1={x1} y1={y1} x2={x2} y2={y2} className={`edge edge-${e.kind}`} data-edge={`${e.from}>${e.to}`} />;
+              const lit = emphasis && emphasis.has(e.from) && emphasis.has(e.to);
+              return <line key={`${e.from}>${e.to}`} x1={x1} y1={y1} x2={x2} y2={y2} className={`edge edge-${e.kind}${emphasis ? (lit ? " lit" : " dim") : ""}`} data-edge={`${e.from}>${e.to}`} />;
             })}
             {layout.nodes.map((n) => {
               if (n.kind === "hint") {
                 const h = hints.get(n.id);
                 const cx = n.x + CELL.w / 2;
                 return (
-                  <g key={n.id} data-graph-node={n.id} data-x={n.x} data-y={n.y} className={`gnode gnode-hint${h?.closed ? " closed" : ""}`}>
+                  <g key={n.id} data-graph-node={n.id} data-x={n.x} data-y={n.y} className={`gnode gnode-hint${h?.closed ? " closed" : ""}${emphasis ? " dim" : ""}`}>
                     <polygon points={`${cx},${n.y} ${cx + 60},${n.y + 20} ${cx},${n.y + 40} ${cx - 60},${n.y + 20}`} />
                     <text x={cx} y={n.y + 24} textAnchor="middle">{n.id} · 人</text>
                   </g>
@@ -125,7 +128,7 @@ export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected:
               const r = rows.get(n.id)!;
               return (
                 <g
-                  key={n.id} data-graph-node={n.id} data-x={n.x} data-y={n.y} className={`gnode gnode-${n.kind}${selected === n.id ? " selected" : ""} level-${r.level ?? "none"}`}
+                  key={n.id} data-graph-node={n.id} data-x={n.x} data-y={n.y} className={`gnode gnode-${n.kind}${selected === n.id ? " selected" : ""} level-${r.level ?? "none"}${emphasis ? (emphasis.has(n.id) ? " lit" : " dim") : ""}`}
                   tabIndex={0} role="button" aria-pressed={selected === n.id} aria-label={`${n.kind === "fact" ? "论断" : "Intent"} ${n.id}${r.level ? `，${r.level}` : ""}：${visible(r.title.value)}`}
                   onClick={() => { if (!drag.current?.moved) onSelect(n.id); }} onKeyDown={activate(n.id)}
                 >
