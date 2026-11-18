@@ -52,6 +52,8 @@ python ci/check_deps.py               # 依赖只走契约接口
 (cd web && npm ci && npm run typecheck && npm test && npm run build)   # 前端
 ```
 
+运维（`/healthz`、结构化日志、备份与恢复、覆盖率）见 [docs/ops.md](docs/ops.md)。
+
 M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格缝隙见 `docs/m0/dissent-*.md`（下表“实施记录”）。
 
 ## 文档

@@ -28,8 +28,11 @@ jobs:
         run: uv run --frozen mypy
       - name: 执行层测试用的通用镜像（不是题目容器）
         run: docker pull python:3.12-slim
-      - name: 单元与对抗测试
-        run: uv run --frozen pytest -q
+      - name: 单元与对抗测试（带覆盖率）
+        run: uv run --frozen pytest -q --cov --cov-report=json:coverage.json --cov-report=
+      - name: 覆盖率（按组件；只显示，不设门槛）
+        if: always()
+        run: python ci/coverage_by_component.py coverage.json
       - name: 全栈冒烟（假 CLI，起全栈 → 开题 → solved → 清理）
         run: scripts/test-e2e.sh --port 8100
 

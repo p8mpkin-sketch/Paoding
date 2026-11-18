@@ -35,12 +35,14 @@
 - 四语域：凡文字内容都是 `{src, register, value}`，`register` 由 `src`（出处类别）查 `views.REGISTER` 得到，取值 `证据｜叙述｜人｜估`。结构字段（id、等级、状态、账目）恒属证据。`pd` 的行首标记读同一张表。
 - 只对本机：`Host` 不是回环名拒绝；带 `Origin` 且非同源的请求一律 403，除非在 `--allow-origin` 白名单。读端点不要令牌（M1 本机单用户；`EventSource` 也带不了头）。
 - 排序只用创建 seq；时间只取事件 `ts`。
+- 访问日志缺省关（`HttpConfig.access_log`）。打开后每个请求向 `logging` 的 `http` 记一条：方法、路径、状态码、耗时、字节数、对端地址；不记查询串、请求头与请求体。
 
 **端点。**
 
 | 端点 | 说明 |
 | --- | --- |
 | `GET /v1/health` | `{ok, head, api}` |
+| `GET /healthz` | 运维探针（不带版本前缀）：`{ok, status: ok｜degraded, api, components{名: {ok, …}}}`，全部正常 200，否则 503。`graph`（链头、题数）与 `blobs`（目录可写）由本组件给；其余组件的状态由组装根经 `HttpConfig.health` 给。不要令牌，不含题目内容；说明见 `docs/ops.md` |
 | `GET /v1/problems` | `items[]`：`id、title、closed、terminal、terminal_badge、profile、opened_seq、opened_ts、closed_seq、spent_usd_milli、cap_usd_milli`；`totals`：题数、solved 数、总花费、每解成本 |
 | `GET /v1/problems/{pid}/status` | `problem`（画像、推出值与覆盖、scope、env、终态）、`goal{statement, accept, predicate}`、`facts[]`、`intents[]`、`hints[]`、`leases[]`、`requests[]`、`review`、`closeout` |
 | `GET /v1/problems/{pid}/view?layer=title｜summary&after_seq=&limit=` | 按创建顺序的节点清单，`next_after_seq` 为游标；`frontier`（活跃 Hint、待人处理、未结束 Intent 及其前提、未到终态的论断）。`layer=full` 需服务端开 `view_full_dump` |
