@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // 开发时的两种后端：
 //   默认            进程内假后端（mock/，线格式与图服务的 HTTP 绑定相同）
@@ -32,7 +33,7 @@ function cspPlugin(): Plugin {
 }
 
 export default defineConfig(({ command }) => ({
-  plugins: [react(), cspPlugin(), ...(api ? [] : [mockPlugin()])],
+  plugins: [react(), tailwindcss(), cspPlugin(), ...(api ? [] : [mockPlugin()])],
   // 只有"开发服务器 + 内置假后端"才预置令牌；构建产物与连真图服务时都要人自己填
   define: { "import.meta.env.VITE_DEV_TOKEN": JSON.stringify(command === "serve" && !api && !process.env.VITEST ? "mock-human-token" : "") },
   server: {

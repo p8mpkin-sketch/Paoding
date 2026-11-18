@@ -14,6 +14,7 @@ import { shortHash, usd } from "../model/text";
 import { buildOpen, draftFromProblem, draftFromTemplate, judgesFor, problemsOf, scopeOf, STEPS, textMaterial, uploadedOf, type Draft, type DraftMaterial, type MaterialKind } from "../model/wizard";
 import { Plain } from "../ui/registers";
 import { rejectText } from "../ui/useProposal";
+import { pending, recorded, rejected } from "../ui/feedback";
 
 const pointers = (b: Record<string, unknown>) => Object.keys(b).filter((k) => k !== "rule").sort().map((k) => `${k}=${JSON.stringify(b[k])}`).join(" ");
 const MARK = "①②③④⑤⑥";
@@ -108,13 +109,16 @@ export function Wizard({ from }: { from?: string } = {}) {
     setHintNote(null);
     const body = JSON.stringify([open, d!.hint ?? ""]);
     if (idem.current.body !== body) idem.current = { key: newIdemKey(), body };
+    const t = pending("开题");
     try {
       const r = await submitDraft(api, d!, idem.current.key);
       clearDraft();
+      recorded(t, "开题", r.seq, r.hintError ? `初始提示没交上：${r.hintError}` : r.hintSeq !== null ? `初始提示 seq ${r.hintSeq}` : undefined);
       if (r.hintError) { setHintNote(`题已开出（seq ${r.seq}），但初始提示没交上：${r.hintError}。可以到工作区再注入。`); return; }
       navigate({ page: "problem", pid: r.pid, asOf: null, node: null });
     } catch (e) {
       setErr(e as Error);
+      rejected(t, "开题", rejectText(e as Error) ?? (e as Error).message);
     } finally {
       setBusy(false);
     }

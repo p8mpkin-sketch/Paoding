@@ -9,6 +9,7 @@ import { CSV_TARGETS, draftsFromCsv, guessMapping, parseCsv, parseJsonBatch, typ
 import { draftFromTemplate, problemsOf, STEPS, type Draft } from "../model/wizard";
 import { Plain } from "../ui/registers";
 import { rejectText } from "../ui/useProposal";
+import { toast } from "sonner";
 import { Link } from "./Problems";
 
 type Row = { draft: Draft; state: "ready" | "invalid" | "busy" | "done" | "failed"; note: string };
@@ -71,18 +72,22 @@ export function Import() {
 
   async function runAll() {
     setRunning(true);
+    let ok = 0, bad = 0;
     for (let i = 0; i < rows.length; i++) {
       if (rows[i].state !== "ready" && rows[i].state !== "failed") continue;
       setRows((rs) => rs.map((r, k) => (k === i ? { ...r, state: "busy", note: "提交中…" } : r)));
       try {
         const res = await submitDraft(api, rows[i].draft, newIdemKey());
         const note = `已开题 seq ${res.seq}${res.hintSeq !== null ? `，初始提示 seq ${res.hintSeq}` : ""}${res.hintError ? `；初始提示失败：${res.hintError}` : ""}`;
+        ok++;
         setRows((rs) => rs.map((r, k) => (k === i ? { ...r, state: "done", note } : r)));
       } catch (e) {
+        bad++;
         setRows((rs) => rs.map((r, k) => (k === i ? { ...r, state: "failed", note: rejectText(e as Error) ?? (e as Error).message } : r)));
       }
     }
     setRunning(false);
+    if (ok + bad > 0) (bad ? toast.warning : toast.success)(`导入任务集：开成 ${ok} 个${bad ? `，${bad} 个没成功，可重试` : ""}`);
   }
 
   const ready = rows.filter((r) => r.state === "ready" || r.state === "failed").length;

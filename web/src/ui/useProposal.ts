@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { ApiError, newIdemKey } from "../api/client";
 import type { Op } from "../api/types";
 import { useServices } from "../app/context";
+import { pending, recorded, rejected } from "./feedback";
 
 export type Accepted = { ok: true; id: string | null; seq: number };
 
@@ -12,15 +13,18 @@ export function useProposal(pid: string) {
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [done, setDone] = useState<Accepted[] | null>(null);
   const run = useCallback(
-    async (ops: Op[]): Promise<Accepted[] | null> => {
+    async (ops: Op[], what = "提交"): Promise<Accepted[] | null> => {
       setBusy(true);
       setError(null);
+      const t = pending(what);
       try {
         const r = await api.propose(pid, ops, newIdemKey());
         setDone(r);
+        recorded(t, what, r.at(-1)?.seq ?? null);
         return r;
       } catch (e) {
         setError(e as Error);
+        rejected(t, what, rejectText(e as Error) ?? (e as Error).message);
         return null;
       } finally {
         setBusy(false);
