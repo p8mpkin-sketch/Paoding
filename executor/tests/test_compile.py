@@ -88,3 +88,54 @@ def test_owner_alive():
     assert owner_alive(f"{socket.gethostname()}:{os.getpid()}:0") is False  # pid 复用
     assert owner_alive(f"{socket.gethostname()}:999999:1") is False
     assert owner_alive("other-host:1:1") is None and owner_alive("") is None
+
+
+# ---------- macOS 兼容（已在真实环境验证的三项补丁之二） ----------
+
+
+def test_owner_alive_without_proc_never_says_dead(monkeypatch):
+    """macOS 没有 /proc：取不到启动时刻时不能把活着的属主判成已死，否则孤儿清扫误杀在用的沙箱。"""
+    import os
+    import socket
+
+    from paoding_executor import runtime
+
+    monkeypatch.setattr(runtime, "_has_proc", lambda: False)
+    host = socket.gethostname()
+    for owner in (runtime.owner_id(), f"{host}:{os.getpid()}:None", f"{host}:{os.getpid()}:?", f"{host}:999999:1"):
+        assert runtime.owner_alive(owner) is None, owner
+
+
+def test_sweep_spares_everything_without_proc(monkeypatch):
+    """同上，落到清扫：没有 /proc 时属主一律“不由本机判断”，一个都不清。"""
+    from paoding_executor import runtime
+
+    monkeypatch.setattr(runtime, "_has_proc", lambda: False)
+    calls = []
+
+    class P:
+        stdout = b"pd-x-1 myhost:1:None\npd-y-2 myhost:2:?\n"
+
+    monkeypatch.setattr(runtime.socket, "gethostname", lambda: "myhost")
+    monkeypatch.setattr(runtime, "_docker", lambda *a, **k: calls.append(a) or P())
+    assert runtime.sweep_orphans() == []
+    assert not [c for c in calls if c[0] in ("rm", "network") and c[1] in ("-f", "rm", "disconnect")]
+
+
+def test_bind_args_use_v_and_strip_private_on_macos(monkeypatch, tmp_path):
+    """macOS 补丁之一：绑定挂载用 -v；Docker Desktop 不认解析出来的 /private/var、/private/tmp 前缀，去掉。"""
+    import pytest
+
+    from paoding_executor import runtime
+
+    assert runtime.bind_args(tmp_path, "/workspace") == ["-v", f"{tmp_path}:/workspace"]
+    assert runtime.bind_args(tmp_path, "/s", readonly=True) == ["-v", f"{tmp_path}:/s:ro"]
+    assert runtime.host_path("/private/var/folders/ab/x") == "/private/var/folders/ab/x"  # 非 macOS 原样
+    monkeypatch.setattr(runtime.sys, "platform", "darwin")
+    assert runtime.host_path("/private/var/folders/ab/x") == "/var/folders/ab/x"
+    assert runtime.host_path("/private/tmp/w") == "/tmp/w"
+    assert runtime.host_path("/Users/cz/w") == "/Users/cz/w"
+    with pytest.raises(FileNotFoundError):  # -v 会悄悄建空目录：先查存在
+        runtime.bind_args(tmp_path / "missing", "/workspace")
+    with pytest.raises(ValueError):
+        runtime.bind_args("/a:b", "/workspace")
