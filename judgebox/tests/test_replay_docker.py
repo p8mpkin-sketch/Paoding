@@ -2,6 +2,7 @@
 
 验收：3.3.5 的 3（伪造的工作区文件过不了重放）、3.2.5 的洁净重放、3.6.4 的 3（判官容器看不到任务容器的东西）。
 """
+
 import subprocess
 
 import pytest
@@ -23,8 +24,14 @@ def dj(tmp_path):
 
 
 def containers(r):
-    out = subprocess.run(["docker", "ps", "-a", "--filter", f"label=paoding.owner={r.box.owner}", "--format",
-                          "{{.Names}}"], capture_output=True).stdout.decode().split()
+    out = (
+        subprocess.run(
+            ["docker", "ps", "-a", "--filter", f"label=paoding.owner={r.box.owner}", "--format", "{{.Names}}"],
+            capture_output=True,
+        )
+        .stdout.decode()
+        .split()
+    )
     return sorted(out)
 
 
@@ -54,17 +61,18 @@ def test_forged_workspace_file_does_not_survive_replay(dj, tmp_path):
     env = {"base": IMAGE, "baseline_ref": "basic@1"}
     sid = dj.box.launch(compile_spec("task", dj.state["problems"]["p1"]["scope"], env, "r0", False, str(ws)), "l-task")
     seen = dj.box.exec(sid, "cat /workspace/proof.txt", "p1", "task-cat")
-    assert seen.exit_code == 0 and "open" in seen.output              # 任务容器里确实看得到
+    assert seen.exit_code == 0 and "open" in seen.output  # 任务容器里确实看得到
     fid, rid = fact(dj, "cat /workspace/proof.txt", {"stdout_contains": "open", "exit_code": 0})
     before = dj.level("p1", fid)
     [done] = dj.runner.tick()
     assert done["result"] == "fail", done
-    assert before == "E0" and dj.level("p1", fid) == "X"                # 判定性 fail：论断被证伪
-    assert containers(dj) == [sid]                                     # 判官容器拆了，任务容器不受影响
+    assert before == "E0" and dj.level("p1", fid) == "X"  # 判定性 fail：论断被证伪
+    assert containers(dj) == [sid]  # 判官容器拆了，任务容器不受影响
 
 
 def test_replay_timeout_kills_the_container(tmp_path):
     from judge_rig import REG, with_flake
+
     r = JRig(tmp_path, registry=with_flake(REG, "replay", timeout_s=1), executor="pending")
     r.box = r.runner.executor = DockerExecutor(r.svc, r.blobs, "tok-exec")
     try:
@@ -87,9 +95,11 @@ def test_missing_image_is_an_environment_error(dj):
 
 # ---------- 恒真谓词（P0-3）：真闸门、真访问摘要 ----------
 
+
 @pytest.fixture
 def target():
     import uuid
+
     with EnvManager() as envs:
         boot = "mkdir -p /srv && cd /srv && echo ready > status && exec python -m http.server 8080"
         yield envs.start(f"pdt-{uuid.uuid4().hex[:8]}", IMAGE, command=["sh", "-c", boot], ready_port=8080)
@@ -99,16 +109,24 @@ def test_echo_ok_does_not_reach_e3_on_a_real_sandbox(dj, target):
     """验收：题目的观察对象是外部资源；一条 `echo ok`、期望含 ok 的观察类论断，重放没碰任何资源，到不了 E3。"""
     dj.open(scope=[{"resource": "net", "pattern": f"{target}:8080", "actions": ["connect"], "risk": "r0"}])
     lid, tok = dj.session()
-    fid, rid = dj.fact(tok, {"judge_id": "replay", "spec_ref": dj.spec("echo ok"),
-                             "expect": {"stdout_contains": "ok", "exit_code": 0}})
+    fid, rid = dj.fact(
+        tok, {"judge_id": "replay", "spec_ref": dj.spec("echo ok"), "expect": {"stdout_contains": "ok", "exit_code": 0}}
+    )
     [done] = dj.runner.tick()
     assert (done["result"], done["reason"]) == ("inconclusive", "untouched"), done
-    assert dj.level("p1", fid) == "E0" and containers(dj) == [target]      # 判官容器与闸门都拆了
+    assert dj.level("p1", fid) == "E0" and containers(dj) == [target]  # 判官容器与闸门都拆了
     ev = dj.state["artifacts"][done["evidence"]]
     assert ev["exec"]["touched"] == [] and b"ok" in dj.blobs.get(ev["hash"])
     # 嘴上说连过也不算：访问摘要来自闸门，不来自输出
-    fid2, _ = dj.fact(tok, {"judge_id": "replay", "spec_ref": dj.spec(f"echo connected to {target}:8080; echo ok"),
-                            "expect": {"stdout_contains": "ok"}}, title="目标在线")
+    fid2, _ = dj.fact(
+        tok,
+        {
+            "judge_id": "replay",
+            "spec_ref": dj.spec(f"echo connected to {target}:8080; echo ok"),
+            "expect": {"stdout_contains": "ok"},
+        },
+        title="目标在线",
+    )
     [again] = dj.runner.tick()
     assert again["reason"] == "untouched" and dj.level("p1", fid2) == "E0"
 

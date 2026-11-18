@@ -1,4 +1,5 @@
 """结构化日志（P2-3 第 1 项）：字段、上下文 ID 的白名单、文件与 stderr 两路。不需要 Docker。"""
+
 from __future__ import annotations
 
 import io
@@ -59,7 +60,7 @@ def test_exceptions_carry_a_traceback_on_one_line(tmp_path, monkeypatch, restore
     except RuntimeError:
         logging.getLogger("watchdog").exception("tick 失败")
     raw = err.getvalue()
-    assert raw.count("\n") == 1                                         # 回溯在 JSON 字符串里，不另起行
+    assert raw.count("\n") == 1  # 回溯在 JSON 字符串里，不另起行
     [r] = lines(raw)
     assert r["level"] == "error" and "RuntimeError: 坏了" in r["exc"]
 

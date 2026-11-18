@@ -1,4 +1,5 @@
 """CI 检查器自身的正反样例：确保检查不是空转。"""
+
 import pathlib
 import shutil
 import sys
@@ -78,10 +79,23 @@ def test_coverage_summary_groups_files_by_component(tmp_path, capsys, monkeypatc
     import json
 
     import coverage_by_component as cbc
-    f = lambda n, c, b=0, cb=0: {"summary": {"num_statements": n, "covered_lines": c, "num_branches": b,  # noqa: E731
-                                              "covered_branches": cb}}
-    report = {"files": {"graph/src/paoding_graph/a.py": f(100, 90, 10, 5), "graph/src/paoding_graph/b.py": f(100, 70),
-                        "scripts/stack.py": f(50, 25), "zzz/x.py": f(10, 10)}}
+
+    f = lambda n, c, b=0, cb=0: {
+        "summary": {
+            "num_statements": n,
+            "covered_lines": c,
+            "num_branches": b,  # noqa: E731
+            "covered_branches": cb,
+        }
+    }
+    report = {
+        "files": {
+            "graph/src/paoding_graph/a.py": f(100, 90, 10, 5),
+            "graph/src/paoding_graph/b.py": f(100, 70),
+            "scripts/stack.py": f(50, 25),
+            "zzz/x.py": f(10, 10),
+        }
+    }
     comps = cbc.by_component(report)
     assert comps["graph"] == {"files": 2, "statements": 200, "covered": 160, "branches": 10, "covered_branches": 5}
     table = cbc.rows(comps)

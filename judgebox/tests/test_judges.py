@@ -3,14 +3,14 @@
 验收 3.3.5：1（超时 → inconclusive，费用入账）、2（抖动）、4（错误候选不升级、次数上限）、
 5（任务令牌提交裁决被拒）、6（规格被改过拒绝运行）、8（空谓词 untouched）、9（保密库对解题者不可见）。
 """
+
 import hashlib
 import json
 import os
 
 import pytest
 from judge_rig import REG, FakeBox, JRig, jr, with_flake  # noqa: F401
-
-from paoding_judgebox.contract import (BUILTINS, RegistryError, Vault, VaultError, kernel_judges, load_registry)
+from paoding_judgebox.contract import BUILTINS, RegistryError, Vault, VaultError, kernel_judges, load_registry
 
 EM = "exact_match"
 
@@ -25,10 +25,13 @@ def judge_costs(r, pid="p1"):
 
 # ---------- 注册表 ----------
 
+
 def test_registry_holds_only_the_neutral_builtins():
     assert sorted(REG) == ["exact_match", "replay"] and sorted(BUILTINS) == ["exact_match", "replay"]
     for spec in REG.values():
-        assert spec["grade"] == "decisive" and spec["version"] == "1" and spec["flake"]["require"] in ("all", "majority")
+        assert (
+            spec["grade"] == "decisive" and spec["version"] == "1" and spec["flake"]["require"] in ("all", "majority")
+        )
 
 
 def test_kernel_judges_shape_matches_graph_config():
@@ -37,12 +40,15 @@ def test_kernel_judges_shape_matches_graph_config():
     assert k["replay"]["max_cost"] == 0.01 and k["replay"]["kind"] == "programmatic"
 
 
-@pytest.mark.parametrize("text,why", [
-    ("version: '1'\nkind: deterministic\ngrade: decisive\n", "缺 id"),
-    ("id: a\nversion: '1'\nkind: oracle\ngrade: decisive\n", "kind"),
-    ("id: a\nversion: '1'\nkind: deterministic\ngrade: sure\n", "kind"),
-    ("id: a\nkind: deterministic\ngrade: decisive\n", "version"),
-])
+@pytest.mark.parametrize(
+    "text,why",
+    [
+        ("version: '1'\nkind: deterministic\ngrade: decisive\n", "缺 id"),
+        ("id: a\nversion: '1'\nkind: oracle\ngrade: decisive\n", "kind"),
+        ("id: a\nversion: '1'\nkind: deterministic\ngrade: sure\n", "kind"),
+        ("id: a\nkind: deterministic\ngrade: decisive\n", "version"),
+    ],
+)
 def test_registry_rejects_malformed_entries(tmp_path, text, why):
     (tmp_path / "a.yaml").write_text(text)
     with pytest.raises(RegistryError, match=why):
@@ -63,6 +69,7 @@ def test_registry_fills_defaults(tmp_path):
 
 
 # ---------- 保密库 ----------
+
 
 def test_vault_roundtrip_and_reference_shape(tmp_path):
     v = Vault(tmp_path / "v")
@@ -108,6 +115,7 @@ def test_vault_missing_key(tmp_path):
 
 # ---------- exact_match ----------
 
+
 def sealed(r, answer=b"42\n", **kw):
     ref = r.vault.put("answer", answer)
     r.open(check={"judge_id": EM, "sealed": [ref]}, **kw)
@@ -127,7 +135,7 @@ def test_exact_match_pass_solves_and_closes(jr):
     assert ev["class"] == "judge" and ev["producer"]["actor"] == "jr1"
 
 
-def test_wrong_candidate_does_not_raise_level(jr):                       # 3.3.5-4
+def test_wrong_candidate_does_not_raise_level(jr):  # 3.3.5-4
     sealed(jr)
     jr.candidate(b"41")
     [done] = jr.runner.tick()
@@ -136,7 +144,7 @@ def test_wrong_candidate_does_not_raise_level(jr):                       # 3.3.5
     assert verdicts(jr)[0]["result"] == "fail"
 
 
-def test_candidate_quota_is_enforced_by_the_kernel(jr):                  # 3.3.5-4
+def test_candidate_quota_is_enforced_by_the_kernel(jr):  # 3.3.5-4
     sealed(jr, max_attempts=2)
     for wrong in (b"1", b"2"):
         _, out = jr.candidate(wrong)
@@ -147,7 +155,7 @@ def test_candidate_quota_is_enforced_by_the_kernel(jr):                  # 3.3.5
     assert jr.level("p1", "goal") == "E0" and len(verdicts(jr)) == 2
 
 
-def test_judge_output_never_contains_the_answer(jr):                     # 3.3.5-9
+def test_judge_output_never_contains_the_answer(jr):  # 3.3.5-9
     answer = b"the-sealed-answer-7781"
     sealed(jr, answer)
     jr.candidate(b"guess")
@@ -157,11 +165,11 @@ def test_judge_output_never_contains_the_answer(jr):                     # 3.3.5
             assert answer not in jr.blobs.get(art["hash"])
     log = json.dumps(jr.svc.events("p1", 0, 1000), ensure_ascii=False)
     assert answer.decode() not in log
-    for p in (jr.blobs.root.rglob("*")):
+    for p in jr.blobs.root.rglob("*"):
         assert not p.is_file() or answer not in p.read_bytes()
 
 
-def test_vault_use_is_recorded_as_touched(jr):                           # 3.3.5-9：show 据此拒绝
+def test_vault_use_is_recorded_as_touched(jr):  # 3.3.5-9：show 据此拒绝
     sealed(jr)
     jr.candidate(b"42")
     [done] = jr.runner.tick()
@@ -169,7 +177,7 @@ def test_vault_use_is_recorded_as_touched(jr):                           # 3.3.5
     assert ev["exec"]["touched"] == ["vault:answer"] and ev["exec"]["tool"] == EM
 
 
-def test_problem_carries_only_the_vault_reference(jr):                   # 3.3.5-9
+def test_problem_carries_only_the_vault_reference(jr):  # 3.3.5-9
     ref = sealed(jr, b"zzz-hidden")
     check = jr.state["problems"]["p1"]["goal"]["check"]
     assert check["sealed"] == [ref] and "zzz-hidden" not in json.dumps(jr.state["problems"]["p1"])
@@ -206,7 +214,8 @@ def test_missing_vault_is_an_environment_error(jr):
 
 # ---------- 谁能裁决 ----------
 
-def test_task_tokens_cannot_submit_verdicts(jr):                         # 3.3.5-5
+
+def test_task_tokens_cannot_submit_verdicts(jr):  # 3.3.5-5
     sealed(jr)
     lid, tok = jr.session()
     _, out = jr.candidate(b"42")
@@ -218,26 +227,65 @@ def test_task_tokens_cannot_submit_verdicts(jr):                         # 3.3.5
     assert jr.level("p1", "goal") == "E0" and verdicts(jr) == []
 
 
-def test_task_tokens_cannot_register_judge_class(jr):                    # 3.3.5-5
+def test_task_tokens_cannot_register_judge_class(jr):  # 3.3.5-5
     sealed(jr)
     lid, tok = jr.session()
-    prov = {"sandbox_id": "s", "base": "b", "baseline_ref": "r", "tool": "t", "command": "c", "cwd": "/",
-            "exit_code": 0, "touched": [], "started_at": 1, "ended_at": 2, "truncated": False}
-    out = jr.submit(tok, "p1", [{"op": "register_artifact", "body": {
-        "hash": jr.blobs.put(b"forged verdict"), "size": 14, "media_type": "text/plain", "class": "judge", "exec": prov}}])
+    prov = {
+        "sandbox_id": "s",
+        "base": "b",
+        "baseline_ref": "r",
+        "tool": "t",
+        "command": "c",
+        "cwd": "/",
+        "exit_code": 0,
+        "touched": [],
+        "started_at": 1,
+        "ended_at": 2,
+        "truncated": False,
+    }
+    out = jr.submit(
+        tok,
+        "p1",
+        [
+            {
+                "op": "register_artifact",
+                "body": {
+                    "hash": jr.blobs.put(b"forged verdict"),
+                    "size": 14,
+                    "media_type": "text/plain",
+                    "class": "judge",
+                    "exec": prov,
+                },
+            }
+        ],
+    )
     assert not out["ok"] and out["results"][0]["code"] == "forbidden_op"
 
 
 def test_task_tokens_cannot_take_judge_leases(jr):
     sealed(jr)
     _, out = jr.candidate(b"42")
-    out = jr.submit("sinan", "p1", [{"op": "lease", "body": {
-        "kind": "judge", "target": out["results"][0]["id"], "holder": "sn1", "reserve": {"usd_milli": 1, "wall_s": 1},
-        "ttl_s": 60}}])
+    out = jr.submit(
+        "sinan",
+        "p1",
+        [
+            {
+                "op": "lease",
+                "body": {
+                    "kind": "judge",
+                    "target": out["results"][0]["id"],
+                    "holder": "sn1",
+                    "reserve": {"usd_milli": 1, "wall_s": 1},
+                    "ttl_s": 60,
+                },
+            }
+        ],
+    )
     assert not out["ok"] and out["results"][0]["code"] == "forbidden_op"
 
 
 # ---------- 运行器的记账与幂等 ----------
+
 
 def test_every_run_books_cost_and_releases_its_lease(jr):
     sealed(jr)
@@ -293,6 +341,7 @@ def test_crashing_judge_gives_up_after_three_leases(jr):
 
     def boom(ctx):
         raise ZeroDivisionError("bug")
+
     jr.cfg.judges = {EM: boom}
     _, out = jr.candidate(b"42")
     rid = out["results"][0]["id"]
@@ -302,25 +351,34 @@ def test_crashing_judge_gives_up_after_three_leases(jr):
     assert jr.runner.run("p1", rid) is None
     leases = [l for l in jr.state["leases"].values() if l["kind"] == "judge"]
     assert [l["outcome"] for l in leases] == ["failed"] * 3 and len(judge_costs(jr)) == 3
-    assert jr.state["requests"][rid].get("verdict_seq") is None       # 留在 /work 里给人看
+    assert jr.state["requests"][rid].get("verdict_seq") is None  # 留在 /work 里给人看
 
 
 def test_inconclusive_needs_a_reason_code(jr):
     sealed(jr)
     _, out = jr.candidate(b"42")
     rid = out["results"][0]["id"]
-    jr.one("judge", "p1", "lease", {"kind": "judge", "target": rid, "holder": "jr1",
-                                    "reserve": {"usd_milli": 1, "wall_s": 1}, "ttl_s": 60})
+    jr.one(
+        "judge",
+        "p1",
+        "lease",
+        {"kind": "judge", "target": rid, "holder": "jr1", "reserve": {"usd_milli": 1, "wall_s": 1}, "ttl_s": 60},
+    )
     for reason in (None, "ok", "bored"):
-        body = {"request": rid, "result": "inconclusive", "version": "1", "evidence": [],
-                **({"reason": reason} if reason else {})}
+        body = {
+            "request": rid,
+            "result": "inconclusive",
+            "version": "1",
+            "evidence": [],
+            **({"reason": reason} if reason else {}),
+        }
         out = jr.submit("judge", "p1", [{"op": "judge_verdict", "body": body}])
         assert not out["ok"] and out["results"][0]["code"] == "schema_error"
 
 
 # ---------- replay（替身执行层） ----------
 
-TOUCH = ["net:target-a:8080"]          # 替身执行层报告的访问摘要：规格确实连过授权目标
+TOUCH = ["net:target-a:8080"]  # 替身执行层报告的访问摘要：规格确实连过授权目标
 PURE = [{"resource": "workspace", "pattern": "*", "actions": ["read", "write"], "risk": "r0"}]
 
 
@@ -350,7 +408,7 @@ def test_replay_runs_in_a_clean_container_and_tears_it_down(jr):
     [box] = jr.box.launched
     assert box["mount_workspace"] is False and box["spec"].workspace == "" and box["spec"].image.startswith("python")
     assert box["lease"] == done["lease"] and jr.box.destroyed == ["box-0"]
-    assert all(kind == "judge" for _, _, kind, _ in jr.box.cmds)        # 执行层不替判官登记
+    assert all(kind == "judge" for _, _, kind, _ in jr.box.cmds)  # 执行层不替判官登记
 
 
 def test_replay_never_gets_irreversible_reach(jr):
@@ -363,7 +421,7 @@ def test_replay_never_gets_irreversible_reach(jr):
     assert jr.box.launched[0]["spec"].egress_allow == ()
 
 
-def test_replay_timeout_is_inconclusive_and_still_costs(jr):             # 3.3.5-1
+def test_replay_timeout_is_inconclusive_and_still_costs(jr):  # 3.3.5-1
     jr.box.runs = [(None, "partial", TOUCH, 61_000)]
     fid, rid = replay_fact(jr)
     before = jr.level("p1", fid)
@@ -375,7 +433,7 @@ def test_replay_timeout_is_inconclusive_and_still_costs(jr):             # 3.3.5
     assert jr.state["requests"][rid]["inconclusive"] == "timeout" and jr.box.destroyed == ["box-0"]
 
 
-def test_replay_flaky_when_reruns_disagree(tmp_path):                    # 3.3.5-2
+def test_replay_flaky_when_reruns_disagree(tmp_path):  # 3.3.5-2
     r = JRig(tmp_path, registry=with_flake(REG, "replay", flake={"reruns": 2, "require": "all"}))
     r.box.runs = [(0, "", TOUCH, 1000), (1, "", TOUCH, 1000), (0, "", TOUCH, 1000)]
     fid, rid = replay_fact(r)
@@ -383,11 +441,11 @@ def test_replay_flaky_when_reruns_disagree(tmp_path):                    # 3.3.5
     [done] = r.runner.tick()
     assert (done["result"], done["reason"]) == ("flaky", "flaky")
     assert [v["result"] for v in verdicts(r)] == ["flaky"] and r.level("p1", fid) == before
-    assert len(r.box.launched) == 3 and len(r.box.destroyed) == 3       # 每次重跑都是新的洁净容器
+    assert len(r.box.launched) == 3 and len(r.box.destroyed) == 3  # 每次重跑都是新的洁净容器
     assert judge_costs(r)[0]["wall_s"] == 3
 
 
-def test_replay_majority_policy(tmp_path):                               # 3.3.5-2
+def test_replay_majority_policy(tmp_path):  # 3.3.5-2
     r = JRig(tmp_path, registry=with_flake(REG, "replay", flake={"reruns": 2, "require": "majority"}))
     r.box.runs = [(0, "", TOUCH, 1), (1, "", TOUCH, 1), (0, "", TOUCH, 1)]
     fid, rid = replay_fact(r)
@@ -401,7 +459,7 @@ def test_replay_stable_reruns_agree(tmp_path):
     assert r.runner.tick()[0]["result"] == "fail"
 
 
-def test_replay_untouched_predicate(tmp_path):                           # 3.3.5-8
+def test_replay_untouched_predicate(tmp_path):  # 3.3.5-8
     r = JRig(tmp_path, registry=with_flake(REG, "replay", params={"require_touch": True}))
     r.box.runs = [(0, "ok", [], 1)]
     fid, rid = replay_fact(r)
@@ -410,14 +468,14 @@ def test_replay_untouched_predicate(tmp_path):                           # 3.3.5
     assert (done["result"], done["reason"]) == ("inconclusive", "untouched") and r.level("p1", fid) == before
 
 
-def test_replay_touching_the_resource_counts(tmp_path):                  # 3.3.5-8
+def test_replay_touching_the_resource_counts(tmp_path):  # 3.3.5-8
     r = JRig(tmp_path, registry=with_flake(REG, "replay", params={"require_touch": True}))
     r.box.runs = [(0, "ok", ["net:target-a:8080"], 1)]
     fid, rid = replay_fact(r)
     assert r.runner.tick()[0]["result"] == "pass"
 
 
-def test_echo_ok_observation_never_reaches_e3(jr):                       # P0-3 验收；3.3.5-8
+def test_echo_ok_observation_never_reaches_e3(jr):  # P0-3 验收；3.3.5-8
     """恒真谓词：规格是 `echo ok`、期望含 ok。内建配置默认要求碰过资源，所以它到不了 E3。"""
     assert REG["replay"]["params"]["require_touch"] is True
     jr.box.runs = [(0, "ok\n", [], 1)]
@@ -455,14 +513,31 @@ def test_require_touch_can_be_switched_off_in_the_judge_config(tmp_path):
 def test_mounted_candidate_counts_only_when_it_has_provenance(jr):
     """挂入的候选算不算"访问过的输入"：人给的材料算；Worker 自己写的不算；访问摘要为空的 exec 输出不算。"""
     from paoding_judgebox.runner import _grounded
+
     jr.open(check={"judge_id": "replay", "expect": {"stdout_contains": "ok"}})
     lid, tok = jr.session()
-    prov = {"sandbox_id": "s", "base": "basic", "baseline_ref": "basic@1", "tool": "shell", "command": "c",
-            "cwd": "/", "exit_code": 0, "touched": [], "started_at": 1, "ended_at": 2, "truncated": False}
+    prov = {
+        "sandbox_id": "s",
+        "base": "basic",
+        "baseline_ref": "basic@1",
+        "tool": "shell",
+        "command": "c",
+        "cwd": "/",
+        "exit_code": 0,
+        "touched": [],
+        "started_at": 1,
+        "ended_at": 2,
+        "truncated": False,
+    }
 
     def reg(who, cls, data, **extra):
-        return jr.one(who, "p1", "register_artifact", {"hash": jr.blobs.put(data), "size": len(data),
-                                                       "media_type": "text/plain", "class": cls, **extra})
+        return jr.one(
+            who,
+            "p1",
+            "register_artifact",
+            {"hash": jr.blobs.put(data), "size": len(data), "media_type": "text/plain", "class": cls, **extra},
+        )
+
     given = jr.art(b"echo ok")
     authored = reg(tok, "authored", b"echo ok  ")
     empty = reg("exec", "exec", b"ok", exec=prov)
@@ -471,8 +546,9 @@ def test_mounted_candidate_counts_only_when_it_has_provenance(jr):
     assert [_grounded(st, a) for a in (given, authored, empty, real, None)] == [(given,), (), (), (real,), ()]
     # Worker 自己写的候选 `echo ok`：重放没碰任何资源，到不了 E3
     jr.box.runs = [(0, "ok", [], 1)]
-    out = jr.submit(tok, "p1", [{"op": "request_judge", "body": {"target": "goal", "judge_id": "replay",
-                                                                  "candidate": authored}}])
+    out = jr.submit(
+        tok, "p1", [{"op": "request_judge", "body": {"target": "goal", "judge_id": "replay", "candidate": authored}}]
+    )
     assert out["ok"], out
     [done] = jr.runner.tick()
     assert (done["result"], done["reason"]) == ("inconclusive", "untouched") and jr.level("p1", "goal") != "E3"
@@ -484,13 +560,13 @@ def test_mounted_candidate_counts_only_when_it_has_provenance(jr):
     assert jr.state["artifacts"][done["evidence"]]["exec"]["touched"] == [f"artifact:{aid}"]
 
 
-def test_tampered_spec_is_refused(jr):                                   # 3.3.5-6
+def test_tampered_spec_is_refused(jr):  # 3.3.5-6
     jr.box.runs = [(0, "", [], 1)]
     fid, rid = replay_fact(jr, script="probe target-a 8080")
     before = jr.level("p1", fid)
     spec_hash = hashlib.sha256(b"probe target-a 8080").hexdigest()
     jr.blobs.path(spec_hash).chmod(0o644)
-    jr.blobs.path(spec_hash).write_bytes(b"true")                        # 等价改写：让它恒真
+    jr.blobs.path(spec_hash).write_bytes(b"true")  # 等价改写：让它恒真
     [done] = jr.runner.tick()
     assert (done["result"], done["reason"]) == ("inconclusive", "env_error")
     assert jr.box.launched == [] and jr.level("p1", fid) == before and verdicts(jr) == []
@@ -509,13 +585,19 @@ def test_replay_without_executor(jr):
     assert jr.runner.tick()[0]["reason"] == "env_error"
 
 
-@pytest.mark.parametrize("expect,code,text,want", [
-    ({}, 0, "", "pass"), ({}, 2, "", "fail"),
-    ({"exit_code": 3}, 3, "", "pass"),
-    ({"stdout_contains": "open"}, 0, "port open", "pass"), ({"stdout_contains": "open"}, 0, "closed", "fail"),
-    ({"stdout_regex": r"^v\d+$"}, 0, "v12", "pass"), ({"stdout_regex": r"^v\d+$"}, 0, "x12", "fail"),
-    ({"exit_code": 0, "stdout_contains": "a"}, 1, "a", "fail"),
-])
+@pytest.mark.parametrize(
+    "expect,code,text,want",
+    [
+        ({}, 0, "", "pass"),
+        ({}, 2, "", "fail"),
+        ({"exit_code": 3}, 3, "", "pass"),
+        ({"stdout_contains": "open"}, 0, "port open", "pass"),
+        ({"stdout_contains": "open"}, 0, "closed", "fail"),
+        ({"stdout_regex": r"^v\d+$"}, 0, "v12", "pass"),
+        ({"stdout_regex": r"^v\d+$"}, 0, "x12", "fail"),
+        ({"exit_code": 0, "stdout_contains": "a"}, 1, "a", "fail"),
+    ],
+)
 def test_replay_expectations(jr, expect, code, text, want):
     jr.box.runs = [(code, text, TOUCH, 1)]
     replay_fact(jr, expect=expect)
@@ -529,4 +611,4 @@ def test_replay_of_a_goal_candidate_passes_spec_and_candidate(jr):
     jr.candidate(b"echo ok", judge="replay")
     assert jr.runner.tick()[0]["result"] == "pass" and jr.level("p1", "goal") == "E3"
     setup = jr.box.cmds[0][1]
-    assert "/workspace/spec" in setup and spec_body not in setup        # 没有规格时候选本身就是被执行的脚本
+    assert "/workspace/spec" in setup and spec_body not in setup  # 没有规格时候选本身就是被执行的脚本

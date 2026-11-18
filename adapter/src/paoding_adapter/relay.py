@@ -7,6 +7,7 @@
 用法（容器内，python -I）：relay.py <端口>=<套接字路径> [<端口>=<套接字路径> …]
 只用标准库；不导入工作区里的任何东西。
 """
+
 import socket
 import sys
 import threading
@@ -55,6 +56,7 @@ def to_unix(path: str):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect(path)
         return s
+
     return connect
 
 

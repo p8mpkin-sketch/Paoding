@@ -11,6 +11,7 @@
 上下文 ID 只收 CONTEXT_KEYS 里列出的键，别的 extra 一律不输出：日志里不会意外带出令牌或请求体。
 组件自己不依赖本模块：它们只用标准库的 logging，格式由组装根在这里统一决定。
 """
+
 from __future__ import annotations
 
 import json
@@ -18,11 +19,25 @@ import logging
 import logging.handlers
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-CONTEXT_KEYS = ("problem_id", "lease_id", "request_id", "seq", "kind", "actor", "session_id", "sandbox_id",
-                "method", "path", "status", "duration_ms", "bytes", "remote")
+CONTEXT_KEYS = (
+    "problem_id",
+    "lease_id",
+    "request_id",
+    "seq",
+    "kind",
+    "actor",
+    "session_id",
+    "sandbox_id",
+    "method",
+    "path",
+    "status",
+    "duration_ms",
+    "bytes",
+    "remote",
+)
 LEVELS = {"debug": logging.DEBUG, "info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 MAX_BYTES = 10 * 1024 * 1024
 BACKUPS = 5
@@ -39,8 +54,7 @@ def ctx(**ids) -> dict:
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         out = {
-            "ts": datetime.fromtimestamp(record.created, timezone.utc).isoformat(timespec="milliseconds")
-                          .replace("+00:00", "Z"),
+            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "level": record.levelname.lower(),
             "component": record.name,
             "msg": record.getMessage(),

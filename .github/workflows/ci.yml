@@ -20,6 +20,12 @@ jobs:
         run: python ci/check_domain_words.py
       - name: 依赖方向：只走契约接口
         run: python ci/check_deps.py
+      - name: ruff lint（含 BLE：不许宽接 Exception）
+        run: uv run --frozen ruff check
+      - name: ruff format
+        run: uv run --frozen ruff format --check
+      - name: mypy --strict（图内核：graph/ 全部，参考模型的搬运副本除外）
+        run: uv run --frozen mypy
       - name: 执行层测试用的通用镜像（不是题目容器）
         run: docker pull python:3.12-slim
       - name: 单元与对抗测试（带覆盖率）
