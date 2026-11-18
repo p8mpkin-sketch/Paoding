@@ -215,6 +215,17 @@ def test_approve_prints_card_then_confirms(home):
     assert code == 1 and "只有 needs_human" in out
 
 
+def test_approve_binds_the_card_it_printed(home):
+    """HT-7 的 pd 一侧：文本卡末行的 card_hash 与卡片端点（网页卡）的相同；批准事件带着它（seen）。"""
+    from paoding_graph.contract import views
+    iid, local = _needs_human(home)
+    card = views.card(local.graph.state, "p1", "approval", iid)
+    code, out = pd(home, "--pid", "p1", "approve", iid, "--yes")
+    assert code == 0 and f"card_hash {card['card_hash'][:12]}" in out and well_formed(out)
+    ev = Local(home / "data", {"kind": "human", "id": "cz"}).graph.events("p1")[-1]
+    assert ev["kind"] == "approve" and ev["body"]["seen"]["card_hash"] == card["card_hash"]
+
+
 def test_deny_requires_reason(home):
     iid, _ = _needs_human(home)
     with pytest.raises(SystemExit):

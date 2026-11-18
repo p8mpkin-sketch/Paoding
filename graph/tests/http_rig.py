@@ -111,14 +111,17 @@ class Api:
         assert st == 201 and body["ok"], (st, body)
         return body
 
-    def lease(self, pid, kind, target=None, who="sinan", reserve=R, ttl=120):
+    def lease(self, pid, kind, target=None, who="sinan", reserve=R, ttl=120, idem=None):
+        self.n += 1
         st, body, _ = self.req("POST", f"/v1/problems/{pid}/leases", {
-            "kind": kind, **({"target": target} if target else {}), "holder": TOKENS[who]["id"],
-            "reserve": reserve, "ttl_s": ttl}, token=f"tok-{who}")
+            "idem_key": idem or f"lease-{self.n}", "kind": kind, **({"target": target} if target else {}),
+            "holder": TOKENS[who]["id"], "reserve": reserve, "ttl_s": ttl}, token=f"tok-{who}")
         return st, body
 
     def release(self, lease_id, outcome="done", who="sinan"):
-        st, body, _ = self.req("POST", f"/v1/leases/{lease_id}/release", {"outcome": outcome}, token=f"tok-{who}")
+        self.n += 1
+        st, body, _ = self.req("POST", f"/v1/leases/{lease_id}/release",
+                               {"idem_key": f"release-{self.n}", "outcome": outcome}, token=f"tok-{who}")
         assert st == 200, (st, body)
         return body
 

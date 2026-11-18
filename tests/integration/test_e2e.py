@@ -198,7 +198,8 @@ def check_chain(rig, r):
     kinds = [e["kind"] for e in r["events"]]
     order = [kinds.index(k) for k in ("open_problem", "add_fact", "add_intent", "close_problem")]
     assert order == sorted(order)
-    assert set(kinds[kinds.index("close_problem") + 1:]) <= {"cost", "release"}       # 关题后只剩判官的记账与释放
+    # 关题后只剩交回：记账、释放，以及在途会话的留档登记
+    assert set(kinds[kinds.index("close_problem") + 1:]) <= {"cost", "release", "register_artifact"}
     close = next(e for e in r["events"] if e["kind"] == "close_problem")
     assert close["actor"]["kind"] == "graph" and close["body"]["terminal"] == "solved"   # 没有人、没有 Worker 关题
 
