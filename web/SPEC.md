@@ -71,7 +71,7 @@
 
 ## 检查
 
-`npm run lint`（先 `npm ci --prefix lint`）、`npm run typecheck`、`npm test`、`npm run build`、`npm run e2e`（构建后跑 Playwright；本机已有浏览器时直接用，CI 里先 `npx playwright install --with-deps chromium`）。
+`npm run lint`（先 `npm ci --prefix lint`）、`npm run typecheck`、`npm test`、`npm run build`、`npm run e2e`（构建后跑 Playwright；本机已有浏览器时直接用，CI 里先 `npx playwright install --with-deps chromium`）、`npm run e2e:real`（连真实图服务，需要 uv）。
 
 ## 目录
 
@@ -84,6 +84,7 @@
 - `mock/`：开发与测试用的假后端，线格式与图服务相同；多出来的只有 M1 的续期门。`stale_view` 校验两边都有：图服务在内核里校验 `seen.card_hash`，拒绝时在结果的 `card` 里附上最新卡片。
 - `tests/fixtures/real/`：真图服务录下的应答（`tools/record_fixtures.py`）。
 - `e2e/`：Playwright 浏览器测试与它用的服务（构建产物加不自动播放的假后端，测试自己推进剧本）。
+- `e2e-real/`：连真实图服务的浏览器测试（`playwright.real.config.ts` 起 `scripts/run.py`，执行层 none、没有会话脚本，事件由测试以人的身份经 HTTP 写入）：总览列出题目、驾驶舱渲染、Intent 与 Hint 经 SSE 推到页面且不刷新、图视图画出节点。
 - `lint/`：ESLint 单独一个包。typescript-eslint 的解析器要 TypeScript 的 JS 接口，`web/` 用的 TypeScript 7 没有，这里固定 5.9 只供解析。
 - `tools/live_demo.py`：起一个真图服务，按固定脚本经 HTTP 提交事件，给网页一份实时数据。
 
@@ -109,6 +110,7 @@
 | 令牌只在本标签页、到期即失效 | `tests/config` |
 | 图的缩放、平移、键盘焦点 | `tests/graph`；`e2e/cockpit.spec.ts` |
 | 驾驶舱、审批卡、时间轴回放、窄屏（浏览器里） | `e2e/cockpit.spec.ts` |
+| 连真实图服务：SSE 推送与节点渲染 | `e2e-real/real-backend.spec.ts` |
 
 ## 实现取值（异议 005 已于 2026-11-18 裁决，见 `docs/m0/adjudication-004-005.md`）
 
