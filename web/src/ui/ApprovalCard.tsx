@@ -1,6 +1,6 @@
 // 审批卡（守门官的载体；HMI 设计 §3.5）。字段由图服务投影，前端只排版。
 // - 批准绑定 card_hash（H2）：卡片在打开期间有变化，标出差异并要求重新确认；服务端以 stale_view 兜底。
-// - 能不能批准听服务端的（display.approve_enabled、rollback_declared）；r2 缺回退声明时禁用批准。
+// - 能不能批准只听服务端的 display.approve_enabled（裁决 004-8、005-3，与 pd 一致）；r2 缺回退声明时卡面醒目标出“未声明回退”，不自己加一道禁用。
 // - 估值不作为批准理由：expected_gain 只在折叠区（I8）。审批问的是"可不可以做"，不是"值不值得做"。
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client";
@@ -65,6 +65,7 @@ export function ApprovalCard({ pid, intentId, head, canWrite, onInspect }: { pid
       <header>
         <h3>审批：{seen.card.target}</h3>
         <span className="muted">card_hash <code>{shortHash(seen.card_hash)}</code> · 所见 seq {seen.as_of}</span>
+        {noRollback && <span className="badge badge-warn" data-flag="no-rollback">r2 · 未声明回退</span>}
       </header>
 
       {changed && (
@@ -90,7 +91,7 @@ export function ApprovalCard({ pid, intentId, head, canWrite, onInspect }: { pid
         <h4>回退</h4>
         {d.rollback_declared && d.rollback
           ? <Text t={d.rollback} />
-          : <p data-no-rollback>未声明回退{noRollback ? "。这是 r2 动作，不能批准。" : "。"}</p>}
+          : <p data-no-rollback className={noRollback ? "warn" : undefined}>未声明回退{noRollback ? "。这是 r2 动作：批准前请确认出了问题怎么收回。" : "。"}</p>}
       </section>
 
       <section data-zone="prediction">
@@ -152,14 +153,14 @@ export function ApprovalCard({ pid, intentId, head, canWrite, onInspect }: { pid
         ) : (
           <>
             <button
-              type="button" data-action="approve" disabled={blocked || noRollback || !d.approve_enabled}
+              type="button" data-action="approve" disabled={blocked || !d.approve_enabled}
               onClick={() => run([ops.approve(seen.card.target, seenArg)])}
             >批准（只管一次租约）</button>
             <div className="deny">
               <label>拒绝的理由（必填）<textarea value={reason} maxLength={2000} onChange={(e) => setReason(e.target.value)} disabled={blocked} /></label>
               <button type="button" data-action="deny" disabled={blocked || reason.trim() === ""} onClick={() => run([ops.deny(seen.card.target, reason.trim(), seenArg)])}>拒绝</button>
             </div>
-            {!d.approve_enabled && !noRollback && <p className="muted">图服务标明这张卡现在不能批准。</p>}
+            {!d.approve_enabled && <p className="muted" data-approve-disabled>图服务标明这张卡现在不能批准。</p>}
             {!canWrite && <p className="muted">现在不能决定：人的决定只能针对链头，且连接必须是实时的。</p>}
             {rejectText(error) && <p className="error" data-reject>{rejectText(error)}</p>}
           </>
