@@ -19,17 +19,17 @@ TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import secrets
 import shutil
 import subprocess
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,19 +63,7 @@ def log(component: str) -> logging.Logger:
     return logging.getLogger(component)
 
 
-def setup_logging(level: int = logging.INFO) -> None:
-    """stderr，一行一条：时间、组件名、消息。"""
-    h = logging.StreamHandler(sys.stderr)
-    h.setFormatter(_OneLine("%(asctime)s %(name)-8s %(message)s", "%H:%M:%S"))
-    root = logging.getLogger()
-    root.handlers[:] = [h]
-    root.setLevel(level)
-
-
-class _OneLine(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        return super().format(record).replace("\r", " ").replace("\n", " ⏎ ")
-
+from oplog import ctx, setup_logging  # noqa: E402,F401  （组装根的日志格式在 scripts/oplog.py）
 
 # ---------- 配置 ----------
 
@@ -102,15 +90,28 @@ class StackConfig:
     max_sessions: int = 3  # 每道题同时在途的会话上限（司南的线程池大小）；1 即串行
     renew_s: float = 60.0
     stall_s: float = 120.0
+    # 运维（P2-3）。log：level（debug|info|warning|error）、format（stderr 的格式 json|text）、
+    # file（相对 home；空串即不写文件）、access（HTTP 访问日志，缺省关）
+    log: dict = field(
+        default_factory=lambda: {"level": "info", "format": "json", "file": "logs/stack.log", "access": False}
+    )
 
     @classmethod
     def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
-        """配置文件（JSON）可省：没有就是空配置——假 CLI 后端、没有脚本、Docker 执行层。
-        文件里的相对路径相对配置文件所在目录。"""
+        """配置文件（YAML）可省：没有就是空配置——假 CLI 后端、没有脚本、Docker 执行层。
+        文件里的相对路径相对配置文件所在目录。缺省读 <home>/config.yaml；只有旧的 config.json 时照样读
+        （JSON 是 YAML 的子集），两份都在则报错，不猜用哪份。"""
         raw: dict = {}
-        path = path or (home / "config.json")
+        if path is None:
+            path, old = home / "config.yaml", home / "config.json"
+            if old.exists():
+                if path.exists():
+                    raise ValueError(f"{path} 与 {old} 同时存在；配置已统一为 YAML，请删掉 config.json")
+                path = old
         if path.exists():
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if not isinstance(raw, dict):
+                raise ValueError(f"{path}：配置的顶层必须是映射")
         base = path.parent
         be = raw.get("backend", {})
         if isinstance(be, str):
@@ -141,10 +142,18 @@ class StackConfig:
                 if k in raw
             },
         )
+        lg = raw.get("log", {})
+        if not isinstance(lg, dict) or set(lg) - set(cfg.log):
+            raise ValueError(f"log 只认 {sorted(cfg.log)} 这几项")
+        cfg.log = {**cfg.log, **lg}
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
         return cfg
+
+    def log_file(self) -> Path | None:
+        f = self.log.get("file")
+        return (self.home / f) if f else None
 
 
 class StackError(RuntimeError):
@@ -185,6 +194,8 @@ class Stack:
         self.cfg = cfg
         self.stop_event = threading.Event()
         self.threads: list[threading.Thread] = []
+        self.beats: dict[str, dict] = {}  # 各循环的心跳：最近一轮的时刻与最近一次失败（/healthz 读）
+        self._docker_probe = (0.0, True)
         self.workers: dict[str, threading.Thread] = {}
         self.crashed: list[dict] = []  # 因缺陷退出的组件线程（_thread_died 记下）
         self._prev_hook = threading.excepthook
@@ -214,7 +225,12 @@ class Stack:
             self.graph,
             self.blobs,
             HttpConfig(
-                port=cfg.port, allowed_origins=tuple(cfg.allow_origins), static_dir=cfg.static_dir, heartbeat_s=5.0
+                port=cfg.port,
+                allowed_origins=tuple(cfg.allow_origins),
+                static_dir=cfg.static_dir,
+                heartbeat_s=5.0,
+                health=self.health,
+                access_log=bool(cfg.log.get("access")),
             ),
         )
         self.vault = Vault(home / "vault")
@@ -364,6 +380,66 @@ class Stack:
             exc_info=(a.exc_type, a.exc_value, a.exc_traceback),
         )
 
+    # ---------- 健康（/healthz）----------
+
+    def _beat(self, name: str, err: BaseException | None = None) -> None:
+        b = self.beats.setdefault(name, {"at": 0.0, "error": None, "failures": 0})
+        b["at"] = time.monotonic()
+        if err is None:
+            b["error"] = None
+        else:
+            b["error"], b["failures"] = f"{type(err).__name__}: {err}"[:300], b["failures"] + 1
+
+    def _loop_health(self, name: str) -> dict:
+        """一个后台循环的状态：线程活着、最近一轮没有抛异常，才算好。最近一轮距今多久只作读数，
+        不设阈值（判官与会话的一轮可以很长）。"""
+        t = next((t for t in self.threads if t.name == name), None)
+        b = self.beats.get(name, {})
+        alive = bool(t and t.is_alive())
+        out = {
+            "ok": alive and not b.get("error"),
+            "alive": alive,
+            "last_tick_age_s": round(time.monotonic() - b["at"], 1) if b.get("at") else None,
+        }
+        if b.get("error"):
+            out["last_error"] = b["error"]
+        if b.get("failures"):
+            out["failures"] = b["failures"]
+        return out
+
+    def _docker_ok(self) -> bool:
+        at, ok = self._docker_probe  # docker info 要起子进程：结果留 10 秒
+        if time.monotonic() - at > 10:
+            ok = docker_available()
+            self._docker_probe = (time.monotonic(), ok)
+        return ok
+
+    def health(self) -> dict:
+        """图服务之外各组件的状态，交给 GET /healthz（图服务自己的那一项由 HTTP 绑定填）。只读，不改任何状态。"""
+        if self._stopped or self.stop_event.is_set():
+            return {"stack": {"ok": False, "stopping": True}}
+        out = {
+            "events": self._loop_health("events"),
+            "judge": {**self._loop_health("judge"), "judges": len(self.judges)},
+            "sinan": {
+                **self._loop_health("sinan"),
+                "problems_scheduled": sum(1 for t in self.workers.values() if t.is_alive()),
+            },
+            "watchdog": self._loop_health("watchdog"),
+            "adapter": {
+                "ok": True,
+                "backend": self.cfg.backend,
+                "launcher": self.cfg.launcher or None,
+                "sessions_in_flight": len(self.runner.live),
+            },
+        }
+        if self.executor is None:
+            out["executor"] = {"ok": True, "kind": "none"}
+        else:
+            ok = self._docker_ok()
+            out["executor"] = {"ok": ok, "kind": "docker", **({} if ok else {"last_error": "docker info 失败"})}
+        return out
+
     # ---------- 事件流：每条落盘事件一行日志 ----------
 
     def _follow_events(self) -> None:
@@ -373,7 +449,23 @@ class Stack:
             evs = self.graph.events(None, after, limit=200)
             for ev in evs:
                 after = ev["seq"]
-                L.info("#%d %s %s ← %s%s", ev["seq"], ev["problem_id"], ev["kind"], _who(ev["actor"]), _gist(ev))
+                L.info(
+                    "#%d %s %s ← %s%s",
+                    ev["seq"],
+                    ev["problem_id"],
+                    ev["kind"],
+                    _who(ev["actor"]),
+                    _gist(ev),
+                    extra=ctx(
+                        seq=ev["seq"],
+                        problem_id=ev["problem_id"],
+                        kind=ev["kind"],
+                        actor=_who(ev["actor"]),
+                        lease_id=_lease_of(ev),
+                        request_id=_request_of(ev),
+                    ),
+                )
+            self._beat("events")
             if not evs:
                 self.stop_event.wait(0.2)
 
@@ -391,9 +483,12 @@ class Stack:
                         d.get("result", "-"),
                         d.get("reason", d.get("code", "")),
                         "" if d.get("status") == "judged" else d,
+                        extra=ctx(request_id=d.get("request"), problem_id=d.get("problem_id")),
                     )
-            except (OSError, subprocess.SubprocessError):  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
+                self._beat("judge")
+            except (OSError, subprocess.SubprocessError) as e:  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
+                self._beat("judge", e)
             self.stop_event.wait(self.cfg.poll_s)
 
     # ---------- 司南：每道未关的题一个循环 ----------
@@ -407,6 +502,7 @@ class Stack:
                 t = threading.Thread(target=self._sinan_loop, args=(pid,), name=f"sinan-{pid}", daemon=True)
                 self.workers[pid] = t
                 t.start()
+            self._beat("sinan")
             self.stop_event.wait(self.cfg.poll_s)
 
     def _sinan_loop(self, pid: str) -> None:
@@ -420,7 +516,7 @@ class Stack:
             self.runner,
         )
         last = None
-        L.info("%s 开始调度（并发上限 %d）", pid, self.cfg.max_sessions)
+        L.info("%s 开始调度（并发上限 %d）", pid, self.cfg.max_sessions, extra=ctx(problem_id=pid))
         try:
             while not self.stop_event.is_set():
                 for r in sinan.collect(0):
@@ -432,12 +528,13 @@ class Stack:
                         r["status"],
                         r["outcome"],
                         f"（{r['detail']}）" if r.get("detail") else "",
+                        extra=ctx(problem_id=pid, lease_id=r["lease"]),
                     )
                     last = None
                 choice = sinan.pick(pid)
                 if choice.get("stop") == "closed":
                     p = self.graph.state["problems"][pid]
-                    L.info("%s 已关题，终态 %s", pid, p.get("terminal"))
+                    L.info("%s 已关题，终态 %s", pid, p.get("terminal"), extra=ctx(problem_id=pid))
                     return
                 if "do" in choice and not self.cfg.scripts.get(choice["do"]["kind"]):
                     note = f"没有 {choice['do']['kind']} 的会话后端（假 CLI 脚本），等配置"
@@ -452,12 +549,13 @@ class Stack:
                             r["lease"],
                             f" → {w['target']}" if w.get("target") else "",
                             len(sinan.in_flight()),
+                            extra=ctx(problem_id=pid, lease_id=r["lease"]),
                         )
                         last = None
                         continue  # 还有空位就接着开下一项
                     note = _note(r)
                 if note != last:
-                    L.info("%s %s", pid, note)
+                    L.info("%s %s", pid, note, extra=ctx(problem_id=pid))
                     last = note
                 if sinan.in_flight():
                     sinan.collect(self.cfg.poll_s)  # 有会话跑完就立刻醒
@@ -468,7 +566,12 @@ class Stack:
             # 停机时 stop() 已经叫停过。两种情况都等它们收尾并各记一行，最多等 30 秒。
             if not self.stop_event.is_set():
                 for f in sinan.in_flight():
-                    L.info("%s 已关题，叫停在途会话：租约 %s", pid, f["lease"])
+                    L.info(
+                        "%s 已关题，叫停在途会话：租约 %s",
+                        pid,
+                        f["lease"],
+                        extra=ctx(problem_id=pid, lease_id=f["lease"]),
+                    )
                     self.runner.kill(f["lease"], "problem_closed")
             deadline = time.monotonic() + 30
             while sinan.in_flight() and time.monotonic() < deadline:
@@ -480,6 +583,7 @@ class Stack:
                         r["lease"],
                         r["status"],
                         r["outcome"],
+                        extra=ctx(problem_id=pid, lease_id=r["lease"]),
                     )
             sinan.close()
 
@@ -493,8 +597,10 @@ class Stack:
                 for k in ("expired", "soft", "killed", "closed", "swept", "alerts"):
                     if getattr(r, k):
                         L.info("%s: %s", k, getattr(r, k))
-            except (OSError, subprocess.SubprocessError):  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
+                self._beat("watchdog")
+            except (OSError, subprocess.SubprocessError) as e:  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
+                self._beat("watchdog", e)
             self.stop_event.wait(self.cfg.dog_interval_s)
 
     # ---------- 停 ----------
@@ -535,6 +641,22 @@ class Stack:
 
 def _who(actor: dict) -> str:
     return actor["kind"] + (f"/{actor['role']}" if actor.get("role") else "")
+
+
+def _lease_of(ev: dict) -> str | None:
+    b = ev.get("body") or {}
+    if ev["kind"] == "lease":
+        return f"l_{ev['seq']}"  # 租约 id 由签发它的事件序号派生（reducer 的 apply）
+    v = b.get("lease")
+    return v if isinstance(v, str) else None
+
+
+def _request_of(ev: dict) -> str | None:
+    b = ev.get("body") or {}
+    if ev["kind"] == "request_judge":
+        return f"j_{ev['seq']}"  # 同上：判定请求的 id
+    v = b.get("request")
+    return v if isinstance(v, str) else None
 
 
 def _gist(ev: dict) -> str:

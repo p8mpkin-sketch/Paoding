@@ -1171,3 +1171,78 @@ def test_stream_sends_a_view_frame_after_each_batch(api):
         assert after["budget"] == before["budget"]  # 账本没动：前端不用重取这一份
     finally:
         s.close()
+
+
+# ---------- 运维：/healthz 与访问日志（P2-3） ----------
+
+
+def test_healthz_reports_graph_and_blobs_without_a_stack(api):
+    st, body, _ = api.req("GET", "/healthz")
+    assert st == 200 and body["ok"] is True and body["status"] == "ok" and body["api"] == "v1"
+    assert set(body["components"]) == {"graph", "blobs"}
+    g = body["components"]["graph"]
+    assert g == {"ok": True, "head": api.svc.head(), "problems": 0, "open": 0}
+    drive(api)
+    g = api.req("GET", "/healthz")[1]["components"]["graph"]
+    assert g["problems"] == 1 and g["open"] == 0 and g["head"] == api.svc.head()
+
+
+def test_healthz_merges_component_states_and_turns_503_when_any_is_down(tmp_path):
+    state = {"judge": {"ok": True, "alive": True}, "watchdog": {"ok": True}}
+    a = Api(tmp_path, health=lambda: state)
+    try:
+        st, body, _ = a.req("GET", "/healthz")
+        assert st == 200 and set(body["components"]) == {"graph", "blobs", "judge", "watchdog"}
+        state["watchdog"] = {"ok": False, "alive": False, "last_error": "RuntimeError: boom"}
+        st, body, _ = a.req("GET", "/healthz")
+        assert st == 503 and body["ok"] is False and body["status"] == "degraded"
+        assert body["components"]["watchdog"]["last_error"] == "RuntimeError: boom"
+        assert body["components"]["graph"]["ok"] is True  # 别的组件照常报
+        assert a.get("/v1/health")["ok"] is True  # 旧的存活探针不受影响
+    finally:
+        a.close()
+
+
+def test_healthz_survives_a_failing_probe_and_keeps_the_origin_guard(tmp_path):
+    def boom():
+        raise RuntimeError("probe broke")
+
+    a = Api(tmp_path, health=boom)
+    try:
+        st, body, _ = a.req("GET", "/healthz")
+        assert st == 503 and body["components"]["stack"] == {"ok": False, "last_error": "RuntimeError: probe broke"}
+        st, body, _ = a.req("GET", "/healthz", headers={"Host": "evil.example"})
+        assert st == 403 and body["code"] == "forbidden_op"
+        st, _, _ = a.req("POST", "/healthz", body={})
+        assert st == 405
+    finally:
+        a.close()
+
+
+def test_access_log_is_off_by_default_and_never_carries_tokens_or_queries(tmp_path, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="http")
+    a = Api(tmp_path)
+    try:
+        a.get("/v1/problems")
+        assert [r for r in caplog.records if r.name == "http"] == []  # 缺省关
+    finally:
+        a.close()
+    (tmp_path / "b").mkdir()
+    b = Api(tmp_path / "b", access_log=True)
+    try:
+        b.get("/v1/problems?as_of=0")
+        b.req("POST", "/v1/problems/p1/proposals", body={"idem_key": "k", "ops": []}, token="tok-human")
+        b.req("GET", "/v1/nope")
+        recs = [r for r in caplog.records if r.name == "http"]
+        assert [(r.method, r.path, r.status) for r in recs] == [
+            ("GET", "/v1/problems", 200),
+            ("POST", "/v1/problems/p1/proposals", recs[1].status),
+            ("GET", "/v1/nope", 404),
+        ]
+        assert all(r.duration_ms >= 0 and r.remote == "127.0.0.1" for r in recs) and recs[0].bytes > 0
+        text = " ".join(r.getMessage() + repr(sorted(r.__dict__.items())) for r in recs)
+        assert "tok-human" not in text and "as_of" not in text and "idem_key" not in text
+    finally:
+        b.close()

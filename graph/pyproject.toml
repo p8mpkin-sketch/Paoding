@@ -1,5 +1,6 @@
 [project]
 name = "paoding-graph"
+license = "Apache-2.0"
 version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = []
