@@ -7,6 +7,7 @@ import { canWrite, ProblemSession } from "../app/session";
 import { countUsage } from "../app/usage";
 import { shortHash } from "../model/text";
 import { ApprovalCard } from "../ui/ApprovalCard";
+import { ScopeCard } from "../ui/ScopeCard";
 import { CostMeter } from "../ui/CostMeter";
 import { TerminalBadge } from "../ui/criterion";
 import { ExtensionDialog } from "../ui/ExtensionDialog";
@@ -74,6 +75,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
 
   const openHints = vm.hints.filter((h) => !h.closed);
   const liveLeases = vm.leases.filter((l) => l.active).length;
+  const scopeAsks = asOf === null ? vm.todo.filter((t) => t.why === "scope_request") : [];
 
   return (
     <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel} data-inspect={node ? "node" : "none"}>
@@ -129,6 +131,11 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
             <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); if (k) setPanel("main"); }} />
             {!writable && <p className="t2" data-readonly-note>{asOf !== null ? "回放中：写操作全部禁用，人的决定只能针对链头。" : vm.closed ? "任务已关闭。" : cfg.token === null ? "还没有配置人的令牌（左下角）：现在只读。" : "未连到链头：写操作暂时禁用。"}</p>}
           </section>
+          {scopeAsks.length > 0 && (
+            <button type="button" className="ws-banner" data-banner="scope" onClick={() => { countUsage("todo"); setSheet({ kind: "todo", key: todoKey(scopeAsks[0]) }); setPanel("main"); }}>
+              等你批准访问 {scopeAsks.length} 个地址<span className="t2">点开处理</span>
+            </button>
+          )}
           <section className="ws-sec">
             <h2 className="ws-h"><span className="no" aria-hidden="true">02</span>会话<span className="ct">{liveLeases} 个在途</span></h2>
             <Sessions leases={vm.leases} onSelect={select} />
@@ -148,6 +155,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
               {sheet.kind === "inject" && <HintInject pid={pid} rows={vm.rows} canWrite={writable} />}
               {sheet.kind === "hint" && <HintTraceCard pid={pid} hintId={sheet.id} seq={vm.seq} ts={hint?.ts ?? null} rows={vm.rows} canWrite={writable} />}
               {sheet.kind === "todo" && openTodo?.why === "needs_human" && <ApprovalCard key={openTodo.target} pid={pid} intentId={openTodo.target} head={s.head} canWrite={writable} onInspect={select} />}
+              {sheet.kind === "todo" && openTodo?.why === "scope_request" && <ScopeCard key={openTodo.target} pid={pid} requestId={openTodo.target} head={s.head} canWrite={writable} statementRef={vm.statementRef} />}
               {sheet.kind === "todo" && openTodo?.why === "extension" && <ExtensionDialog pid={pid} head={s.head} canWrite={writable} />}
               {sheet.kind === "todo" && !openTodo && <p className="muted">这一项已不在待办里。</p>}
             </div>

@@ -358,3 +358,56 @@ def test_old_logs_keep_their_state_shape():
     k = Kernel(ON)
     workspace_open(k)
     assert "scope_requests" not in k.state
+
+
+# ---------- 扩权卡（§7.1，第三步）：网页与 pd 同一张卡 ----------
+
+
+def test_card_names_where_the_risk_came_from_and_the_profile_change(k):
+    from paoding_graph import views
+
+    workspace_open(k)
+    rid = ask(k, {**NET, "pattern": "evil.example:443"})
+    hit = ask(k)
+    assert k.state["scope_requests"][rid]["risk_from"] == [None]
+    assert k.state["scope_requests"][hit]["risk_from"] == [0]
+    assert k.state["scope_requests"][rid]["role"] == "explore"
+    c = views.card(k.state, "p1", "scope", rid, ON)
+    d = c["display"]
+    assert d["risk_rows"] == [None] and views.card(k.state, "p1", "scope", hit, ON)["display"]["risk_rows"] == [1]
+    assert d["profile"]["before"] == {"info": "complete", "judge": "hard", "reversibility": "r0"}
+    assert d["profile"]["after"] == {"info": "partial", "judge": "hard", "reversibility": "r2"}
+    assert d["risk_choices"] == ["r2"] and d["approve_enabled"] and d["decision"] is None
+    assert views.card(k.state, "p1", "scope", hit, ON)["display"]["risk_choices"] == ["r0", "r1", "r2"]
+    assert views.card(k.state, "p1", "scope", rid)["display"]["profile"] is None  # 没给 cfg 就不算
+    # 画像与风险来源只排版，不进哈希：卡片对象与 pd 取 seen 的一致
+    assert c["card_hash"] == seen_card(k.state, "p1", "scope", rid)["card_hash"]
+    assert grant(k, rid, decision="deny", reason="不需要") == "ok"
+    d = views.card(k.state, "p1", "scope", rid, ON)["display"]
+    assert d["decision"]["decision"] == "deny" and d["decision"]["by"] == "cz" and d["decision"]["via"] is None
+    assert d["decision"]["reason"]["value"] == "不需要" and not d["approve_enabled"] and d["profile"] is None
+
+
+def test_card_records_auto_grants_with_the_envelope_version(k):
+    from paoding_graph import views
+
+    workspace_open(k, lane="practice")
+    rid = ask(k)
+    settle(k)
+    d = views.card(k.state, "p1", "scope", rid, ON)["display"]["decision"]
+    assert d["decision"] == "approve" and d["via"] == "auto" and d["by"] == "graph" and d["policy_version"] == 3
+
+
+def test_intent_requests_are_decided_on_the_approval_card(k):
+    from paoding_graph import views
+
+    workspace_open(k)
+    iid = k.submit(
+        HUMAN,
+        "p1",
+        "add_intent",
+        {"title": "t", "premises": [], "risk": "r0", "budget": R, "needs_scope": [{**NET, "risk": "r0"}]},
+    )
+    settle(k)
+    [rid] = [x["id"] for x in k.state["scope_requests"].values() if x.get("intent") == iid]
+    assert not views.card(k.state, "p1", "scope", rid, ON)["display"]["approve_enabled"]

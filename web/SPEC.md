@@ -110,6 +110,12 @@
 - 列表行二选一：整行是一个链接或按钮、里面不再套链接；或整行不可点、操作放在行里的链接与按钮上。今日页与待办页用后一种。
 - 金额：两位小数加千分位，不足一分写“< $0.01”，始终带“$”。
 
+## 运行时扩权（`docs/design/runtime-grants/` §7，第三步）
+
+- 扩权卡 `ui/ScopeCard.tsx`：新增规则与现有范围并排，风险来源照写（风险表第几条，或未命中按缺省 r2）；理由是申请方（模型）写的，叙述语域；批准后的画像变化与没有自动批准的原因都由图服务给出。批准绑定 `card_hash`，与审批卡同法（打开期间变了就列出差异、要求重新确认；服务端以 `stale_view` 兜底）。风险只可上调，档位由服务端给。原文对照是前端对题面的逐段字面查找（`model/scope.ts`），只帮人读，不作判断依据。随尝试而来的申请不在这张卡上决定。
+- 出现的地方：工作区左栏待办（`why: scope_request`）、会话面板上方的横幅“等你批准访问 N 个地址”（只在实时时出现，点开是同一张卡）、收件箱（按任务分组，印“权”）。时间轴的 S 节点：人批、人拒、随审批、自动批准（写明信封版本）与撤销各说各的。
+- 写操作 `grant_scope`、`revoke_scope` 与 `pd scope` 发出同一组字段（`api/ops.ts`）。假后端的 demo-4 是一道开题零出站的题：一条已自动批准，两条等人批。
+
 ## 检查
 
 `npm run lint`（先 `npm ci --prefix lint`）、`npm run typecheck`、`npm test`、`npm run build`、`npm run e2e`（构建后跑 Playwright；本机已有浏览器时直接用，CI 里先 `npx playwright install --with-deps chromium`）、`npm run e2e:real`（连真实图服务，需要 uv）。

@@ -38,7 +38,15 @@ export type Check = {
   sealed?: VaultRef[];
   control?: Control;
 };
-export type ScopeRule = { resource: string; pattern: string; actions: string[]; risk: Risk };
+/** 运行时扩权追加的规则带 granted（谁在哪个序号按哪条申请批的）；撤销的规则留在原位、带 revoked 序号。 */
+export type ScopeRule = {
+  resource: string;
+  pattern: string;
+  actions: string[];
+  risk: Risk;
+  granted?: { seq: number; by: string; request: string };
+  revoked?: number;
+};
 /** 一句话开题的出处账引用与道别（增量 13）；policy 只在练习道，由图服务从信封抄入。 */
 export type DraftRef = { record: ArtifactId; lane: "practice" | "confirm"; policy?: { version: number; digest: string } };
 export type Origin = { statement_ref: ArtifactId; materials: ArtifactId[]; draft?: DraftRef };
@@ -276,7 +284,7 @@ export type ArtifactView = Envelope & {
   register: RegisterName;
   exec: ExecRecord | null;
 };
-export type CardKind = "approval" | "closeout" | "extension" | "dispute";
+export type CardKind = "approval" | "closeout" | "extension" | "dispute" | "scope";
 export type CardResponse<F = Record<string, unknown>, D = Record<string, unknown>> = Envelope & {
   /** 进 card_hash 的部分：只含与这一个决定有关的字段（参考模型的投影）。 */
   card: { kind: CardKind; target: string; fields: F };
@@ -319,6 +327,40 @@ export type ApprovalDisplay = {
   rollback_declared: boolean;
   approve_enabled: boolean;
   decision: Decision | null;
+};
+/** 扩权卡进 card_hash 的部分（runtime-grants §7.1）：申请的规则（风险已查表）、理由、现有有效范围。 */
+export type ScopeCardFields = {
+  rules: ScopeRule[];
+  why: string;
+  status: "pending" | "granted" | "denied";
+  auto: boolean;
+  scope: ScopeRule[];
+  closed: boolean;
+};
+export type ScopeDecision = {
+  decision: "approve" | "deny";
+  by: string | null;
+  seq: number | null;
+  via: ("auto" | "approval") | null;
+  policy_version: number | null;
+  reason: Tagged;
+};
+export type ScopeDisplay = {
+  status: "pending" | "granted" | "denied";
+  why: Tagged;
+  by: string;
+  session: string | null;
+  role: string | null;
+  intent: string | null;
+  auto: boolean;
+  blockers: string[];
+  /** 逐条：风险表命中的行号（从 1 起），null 即未命中、按缺省 r2；旧事件整项为 null。 */
+  risk_rows: (number | null)[] | null;
+  /** 批准前后的画像（与开题同一个推导函数）；已决定的申请为 null。 */
+  profile: { before: Profile; after: Profile; overridden: string[] } | null;
+  risk_choices: Risk[];
+  approve_enabled: boolean;
+  decision: ScopeDecision | null;
 };
 /** 续期卡随 M1 落地（真图服务现在返回 not_enabled）；字段形状是 F1 的暂行约定。 */
 export type ExtensionFields = { progress_since_50: string[]; spent_usd_milli: number; cap_usd_milli: number };
@@ -370,8 +412,17 @@ export type SnapshotResponse = {
   budget?: BudgetResponse;
   work?: WorkView;
 };
-/** 时间轴的一格：每条事件只有 seq、ts、种类；判官裁决另带 result，预算标记另带 mark。 */
-export type WireTick = { seq: number; ts: number; kind: string; result?: "pass" | "fail" | "inconclusive"; mark?: number };
+/** 时间轴的一格：每条事件只有 seq、ts、种类；判官裁决另带 result，预算标记另带 mark；扩权的批准与拒绝（grant_scope）另带 decision，图服务批准时带 via，自动批准带信封版本 policy_version。 */
+export type WireTick = {
+  seq: number;
+  ts: number;
+  kind: string;
+  result?: "pass" | "fail" | "inconclusive";
+  mark?: number;
+  decision?: string;
+  via?: string;
+  policy_version?: number;
+};
 export type TicksResponse = { as_of: number; head: number; ticks: WireTick[]; last_seq: number; head_hash: string | null };
 /** 事件流里一批事件之后的具名帧。 */
 export type ViewFrame = { as_of: number; parts_hash: PartsHash };
@@ -395,7 +446,9 @@ export type HumanOpKind =
   | "rule"
   | "accept"
   | "judge_revoke"
-  | "intent_done";
+  | "intent_done"
+  | "grant_scope"
+  | "revoke_scope";
 export type Op = { op: HumanOpKind; body: Record<string, unknown> };
 export type Seen = { seq: number; card_hash: string };
 export type OpResult = { ok: true; id: string | null; seq: number } | { ok: false; code: string; detail?: string; card?: unknown; as_of?: number };

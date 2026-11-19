@@ -150,7 +150,14 @@ define(
         {"spec_ref": ref("ArtifactId"), "expect": OBJ, "sealed": arr(ref("VaultRef")), "control": ref("Control")},
     ),
 )
-define("ScopeRule", obj({"resource": STR, "pattern": STR, "actions": arr(STR), "risk": ref("Risk")}))
+define(
+    "ScopeRule",
+    obj(
+        {"resource": STR, "pattern": STR, "actions": arr(STR), "risk": ref("Risk")},
+        {"granted": obj({"seq": INT, "by": STR, "request": STR}), "revoked": INT},
+        doc="运行时扩权追加的规则带 granted（谁在哪个序号按哪条申请批的）；撤销的规则留在原位、带 revoked 序号。",
+    ),
+)
 define(
     "DraftRef",
     obj(
@@ -527,7 +534,7 @@ define(
         )
     ),
 )
-define("CardKind", lit("approval", "closeout", "extension", "dispute"))
+define("CardKind", lit("approval", "closeout", "extension", "dispute", "scope"))
 define(
     "CardResponse",
     {
@@ -605,6 +612,58 @@ define(
             "rollback_declared": BOOL,
             "approve_enabled": BOOL,
             "decision": null(ref("Decision")),
+        }
+    ),
+)
+define(
+    "ScopeCardFields",
+    obj(
+        {
+            "rules": arr(ref("ScopeRule")),
+            "why": STR,
+            "status": lit("pending", "granted", "denied"),
+            "auto": BOOL,
+            "scope": arr(ref("ScopeRule")),
+            "closed": BOOL,
+        },
+        doc="扩权卡进 card_hash 的部分（runtime-grants §7.1）：申请的规则（风险已查表）、理由、现有有效范围。",
+    ),
+)
+define(
+    "ScopeDecision",
+    obj(
+        {
+            "decision": lit("approve", "deny"),
+            "by": null(STR),
+            "seq": null(INT),
+            "via": null(lit("auto", "approval")),
+            "policy_version": null(INT),
+            "reason": ref("Tagged"),
+        }
+    ),
+)
+define(
+    "ScopeDisplay",
+    obj(
+        {
+            "status": lit("pending", "granted", "denied"),
+            "why": ref("Tagged"),
+            "by": STR,
+            "session": null(STR),
+            "role": null(STR),
+            "intent": null(STR),
+            "auto": BOOL,
+            "blockers": arr(STR),
+            "risk_rows": doc(
+                null(arr(null(INT))), "逐条：风险表命中的行号（从 1 起），null 即未命中、按缺省 r2；旧事件整项为 null。"
+            ),
+            "profile": doc(
+                null(obj({"before": ref("Profile"), "after": ref("Profile"), "overridden": arr(STR)})),
+                "批准前后的画像（与开题同一个推导函数）；已决定的申请为 null。",
+            ),
+            "risk_choices": arr(ref("Risk")),
+            "approve_enabled": BOOL,
+            "decision": null(ref("ScopeDecision")),
         }
     ),
 )
@@ -705,8 +764,9 @@ define(
     "WireTick",
     obj(
         {"seq": INT, "ts": INT, "kind": STR},
-        {"result": RESULT, "mark": INT},
-        doc="时间轴的一格：每条事件只有 seq、ts、种类；判官裁决另带 result，预算标记另带 mark。",
+        {"result": RESULT, "mark": INT, "decision": STR, "via": STR, "policy_version": INT},
+        doc="时间轴的一格：每条事件只有 seq、ts、种类；判官裁决另带 result，预算标记另带 mark；"
+        "扩权的批准与拒绝（grant_scope）另带 decision，图服务批准时带 via，自动批准带信封版本 policy_version。",
     ),
 )
 define(
@@ -736,6 +796,8 @@ define(
             "accept",
             "judge_revoke",
             "intent_done",
+            "grant_scope",
+            "revoke_scope",
         ),
         "description": "add_intent 之后的几种随后续里程碑启用（规格 3.1.9）；M0 的图服务以 schema_error 拒绝。",
     },

@@ -324,7 +324,7 @@ Adapter 的系统提示加一段："本任务开始时没有任何出站权限�
 | --- | --- | --- |
 | 一 | 内核三操作与 `state.scope_requests`；`compile_spec` 跳过已撤销规则；`needs_scope` 接上扩权（修 §1.3 缺陷）；`pd scope`；设置 `grants` 一节，缺省 `runtime = off`。验收门：§11 第 6 条在修复前失败、修复后通过（已实现：`graph/src/paoding_graph/reducer/grants.py`、`tests/integration/test_stack_scope_grants.py`、`pd scope`、设置 `grants` 节；实现取值见 `graph/SPEC.md`） | 本稿裁决 |
 | 二 | Adapter 的 `request_access` 工具与提示；执行层 `extend`、`shrink` 与隔离测试；越界 sink（可选）（已实现，sink 未做：执行层 `DockerExecutor.reconcile` 一个方法同时管热加与热撤销，契约 `HotGates`；Adapter 的 `request_access` 工具、会话运行器 `reconcile` 与会话循环里的范围指纹、`AdapterConfig.grants_hot` 退路；隔离测试与金丝雀 `executor/tests/test_docker.py` 的 `test_hot_*`，端到端 `adapter/tests/test_access_live.py`） | 一 |
-| 三 | 网页扩权卡、待办与工作区横幅、时间轴节点 | 一；与地图线程的 L1 修订同步 |
+| 三 | 网页扩权卡、待办与工作区横幅、时间轴节点（已实现：`web/src/ui/ScopeCard.tsx`、工作区横幅、待办与收件箱的 `scope_request`、时间轴的 S 节点；卡片投影的补充见 `graph/SPEC.md`；原文对照在前端按题面逐段字面查找，`Vetted.mentions` 不存在，不另建） | 一；与地图线程的 L1 修订同步 |
 | 四 | 一句话开题切到零出站：`vet` 不再生成 net 规则，确认卡撤掉风险控件，道别去掉授权条件；设置 `grants.runtime = on` | 二、三；测试方确认读数口径（§10.1 最后一行） |
 | 五 | `eval/SPEC.md` 写入 §9；评测运行器比对三份摘要 | 一 |
 

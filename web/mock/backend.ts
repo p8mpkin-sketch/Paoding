@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import type {
   ApprovalDisplay, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
-  ExecRecord, ExtensionFields, FactNode, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, LeaseRow, Level,
+  ExecRecord, ExtensionFields, FactNode, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, LeaseRow, Level,
   OpResult, Predicate, ProblemInput, ProblemItem, Profile, ProposalResponse, RegisterName, Risk, ScopeRule, StatusView,
   Tagged, Terminal, WorkItem,
 } from "../src/api/types";
@@ -64,6 +64,12 @@ type Hint = { id: string; seq: number; ts: number; author: string; text: string;
 type Lease = { id: string; kind: string; target?: string; holder: string; reserve: Budget; issued_seq: number; expires_at: number; ended_seq?: number; outcome?: string };
 type Req = { id: string; seq: number; target: string; judge_id: string; candidate?: string; verdict_seq?: number };
 type Verdict = { seq: number; request: string; target: string; result: "pass" | "fail" | "inconclusive"; evidence: string[]; judge: string; version: string; grade: Predicate["grade"]; candidate?: string };
+/** 运行时扩权的申请（runtime-grants §4.1）；风险已由“图服务”查表填好，riskRows 是命中的行号（从 1 起）。 */
+type ScopeReq = {
+  id: string; seq: number; rules: ScopeRule[]; why: string; auto: boolean; blockers: string[]; by: string; session?: string; role?: string;
+  intent?: string; riskRows: (number | null)[]; status: "pending" | "granted" | "denied";
+  decided?: { seq: number; by: string; via?: "auto" | "approval"; policy_version?: number; reason?: string };
+};
 type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal };
 type State = {
   seq: number; now: number; problem?: Problem; overrides: StatusView["problem"]["profile_overrides"];
@@ -72,12 +78,13 @@ type State = {
   decisions: Map<string, { decision: "approve" | "deny"; by: string; seq: number; reason: string }>;
   costs: { kind: string; usd_milli: number; tokens: number; wall_s: number }[];
   capAdd: number; marks: { pct: number; seq: number }[]; extendedSeq: number;
+  scopeReqs: Map<string, ScopeReq>;
 };
 
 function project(events: Event[], pid: string, asOf: number): State {
   const s: State = {
     seq: asOf, now: 0, overrides: [], artifacts: new Map(), facts: new Map(), intents: new Map(), hints: new Map(), leases: new Map(),
-    requests: new Map(), verdicts: [], decisions: new Map(), costs: [], capAdd: 0, marks: [], extendedSeq: 0,
+    requests: new Map(), verdicts: [], decisions: new Map(), costs: [], capAdd: 0, marks: [], extendedSeq: 0, scopeReqs: new Map(),
   };
   for (const ev of events) {
     if (ev.seq > asOf) break;
@@ -112,6 +119,29 @@ function project(events: Event[], pid: string, asOf: number): State {
         if (s.problem) s.problem = { ...s.problem, profile: { ...s.problem.profile, [b.axis]: b.value } };
         break;
       }
+      case "request_scope":
+        s.scopeReqs.set(`r_${ev.seq}`, {
+          id: `r_${ev.seq}`, seq: ev.seq, rules: b.rules, why: b.why ?? "", auto: b.auto, blockers: b.blockers ?? [], by: ev.actor.id,
+          session: ev.actor.session, role: ev.actor.role, intent: b.intent, riskRows: (b.risk_from ?? []).map((x: number | null) => (x === null ? null : x + 1)), status: "pending",
+        });
+        break;
+      case "grant_scope": {
+        const r = s.scopeReqs.get(b.request);
+        if (!r) break;
+        r.status = b.decision === "approve" ? "granted" : "denied";
+        r.decided = { seq: ev.seq, by: ev.actor.id, ...(b.via ? { via: b.via } : {}), ...(b.policy ? { policy_version: b.policy.version } : {}), ...(b.reason ? { reason: b.reason } : {}) };
+        if (b.decision === "approve" && s.problem) {
+          const scope = [...s.problem.scope, ...(b.rules as ScopeRule[]).map((x) => ({ ...x, granted: { seq: ev.seq, by: ev.actor.id, request: r.id } }))];
+          s.problem = { ...s.problem, scope, profile: b.derived, derived_profile: b.derived };
+        }
+        break;
+      }
+      case "revoke_scope":
+        if (s.problem) {
+          const scope = s.problem.scope.map((x, k) => (k === b.rule ? { ...x, revoked: ev.seq } : x));
+          s.problem = { ...s.problem, scope, profile: b.derived, derived_profile: b.derived };
+        }
+        break;
       case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
     }
   }
@@ -199,6 +229,7 @@ function work(s: State, pid: string): WorkItem[] {
   for (const r of bySeq(s.requests)) if (r.verdict_seq === undefined) items.push({ kind: "judge", target: r.id });
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "needs_human") items.push({ kind: "human", target: i.id, why: "needs_human" });
   if (extensionPending(s)) items.push({ kind: "human", target: pid, why: "extension" });
+  for (const r of bySeq(s.scopeReqs)) if (r.status === "pending" && !r.auto && !r.intent) items.push({ kind: "human", target: r.id, why: "scope_request" });
   return items;
 }
 
@@ -264,6 +295,13 @@ function budgetView(s: State): Omit<BudgetResponse, "as_of" | "head" | "view_has
   };
 }
 
+/** 时间轴的扩权刻度：与真图服务的 /ticks 同形。 */
+function scopeTick(b: Record<string, any>): Record<string, unknown> {
+  return { decision: b.decision, ...(b.via ? { via: b.via } : {}), ...(b.policy?.version !== undefined ? { policy_version: b.policy.version } : {}) };
+}
+
+const activeScope = (scope: ScopeRule[]): ScopeRule[] => scope.filter((x) => !("revoked" in x));
+
 function deriveProfile(scope: ScopeRule[], judgeId: string): Profile {
   const top = scope.reduce<Risk>((a, r) => (RISK_RANK[r.risk] > RISK_RANK[a] ? r.risk : a), "r0");
   const j = JUDGES[judgeId];
@@ -318,6 +356,26 @@ function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind
     const m50 = s.marks.find((m) => m.pct === 50)?.seq ?? 0;
     const f: ExtensionFields = { progress_since_50: s.verdicts.filter((v) => v.result === "pass" && v.seq > m50).map((v) => v.target), spent_usd_milli: s.costs.reduce((a, c) => a + c.usd_milli, 0), cap_usd_milli: s.problem!.budget.usd_milli + s.capAdd };
     fields = f; display = {};
+  } else if (kind === "scope") {
+    const r = s.scopeReqs.get(id);
+    if (!r) return "not_found";
+    const now = activeScope(s.problem!.scope);
+    const keep = (x: ScopeRule): ScopeRule => ({ resource: x.resource, pattern: x.pattern, actions: x.actions, risk: x.risk });
+    const f: ScopeCardFields = { rules: r.rules.map(keep), why: r.why, status: r.status, auto: r.auto, scope: now.map(keep), closed: closed(s) };
+    const top = r.rules.reduce<Risk>((a, x) => (RISK_RANK[x.risk] > RISK_RANK[a] ? x.risk : a), "r0");
+    const jid = s.problem!.goal.check.judge_id;
+    const disp: ScopeDisplay = {
+      status: r.status, why: tag("summary", r.why), by: r.by, session: r.session ?? null, role: r.role ?? null, intent: r.intent ?? null,
+      auto: r.auto, blockers: r.blockers, risk_rows: r.riskRows,
+      profile: r.status === "pending" ? { before: deriveProfile(now, jid), after: deriveProfile([...now, ...r.rules], jid), overridden: [] } : null,
+      risk_choices: (["r0", "r1", "r2"] as Risk[]).filter((k) => RISK_RANK[k] >= RISK_RANK[top]),
+      approve_enabled: r.status === "pending" && !r.intent && !closed(s),
+      decision: r.decided ? {
+        decision: r.status === "granted" ? "approve" : "deny", by: r.decided.by, seq: r.decided.seq,
+        via: r.decided.via ?? null, policy_version: r.decided.policy_version ?? null, reason: tag("human_reason", r.decided.reason ?? ""),
+      } : null,
+    };
+    fields = f; display = disp;
   } else return "not_found";
   const c = { kind, target: id, fields };
   return { card: c, card_hash: sha256(canonical(c)), display };
@@ -396,7 +454,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
 
   // ---- 写 ----
   const HUMAN: Event["actor"] = { kind: "human", id: "local" };
-  const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension" };
+  const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension", grant_scope: "scope" };
 
   /** 校验一条人的操作，返回规范化的事件体。 */
   function validate(pid: string, op: string, b: any, pendingArts: Set<string>): Record<string, unknown> {
@@ -419,7 +477,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     if (closed(s)) throw new Rejected("schema_error", "题目已关闭");
     const ck = DECISIONS[op];
     if (ck) {
-      const c = card(s, pid, ck, op === "approve" ? b.intent : pid);
+      const c = card(s, pid, ck, op === "approve" ? b.intent : op === "grant_scope" ? b.request : pid);
       if (c === "not_found") throw new Rejected("unknown_ref", `${ck} 卡不存在`);
       // M1 的行为：带了 seen 就校验；M0 的真图服务还不看这个字段
       if (b.seen && b.seen.card_hash !== c.card_hash) throw new Rejected("stale_view", "卡片已变化", c);
@@ -449,6 +507,33 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if ("terminal" in b) throw new Rejected("schema_error", "terminal 是派生量，由图服务按三值算出");
         return { terminal: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}) };
       case "extend": if (!extensionPending(s)) throw new Rejected("schema_error", "续期门未触发"); return {};
+      case "grant_scope": {
+        const r = s.scopeReqs.get(b.request);
+        if (!r) throw new Rejected("unknown_ref", `扩权申请 ${b.request} 不存在`);
+        if (r.status !== "pending") throw new Rejected("schema_error", `扩权申请 ${b.request} 已经${r.status}`);
+        if (b.decision !== "approve" && b.decision !== "deny") throw new Rejected("schema_error", "decision 只取 approve、deny");
+        const reason = String(b.reason ?? "").trim();
+        if (b.decision === "deny") {
+          if (!reason) throw new Rejected("schema_error", "拒绝须写理由");
+          return { request: r.id, decision: "deny", reason, seen: b.seen };
+        }
+        const rules = r.rules.map((x, k) => {
+          const want = (b.risk as Risk[] | undefined)?.[k] ?? x.risk;
+          if (RISK_RANK[want] < RISK_RANK[x.risk]) throw new Rejected("schema_error", `${x.pattern} 的风险只可上调`);
+          return { ...x, risk: want };
+        });
+        const derived = deriveProfile([...activeScope(s.problem.scope), ...rules], s.problem.goal.check.judge_id);
+        return { request: r.id, decision: "approve", seen: b.seen, rules, derived, ...(reason ? { reason } : {}) };
+      }
+      case "revoke_scope": {
+        const k = b.rule as number;
+        const x = s.problem.scope[k];
+        if (!x || "revoked" in x) throw new Rejected("unknown_ref", `规则 ${k} 不在有效范围内`);
+        if (!String(b.reason ?? "").trim()) throw new Rejected("schema_error", "撤销须写理由");
+        const rest = activeScope(s.problem.scope.filter((_y, j) => j !== k));
+        if (rest.length === 0) throw new Rejected("schema_error", "授权范围至少留一条规则");
+        return { rule: k, reason: String(b.reason).trim(), derived: deriveProfile(rest, s.problem.goal.check.judge_id) };
+      }
       case "budget_add": if (!(Number.isInteger(b.usd_milli) && b.usd_milli > 0)) throw new Rejected("schema_error", "金额为正"); return { usd_milli: b.usd_milli };
       default: throw new Rejected("schema_error", `未知操作 ${op}`);
     }
@@ -678,7 +763,8 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (!stateOf(pid, asOf).problem) return notFound(`题目 ${pid} 不存在（或在该序号时尚未开题）`);
       const evs = eventsOf(pid, asOf);
       const ticks = evs.map((e) => ({ seq: e.seq, ts: e.ts, kind: e.kind,
-        ...(e.kind === "judge_verdict" ? { result: e.body.result } : {}), ...(e.kind === "budget_mark" ? { mark: e.body.mark } : {}) }));
+        ...(e.kind === "judge_verdict" ? { result: e.body.result } : {}), ...(e.kind === "budget_mark" ? { mark: e.body.mark } : {}),
+        ...(e.kind === "grant_scope" ? scopeTick(e.body) : {}) }));
       return json(200, { as_of: asOf, head: headSeq(), ticks, last_seq: evs.at(-1)?.seq ?? 0, head_hash: evs.at(-1)?.hash ?? null });
     }
     if ((m = path.match(/^\/v1\/problems\/([^/]+)\/(.+)$/))) {

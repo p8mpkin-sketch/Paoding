@@ -248,11 +248,14 @@ def scope_card(state: dict, pid: str, rid: str) -> str:
         f"扩权申请 {rid}：{x['status']}；{via}；申请方 {x['by']}"
         + (f"（会话 {x['session']}）" if x["session"] else ""),
     )
-    for r in x["rules"]:
-        o.add(
-            "structure",
-            f"新增 {r['resource']} {r['pattern']} {','.join(r['actions'])} 风险 {r['risk']}（查风险表，未命中按 r2）",
+    rows = x.get("risk_from")
+    for k, r in enumerate(x["rules"]):
+        src = (
+            "查风险表，未命中按 r2"
+            if rows is None
+            else (f"风险表第 {rows[k] + 1} 条" if rows[k] is not None else "风险表未命中，按缺省 r2")
         )
+        o.add("structure", f"新增 {r['resource']} {r['pattern']} {','.join(r['actions'])} 风险 {r['risk']}（{src}）")
     for r in state["problems"][pid]["scope"]:
         if "revoked" not in r:
             o.add("structure", f"现有 {r['resource']} {r['pattern']} {','.join(r['actions'])} {r['risk']}")
