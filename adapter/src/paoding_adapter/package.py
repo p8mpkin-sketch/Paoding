@@ -61,6 +61,16 @@ def problem_brief(state: State, pid: str, statement: str, judges_cfg: dict[str, 
     )
 
 
+def memory_notes(state: State, pid: str) -> str:
+    """开题时随召回清单登记的叙述（v1.5，01-memory §4）：排除路径、花费画像，以及消融臂 recall_noverify
+    里不复核的事实。它们是叙述或估值，不是节点，不能作前提；复核过的召回事实在④里，是本题自己的节点。
+    没有召回清单的题这里是空串，③与旧版逐字节相同。"""
+    notes = (state["problems"][pid].get("recall") or {}).get("notes") or []
+    if not notes:
+        return ""
+    return "\n记忆（叙述，未在本题复核；上次在同一环境的情形，可能已变）：\n" + _j(notes)
+
+
 def listing(state: State, pid: str) -> str:
     nodes: list[Mapping[str, Any]] = [
         *[f for f in state["facts"].values() if f["problem_id"] == pid],
@@ -115,7 +125,7 @@ def render(
     sections = [
         ("① 角色", role_prompt(role)),
         ("② 题目", problem_brief(state, pid, statement, judges_cfg)),
-        ("③ 锦囊", _j(kit_index)),
+        ("③ 锦囊", _j(kit_index) + memory_notes(state, pid)),
         ("④ 节点", listing(state, pid)),
     ]
     # 段间空行放在下一段的开头：这样①–④的字节在只追加节点时恰好是后一个包的前缀（3.4.5 的 5）
@@ -129,6 +139,7 @@ def render(
         "role_prompt": sections[0][1],
         "problem_brief": sections[1][1],
         "kit_index": kit_index,
+        **({"memory_notes": sections[2][1]} if sections[2][1] != _j(kit_index) else {}),
         "listing": sections[3][1],
         "status": st,
         "focus": focus,

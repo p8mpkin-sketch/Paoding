@@ -216,6 +216,14 @@ def in_review(state: State, pid: str) -> bool:
 # ---------- /work（§3.1.2） ----------
 
 
+def recall_pending(state: State, pid: str) -> bool:
+    """召回还没做完：开题登记了要复核的召回清单，且还没有一个 recall 租约结束过（过期也算结束）。"""
+    rec = state["problems"][pid].get("recall") or {}
+    if not rec.get("items"):
+        return False
+    return not any(l["kind"] == "recall" and not l["active"] for l in leases_of(state, pid))
+
+
 def work(state: State, pid: str) -> list[dict[str, Any]]:
     p = state["problems"].get(pid)
     if p is None or p.get("closed"):
@@ -226,7 +234,10 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     review = in_review(state, pid)
     task_leases = [l for l in leases if l["kind"] in TASK_KINDS]
-    if not task_leases:
+    recalling = recall_pending(state, pid)
+    if recalling and in_flight(state, pid, "recall") is None:
+        items.append({"kind": "recall"})  # v1.5 增量 8：召回复核先于 Bootstrap，由不含模型的召回运行器领走
+    if not task_leases and not recalling:
         items.append({"kind": "bootstrap"})
     boot_done = any(l["kind"] == "bootstrap" and not l["active"] for l in leases)
     reason_now = in_flight(state, pid, "reason") is not None

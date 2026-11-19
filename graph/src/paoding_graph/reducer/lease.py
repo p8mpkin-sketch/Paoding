@@ -14,7 +14,7 @@ from .common import Config, Ok, Reject, _amount
 
 def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: int) -> Ok | Reject:
     kind, target = body.string("kind"), body.opt_string("target")
-    if kind not in ("bootstrap", "reason", "explore", "judge"):
+    if kind not in ("bootstrap", "reason", "explore", "judge", "recall"):
         return Reject("schema_error", f"租约种类 {kind} 非法")
     if (kind == "judge") != (actor["kind"] == "judge"):
         return Reject("forbidden_op", "judge 租约只由判官运行器申请；任务租约只由司南申请")

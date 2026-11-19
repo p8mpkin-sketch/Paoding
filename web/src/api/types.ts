@@ -228,7 +228,7 @@ export type StatusView = Envelope & {
 /** why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；M1 起还有续期门等。 */
 export type HumanWorkItem = { kind: "human"; target: string; why: string };
 export type WorkItem =
-  | { kind: "bootstrap" }
+  | { kind: "bootstrap" | "recall" }
   | { kind: "reason"; reflect?: boolean }
   | { kind: "explore" | "judge"; target: string }
   | { kind: "rejudge"; target: string; judge: string; version: string; candidate: ArtifactId | null }
