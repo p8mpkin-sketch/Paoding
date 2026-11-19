@@ -26,3 +26,15 @@ export type SettingsLogEntry = { version: number; from: string | null; to: strin
 /** 密钥槽：没有任何字段是密钥本身；指纹 = 加盐 sha256 前 8 位 + 末 4 位。 */
 export type KeySlot = { slot: string; set: boolean; fingerprint: string | null; set_at: number | null; source: "page" | "env" | "config" | "fake" | null; env: string };
 export type KeysView = { slots: KeySlot[]; note: string };
+/** 设置页的两节只读（宪章 Q6）：练习道信封（内核此刻加载的那一份）与预算先验表（外部注入的可插拔数据源）。 */
+export type PracticeEnvelope = {
+  version: number;
+  digest: string | null;
+  zero_confirm: boolean;
+  allow: { resources: string[]; net_patterns: string[]; max_risk: "r0" | "r1" | "r2" };
+  judge: { ids: string[]; require_sealed: boolean };
+  budget: { usd_milli_max: number; wall_s_max: number };
+  goal: { max_attempts_max: number };
+};
+export type PriorTier = { usd_milli: number; wall_s: number; bootstrap_share: number | null; note: string };
+export type SettingsSources = { envelope: PracticeEnvelope; priors: { version: string; placeholder: boolean; tiers: Record<string, PriorTier> } };

@@ -9,7 +9,7 @@ import type {
 } from "./types";
 import type { KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
-import type { KeySlot, KeysView, Settings, SettingsDoc, SettingsLogEntry } from "./settings-types";
+import type { KeySlot, KeysView, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
 
 export type ApiConfig = {
   /** 图服务的基址；同源部署时为空串。 */
@@ -133,6 +133,8 @@ export function createApi(cfg: ApiConfig) {
     // ---- 设置层 ----
     settings: () => get<SettingsDoc>("/v1/settings"),
     settingsLog: () => get<{ items: SettingsLogEntry[] }>("/v1/settings/log"),
+    /** 练习道信封与预算先验：只读，改它们不在设置页（信封随起草组件发版，先验表外部注入）。 */
+    settingsSources: () => get<SettingsSources>("/v1/settings/sources"),
     /** base_digest 不是当前摘要 → 409 stale_view（extra.current 是当前摘要）：重读再改。 */
     putSettings: async (baseDigest: string, settings: Settings) =>
       (await call("PUT", "/v1/settings", json({ base_digest: baseDigest, settings }), "application/json")).json() as Promise<SettingsDoc>,

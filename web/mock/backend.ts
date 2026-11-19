@@ -609,6 +609,27 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     const settingsDoc = () => ({ version: settingsVersion, digest: sha256(canonical(settings)), settings });
     if (method === "GET" && path === "/v1/settings") return json(200, settingsDoc());
     if (method === "GET" && path === "/v1/settings/log") return json(200, { items: settingsLog });
+    if (method === "GET" && path === "/v1/settings/sources") {
+      // 抄 qicao 的 kaiti.d/practice.yaml 与 priors.placeholder.yaml；练习上限取设置层（与组装根 practice_doc 同一种合成）
+      const envelope = {
+        version: 1,
+        allow: { resources: ["net", "workspace"], net_patterns: ["q*:*", "127.0.0.1:*", "localhost:*", "10.*:*", "192.168.*:*"], max_risk: "r0" },
+        judge: { ids: ["exact_match"], require_sealed: true },
+        budget: { usd_milli_max: settings.caps.practice_usd_milli, wall_s_max: settings.caps.practice_wall_s },
+        goal: { max_attempts_max: 5 },
+      };
+      return json(200, {
+        envelope: { ...envelope, digest: sha256(canonical(envelope)), zero_confirm: false },
+        priors: {
+          version: "placeholder:placeholder-0", placeholder: true,
+          tiers: {
+            easy: { usd_milli: 500, wall_s: 600, bootstrap_share: null, note: "" },
+            medium: { usd_milli: 2000, wall_s: 1800, bootstrap_share: null, note: "" },
+            hard: { usd_milli: 6000, wall_s: 3600, bootstrap_share: null, note: "" },
+          },
+        },
+      });
+    }
     if (!auth.startsWith("Bearer ") || !auth.slice(7).trim()) return err(401, "forbidden_op", "写操作须带 Authorization: Bearer <令牌>");
     if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "未知令牌");
     if (method === "PUT" && path === "/v1/settings") {
@@ -650,7 +671,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     const notFound = (d = `没有端点 ${path}`) => err(404, "unknown_ref", d);
     let m: RegExpMatchArray | null;
 
-    if (path === "/v1/settings" || path === "/v1/settings/log" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");

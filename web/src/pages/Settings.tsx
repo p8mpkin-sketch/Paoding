@@ -6,7 +6,7 @@
 // 别人先改了就 409，重读再改。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
-import type { KeySlot, KeysView, ModelProfile, RiskRule, Settings, SettingsDoc, SettingsLogEntry } from "../api/settings-types";
+import type { KeySlot, KeysView, ModelProfile, RiskRule, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "../api/settings-types";
 import type { PlatformEntry } from "../api/kaiti";
 import { fmtTs, useServices } from "../app/context";
 import { Button, Mark, Mast, SectionHead } from "../kit";
@@ -78,6 +78,8 @@ export function SettingsPage() {
         <SectionHead id="sec-caps" title="预算与硬顶" note="练习 ≤ 单任务 ≤ 全局；保存时由服务端校验次序" />
         <Caps draft={draft} set={set} writable={writable} />
       </section>
+
+      <Sources version={doc.version} />
 
       <section className="settings-sec" aria-labelledby="sec-models">
         <SectionHead id="sec-models" title="模型档案与角色路由" note="新会话起生效，会话中途不换模型" />
@@ -347,6 +349,62 @@ function Risk({ draft, set, writable }: Part) {
         </tbody>
       </table>
       <Button tone="line" size="sm" disabled={!writable} data-action="add-risk" onClick={() => set((s) => { s.risk.push(emptyRule()); })}>加一条规则</Button>
+    </>
+  );
+}
+
+// ---------- 练习道信封与预算先验（宪章 03 §2、Q6：只读） ----------
+
+const minutes = (s: number) => `${Math.round((s / 60) * 100) / 100} 分钟`;
+
+function Sources({ version }: { version: number }) {
+  const { api } = useServices();
+  const [src, setSrc] = useState<SettingsSources | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // 设置每保存一版就重读：信封的练习上限抄设置层，摘要跟着变
+  useEffect(() => {
+    api.settingsSources().then((x) => { setSrc(x); setError(null); }, (e) => setError(errText(e)));
+  }, [api, version]);
+  if (error) return <section className="settings-sec"><p className="error">读不到信封与先验：<Plain text={error} /></p></section>;
+  if (!src) return null;
+  const e = src.envelope;
+  const p = src.priors;
+  return (
+    <>
+      <section className="settings-sec" aria-labelledby="sec-envelope" data-settings-envelope>
+        <SectionHead id="sec-envelope" title="练习道信封"
+          note="只读：随起草组件发版；金额与时长上限就是上面的练习上限。新建任务时版本与摘要抄进事件" />
+        <table className="bank"><tbody>
+          <tr><td>版本</td><td className="k-mono" data-envelope-digest={e.digest ?? ""}>v{e.version} · {e.digest ? shortHash(e.digest) : "内核未加载"}</td></tr>
+          <tr><td>零确认</td><td data-zero-confirm={String(e.zero_confirm)}>{e.zero_confirm ? "已放行" : "关着：练习道候选也要你按一下，放行等离线精确率读数"}</td></tr>
+          <tr><td>可连的地址</td><td className="k-mono"><Plain text={e.allow.net_patterns.join("  ")} /></td></tr>
+          <tr><td>资源与风险</td><td><Plain text={e.allow.resources.join("、")} /> · 风险至多 <span className="k-tag">{e.allow.max_risk}</span></td></tr>
+          <tr><td>判定器</td><td><Plain text={e.judge.ids.join("、")} />{e.judge.require_sealed ? " · 答案须在保密库" : ""}</td></tr>
+          <tr><td>上限</td><td className="num">{usd(e.budget.usd_milli_max)} · {minutes(e.budget.wall_s_max)} · 最多尝试 {e.goal.max_attempts_max} 次</td></tr>
+        </tbody></table>
+      </section>
+
+      <section className="settings-sec" aria-labelledby="sec-priors" data-settings-priors>
+        <SectionHead id="sec-priors" title="预算先验"
+          note="只读：外部注入的“档位 → 默认预算”表；新建任务时预算的默认值从这里来，确认卡上标“估”" />
+        <p className={p.placeholder ? "issues" : "muted"} data-priors-version={p.version}>
+          <span className="k-mono"><Plain text={p.version} /></span>{p.placeholder ? " · 占位表：数不是校准读数，只为让流程跑通" : ""}
+        </p>
+        <table className="mini wide" data-priors-table>
+          <thead><tr><th>档位</th><th>金额</th><th>时长</th><th>起步占比</th><th>说明</th></tr></thead>
+          <tbody>
+            {Object.entries(p.tiers).map(([name, t]) => (
+              <tr key={name} data-tier={name}>
+                <td className="k-mono"><Plain text={name} /></td>
+                <td className="num">{usd(t.usd_milli)}</td>
+                <td className="num">{minutes(t.wall_s)}</td>
+                <td className="num">{t.bootstrap_share === null ? "—" : `${Math.round(t.bootstrap_share * 100)}%`}</td>
+                <td className="t2"><Plain text={t.note || "—"} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </>
   );
 }

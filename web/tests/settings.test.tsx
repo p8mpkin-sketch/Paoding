@@ -91,6 +91,26 @@ describe("设置页", () => {
     await waitFor(() => expect(container.querySelectorAll("[data-settings-log] tbody tr")).toHaveLength(2));
   });
 
+  it("练习道信封与预算先验两节只读；练习上限一改，信封跟着变", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <SettingsPage />);
+    const env = await waitFor(() => { const el = container.querySelector("[data-settings-envelope]"); expect(el).not.toBeNull(); return el!; });
+    expect(env.querySelector("input, select, button")).toBeNull();
+    expect(env.textContent).toMatch(/q\*:\*/);
+    expect(env.querySelector('[data-zero-confirm="false"]')).not.toBeNull();
+    const pri = container.querySelector("[data-settings-priors]")!;
+    expect(pri.querySelector("input, select, button")).toBeNull();
+    expect(pri.querySelector("[data-priors-version]")!.textContent).toMatch(/占位表/);
+    expect([...pri.querySelectorAll("[data-tier]")].map((x) => x.getAttribute("data-tier"))).toEqual(["easy", "medium", "hard"]);
+    const before = env.querySelector("[data-envelope-digest]")!.getAttribute("data-envelope-digest");
+    const field = container.querySelector<HTMLInputElement>('[data-field="practice_usd_milli"]')!;
+    fireEvent.change(field, { target: { value: "0.4" } });
+    fireEvent.blur(field);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-action="save-settings"]')!);
+    await waitFor(() => expect(container.querySelector("[data-envelope-digest]")!.getAttribute("data-envelope-digest")).not.toBe(before));
+    expect(container.querySelector("[data-settings-envelope]")!.textContent).toMatch(/\$0\.40?/);
+  });
+
   it("别处先改了：409 提示重读，不覆盖别人的改动", async () => {
     const r = rig();
     const { container } = renderWith(r, <SettingsPage />);

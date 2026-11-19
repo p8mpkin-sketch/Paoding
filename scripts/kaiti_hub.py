@@ -97,6 +97,7 @@ class KaitiHub:
         self.cfg, self.upstream, self.catalog = cfg, upstream, catalog
         priors = TablePriors.load(cfg["priors"]) if cfg.get("priors") else placeholder_priors()
         self.kind = str(cfg.get("draft") or ("messages" if real else "heuristic"))
+        self.priors = priors
         self.priors_version = priors.version()
         intake = Intake.load()
         self.envelope = dict(intake.envelope)
@@ -137,6 +138,32 @@ class KaitiHub:
             "profile": profile,
             "priors": self.priors_version,
             "zero_confirm": False,  # 第三期休眠：开关的打开等测试方的精确率读数
+        }
+
+    def sources(self, caps: dict[str, Any], practice: Any) -> dict[str, Any]:
+        """设置页的两节只读（宪章 03 §2、Q6）。信封 = 组件的信封数据 + 设置层的练习上限，摘要取内核此刻加载的那一份；
+        先验表是外部注入的可插拔数据源（占位表时 placeholder 为真），只报档位与默认值，不报来源路径。"""
+        env = practice_doc(self.envelope, caps)
+        tiers = getattr(self.priors, "tiers", None)
+        return {
+            "envelope": {
+                **env,
+                "digest": getattr(practice, "digest", None),
+                "zero_confirm": False,  # 零确认放行开关：关着，等测试方的精确率读数
+            },
+            "priors": {
+                "version": self.priors_version,
+                "placeholder": bool(getattr(self.priors, "placeholder", False)),
+                "tiers": {
+                    name: {
+                        "usd_milli": p.usd_milli,
+                        "wall_s": p.wall_s,
+                        "bootstrap_share": p.bootstrap_share,
+                        "note": p.note,
+                    }
+                    for name, p in (tiers or {}).items()
+                },
+            },
         }
 
     def use_settings(self, current: Callable[[], dict[str, Any]]) -> None:

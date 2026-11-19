@@ -253,3 +253,22 @@ def test_chosen_profile_is_recorded_as_human():
     out = hub.svc.draft_view({"text": TEXT, "profile": "cheap"})
     row = next(r for r in out["derivation"] if r["field"] == "draft.model")
     assert out["model"] == "cheap" and row["source"] == "human" and row["value"] == "cheap"
+
+
+def test_settings_sources_are_read_only_and_follow_caps(stack):
+    """宪章 Q6：设置页的练习道信封与预算先验两节只读；信封的练习上限抄设置层，摘要与内核此刻加载的一致。"""
+    s, url = stack
+    out = call(url, "/v1/settings/sources")
+    env, pri = out["envelope"], out["priors"]
+    assert env["digest"] == s.graph.cfg.practice.digest and env["zero_confirm"] is False
+    assert env["budget"]["usd_milli_max"] == s.settings.store.settings["caps"]["practice_usd_milli"]
+    assert "q*:*" in env["allow"]["net_patterns"]
+    assert pri["placeholder"] is True and pri["version"].startswith("placeholder:") and pri["tiers"]
+    store = s.settings.store
+    store.settings = {**store.settings, "caps": {**store.settings["caps"], "practice_usd_milli": 400}}
+    s.settings.apply()
+    again = call(url, "/v1/settings/sources")["envelope"]
+    assert again["budget"]["usd_milli_max"] == 400 and again["digest"] == s.graph.cfg.practice.digest != env["digest"]
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(url, "/v1/settings/sources", {"x": 1}, token=s.human_token)
+    assert e.value.code in (404, 405)
