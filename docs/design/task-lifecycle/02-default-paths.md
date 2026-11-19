@@ -102,11 +102,13 @@ goal.acceptance?: { id: string,             // a1、a2…，开题时由图服�
                     needs?: "artifact" | "note" }[]   // 验收这一条时要附的依据
 ```
 
-- **来源**：原文里“交付”“要求”一类的句子由模型指认区间（出处“摘”），人也可以在确认卡上增删。模型不得自己写条目，理由与“模型不写检查脚本”相同（kaiti §3.1）：那等于干活的一方给自己出验收题。
+- **来源**（裁决附加 1，与一句话开题同规则）：原文里“交付”“要求”一类的句子由模型指认区间（出处“摘”），人也可以在确认卡上增删。模型不得自己写条目，理由与“模型不写检查脚本”相同（kaiti §3.1）：那等于干活的一方给自己出验收题。
 - **登记与不可改**：清单随 `open_problem` 写入，之后不可改。要改清单，只能关掉这道题，重新开一道（克隆进高级模式）。
 - **结构检查**：清单里 `needs: artifact` 的条目，附带一个 advisory 判官（交付物存在、格式合法），它只给读数，不让 Goal 到 E3。
 - **验收操作**：`accept` 的事件体带 `{ checks: [{ id, verdict: "pass"|"fail", ref?: ArtifactId, note? }], seen: { seq, card_hash } }`。`validate` 要求清单里每条都有一项、`needs: artifact` 的条目 `ref` 指向本题的 exec 类或 input 类 Artifact、四顾清单（`closeout` 卡）里的非空项已逐条确认。任何一条 `fail` 时只能 `reject`，回到 S8（写 Hint 继续）或以 unsolved 关闭。
 - **终态**：全部 pass 才是 `accepted`。报告首行写“人工验收（accepted），根结论等级上限 E0”。
+- **只经 B 道**（裁决附加 1）：`accepted` 只能出现在 `goal.accept = human` 的题上；A 道与 B1 的题没有 `accept` 操作，终态只有 solved 与 unsolved。
+- **永远分开呈现**（裁决附加 1）：今日、任务库、读数页、`pd` 与评测记录里，accepted 与 solved 各自计数；“成功率”“每解成本”一类读数的分子只取 solved，accepted 另列一行，不合并。
 
 ### 3.4 B 道上必须有人的点位
 

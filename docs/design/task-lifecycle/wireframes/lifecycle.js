@@ -127,6 +127,7 @@ function setModels() {
   <div class="sh sec"><h2>角色路由</h2><span class="sp"></span><span class="ink3" style="font-size:12px">新会话起生效 · 会话中途不换模型</span></div>
   <table class="tbl">${route('起草（一句话开题）', '轻 · A', '只做指认，不做推理')}${route('Bootstrap · Reason', '强 · A', '')}${route('Explore', '中 · A', '')}${route('Verify', '异家族 · D', '异家族复核（M1）')}</table>
   <div class="sh sec"><h2>密钥</h2><span class="sp"></span><span class="btn sm bare">全部锁定</span></div>
+  <div class="row" style="gap:8px;margin:10px 0 2px;font-size:12.5px"><span class="mk wei">时</span><b style="font-weight:600">密钥重启后失效，可用环境变量持久注入</b><span class="ink3 mono" style="font-size:11.5px">anthropic → ANTHROPIC_API_KEY · deepseek → DEEPSEEK_API_KEY</span></div>
   <table class="tbl"><tr><th>槽</th><th>端点</th><th>状态</th><th></th></tr>
     <tr><td><b style="font-weight:500">anthropic</b></td><td class="m">api.anthropic.com</td><td><span class="row" style="gap:8px"><span class="mk jie">设</span><span class="mono" style="font-size:12px">指纹 3f9a…c1d2 · 08:12 设</span></span></td><td class="r"><span class="btn sm">清除</span></td></tr>
     <tr><td><b style="font-weight:500">deepseek</b></td><td class="m">api.deepseek.com</td><td><span class="keybox">••••••••••••••••</span></td><td class="r"><span class="btn sm ink">设置</span></td></tr></table>
