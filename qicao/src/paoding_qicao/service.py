@@ -1,13 +1,16 @@
 """起草服务（设计 §6 service.py、§7）：网页 /new 的后端。不持有令牌，不写图服务，不写保密库。
 
     POST /v1/drafts/extract {text}                                  → 前置抽取（确定性，不调模型）
-    POST /v1/drafts {text, answer?, profile?, draft?, model?, nonce?, overrides?, acceptance?} → 校验结果 + 待提交的批次
+    POST /v1/drafts {text, answer?, profile?, draft?, model?, nonce?, overrides?, acceptance?, strict?}
+                                                                    → 校验结果 + 待提交的批次
 
 开题仍由前端用人的令牌提交（禁令三）：先 PUT /v1/blobs 存题面等材料（本机核对哈希），有答案时 PUT /v1/vault
 换回 VaultRef 替换批次里的 "$answer"，最后 POST /v1/problems。这里只算，不落任何东西。
 
 - profile：这次起草用哪个已登记的模型档案（确认卡的“起草用”）；缺省取设置里角色路由的“起草”。
-- acceptance：拒绝页选“人工验收”后人给的清单（每项原文区间或人写的陈述），任务改为 accept=human。
+- acceptance：人选“人工验收”后给的清单（每项原文区间或人写的陈述），任务改为 accept=human。
+- strict：人选了“严格判定”。没有答案、命令或已登记平台就拒绝；缺省（false）判不了的进开放道（open-lane §3.1），
+  lane=open 不出确认卡，前端拿到批次直接提交。
 - 交回 draft 即不调模型：确认卡改风险或预算（overrides）后重新校验走这条路，模型只在第一次回车时调一次。
 - 零确认在第二期一律关（cz 2026-11-19 裁决 #83 第 2 条附条件；内核信封随第三期）：lane 只有 confirm 与 refuse，
   练习道候选照样标 eligible，卡上写"零确认未放行"。
@@ -163,6 +166,9 @@ class KaitiService:
             or not all(isinstance(a, dict) and set(a) <= {"span", "text", "needs"} for a in acc)
         ):
             raise BadRequest("acceptance 须是 [{span} | {text}, needs?] 的列表")
+        strict = body.get("strict", False)
+        if not isinstance(strict, bool):
+            raise BadRequest("strict 须是 true 或 false")
         v = vet(
             ext,
             answer,
@@ -175,6 +181,7 @@ class KaitiService:
             draft_error=err,
             catalog=self.catalog,
             acceptance=acc or None,
+            strict=strict,
         )
         ov = body.get("overrides")
         if ov:
@@ -207,8 +214,11 @@ class KaitiService:
             "ops": None,
         }
         if v.lane == "refuse" or v.input is None:
-            # 降级路（§5.8）：补判定终点、人工验收（D3）、高级模式、去设置页登记这个平台
+            # 降级路（§5.8）：补判定终点、人工验收（D3）、高级模式、去设置页登记这个平台；
+            # 开放道开着时，因“判不了”被拒的题多一条路：不要严格判定，按开放道去做
             out["ways"] = ["endpoint", "human", "advanced", "register_platform"]
+            if self.settings().lanes_open and any(n.code == "no_criterion" for n in v.notes):
+                out["ways"].insert(0, "open")
             return out
         if v.external is not None or v.needs_ack:
             # 外部判定：创建时才领题，批次由导入生成；命令有外发形状：人勾选之前不给批次

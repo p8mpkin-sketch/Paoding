@@ -14,6 +14,7 @@ from . import refmodel as rm
 from .state import Lease, Request, ScopeRequest, ScopeRule, State
 
 TASK_KINDS = ("bootstrap", "reason", "explore")
+OPEN_RELAYS = 5  # 开放道：未交付时最多接力几个求解会话，用完转人（docs/design/open-lane/ §3.2）
 FAIL_OUTCOMES = ("failed", "nothing", "budget_exhausted", "expired")
 MAX_ATTEMPTS = 2  # Intent 回到 open 并累计尝试次数，两次后放弃（§3.4.4）
 MARKS = (50, 80)
@@ -279,10 +280,44 @@ def recheck_wanted(state: State, pid: str) -> list[dict[str, Any]]:
     return out
 
 
+def open_lane(state: State, pid: str) -> bool:
+    return state["problems"][pid]["goal"]["accept"] == "open"
+
+
+def delivered(state: State, pid: str) -> bool:
+    """开放道的终态是否为 delivered：至少有一次完整回答或部分完成的交付（open-lane §5.1）。受阻不算。"""
+    return any(d["outcome"] in ("answered", "partial") for d in state["problems"][pid].get("deliveries", []))
+
+
+def open_work(state: State, pid: str) -> list[dict[str, Any]]:
+    """开放道的 /work（open-lane §3.2、§3.3）：一个求解会话做到底；未交付而会话结束就接力，至多 OPEN_RELAYS 个；
+    交付之后不再派，等人看（why=delivered，受阻为 blocked）；接力用完仍未交付，转人（stalled）。
+    没有 bootstrap、reason、explore，也没有判官项：开放道的 Goal 不设判官。"""
+    p = state["problems"][pid]
+    items: list[dict[str, Any]] = []
+    solves = [l for l in leases_of(state, pid) if l["kind"] == "solve"]
+    ds = p.get("deliveries") or []
+    last = ds[-1] if ds else None
+    if last is not None:
+        items.append(
+            {"kind": "human", "target": pid, "why": "blocked" if last["outcome"] == "blocked" else "delivered"}
+        )
+    elif not any(l["active"] for l in solves):
+        if len(solves) < OPEN_RELAYS:
+            items.append({"kind": "solve"})
+        else:
+            items.append({"kind": "human", "target": pid, "why": "stalled"})
+    for rid in pending_for_human(state, pid):
+        items.append({"kind": "human", "target": rid, "why": "scope_request"})
+    return items
+
+
 def work(state: State, pid: str) -> list[dict[str, Any]]:
     p = state["problems"].get(pid)
     if p is None or p.get("closed"):
         return []
+    if open_lane(state, pid):
+        return open_work(state, pid)
     st, res = lv.compute(state, pid)
     cache = {"ref": (st, res)}
     leases = leases_of(state, pid)
@@ -352,7 +387,11 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
 
 
 def terminal(state: State, pid: str) -> str:
+    """终态四值（open-lane §5.1）：solved 只来自判官判到 E3，accepted 只来自登记在先的清单逐条验过，
+    delivered 只来自开放道的交付（未经判定），其余 unsolved。四者永不互换。"""
     p = state["problems"][pid]
+    if p["goal"]["accept"] == "open":
+        return "delivered" if delivered(state, pid) else "unsolved"
     if p["goal"]["accept"] == "judge" and lv.levels(state, pid)["goal"] == "E3":
         return "solved"
     return "accepted" if p.get("accepted") else "unsolved"
@@ -377,7 +416,7 @@ def closeout_items(state: State, pid: str) -> list[dict[str, Any]]:
     """四顾清单（3.1.8）。只对画像为 r1、r2 或 accept=human 的题列项；M0 的 r0 判官验收题恒为空。
     完整清单（范围修订、r2 凭据、stale/disputed/E3d）在 M4 落地，这里先给出 r1/r2 题的占位项。"""
     p = state["problems"][pid]
-    if p["profile"]["reversibility"] == "r0" and p["goal"]["accept"] == "judge":
+    if p["profile"]["reversibility"] == "r0" and p["goal"]["accept"] in ("judge", "open"):
         return []
     items: list[dict[str, Any]] = [{"item": "closeout_review", "reason": p["profile"]["reversibility"]}]
     if p["goal"]["accept"] == "human":
@@ -410,6 +449,8 @@ def followups(state: State, pid: str) -> list[tuple[str, dict[str, Any]]]:
         ]
         if crossed:
             out.append(("budget_mark", {"mark": m, "axis": crossed[0]}))
+    if open_lane(state, pid):  # 开放道不自动关题：交付之后由人关，或由哮天犬按预算与墙钟关（open-lane §3.5）
+        return out
     if lv.levels(state, pid)["goal"] == "E3" and not closeout_items(state, pid):
         out.append(("close_problem", {"terminal": "solved", "card_hash": None, "by": "goal_e3"}))
     elif p.get("accepted"):  # 人逐条验收全部通过（accept 事件已绑定收尾卡）：图服务随即关题，终态 accepted

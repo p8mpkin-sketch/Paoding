@@ -1,7 +1,8 @@
 """哮天犬（§3.5.2、3.4.4）：不含任何策略的脚本，只做四件事。
 
 1. 过期租约：expires_at 已过的在途租约，提交 expire_lease；Intent 回到 open（Adapter 崩溃时的回收）。
-2. 超预算终止：读 /budget 与 cost 事件。任务花费越过软线（预留额的 90%）→ 通知 Adapter 进入收尾轮，
+2. 超预算终止：读 /budget 与 cost 事件。任务花费越过软线（预留额的 90%）→ 通知 Adapter 进入收尾轮
+   （开放道的题墙钟用到 90% 时同样通知求解会话收尾交付），
    每个任务只通知一次；越过硬顶（预留额）→ 终止任务。题花费达到 cap → 终止题内所有任务，以 unsolved 关题。
    题的墙钟（wall_s）用尽 → 同样终止并关题。墙钟的含义随开题时抄进事件体的 wall_mode（external-verdict §5.6）：
    elapsed（缺省，旧行为）按开题以来的墙钟；spend 按花费墙钟（cost 事件的 wall_s 累计），另有题的最长存活
@@ -61,6 +62,15 @@ def _over_time(p: dict, view: dict, now: int) -> str | None:
     if "life_s" in p and age_ms >= p["life_s"] * 1000:
         return "life_s"
     return None
+
+
+def _wall_used(p: dict, view: dict, now: int) -> float | None:
+    """墙钟用掉的比例（与 _over_time 同一口径）；题没有墙钟时 None。"""
+    if "wall_s" not in p["budget"] or "opened_ts" not in p or p["budget"]["wall_s"] <= 0:
+        return None
+    if p.get("wall_mode", "elapsed") == "elapsed":
+        return (now - p["opened_ts"]) / (p["budget"]["wall_s"] * 1000)
+    return (view["spent"].get("wall_s") or 0) / p["budget"]["wall_s"]
 
 
 class Watchdog:
@@ -132,6 +142,15 @@ class Watchdog:
                     self.control.soft_line(l["id"])
                 r.soft.append(l["id"])
         p = st["problems"][pid]
+        used = _wall_used(p, view, now)
+        if p["goal"]["accept"] == "open" and used is not None and used >= SOFT_LINE:
+            # 开放道（docs/design/open-lane/ §3.3）：墙钟到 90% 也叫求解会话收尾交付，到点关题时人手里有东西
+            for l in self._active(pid):
+                if l["kind"] == "solve" and l["id"] not in self._soft_sent:
+                    self._soft_sent.add(l["id"])
+                    if self.control is not None:
+                        self.control.soft_line(l["id"])
+                    r.soft.append(l["id"])
         cap = view["cap"].get("usd_milli")
         over_cap = cap is not None and view["spent"]["usd_milli"] >= cap
         why = "problem_budget" if over_cap else _over_time(p, view, now)

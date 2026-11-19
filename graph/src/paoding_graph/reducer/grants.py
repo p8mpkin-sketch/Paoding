@@ -22,7 +22,7 @@ from ..work import active, requests
 from .common import RISK_RANK, RISKS, Config, Ok, Reject, RiskRow, _reason, _seen
 from .problem import _derive_profile
 
-REQUEST_ROLES = ("bootstrap", "reason", "explore")
+REQUEST_ROLES = ("bootstrap", "reason", "explore", "solve")
 
 
 def table_hit(table: tuple[RiskRow, ...], resource: str, pattern: str, actions: list[str]) -> int | None:
@@ -155,7 +155,8 @@ def _v_request_scope(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
 
 
 def _reprofile(p: Problem, scope: list[ScopeRule], cfg: Config) -> Profile:
-    goal_judge = p["judge_snapshot"][p["goal"]["check"]["judge_id"]]
+    check = p["goal"].get("check")  # 开放道没有 Goal 判官
+    goal_judge = p["judge_snapshot"][check["judge_id"]] if check is not None else None
     return _derive_profile(active(scope), goal_judge, cfg)
 
 

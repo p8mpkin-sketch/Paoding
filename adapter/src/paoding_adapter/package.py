@@ -45,7 +45,14 @@ ACCESS_NOTE = (
 
 
 def role_prompt(role: str, access: bool = False) -> str:
-    """access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。"""
+    """access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。
+    solve（开放道，docs/design/open-lane/ §4.1）不接公共段：公共段讲的是“把答案交给判官比对”，开放道没有判官。"""
+    if role == "solve":
+        own = (PROMPTS / "solve.md").read_text(encoding="utf-8")
+        if access:  # 接在工具清单（deliver 那一行）之后
+            at = own.index("\n", own.index("- deliver：")) + 1
+            own = own[:at] + ACCESS_NOTE + own[at:]
+        return own
     common = (PROMPTS / "common.md").read_text(encoding="utf-8")
     if access:  # 接在工具清单（show 那一行）之后
         at = common.index("\n", common.index("- show：")) + 1
@@ -55,6 +62,8 @@ def role_prompt(role: str, access: bool = False) -> str:
 
 def problem_brief(state: State, pid: str, statement: str, judges_cfg: dict[str, Any]) -> str:
     p = state["problems"][pid]
+    if p["goal"]["accept"] == "open":
+        return open_brief(state, pid, statement)
     judges = [{"judge_id": j, "grade": judges_cfg.get(j, {}).get("grade")} for j in sorted(p["judges"])]
     return "\n".join(
         [
@@ -67,6 +76,27 @@ def problem_brief(state: State, pid: str, statement: str, judges_cfg: dict[str, 
             f"可用判官：{_j(judges)}",
         ]
     )
+
+
+def open_brief(state: State, pid: str, statement: str) -> str:
+    """开放道的题目简报（open-lane §3.2、§4）：原话、材料编号、必做自检项、授权范围。没有判据与判官。"""
+    p = state["problems"][pid]
+    o = p["origin"]
+    lines = [
+        f"题目：{p['title']}",
+        "原话：",
+        statement.rstrip(),
+        f"目标：{p['goal']['statement']}",
+        "完成方式：开放道。没有判官，也没有标准答案；做完用 deliver 交付，附上证据、自检与没验证的部分。",
+        f"材料编号（可作 refs）：原话 {o['statement_ref']}"
+        + (f"；参考材料 {'、'.join(o['materials'])}" if o["materials"] else ""),
+    ]
+    checks = p["goal"].get("self_checks") or []
+    if checks:
+        lines.append("必做自检项（交付前逐条做，结果如实写进 self_check，item 填编号）：")
+        lines += [f"- {c['id']}：{c['text']}" for c in checks]
+    lines.append(f"授权范围：{_j(p['scope'])}")
+    return "\n".join(lines)
 
 
 def memory_notes(state: State, pid: str) -> str:
@@ -123,11 +153,16 @@ def render(
         focus.setdefault("intent", lease["target"])
         it = state["intents"][lease["target"]]
         focus.setdefault("restate", f"推进 Intent {lease['target']}：{it['title']}")
+    if role == "solve":  # 开放道：第几个接力的求解会话（open-lane §3.2）；前面的会话留下的笔记在工作区 NOTES.md
+        earlier = [l for l in state["leases"].values() if l["problem_id"] == pid and l["kind"] == "solve"]
+        focus.setdefault("relay", len([l for l in earlier if l["id"] != lease["id"]]) + 1)
     focus.setdefault(
         "restate",
-        {"bootstrap": "摸清材料与环境，提交直接观察到的事实。", "reason": "读图，提交推断与下一步 Intent。"}.get(
-            role, ""
-        ),
+        {
+            "bootstrap": "摸清材料与环境，提交直接观察到的事实。",
+            "reason": "读图，提交推断与下一步 Intent。",
+            "solve": "从原话出发把答案找出来，做完用 deliver 交付，附上证据、自检与没验证的部分。",
+        }.get(role, ""),
     )
     hint_text = [{"id": h, "text": state["hints"][h]["text"]} for h in focus["hints"]]
     sections = [

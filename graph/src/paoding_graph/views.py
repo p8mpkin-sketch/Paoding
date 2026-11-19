@@ -45,6 +45,7 @@ REGISTER = {
     "summary": "叙述",
     "suggestion": "叙述",
     "candidate": "叙述",
+    "delivery": "叙述",  # 开放道的交付：答案、主张、自检、未验证项都是会话写的（docs/design/open-lane/ §3.4）
     # 人：Hint、裁决与拒绝的理由、豁免、覆盖理由、开题时人写下的目标陈述
     "hint": "人",
     "human_reason": "人",
@@ -82,6 +83,17 @@ def _problem(state: State, pid: str) -> Problem:
     return p
 
 
+OPEN_BADGE_LABEL = "开放道 · 未经判定"
+
+
+def _goal_badge(p: Problem) -> View:
+    """Goal 的判据徽章。开放道没有判官：徽章写明“未经判定”，judge_id 为空串，不冒充任何判官。"""
+    check = p["goal"].get("check")
+    if check is None:
+        return {"judge_id": "", "version": None, "grade": None, "kind": "open", "label": OPEN_BADGE_LABEL}
+    return _badge(p, check["judge_id"])
+
+
 def _badge(p: Problem, judge_id: str) -> View:
     snap: Mapping[str, Any] = p["judge_snapshot"].get(judge_id) or {}
     return {
@@ -99,6 +111,57 @@ def _terminal(state: State, pid: str) -> str | None:
 
 
 # ---------- 判据卡（HMI §3.3）：Goal、带判据的 Intent、观察类论断同一形状 ----------
+
+
+def _goal_predicate(state: State, pid: str, p: Problem, level: str | None) -> View:
+    """Goal 的判据卡。开放道没有判据：卡是空的（没有判官、没有等级、没有裁决），徽章写明未经判定。"""
+    check = p["goal"].get("check")
+    if check is not None:
+        return _predicate(state, pid, "goal", check, level, p["goal"].get("max_attempts"))
+    return {
+        "target": "goal",
+        **_goal_badge(p),
+        "spec_ref": None,
+        "spec_hash": None,
+        "expect": {},
+        "sealed": [],
+        "max_attempts": None,
+        "attempts_used": None,
+        "level": None,
+        "level_word": None,
+        "fail_means": "not_yet",
+        "verdicts": [],
+    }
+
+
+def _delivery(state: State, d: Mapping[str, Any]) -> View:
+    """一次交付的投影。主张的依据逐个标出类别：执行留档（exec）或材料（input）；没有依据的主张 supported=false。"""
+
+    def grounds(refs: Sequence[str]) -> list[View]:
+        return [{"id": r, "class": state["artifacts"][r]["class"]} for r in refs]
+
+    return {
+        "id": d["id"],
+        "seq": d["seq"],
+        "lease": d["lease"],
+        "outcome": d["outcome"],
+        "answer": d.get("answer"),
+        "claims": [
+            {"text": tag("delivery", c["text"]), "refs": grounds(c["refs"]), "supported": bool(c["refs"])}
+            for c in d["claims"]
+        ],
+        "self_check": [
+            {
+                "what": tag("delivery", c["what"]),
+                "result": c["result"],
+                "refs": grounds(c["refs"]),
+                **({"item": c["item"]} if "item" in c else {}),
+            }
+            for c in d["self_check"]
+        ],
+        "unverified": [tag("delivery", x) for x in d["unverified"]],
+        "needs": [tag("delivery", x) for x in d["needs"]],
+    }
 
 
 def _predicate(
@@ -317,11 +380,14 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
     每行另带总览要的几项（工作台设计 §6 A 组），都是现有投影的搬运：Goal 的等级、在途租约的种类与目标、
     待人处理的项数、墙钟。`closed_ts` 是关题那条事件的 ts，由调用方经 `ts_of(pid, seq)` 从日志取；
     状态里不存它，所以不给 `ts_of` 时为 null。"""
-    items, spent_all = [], 0
+    items, spent_all, spent_strict = [], 0, 0
     # 按判定来源分列（external-verdict §5.7、宪章裁决附加 1）：local 与 external 的 solved 各数各的，
     # human 那一行只有 accepted；成功率、每解成本的分子只取本地判定的 solved
+    # 开放道单独一行 self（open-lane §5.2、裁决附加条件 1）：delivered 只出现在 self 一行，永不进 solved、
+    # 成功率与每解成本；四行永不合并
     tally: dict[str, dict[str, int]] = {
-        a: {"problems": 0, "solved": 0, "accepted": 0, "unsolved": 0, "open": 0} for a in ("local", "external", "human")
+        a: {"problems": 0, "solved": 0, "accepted": 0, "delivered": 0, "unsolved": 0, "open": 0}
+        for a in ("local", "external", "human", "self")
     }
     for pid in sorted(state["problems"], key=lambda k: state["problems"][k]["opened_seq"]):
         p = state["problems"][pid]
@@ -332,6 +398,8 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
         end = closed_ts if closed_ts is not None else state["now"]
         spent_all += b["spent"]["usd_milli"]
         auth = p["goal"].get("authority", "local")
+        if auth != "self":  # 开放道的花费不进每解成本（裁决附加条件 1）：分子分母都只取严格道
+            spent_strict += b["spent"]["usd_milli"]
         tally[auth]["problems"] += 1
         tally[auth][term or "open"] += 1
         items.append(
@@ -340,7 +408,7 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
                 "title": tag("title", p["title"]),
                 "closed": bool(p.get("closed")),
                 "terminal": term,
-                "terminal_badge": _badge(p, p["goal"]["check"]["judge_id"]),
+                "terminal_badge": _goal_badge(p),
                 "authority": auth,
                 "profile": dict(p["profile"]),
                 "opened_seq": p["opened_seq"],
@@ -364,7 +432,7 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
             "problems": len(items),
             "solved": tally["local"]["solved"],
             "spent_usd_milli": spent_all,
-            "cost_per_solve_usd_milli": spent_all // tally["local"]["solved"] if tally["local"]["solved"] else None,
+            "cost_per_solve_usd_milli": spent_strict // tally["local"]["solved"] if tally["local"]["solved"] else None,
             "by_authority": tally,
         },
     }
@@ -381,7 +449,7 @@ def status(state: State, pid: str) -> View:
             "title": tag("title", p["title"]),
             "closed": bool(p.get("closed")),
             "terminal": _terminal(state, pid),
-            "terminal_badge": _badge(p, p["goal"]["check"]["judge_id"]),
+            "terminal_badge": _goal_badge(p),
             "opened_seq": p["opened_seq"],
             "opened_ts": p["opened_ts"],
             "closed_seq": p.get("closed_seq"),
@@ -409,7 +477,7 @@ def status(state: State, pid: str) -> View:
             "accept": p["goal"]["accept"],
             # 判定来源：与事件体同法，local 时不写（旧日志的视图逐字节不变）
             **({"authority": p["goal"]["authority"]} if "authority" in p["goal"] else {}),
-            "predicate": _predicate(state, pid, "goal", p["goal"]["check"], goal_level, p["goal"]["max_attempts"]),
+            "predicate": _goal_predicate(state, pid, p, goal_level),
             # 人工验收（宪章 D3）：开题时登记的清单、待验收交付物所在的裁决 seq、历次验收与拒收
             **(
                 {
@@ -418,6 +486,16 @@ def status(state: State, pid: str) -> View:
                     "accept_log": [dict(a) for a in p.get("accept_log", [])],
                 }
                 if "acceptance" in p["goal"]
+                else {}
+            ),
+            # 开放道（open-lane §3.4）：登记的必做自检项与历次交付。交付是会话写的，语域“叙述”；依据只列编号
+            **(
+                {
+                    "self_checks": [dict(c) for c in p["goal"].get("self_checks", [])],
+                    "deliveries": [_delivery(state, d) for d in p.get("deliveries", [])],
+                    **({"feedback": p["feedback"]} if "feedback" in p else {}),
+                }
+                if p["goal"]["accept"] == "open"
                 else {}
             ),
         },
@@ -614,7 +692,7 @@ def card(state: State, pid: str, kind: str, target: str, cfg: Config | None = No
         display = {
             "steps": ["四顾", "满志", "藏刀"],
             "terminal_if_closed_now": wk.terminal(state, pid),
-            "terminal_badge": _badge(p, p["goal"]["check"]["judge_id"]),
+            "terminal_badge": _goal_badge(p),
         }
     elif kind == "scope":
         x = wk.requests(state).get(target)
@@ -658,7 +736,8 @@ def card(state: State, pid: str, kind: str, target: str, cfg: Config | None = No
 
 def _scope_profiles(p: Problem, rules: Sequence[Mapping[str, Any]], cfg: Config) -> View:
     """扩权卡上"批准后画像怎样变"：现有有效范围与加上申请规则后的范围，各推一次。人工覆盖的轴照旧盖在上面。"""
-    judge = p["judge_snapshot"][p["goal"]["check"]["judge_id"]]
+    check = p["goal"].get("check")  # 开放道没有 Goal 判官
+    judge = p["judge_snapshot"][check["judge_id"]] if check is not None else None
     now = [r for r in p["scope"] if "revoked" not in r]
     last = {o["axis"]: o["value"] for o in p.get("profile_overrides") or []}
     before = _derive_profile(now, judge, cfg)
@@ -724,15 +803,21 @@ def profile_preview(body: Any, cfg: Config) -> View:
     scope = [_rule(Obj({"pattern": "", "actions": [], **r.raw}, r.where)) for r in given]  # 预览时这两项可以先不填
     if not scope:
         raise BadBody("scope 必填且非空")
-    jid = b.child("goal").child("check").string("judge_id")
-    if jid not in cfg.judges:
-        raise NotFound(f"判官 {jid} 未注册")
-    j = cfg.judges[jid]
+    g = b.child("goal")
+    j: Any = None
+    jid: str | None = None
+    if g.get("accept") != "open":
+        jid = g.child("check").string("judge_id")
+        if jid not in cfg.judges:
+            raise NotFound(f"判官 {jid} 未注册")
+        j = cfg.judges[jid]
     prof = _derive_profile(scope, j, cfg)
     top = next(i for i, r in enumerate(scope) if r["risk"] == prof["reversibility"])
     ext = [i for i, r in enumerate(scope) if r["resource"] in cfg.external_resources]
     why_judge: View
-    if j["grade"] == "advisory":
+    if j is None:  # 开放道（open-lane §8）：没有 Goal 判官
+        why_judge = {"rule": "开放道：没有判官，结论未经判定", "field": "accept", "value": "open"}
+    elif j["grade"] == "advisory":
         why_judge = {"rule": "grade=advisory", "field": "grade", "value": j["grade"]}
     elif j["kind"] == "deferred" or j["grade"] == "consistent":
         why_judge = (
@@ -756,7 +841,7 @@ def profile_preview(body: Any, cfg: Config) -> View:
                 "risk": scope[top]["risk"],
                 "defaulted": "risk" not in given[top],
             },
-            "judge": {"judge_id": jid, "version": j.get("version"), **why_judge},
+            "judge": {"judge_id": jid or "", "version": j.get("version") if j else None, **why_judge},
             "info": {
                 "rule": "scope 中有外部资源即 partial",
                 "scope_indexes": ext,

@@ -15,6 +15,8 @@ def _registered_check(state: State, pid: str, target: str) -> tuple[Check | None
     """目标登记过的判据与次数上限。判据先行（I4）：判官只能是创建时登记的那一个。"""
     if target == "goal":
         g = state["problems"][pid]["goal"]
+        if "check" not in g:  # 开放道：Goal 没有判官，结论随 deliver 交付（docs/design/open-lane/ §3.4）
+            return None, None
         return g["check"], g["max_attempts"]
     f = state["facts"].get(target)
     if f is not None and f["problem_id"] == pid:

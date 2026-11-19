@@ -9,7 +9,8 @@
 export type ArtifactId = string;
 export type Risk = "r0" | "r1" | "r2";
 export type Level = "E0" | "E1" | "E2" | "E3d" | "E3" | "X";
-export type Terminal = "solved" | "accepted" | "unsolved";
+/** delivered 只来自开放道的交付（docs/design/open-lane/ §5.1）：未经判定，永不计入 solved。 */
+export type Terminal = "solved" | "accepted" | "delivered" | "unsolved";
 export type Grade = "decisive" | "consistent" | "advisory";
 export type ActorKind = "human" | "sinan" | "adapter" | "judge" | "executor" | "watchdog" | "graph";
 export type Actor = { kind: ActorKind; id: string; session?: string; role?: string };
@@ -48,27 +49,33 @@ export type ScopeRule = {
   revoked?: number;
 };
 /** 一句话开题的出处账引用与道别（增量 13）；policy 只在练习道，由图服务从信封抄入。 */
-export type DraftRef = { record: ArtifactId; lane: "practice" | "confirm"; policy?: { version: number; digest: string } };
+export type DraftRef = { record: ArtifactId; lane: "practice" | "confirm" | "open"; policy?: { version: number; digest: string } };
 export type Origin = { statement_ref: ArtifactId; materials: ArtifactId[]; draft?: DraftRef };
 export type Env = { base: string; baseline_ref: string };
 /** 验收清单的一条（宪章 D3、02 §3.3）：只许原文区间或人写；编号由图服务分配，提交时不接受。 */
 export type AcceptanceInput = { text: string; src: "span" | "human"; needs?: "artifact" | "note" };
 export type AcceptanceItem = AcceptanceInput & { id: string };
-export type Authority = "local" | "external" | "human";
-/** 按判定来源分列的计数（external-verdict §5.7、宪章裁决附加 1）：accepted 只出现在 human 一行。 */
-export type AuthorityTally = { problems: number; solved: number; accepted: number; unsolved: number; open: number };
+export type Authority = "local" | "external" | "human" | "self";
+/** 按判定来源分列的计数（external-verdict §5.7、宪章裁决附加 1）：accepted 只出现在 human 一行，delivered 只出现在 self 一行（开放道，open-lane §5.2）。 */
+export type AuthorityTally = { problems: number; solved: number; accepted: number; delivered: number; unsolved: number; open: number };
 export type AcceptCheck = { id: string; verdict: "pass" | "fail"; ref?: ArtifactId; note?: string };
 export type AcceptRecord = { seq: number; decision: "accept" | "reject"; checks: AcceptCheck[]; reason?: string };
+/** 开放道的必做自检项（open-lane §4.2）：原文里的检查命令；会话交付前自己跑、如实报告，判官不重放。 */
+export type SelfCheckInput = { text: string; src: "span" | "human" };
+export type SelfCheckItem = SelfCheckInput & { id: string };
 /** open_problem 的事件体。没有 profile 字段：画像是派生量，提交时不接受（HMI §3.2 强制点）。题目 id 在批次外层。 */
 export type ProblemInput = {
   title: string;
   origin: Origin;
   goal: {
     statement: string;
-    check: Check;
-    max_attempts: number;
-    accept: "judge" | "human";
+    accept: "judge" | "human" | "open";
+    /** 判定道必填；开放道（accept=open）没有 */
+    check?: Check;
+    /** 判定道必填；开放道没有 */
+    max_attempts?: number;
     acceptance?: AcceptanceInput[];
+    self_checks?: SelfCheckInput[];
   };
   scope: ScopeRule[];
   budget: Budget & { verify_share: number; bootstrap_share: number };
@@ -242,13 +249,17 @@ export type StatusView = Envelope & {
   };
   goal: {
     statement: Tagged;
-    accept: "judge" | "human";
+    accept: "judge" | "human" | "open";
+    /** 开放道的判据卡是空的：没有判官、等级与裁决 */
     predicate: Predicate;
     /** 判定来源；缺省即 local */
     authority?: Authority;
     acceptance?: AcceptanceItem[];
     acceptance_ready?: number | null;
     accept_log?: AcceptRecord[];
+    self_checks?: SelfCheckItem[];
+    deliveries?: Delivery[];
+    feedback?: "adopted" | "rejected" | "none";
   };
   facts: FactNode[];
   intents: IntentNode[];
@@ -258,10 +269,23 @@ export type StatusView = Envelope & {
   review: boolean;
   closeout: unknown[];
 };
-/** why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；M1 起还有续期门等。 */
+export type GroundBrief = { id: ArtifactId; class: ArtifactClass };
+/** 开放道的一次交付（open-lane §3.4）。内核只校验依据真实存在、类别可采信，不校验结论对不对；supported=false 即这条主张没有任何留档支撑。 */
+export type Delivery = {
+  id: string;
+  seq: number;
+  lease: string;
+  outcome: "answered" | "partial" | "blocked";
+  answer: ArtifactId | null;
+  claims: { text: Tagged; refs: GroundBrief[]; supported: boolean }[];
+  self_check: { what: Tagged; result: "pass" | "fail" | "skipped"; refs: GroundBrief[]; item?: string }[];
+  unverified: Tagged[];
+  needs: Tagged[];
+};
+/** why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；开放道另有 delivered、blocked（交付了，等人看）；M1 起还有续期门等。 */
 export type HumanWorkItem = { kind: "human"; target: string; why: string };
 export type WorkItem =
-  | { kind: "bootstrap" | "recall" }
+  | { kind: "bootstrap" | "recall" | "solve" }
   | { kind: "reason"; reflect?: boolean }
   | { kind: "explore" | "judge"; target: string }
   | { kind: "rejudge"; target: string; judge: string; version: string; candidate: ArtifactId | null }
@@ -422,7 +446,7 @@ export type ProblemsView = Envelope & {
     spent_usd_milli: number;
     /** 全部花费 ÷ 本地判定的 solved */
     cost_per_solve_usd_milli: number | null;
-    by_authority: { local: AuthorityTally; external: AuthorityTally; human: AuthorityTally };
+    by_authority: { local: AuthorityTally; external: AuthorityTally; human: AuthorityTally; self: AuthorityTally };
   };
 };
 export type EventsResponse = { events: Event[]; head: number; next_after: number };

@@ -56,6 +56,9 @@ def defaults(*, endpoint: str = "", model: str = "", global_cap_usd_milli: int =
         # 运行时扩权（docs/design/runtime-grants/ §12 第四步起缺省开）：一句话开题零出站，执行时按需申请；
         # 练习道白名单就是信封的 allow.net_patterns。旧快照没有这一节时仍按关（grants_of），切换要写一版设置
         "grants": {"runtime": True, "auto": {"practice": True}},
+        # 开放道（docs/design/open-lane/ §11 回滚开关）：关掉后一句话开题恢复判据先行，判不了就拒绝；
+        # 已开的开放道任务照常可读、可关。旧快照没有这一节时按开（lanes_of）
+        "lanes": {"open": True},
         "models": {
             "profiles": [
                 {
@@ -99,9 +102,9 @@ def _no_secrets(obj: object, where: str = "settings") -> None:
 
 def validate(raw: object) -> dict[str, Any]:
     # grants 节可缺：这一节加进来之前写下的快照照旧有效、摘要不变，缺省即"运行时扩权关"
-    allowed = {"caps", "risk", "models", "grants", "budget"}
+    allowed = {"caps", "risk", "models", "grants", "budget", "lanes"}
     if not isinstance(raw, dict) or not {"caps", "risk", "models"} <= set(raw) <= allowed:
-        raise BadBody("settings 是 {caps, risk, models} 三项，可选 grants、budget")
+        raise BadBody("settings 是 {caps, risk, models} 三项，可选 grants、budget、lanes")
     _no_secrets(raw)
     caps = raw["caps"]
     if not isinstance(caps, dict) or set(caps) != set(CAP_KEYS):
@@ -168,6 +171,11 @@ def validate(raw: object) -> dict[str, Any]:
         ):
             raise BadBody("grants 是 {runtime: bool, auto: {practice: bool}}")
         out["grants"] = {"runtime": g["runtime"], "auto": {"practice": g["auto"]["practice"]}}
+    if "lanes" in raw:
+        ln = raw["lanes"]
+        if not isinstance(ln, dict) or set(ln) != {"open"} or not isinstance(ln["open"], bool):
+            raise BadBody("lanes 是 {open: bool}")
+        out["lanes"] = {"open": ln["open"]}
     if "budget" in raw:
         # 时限与花费分开的开关（docs/design/external-verdict/ §5.6）：缺省 elapsed 即旧行为
         bd = raw["budget"]

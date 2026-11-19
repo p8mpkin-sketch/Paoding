@@ -8,11 +8,12 @@ export function levelWord(level: Level | null, word: string | null, badge: Pick<
   return (level === "E3" || level === "E3d" || level === "X") && badge ? `${base}（${badge.label}）` : base;
 }
 
-/** 终态三值。accepted 在任何地方不得显示为"已证明"。 */
+/** 终态四值。accepted 在任何地方不得显示为"已证明"；delivered（开放道）处处带“未经判定”。 */
 export function terminalWord(t: Terminal | null): string {
   switch (t) {
     case "solved": return "solved · 判定器确认";
     case "accepted": return "accepted · 人验收";
+    case "delivered": return "delivered · 已交付，未经判定";
     case "unsolved": return "unsolved";
     case null: return "进行中";
   }
@@ -28,5 +29,5 @@ export const INTENT_STATE_WORD = {
  * 不靠颜色、也不靠边框粗细区分（黑白打印、色弱、缩小到一行时照样分得出）。记号对读屏器隐藏，文字照读。
  */
 export const LEVEL_GLYPH: Record<Level, string> = { E0: "○", E1: "◔", E2: "◑", E3d: "◕", E3: "●", X: "✕" };
-export const TERMINAL_GLYPH: Record<Terminal | "running", string> = { solved: "✓", accepted: "◇", unsolved: "✕", running: "…" };
+export const TERMINAL_GLYPH: Record<Terminal | "running", string> = { solved: "✓", accepted: "◇", delivered: "▷", unsolved: "✕", running: "…" };
 export const RESULT_GLYPH = { pass: "✓", fail: "✕", inconclusive: "？" } as const;

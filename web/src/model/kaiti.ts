@@ -100,7 +100,7 @@ export function sealOps(ops: Op[], ref: VaultRef | null): Op[] {
   const copy = JSON.parse(JSON.stringify(ops)) as Op[];
   const open = copy.at(-1);
   if (!open || open.op !== "open_problem") throw new Error("批次最后一条须是 open_problem");
-  const check = (open.body as unknown as ProblemInput).goal.check as { sealed?: unknown[] };
+  const check = ((open.body as unknown as ProblemInput).goal.check ?? {}) as { sealed?: unknown[] }; // 开放道没有判据
   if (check.sealed) {
     if (!ref) throw new Error("有答案时须先写保密库");
     check.sealed = check.sealed.map((x) => (x === "$answer" ? ref : x));
@@ -135,12 +135,12 @@ export function wizardDraftOf(v: KaitiVetted, ref: VaultRef | null): Draft {
     title: p.title,
     statement: p.goal.statement,
     materials: mats,
-    judge: p.goal.check.judge_id,
+    judge: p.goal.check?.judge_id ?? "", // 开放道的题进向导：向导只开严格道，判据留给人选
     lockJudge: false,
-    expect: p.goal.check.expect ? JSON.stringify(p.goal.check.expect) : "",
+    expect: p.goal.check?.expect ? JSON.stringify(p.goal.check.expect) : "",
     specSlot: spec ? String(mats.length - 1) : "",
     accept: "judge",
-    maxAttempts: String(p.goal.max_attempts),
+    maxAttempts: String(p.goal.max_attempts ?? 5),
     scope: p.scope.map((r) => ({ resource: r.resource, pattern: r.pattern, actions: r.actions.join(","), risk: r.risk as Risk })),
     usd: String(p.budget.usd_milli / 1000),
     wall_s: String(p.budget.wall_s),

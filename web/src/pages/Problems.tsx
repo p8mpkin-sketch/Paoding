@@ -44,7 +44,7 @@ export function filterBank(items: ProblemItem[], f: BankFilter): ProblemItem[] {
 }
 
 const TABS: { t: Terminal | "running" | ""; word: string }[] = [
-  { t: "", word: "全部" }, { t: "running", word: "运行中" }, { t: "solved", word: "已解决" }, { t: "accepted", word: "已验收" }, { t: "unsolved", word: "未解决" },
+  { t: "", word: "全部" }, { t: "running", word: "运行中" }, { t: "solved", word: "已解决" }, { t: "accepted", word: "已验收" }, { t: "delivered", word: "已交付" }, { t: "unsolved", word: "未解决" },
 ];
 
 export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
@@ -61,7 +61,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
   return (
     <div className="problems" data-page="bank">
       <Mast vol={["卷三", "任务"]} cap="任务库" title={`${view.items.length} 个任务`}
-        dek={`运行中 ${c("running")} · 已解决 ${c("solved")} · 已验收 ${c("accepted")} · 未解决 ${c("unsolved")}。每一行都可以克隆进向导，改几处再开。`} />
+        dek={`运行中 ${c("running")} · 已解决 ${c("solved")} · 已验收 ${c("accepted")} · 已交付（未经判定） ${c("delivered")} · 未解决 ${c("unsolved")}。每一行都可以克隆进向导，改几处再开。`} />
       <div className="ttabs" role="tablist" aria-label="按终态">
         {TABS.map(({ t, word }) => (
           <button key={word} type="button" role="tab" aria-selected={filter.terminal === t} data-tab={t || "all"} onClick={() => set({ terminal: t })}>

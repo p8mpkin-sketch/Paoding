@@ -11,6 +11,10 @@
 | 4b | wall_mode 两种取值：elapsed 照旧关（缺省没变），spend 不关 |
 | 5  | 回执两次 pending 后 accepted：Goal 到 E3，终态 solved，authority=external；平台只收到一次提交 |
 | 金丝雀 | 平台令牌跑完上面的路径，在数据目录、日志、事件里逐字搜不到（§9 第 4 条） |
+
+二次翻转（开放道，docs/design/open-lane/ 裁决附加条件 2）：未登记的平台不再拒题，进开放道（拒绝分支已删，
+见 test_row1_unregistered_platform_goes_open_lane）；已登记的平台仍走严格道（test_row1_registered_*、
+test_row1b_registered_* 保留不动）；未登记平台的提交命令只在严格判定下走“人勾只检查、不提交”这条路。
 """
 
 from __future__ import annotations
@@ -292,14 +296,24 @@ def test_row1_registered_platform_is_recognized_then_imported(tmp_path, plat, mo
         s.http.close()
 
 
-def test_row1_unregistered_platform_refuses_with_register_way(tmp_path, plat):
+def test_row1_unregistered_platform_goes_open_lane(tmp_path, plat):
+    """二次翻转：没登记的平台不拒题，进开放道直接开；判定来源是 self（未经判定），不碰平台。"""
     s = Stack(StackConfig.load(tmp_path / "home", port=0, executor="none"))
     url = s.http.serve()
     try:
         out = call(url, "/v1/drafts", {"text": plat.pasted()}, token=s.human_token)
-        assert out["lane"] == "refuse" and "no_criterion" in _codes(out)
-        assert "register_platform" in out["ways"]
+        assert out["lane"] == "open" and "no_criterion" not in _codes(out) and "ways" not in out
+        assert out["external"] is None and out["ops"]
+        res = _submit_view(s, url, out)
+        assert res["ok"], res
+        p = s.graph.state["problems"][out["pid"]]
+        assert p["goal"]["accept"] == "open" and p["goal"]["authority"] == "self" and p["judges"] == []
+        assert [r["resource"] for r in p["scope"]] == ["workspace"]  # 开题零出站
+        assert plat.started == {}  # 没领题
         assert call(url, "/v1/connectors", token=s.human_token) == {"items": []}
+        # 选严格判定时仍拒，并指向登记平台这条路
+        strict = call(url, "/v1/drafts", {"text": plat.pasted(), "strict": True}, token=s.human_token)
+        assert strict["lane"] == "refuse" and "register_platform" in strict["ways"]
     finally:
         s.http.close()
 
@@ -316,12 +330,12 @@ def test_row1b_registered_submit_example_is_only_material(tmp_path, plat, monkey
         s.http.close()
 
 
-def test_row1b_unregistered_command_needs_explicit_ack(tmp_path, plat):
+def test_row1b_unregistered_command_needs_explicit_ack_when_strict(tmp_path, plat):
     s = Stack(StackConfig.load(tmp_path / "home", port=0, executor="none"))
     url = s.http.serve()
     try:
         tok = s.human_token
-        out = call(url, "/v1/drafts", {"text": plat.pasted(with_example=True)}, token=tok)
+        out = call(url, "/v1/drafts", {"text": plat.pasted(with_example=True), "strict": True}, token=tok)
         assert out["lane"] == "confirm" and out["input"]["goal"]["check"]["judge_id"] == "replay"
         assert {"command_criterion", "command_outbound"} <= set(_codes(out))
         assert out["needs_ack"] == "command" and out["ops"] is None  # 不勾选拿不到批次
@@ -334,6 +348,7 @@ def test_row1b_unregistered_command_needs_explicit_ack(tmp_path, plat):
                 "model": out["model"],
                 "nonce": out["nonce"],
                 "overrides": {"ack_command": True},
+                "strict": True,
             },
             token=tok,
         )

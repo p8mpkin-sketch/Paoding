@@ -1,4 +1,4 @@
-"""pd kaiti：一句话开题一期（只有确认道；零确认开关不放行）。"""
+"""pd kaiti：一句话开题（确认道、开放道；零确认开关不放行）与 pd close。"""
 
 import hashlib
 import io
@@ -82,8 +82,8 @@ def test_settings_risk_table_and_draft_file(tmp_path):
 
 def test_refuse_and_decline_open_nothing(tmp_path):
     text = "帮我调研一下主流的智能体框架，写一份对比。"
-    code, out = pd(tmp_path, "kaiti", text, model=Model(_draft_for(text, "none")))
-    assert code == 3 and "为什么不开" in out
+    code, out = pd(tmp_path, "kaiti", text, "--strict", model=Model(_draft_for(text, "none")))
+    assert code == 3 and "为什么不开" in out and "不加 --strict 就按开放道去做" in out
     code, out = pd(tmp_path, "kaiti", T1, model=Model(_draft_for(T1)), read=lambda _: "n")
     assert code == 1 and "已放弃" in out
     assert not Local(tmp_path, {"kind": "human", "id": "cz"}).graph.state["problems"]
@@ -99,3 +99,49 @@ def test_no_model_configured(tmp_path, monkeypatch):
         monkeypatch.delenv(k, raising=False)
     code, out = pd(tmp_path, "kaiti", T1)
     assert code == 2 and "没有起草模型" in out
+
+
+def test_open_lane_opens_without_a_card_then_delivers_and_closes(tmp_path):
+    """open-lane §11 第一步：今天被拒的那句话，命令行直接开（不问回车）；pd status 看交付；pd close 带反馈关题。"""
+    text = "帮我调研一下主流的智能体框架，写一份对比。"
+    asked = []
+    code, out = pd(
+        tmp_path, "kaiti", text, model=Model(_draft_for(text, "none")), read=lambda q: asked.append(q) or "n"
+    )
+    assert code == 0 and asked == [] and "开放道" in out, out
+    local = Local(tmp_path, {"kind": "human", "id": "cz"})
+    (pid,) = local.graph.state["problems"]
+    assert local.graph.state["problems"][pid]["goal"]["accept"] == "open"
+    code, out = pd(tmp_path, "status", pid)
+    assert "开放道：不登记判据" in out and "交付：还没有" in out and "自述（未经判定）" in out
+    # 一个求解会话交付（司南领租约，会话令牌提交 deliver）
+    g = local.graph
+    g.tokens.issue({"kind": "sinan", "id": "sn1"}, "tok-sn")
+    lease = {"kind": "solve", "holder": "sn1", "reserve": {"usd_milli": 100, "wall_s": 60}, "ttl_s": 60}
+    lid = g.submit("tok-sn", pid, "l1", [{"op": "lease", "body": lease}])["results"][0]["id"]
+    g.tokens.issue({"kind": "adapter", "id": "ad1", "session": lid, "role": "solve"}, "tok-s")
+    data = b"LangGraph vs AutoGen ..."
+    ans = {"hash": local.blobs.put(data), "size": len(data), "media_type": "text/plain", "class": "authored"}
+    out = g.submit(
+        "tok-s",
+        pid,
+        "d1",
+        [
+            {"op": "register_artifact", "body": ans},
+            {"op": "deliver", "body": {"outcome": "partial", "answer": "$0", "unverified": ["没跑基准"]}},
+        ],
+    )
+    assert out["ok"], out
+    code, out = pd(tmp_path, "status", pid)
+    assert "部分完成；未经判定" in out and "未验证：没跑基准" in out
+    code, out = pd(tmp_path, "close", pid, "--feedback", "adopted", "--yes")
+    assert code == 0 and "delivered（已交付，未经判定；已采纳）" in out, out
+    code, out = pd(tmp_path, "close", pid, "--yes")
+    assert code == 1 and "已关" in out
+
+
+def test_close_feedback_only_for_open_lane(tmp_path):
+    pd(tmp_path, "kaiti", T1, "--yes", model=Model(_draft_for(T1)))
+    (pid,) = Local(tmp_path, {"kind": "human", "id": "cz"}).graph.state["problems"]
+    code, out = pd(tmp_path, "close", pid, "--feedback", "adopted", "--yes")
+    assert code == 2 and "只用于开放道" in out

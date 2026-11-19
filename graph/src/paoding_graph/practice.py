@@ -24,7 +24,7 @@ from .envelope import sha256_hex
 from .jcs import canonicalize
 
 RISK_RANK = {"r0": 0, "r1": 1, "r2": 2}
-LANES = ("practice", "confirm")
+LANES = ("practice", "confirm", "open")  # open：开放道（docs/design/open-lane/），不受信封限制，零出站开题
 
 
 class PolicyError(ValueError):

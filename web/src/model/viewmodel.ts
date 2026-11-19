@@ -59,7 +59,7 @@ export type ViewModel = {
   /** 题面的 Artifact（扩权卡做原文对照时读它）。 */
   statementRef: string;
   goal: {
-    predicate: Predicate; badge: Badge; levelWord: string; statement: Tagged; accept: "judge" | "human";
+    predicate: Predicate; badge: Badge; levelWord: string; statement: Tagged; accept: "judge" | "human" | "open";
     /** 判定来源（external-verdict §5.7）：服务端只在非本地时给出 */
     authority: Authority;
     /** 人工验收的清单与历次验收记录（只在 accept=human 的任务上） */

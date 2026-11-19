@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import signal
 import subprocess
 import threading
@@ -29,10 +30,11 @@ from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import backend as be
+from . import creds
 from .mcp import ToolEndpoint
 from .package import MEDIA_TYPE, render
 from .proxy import EndpointProxy
-from .tools import Session, ToolHost
+from .tools import Session, ToolHost, solve_ceiling
 
 LOG = logging.getLogger("adapter")
 CLI_STDERR = "cli.stderr.log"  # 会话目录里：CLI 的 stderr（两轮追加写）。CLI 出错时只在这里留话
@@ -158,13 +160,18 @@ class SessionRunner:
         ws = sdir / "workspace"
         ws.mkdir(parents=True, exist_ok=True)
         (sdir / "home").mkdir(exist_ok=True)
-        tools: tuple[str, ...] = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
+        if role == "solve":  # 开放道（open-lane §3.2）：一个会话做到底，交付即结束；不写论断，不交判官
+            tools: tuple[str, ...] = ("exec", "show", "deliver")
+            self._relay(pid, lease_id, ws)
+        else:
+            tools = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
         if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
             tools += ("request_access",)
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
         if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
+        s.secrets = creds.found(statement)  # 原话里的凭据：写进扩权申请与交付之前逐字遮盖（creds.py）
         host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor, access=lambda: self.reconcile(lease_id))
         url = self.endpoint.mount(host)
         lv = self.live[lease_id] = {
@@ -215,7 +222,13 @@ class SessionRunner:
             )
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
-            if exit_status is None and not lv["killed"] and (lv["closing"] or not s.submitted):
+            if role == "solve":
+                # 开放道的收尾轮（open-lane §3.3）：软线（预算或墙钟到 90%）→ 立即交付；没交付就结束 → 交付或留笔记接力
+                if exit_status is None and not lv["killed"] and (lv["closing"] or not s.delivered):
+                    plan.resume = True
+                    plan.user_prompt = be.SOLVE_CLOSING_BUDGET if lv["closing"] else be.SOLVE_CLOSING_RELAY
+                    exit_status = self._round(plan, rec, pid, token)
+            elif exit_status is None and not lv["killed"] and (lv["closing"] or not s.submitted):
                 plan.resume, plan.user_prompt = True, be.CLOSING_PROMPT  # 软线或从未 submit：收尾轮
                 exit_status = self._round(plan, rec, pid, token)
             rec.status = "collecting"
@@ -229,6 +242,8 @@ class SessionRunner:
                 outcome = "failed"
             elif t and t.spent_usd_milli >= t.reserve_usd_milli:
                 exit_status, outcome = "killed(budget)", "budget_exhausted"
+            elif role == "solve":  # 交付了即 done；没交付即 nothing，司南按接力上限再派下一个求解会话
+                outcome = "done" if s.delivered else "nothing"
             elif not s.submitted:
                 exit_status, outcome = "failed(no_output)", "failed"  # 容错第三级
             else:
@@ -243,6 +258,7 @@ class SessionRunner:
                 "events": rec.events,
                 "tool_calls": s.calls,
                 "final": s.final,
+                **({"delivered": s.delivered} if role == "solve" else {}),
                 "package_ref": rec.package_ref,
                 "proxy": {"requests": t.requests if t else 0, "usd_milli": t.spent_usd_milli if t else 0},
             }
@@ -275,6 +291,23 @@ class SessionRunner:
             if owned is not None and self.executor is not None:  # owned 只在起过执行容器时才有
                 self.executor.destroy(owned)
 
+    def _relay(self, pid: str, lease_id: str, ws: Path) -> None:
+        """开放道的接力（open-lane §3.2）：把本题上一个求解会话的工作区（含它的 NOTES.md）拷进新会话的工作区。
+        每个会话仍有自己的会话目录与工作区（容器启动器按目录名认租约），接力只是拷贝，不共用目录。"""
+        prev = sorted(
+            (
+                l
+                for l in self.reader.state["leases"].values()
+                if l["problem_id"] == pid and l["kind"] == "solve" and l["id"] != lease_id and not l["active"]
+            ),
+            key=lambda l: l["ended_seq"],
+        )
+        if not prev:
+            return
+        src = self.cfg.root / prev[-1]["id"] / "workspace"
+        if src.is_dir():
+            shutil.copytree(src, ws, dirs_exist_ok=True, symlinks=True)
+
     def _launch_sandbox(self, pid: str, lease: Mapping[str, Any], ws: Path) -> str:
         """按租约编译授权并起执行容器（§3.6.2）。reason 会话不走到这里。"""
         ws.chmod(0o777)  # 容器内进程丢了全部能力，靠目录权限写工作区
@@ -297,12 +330,13 @@ class SessionRunner:
         return out
 
     def _spec(self, pid: str, lease: Mapping[str, Any], ws: Path) -> ExecSpec:
-        """编译授权：上限取所服务 Intent 的 risk，Bootstrap 取 r0；r2 规则只在该 Intent 已获批准时编入；
+        """编译授权：上限取所服务 Intent 的 risk，Bootstrap 取 r0，开放道的 solve 取 r1（只含人批过的规则）；
+        r2 规则只在该 Intent 已获批准时编入；
         Intent 声明了 touches 时只编入其中的规则；已撤销的规则不编入（compile_spec 跳过）。"""
         st = self.reader.state
         p = st["problems"][pid]
         intent = st["intents"].get(lease.get("target") or "")
-        ceiling = intent["risk"] if intent else "r0"
+        ceiling = intent["risk"] if intent else solve_ceiling(lease)
         approved = bool(intent and st.get("approvals", {}).get(intent["id"]))
         env = {**p["env"], "base": self.cfg.bases.get(p["env"]["base"], p["env"]["base"])}
         touches = intent.get("touches") if intent else None  # add_intent 已校验，这里只取用

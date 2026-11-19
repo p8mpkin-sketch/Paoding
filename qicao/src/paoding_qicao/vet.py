@@ -3,11 +3,14 @@
 vet(抽取结果, 答案栏, 草案, 模板数据, 设置快照, 先验源) → Vetted
 - 出处：每个进入提交体的字段都有一行出处（摘 span / 表 table / 估 prior / 起草 model），见 derivation。
 - 答案：只走专用栏或标签行；题面、题名、目标句、材料、检查命令里出现答案即拒绝（answer_leak）。
-- 判据：有答案 → exact_match（sealed，保密库）；无答案而草案指认了原文代码块 → replay；都没有 → 拒绝。
+- 判据：有答案 → exact_match（sealed，保密库）；认出已登记平台 → 外部裁决；人给了验收清单 → 人工验收；
+  其余进开放道（docs/design/open-lane/ §3.1）：不登记判据，原文里的检查命令变成必做自检项。
+  严格判定（strict）或设置里关了开放道（lanes.open=false）时，回到判据先行：命令 → replay，都没有 → 拒绝。
   模型不能改变"有没有答案"，也不能写检查命令。
 - 授权：只认草案标为 entry 的地址区间；风险查设置层的风险表，未命中按 r2。没有入口 → 只有 workspace（r0）。
 - 预算：原文写的数 > 先验源（按档位）> 模板缺省；被单题硬顶裁剪，裁过即不得零确认。
-- 分道：refuse | confirm | practice。practice 只在零确认开关打开且全部条件满足时给出；开关关着时记 eligible。
+- 分道：refuse | confirm | practice | open。practice 只在零确认开关打开且全部条件满足时给出；开关关着时记 eligible。
+  open 不出确认卡（开题零出站时）：confirm 一档的提示只作说明，不压道别。
 """
 
 from __future__ import annotations
@@ -33,12 +36,12 @@ class Note:
     code: str
     field: str
     text: str
-    lane: str  # 它把道别压到哪一档：refuse | confirm
+    lane: str  # 它把道别压到哪一档：refuse | confirm（开放道里 confirm 一档只作说明）
 
 
 @dataclass
 class Vetted:
-    lane: str  # practice | confirm | refuse
+    lane: str  # practice | confirm | refuse | open
     eligible: bool  # 练习道候选（零确认开关打开时即直开）
     notes: list[Note]
     derivation: list[dict[str, Any]]
@@ -92,12 +95,15 @@ def vet(
     draft_error: str = "",
     catalog: Catalog | None = None,
     acceptance: list[Mapping[str, Any]] | None = None,
+    strict: bool = False,
 ) -> Vetted:
-    """acceptance：人在拒绝页选了“人工验收”（降级路 02，宪章 D3、02 §3.3）后给的验收清单，
-    每项 {span: 区间 id} 或 {text: 人写的陈述}，可带 needs。模型不写条目：草案里没有这一栏。"""
+    """acceptance：人选了“人工验收”（宪章 D3、02 §3.3）后给的验收清单，
+    每项 {span: 区间 id} 或 {text: 人写的陈述}，可带 needs。模型不写条目：草案里没有这一栏。
+    strict：人选了“严格判定”。没有可判定的终点就拒绝，不进开放道。"""
     notes: list[Note] = []
     der: list[dict[str, Any]] = []
     dfl = intake.defaults
+    open_ok = settings.lanes_open and not strict  # 回滚开关 lanes.open（open-lane §11）
 
     def note(code: str, f: str, text: str, lane: str = "confirm") -> None:
         notes.append(Note(code, f, text, lane))
@@ -139,12 +145,20 @@ def vet(
             plats.setdefault(pf.connector, (pf, []))[1].append(psp.id)
     plat_spans = {sid for _, ids in plats.values() for sid in ids}
     if d.check_form == "external" and not set(d.check_spans) & plat_spans:
-        note(
-            "platform_unregistered",
-            "goal.check",
-            "起草认为判定权在外部平台，但原文里的地址不是已登记的平台：先去设置页登记这个平台，再从平台导入",
-            "refuse",
-        )
+        if open_ok:  # 未登记的平台不再拒题（open-lane 裁决附加条件 2）：进开放道，地址只作材料
+            note(
+                "platform_unregistered",
+                "goal.check",
+                "起草认为判定权在外部平台，但原文里的地址不是已登记的平台：按开放道去做，平台的结果不当判定。"
+                "要让平台说了算，先去设置页登记这个平台，再从平台导入",
+            )
+        else:
+            note(
+                "platform_unregistered",
+                "goal.check",
+                "起草认为判定权在外部平台，但原文里的地址不是已登记的平台：先去设置页登记这个平台，再从平台导入",
+                "refuse",
+            )
     if secret is None and len(plats) > 1:
         note(
             "ambiguous_platform", "goal.check", f"原文里认出不止一个已登记的平台：{'、'.join(sorted(plats))}", "refuse"
@@ -187,7 +201,7 @@ def vet(
                 [d.deliverable] if d.deliverable else None,
             )
         )
-    elif d.check_form == "command" and d.check_spans:
+    elif d.check_form == "command" and d.check_spans and not open_ok:
         sp = ext.span(d.check_spans[0])
         assert sp is not None
         spec = str(sp.value)
@@ -219,14 +233,46 @@ def vet(
             "goal.check",
             "人工验收：交付后由你按清单逐条判，终态最多为“已验收”，不写“已证明”；清单创建后不能改",
         )
+    elif open_ok:
+        # 开放道（open-lane §3.1）：不登记判据、不设候选次数；智能体从原话出发自己找答案，交付时带证据
+        judges, check, accept = [], {}, "open"
+        if d.check_form == "answer":
+            note("answer_missing", "goal.check", "起草认为有标准答案，但答案栏与原文里都没有答案行：按开放道去找它")
+        for sid in d.check_spans if d.check_form == "command" else []:
+            sp = ext.span(sid)
+            assert sp is not None
+            outw = _outbound(str(sp.value), ext, intake.outbound)
+            if outw:  # 有外发形状的命令（多半是向平台提交）不当自检项：让智能体“自检”时再提交一次就错了
+                der.append(_src("goal.check", sp.value, "span", [sid], "有外发的形状，只留在题面里，不当自检项"))
+                note(
+                    "command_outbound_material",
+                    "goal.check",
+                    f"原文里的命令有外发的形状（{'、'.join(outw)}）：不当自检项，只留在题面里。"
+                    "执行时要访问外部地址，会按需申请，由你批准",
+                )
+                continue
+            items.append({"text": str(sp.value), "src": "span"})
+            der.append(
+                _src(f"goal.self_checks[{len(items) - 1}]", sp.value, "span", [sid], "交付前必须自己跑，如实报告")
+            )
+        if items:
+            note(
+                "command_self_check",
+                "goal.check",
+                "原文里的命令作为必做的自检项：智能体交付前自己跑、如实报告结果；判官不重放它。"
+                "要按它的退出码判定，请选“严格判定”",
+            )
+        der.append(_src("goal.check", "开放道 · 不登记判据", "table", note="交付带证据，未经独立判定"))
     else:
         if d.check_form == "answer":
             note("answer_missing", "goal.check", "起草认为有标准答案，但答案栏与原文里都没有答案行", "refuse")
-        note("no_criterion", "goal.check", "没有标准答案，也没有能跑的检查命令：现有判定方式判不了它", "refuse")
+        why = "你选了严格判定，但" if strict else ""
+        note("no_criterion", "goal.check", f"{why}没有标准答案，也没有能跑的检查命令：现有判定方式判不了它", "refuse")
         judges, check = [], {}
     if acceptance and accept == "judge":
         note("acceptance_ignored", "goal.check", "已有可判定的终点，验收清单没有用上：按判定器判定")
-    der.append(_src("goal.max_attempts", max_attempts, "table"))
+    if accept != "open":
+        der.append(_src("goal.max_attempts", max_attempts, "table"))
 
     # ---------- 授权 ----------
     scope: list[dict[str, Any]] = []
@@ -327,7 +373,17 @@ def vet(
     der.append(_src("budget.shares", {"verify_share": vs, "bootstrap_share": bs}, "table"))
 
     problem: dict[str, Any] | None = None
-    if judges:
+    if accept == "open":
+        problem = {
+            "title": d.title,
+            "origin": {"statement_ref": "$statement", "materials": ["$references"] if refs else []},
+            "goal": {"statement": goal_text, "accept": "open", **({"self_checks": items} if items else {})},
+            "scope": scope,
+            "budget": {"usd_milli": usd, "wall_s": wall, "verify_share": vs, "bootstrap_share": bs},
+            "env": dict(dfl["env"]),
+            "judges": [],
+        }
+    elif judges:
         problem = {
             "title": d.title,
             "origin": {"statement_ref": "$statement", "materials": ["$references"] if refs else []},
@@ -372,7 +428,9 @@ def vet(
         and not guessed
         and max_attempts <= int(intake.envelope.get("goal", {}).get("max_attempts_max", max_attempts))
     )
-    if secret is None:
+    if accept == "open":
+        pass  # 开放道不走零确认的练习道条件：它本来就不出确认卡
+    elif secret is None:
         note("no_answer", "goal.check", "没有标准答案：不能零确认")
     elif not eligible_shape:
         note("outside_envelope", "scope", "授权不全在练习道信封里（只读、白名单地址）")
@@ -462,6 +520,14 @@ def _done(
     zc = intake.zero_confirm if zero_confirm is None else zero_confirm
     if any(n.lane == "refuse" for n in notes) or problem is None:
         lane, eligible = "refuse", False
+    elif problem["goal"].get("accept") == "open":
+        lane, eligible = "open", False
+        if any(r["resource"] != "workspace" for r in problem["scope"]):
+            # 运行时扩权关着时原文里的入口会在开题时开通：这时不能零确认（open-lane §3.1 第 3 点的前提）
+            lane = "confirm"
+            notes.append(
+                Note("open_needs_confirm", "scope", "运行时扩权关着，开题就会开通原文里的地址：请确认", "confirm")
+            )
     elif eligible and zc:
         lane = "practice"
     else:
@@ -543,8 +609,7 @@ def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
     gone = {"zero_confirm_off"} | {"clipped_" + f.split(".", 1)[1] for f in touched if f.startswith("budget.")}
     notes = [n for n in v.notes if n.code not in gone]
     notes.append(Note("human_edit", "lane", f"你在卡上改了 {'、'.join(touched)}", "confirm"))
-    out = Vetted(
-        "confirm", False, notes, der, inp, v.statement, v.references, v.spec, v.secret, v.pid, v.priors_version
-    )
+    lane = "open" if v.lane == "open" else "confirm"  # 开放道改了预算仍是开放道：人改过的数本来就是人定的
+    out = Vetted(lane, False, notes, der, inp, v.statement, v.references, v.spec, v.secret, v.pid, v.priors_version)
     out.external, out.needs_ack, out.notice = v.external, needs_ack, v.notice
     return out

@@ -11,6 +11,8 @@ Op 到内核操作的翻译：
   候选可以是工作区里的文件（candidate_path），也可以直接是答案字符串（candidate）；两样都给时以文件为准。
 - `tmp_id`：本次 submit 内，后一条可用前一条的 tmp_id 指代它的 id。
 - 同一操作连续被拒 3 次后不再转发（3.4.4），直接返回上次的拒绝码。
+- `deliver`（开放道的求解会话，docs/design/open-lane/ §3.4）：答案是文字或工作区文件，登记为 authored，
+  再提交内核的 deliver；主张与自检的依据只填执行留档或材料的编号，内核逐个查真伪。
 
 工具入参是模型写的、未经校验的 JSON：只经解析层的 `Obj` 读，形状不对抛 `BadBody`，`call` 与 `_one`
 只接这一种异常并转成 `schema_error`。其余异常（KeyError、TypeError 等）是本组件或下游的缺陷，原样抛出，
@@ -39,6 +41,8 @@ from paoding_graph.contract import (
     node_levels,
 )
 
+from . import creds
+
 MAX_SAME_REJECT = 3
 SHOW_RANGE_MAX = 8 * 1024
 LATER_OPS = {"escalate_intent": "M1", "add_support": "完整版", "add_contradiction": "完整版"}
@@ -51,7 +55,7 @@ class Session:
 
     pid: str
     lease_id: str
-    role: str  # bootstrap | reason | explore
+    role: str  # bootstrap | reason | explore | solve
     token: str
     workspace: Path
     tools: tuple[Any, ...] = ("exec", "submit", "show")
@@ -59,6 +63,23 @@ class Session:
     calls: list[Any] = field(default_factory=list)  # 会话记录：每次工具调用的入参与结果
     final: dict[str, Any] | None = None
     submitted: bool = False
+    delivered: str | None = None  # 开放道：最近一次交付的 outcome（answered | partial | blocked）
+    secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
+
+
+def _mask_deep(x: Any, secrets: tuple[str, ...]) -> tuple[Any, bool]:
+    """把结构里每一段文字的凭据遮掉（交付的主张、自检、未验证项、需要人提供的）。"""
+    if not secrets:
+        return x, False
+    if isinstance(x, str):
+        return creds.mask(x, secrets)
+    if isinstance(x, list):
+        pairs = [_mask_deep(y, secrets) for y in x]
+        return [p[0] for p in pairs], any(p[1] for p in pairs)
+    if isinstance(x, dict):
+        kv = {k: _mask_deep(v, secrets) for k, v in x.items()}
+        return {k: v[0] for k, v in kv.items()}, any(v[1] for v in kv.values())
+    return x, False
 
 
 def _err(code: str, detail: str) -> dict[str, Any]:
@@ -135,6 +156,9 @@ class ToolHost:
         target, why = a.string("target").strip(), a.text("why").strip()
         if not why:
             raise BadBody("why 须写明为什么需要这个地址")
+        if creds.mask(target, self.s.secrets)[1]:
+            raise BadBody("target 里带着原话里的凭据：地址只写 host:port，凭据只在执行的命令里用")
+        why, masked = creds.mask(why, self.s.secrets)  # 扩权卡给人看、进事件账：凭据不上卡
         rule = {"resource": "net", "pattern": target, "actions": ["connect"]}
         st = self.reader.state
         if any(_same(r, rule) for r in st["problems"][self.s.pid]["scope"] if "revoked" not in r):
@@ -155,12 +179,15 @@ class ToolHost:
         if req["status"] == "granted":  # 练习道白名单：同一批里已自动批准
             return self._granted(rid, target)
         self._asked[rid] = req["status"]
-        return {
+        out = {
             "status": "pending",
             "request": rid,
             "target": target,
             "detail": "已进人的待办。可以先做不需要这个地址的事；批下来后 exec 的返回里会带 access 告诉你。",
         }
+        if masked:
+            out["masked"] = "理由里有原话里的凭据，已遮盖后再送审；以后不要把凭据写进理由"
+        return out
 
     def _granted(self, rid: str | None, target: str) -> dict[str, Any]:
         if rid:
@@ -185,7 +212,11 @@ class ToolHost:
     def _compiled(self, target: str) -> bool:
         lease = self.reader.state["leases"].get(self.s.lease_id)
         iid = lease.get("target") if lease else None
-        ceiling = self.reader.state["intents"][iid]["risk"] if iid and iid in self.reader.state["intents"] else "r0"
+        ceiling = (
+            self.reader.state["intents"][iid]["risk"]
+            if iid and iid in self.reader.state["intents"]
+            else solve_ceiling(lease)
+        )
         rank = {"r0": 0, "r1": 1, "r2": 2}
         return any(
             r["pattern"] == target and "revoked" not in r and rank[r["risk"]] <= rank[ceiling]
@@ -208,6 +239,59 @@ class ToolHost:
         if any(n["status"] == "granted" for n in news) and self.access:
             self.access()
         return news
+
+    # ---------- deliver（开放道） ----------
+
+    def _deliver(self, a: Obj) -> dict[str, Any]:
+        """交付（open-lane §3.4）。答案：answer（文字）或 answer_path（工作区文件），登记为 authored。
+        其余字段原样交内核校验：依据不存在、类别不可采信、受阻却不写 needs，都由内核拒绝并说明。"""
+        allowed = {"outcome", "answer", "answer_path", "claims", "self_check", "unverified", "needs"}
+        extra = a.keys() - allowed
+        if extra:
+            raise BadBody(f"deliver 只收 {sorted(allowed)}，多了 {sorted(extra)}")
+        keys = ("outcome", "claims", "self_check", "unverified", "needs")
+        body: dict[str, Any] = {k: a.get(k) for k in keys if k in a}
+        body, masked = _mask_deep(body, self.s.secrets)  # 交付进事件账、给人看：凭据不进交付（creds.py）
+        ops: list[dict[str, Any]] = []
+        data: bytes | None = None
+        if a.get("answer_path") is not None:
+            data = self._read_ws(a.string("answer_path"))
+        elif a.get("answer") is not None:
+            data = a.text("answer").encode("utf-8")
+        if data is not None and self.s.secrets:
+            text, hit = creds.mask(data.decode("utf-8", "replace"), self.s.secrets)
+            if hit:
+                data, masked = text.encode("utf-8"), True
+        if data is not None:
+            ops.append(
+                {
+                    "op": "register_artifact",
+                    "body": {
+                        "hash": self.blobs.put(data),
+                        "size": len(data),
+                        "media_type": "text/plain; charset=utf-8",
+                        "class": "authored",
+                    },
+                }
+            )
+            body["answer"] = "$0"
+        ops.append({"op": "deliver", "body": body})
+        self.s.submitted = True
+        out = self.graph.submit(self.s.token, self.s.pid, f"deliver:{self.s.lease_id}:{self._nonce}:{self._n}", ops)
+        if not out["ok"]:
+            r = next(r for r in out["results"] if not r.get("ok"))
+            return _err(r.get("code", "schema_error"), r.get("detail", ""))
+        self.s.delivered = str(a.get("outcome"))
+        res: dict[str, Any] = {
+            "ok": True,
+            "id": out["results"][-1]["id"],
+            "detail": "已交付。人会看到你的答案、证据和没验证的部分；本会话可以结束了。",
+        }
+        if data is not None:
+            res["answer"] = out["results"][0]["id"]  # 答案的产物编号（authored：它不是证据，不能当主张的依据）
+        if masked:
+            res["masked"] = "交付里有原话里的凭据，已遮盖"
+        return res
 
     # ---------- submit ----------
 
@@ -464,7 +548,13 @@ class ToolHost:
             items = [x for x in items if x["level"] not in ("E3", "X")]
         return {"list": lst, "items": items}
 
-    _TOOLS = {"exec": _exec, "submit": _submit, "show": _show, "request_access": _request_access}
+    _TOOLS = {
+        "exec": _exec,
+        "submit": _submit,
+        "show": _show,
+        "request_access": _request_access,
+        "deliver": _deliver,
+    }
 
 
 def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -530,7 +620,55 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
             },
         },
     }
-    return [{"name": n, **s[n]} for n in ("exec", "submit", "show", "request_access") if n in tools]
+    ref_list = {"type": "array", "items": {"type": "string"}, "description": "执行留档或材料的编号，形如 a_123"}
+    s["deliver"] = {
+        "description": "交付（开放道）：交出答案，附上支撑它的执行留档编号、自检结果、没验证的部分。"
+        "做完了 outcome=answered；只做完一部分 partial；做不下去 blocked，并在 needs 里写需要人提供什么。"
+        "refs 只填 exec 返回的 artifact 编号或题目材料的编号；没有依据的主张 refs 留空。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["outcome"],
+            "additionalProperties": False,
+            "properties": {
+                "outcome": {"enum": ["answered", "partial", "blocked"]},
+                "answer": {"type": "string", "description": "答案正文；长的写进工作区文件，用 answer_path"},
+                "answer_path": {"type": "string", "description": "工作区里的答案文件（相对 /workspace）"},
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["text"],
+                        "additionalProperties": False,
+                        "properties": {"text": {"type": "string"}, "refs": ref_list},
+                    },
+                },
+                "self_check": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["what", "result"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "what": {"type": "string", "description": "查了什么、怎么查的"},
+                            "result": {"enum": ["pass", "fail", "skipped"]},
+                            "refs": ref_list,
+                            "item": {"type": "string", "description": "对应题目里必做自检项的编号（c1、c2…）"},
+                        },
+                    },
+                },
+                "unverified": {"type": "array", "items": {"type": "string"}},
+                "needs": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    }
+    order = ("exec", "submit", "show", "request_access", "deliver")
+    return [{"name": n, **s[n]} for n in order if n in tools]
+
+
+def solve_ceiling(lease: Mapping[str, Any] | None) -> str:
+    """不服务于 Intent 的会话编译授权时的风险上限：bootstrap 取 r0；开放道的 solve 取 r1——它碰得到的规则只有
+    人在扩权卡上批过的（开题零出站），r2 仍要逐次批准，solve 不编入（open-lane §3.2、§9）。"""
+    return "r1" if lease is not None and lease.get("kind") == "solve" else "r0"
 
 
 def _same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:

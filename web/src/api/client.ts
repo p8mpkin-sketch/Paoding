@@ -105,7 +105,7 @@ export function createApi(cfg: ApiConfig) {
     blob: async (hash: string): Promise<Uint8Array> => new Uint8Array(await (await call("GET", `/v1/blobs/${enc(hash)}`)).arrayBuffer()),
 
     /** 画像预检：与开题同一个推导函数，不写日志。 */
-    profilePreview: (p: { scope: Partial<ScopeRule>[]; goal: { check: { judge_id: string } } }) => post<ProfilePreview>("/v1/profile/preview", p),
+    profilePreview: (p: { scope: Partial<ScopeRule>[]; goal: { check: { judge_id: string } } | { accept: "open" } }) => post<ProfilePreview>("/v1/profile/preview", p),
     putBlob: async (bytes: Uint8Array): Promise<{ hash: string; size: number }> =>
       (await (await call("PUT", "/v1/blobs", bytes as BodyInit, "application/octet-stream")).json()) as { hash: string; size: number },
     /** 保密库：只写，返回写进 sealed 的引用。答案不进 Blob、不进日志。 */

@@ -188,28 +188,32 @@ export function Kaiti() {
   }, [v]);
 
   // 画像预览：服务端同一个推导函数（/v1/profile/preview），与向导一样
-  const scopeKey = v?.input ? JSON.stringify([v.input.scope, v.input.goal.check.judge_id]) : "";
+  const scopeKey = v?.input ? JSON.stringify([v.input.scope, v.input.goal.check?.judge_id ?? "open"]) : "";
   useEffect(() => {
     if (!v?.input) { setPreview(null); return; }
     let live = true;
-    api.profilePreview({ scope: v.input.scope, goal: { check: { judge_id: v.input.goal.check.judge_id } } }).then((p) => { if (live) setPreview(p); }, () => { if (live) setPreview(null); });
+    const check = v.input.goal.check;
+    api.profilePreview({ scope: v.input.scope, goal: check ? { check: { judge_id: check.judge_id } } : { accept: "open" } }).then((p) => { if (live) setPreview(p); }, () => { if (live) setPreview(null); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, scopeKey]);
 
   const nums = useMemo(() => (v ? spanNumbers(v.spans, v.derivation) : new Map<string, number>()), [v]);
 
-  async function draftIt(profile: string | null = null) {
+  async function draftIt(profile: string | null = null, strict = false) {
     if (!text.trim() || busy) return;
     setBusy("draft"); setErr(null); setFieldErr(null);
+    let out: KaitiVetted | null = null;
     try {
-      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}) });
+      out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}), ...(strict ? { strict } : {}) });
       setV(out); setOv({}); setProf(profile); setAcc(null);
     } catch (e) {
       setErr(e as Error); setV(null);
     } finally {
       setBusy(null);
     }
+    // 开放道不出确认卡（open-lane §3.1 第 3 点）：开题零出站、花费有硬顶，回车即创建，进任务页看它做
+    if (out?.lane === "open" && out.ops) await openIt(out);
   }
 
   async function revet(next: KaitiOverrides) {
@@ -240,17 +244,18 @@ export function Kaiti() {
     }
   }
 
-  async function openIt() {
-    if (!v || v.lane === "refuse" || v.needs_ack === "command" || busy) return;
+  async function openIt(given: KaitiVetted | null = null) {
+    const cur = given ?? v;
+    if (!cur || cur.lane === "refuse" || cur.needs_ack === "command" || (busy && !given)) return;
     setBusy("open"); setErr(null);
-    const body = JSON.stringify([v.ops, v.blobs.map((b) => b.hash)]);
+    const body = JSON.stringify([cur.ops, cur.blobs.map((b) => b.hash)]);
     if (idem.current.body !== body) idem.current = { key: newIdemKey(), body };
     const t = pending("新建任务");
     try {
       // 外部判定：此刻才领题（平台从这一刻开始计时），批次由导入生成；卡上改过的预算一并带过去
-      const ready = v.external
-        ? await api.platformImport(v.external.connector, { task: v.external.task, nonce: v.nonce, budget: v.input ? { usd_milli: v.input.budget.usd_milli, wall_s: v.input.budget.wall_s } : undefined })
-        : v;
+      const ready = cur.external
+        ? await api.platformImport(cur.external.connector, { task: cur.external.task, nonce: cur.nonce, budget: cur.input ? { usd_milli: cur.input.budget.usd_milli, wall_s: cur.input.budget.wall_s } : undefined })
+        : cur;
       const r = await submitVetted(api, ready, answer, idem.current.key);
       recorded(t, "新建任务", r.seq);
       navigate({ page: "problem", pid: r.pid, asOf: null, node: null });
@@ -316,7 +321,7 @@ export function Kaiti() {
   return (
     <div className="kaiti" data-kaiti data-lane={v?.lane ?? "input"}>
       <Mast vol={["卷三", "新建"]} cap="新建任务" title="一句话说清要做的事"
-        dek="写要做什么、怎样算做完、能连哪里、多久花多少。回车后系统起草一张任务单，每个字段都标着出处，你看过再创建。"
+        dek="写要做什么就行。没有标准答案的，回车即开始，智能体自己找答案、交付时附证据（开放道，结果未经判定）；给了标准答案的，起草一张任务单，每个字段标着出处，你看过再创建。"
         actions={
           <div className="kt-links t2">
             <Link to={{ page: "new", advanced: true }} data-action="advanced-blank">高级模式</Link>
@@ -396,7 +401,7 @@ export function Kaiti() {
                       {g === "判据" && v.has_answer && (
                         <div className="kt-row" data-field="answer"><dt>答案</dt><dd><span className="kt-val">已收起，只给判定器（保密库）</span><Mark ch="人" tone="jie" label="你给的" /></dd></div>
                       )}
-                      {g === "判据" && v.input!.goal.check.spec_ref !== undefined && (
+                      {g === "判据" && v.input!.goal.check?.spec_ref !== undefined && (
                         <div className="kt-row kt-warn" data-field="command-note"><dt /><dd className="t2">
                           判定器会在洁净容器里<b>重放</b>这条命令，按退出码判定，创建后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先<Link to={{ page: "settings" }}>登记这个平台</Link>，再<Link to={{ page: "platform" }}>从平台导入</Link>。
                         </dd></div>
@@ -419,7 +424,7 @@ export function Kaiti() {
 
             <aside className="kt-col kt-side" aria-label="为什么要你看">
               <div className="kt-lane" data-lane-chip>
-                <b>确认道 · 一步确认</b>
+                <b>{v.lane === "open" ? "开放道 · 未经判定" : "确认道 · 一步确认"}</b>
                 {v.external && <span className="t2" data-external>外部判定 · 平台 <span className="k-mono"><Plain text={v.external.connector} /></span> · 创建时领题</span>}
                 {v.eligible && <span className="t2" data-eligible>练习道候选 · 零确认尚未放行</span>}
               </div>

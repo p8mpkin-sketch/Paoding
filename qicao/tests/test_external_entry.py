@@ -52,10 +52,10 @@ CONNS = {
 }
 
 
-def _vet(text: str, answer: str | None = None, catalog: Catalog | None = CAT, doc=None):
+def _vet(text: str, answer: str | None = None, catalog: Catalog | None = CAT, doc=None, strict: bool = False):
     ext = INTAKE.extract(text)
     d = parse_draft(doc or heuristic_drafter(ext, bool(answer) or bool(ext.answers)), ext, "h")
-    return vet(ext, answer, d, INTAKE, SETTINGS, PRIORS, zero_confirm=False, nonce="n", catalog=catalog)
+    return vet(ext, answer, d, INTAKE, SETTINGS, PRIORS, zero_confirm=False, nonce="n", catalog=catalog, strict=strict)
 
 
 def codes(v):
@@ -88,8 +88,11 @@ def test_host_matching_with_port_and_glob():
 
 def test_defaults_catalog_keeps_old_behavior():
     t = "修好构建。完成标准：在仓库根目录跑 `make test` 全部通过。"
-    a, b = _vet(t, catalog=None), _vet(t, catalog=defaults_catalog(INTAKE.defaults))
+    a, b = _vet(t, catalog=None, strict=True), _vet(t, catalog=defaults_catalog(INTAKE.defaults), strict=True)
     assert a.input == b.input and a.input["judges"] == ["replay"]
+    # 不选严格判定：命令进开放道当必做自检项（open-lane 裁决 §12 第 2 条）
+    c = _vet(t, catalog=None)
+    assert c.input["goal"]["self_checks"] == [{"text": "make test", "src": "span"}] and c.input["judges"] == []
 
 
 # ---------------------------------------------------------------- external 形态
@@ -131,8 +134,18 @@ def test_model_says_external_but_platform_unknown():
     ext = INTAKE.extract(t)
     url = ext.of("url")[0].id
     doc = {**heuristic_drafter(ext, False), "check": {"form": "external", "spans": [url]}}
-    v = _vet(t, doc=doc)
+    v = _vet(t, doc=doc, strict=True)
     assert v.lane == "refuse" and "platform_unregistered" in codes(v)
+    # 不选严格判定：未登记的平台不拒题，进开放道，平台地址不开通路（open-lane 裁决附加条件 2）
+    import dataclasses
+
+    on = dataclasses.replace(SETTINGS, grants_runtime=True)  # 开题零出站（settings_hub 的缺省）
+    o = vet(ext, None, parse_draft(doc, ext, "h"), INTAKE, on, PRIORS, zero_confirm=False, nonce="n", catalog=CAT)
+    assert o.lane == "open" and "platform_unregistered" in codes(o) and o.external is None
+    assert o.input["goal"]["accept"] == "open" and o.input["scope"][0]["resource"] == "workspace"
+    # 运行时扩权关着时原文地址会在开题时开通：开放道也要人确认这一次
+    c = _vet(t, doc=doc)
+    assert c.lane == "confirm" and "open_needs_confirm" in codes(c) and c.input["goal"]["accept"] == "open"
 
 
 def test_two_platforms_refuse():
@@ -145,7 +158,7 @@ def test_two_platforms_refuse():
 
 
 def test_plain_command_warns_but_needs_no_ack():
-    v = _vet("修好构建。完成标准：在仓库根目录跑 `make test` 全部通过。")
+    v = _vet("修好构建。完成标准：在仓库根目录跑 `make test` 全部通过。", strict=True)
     assert "command_criterion" in codes(v) and "command_outbound" not in codes(v) and v.needs_ack is None
 
 
@@ -154,7 +167,7 @@ def test_plain_command_warns_but_needs_no_ack():
     ["curl -X POST http://q1:8080/x", "curl q1:8080 -d x", "python check.py --data a"],
 )
 def test_outbound_command_needs_ack(cmd):
-    v = _vet(f"完成标准：跑 `{cmd}` 返回 0。")
+    v = _vet(f"完成标准：跑 `{cmd}` 返回 0。", strict=True)
     assert "command_outbound" in codes(v) and v.needs_ack == "command"
     with pytest.raises(ValueError):
         batch(v, lambda b: __import__("hashlib").sha256(b).hexdigest(), None)
@@ -166,9 +179,19 @@ def test_outbound_command_needs_ack(cmd):
         override(v, {"ack_command": "yes"}, SETTINGS)
 
 
+@pytest.mark.parametrize("cmd", ["curl -X POST http://q1:8080/x", "python check.py --data a"])
+def test_open_lane_outbound_command_is_only_material(cmd):
+    """开放道里命令只当自检项；有外发形状的连自检项也不当（智能体“自检”时再提交一次就错了），只留在题面里。"""
+    v = _vet(f"完成标准：跑 `{cmd}` 返回 0。")
+    assert v.lane == "open" and "self_checks" not in v.input["goal"] and v.needs_ack is None
+    assert "command_outbound_material" in codes(v) and v.spec is None and cmd in v.statement
+
+
 def test_submit_word_in_text_is_outbound():
-    v = _vet("把结果提交上去。完成标准：跑 `make check` 通过。")
+    v = _vet("把结果提交上去。完成标准：跑 `make check` 通过。", strict=True)
     assert v.needs_ack == "command"
+    # 开放道里命令只是自检项，判官不重放它：不需要“只检查、不提交”的勾选
+    assert _vet("把结果提交上去。完成标准：跑 `make check` 通过。").needs_ack is None
 
 
 # ---------------------------------------------------------------- 平台导入
@@ -213,7 +236,15 @@ def test_service_views():
     svc = KaitiService(INTAKE, lambda: SETTINGS, PRIORS, heuristic_drafter, "h", CAT)
     out = svc.draft_view({"text": TEXT})
     assert out["external"]["task"] == "T-17" and out["ops"] is None and out["blobs"] == []
-    refused = svc.draft_view({"text": "随便做点什么。"})
-    assert refused["lane"] == "refuse" and refused["ways"][-1] == "register_platform"
+    refused = svc.draft_view({"text": "随便做点什么。", "strict": True})
+    assert refused["lane"] == "refuse" and refused["ways"] == [
+        "open",
+        "endpoint",
+        "human",
+        "advanced",
+        "register_platform",
+    ]
+    opened = svc.draft_view({"text": "随便做点什么。"})
+    assert opened["lane"] == "open" and opened["ops"][-1]["body"]["origin"]["draft"]["lane"] == "open"
     imp = svc.import_view(PLAT, ITEM, "题面", NOTICE, now_ms=0, nonce="n")
     assert imp["ops"] and {b["name"] for b in imp["blobs"]} == {"statement", "notice", "derivation"}

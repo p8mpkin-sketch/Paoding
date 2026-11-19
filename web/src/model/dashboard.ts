@@ -12,7 +12,7 @@ export function recentOf(items: ProblemItem[], filter: Terminal | null): Problem
 }
 
 export function terminalCounts(items: ProblemItem[]): Record<Terminal, number> {
-  const c: Record<Terminal, number> = { solved: 0, accepted: 0, unsolved: 0 };
+  const c: Record<Terminal, number> = { solved: 0, accepted: 0, delivered: 0, unsolved: 0 };
   for (const p of items) if (p.closed && p.terminal) c[p.terminal]++;
   return c;
 }

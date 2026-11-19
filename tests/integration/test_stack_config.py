@@ -18,7 +18,7 @@ from stack import StackConfig  # noqa: E402
 def test_sample_config_is_yaml_and_resolves_relative_paths(tmp_path):
     cfg = StackConfig.load(tmp_path, E2E / "config.yaml")
     assert cfg.backend == "fake" and cfg.executor == "docker"
-    assert cfg.scripts == {k: str(E2E / f"{k}.json") for k in ("bootstrap", "reason", "explore")}
+    assert cfg.scripts == {k: str(E2E / f"{k}.json") for k in ("bootstrap", "reason", "explore", "solve")}
     assert cfg.bases == {"basic": "python:3.12-slim"}
     assert cfg.poll_s == 0.3 and cfg.dog_interval_s == 1.0
 

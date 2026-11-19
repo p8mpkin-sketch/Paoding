@@ -59,7 +59,8 @@ def score(
                 err = "没有草案也没有起草模型"
         except DraftError as e:
             err = str(e)
-        v = vet(ext, answer, d, intake, settings, priors, zero_confirm=False, draft_error=err)
+        # 零确认读数只关严格道（练习道是严格道的一档）：按严格判定校验，开放道不进这张表（open-lane §5.2）
+        v = vet(ext, answer, d, intake, settings, priors, zero_confirm=False, draft_error=err, strict=True)
         exp = c.get("expect", {})
         pats, judge = _authority(v)
         exact = pats == frozenset(exp.get("scope", [])) and judge == exp.get("judge", "")
