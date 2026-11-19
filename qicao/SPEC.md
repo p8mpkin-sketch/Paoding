@@ -31,10 +31,10 @@
 组装根（`scripts/kaiti_hub.py`）把 `KaitiService` 挂在图服务的 `/v1/drafts` 前缀上，只接受人的令牌；图服务不认识它。
 
 - `POST /v1/drafts/extract {text}` → `{text, spans, answers}`：前置抽取，不调模型。答案只报个数。
-- `POST /v1/drafts {text, answer?, draft?, model?, nonce?, overrides?}` → 校验结果、区间表（UTF-16 下标）、待登记的材料（正文与 sha256）、带 `"$answer"` 占位的批次。交回 `draft` 即不调模型，只重新校验；`overrides` 是确认卡上的人改（`risk`、`usd_milli`、`wall_s`），改过的出处记"人"，不再是练习道候选，超过单题硬顶直接 400，不替人裁剪。
+- `POST /v1/drafts {text, answer?, profile?, draft?, model?, nonce?, overrides?}` → 校验结果、区间表（UTF-16 下标）、待登记的材料（正文与 sha256）、带 `"$answer"` 占位的批次。交回 `draft` 即不调模型，只重新校验；`overrides` 是确认卡上的人改（`risk`、`usd_milli`、`wall_s`），改过的出处记"人"，不再是练习道候选，超过单题硬顶直接 400，不替人裁剪。
 - 零确认一律关（第三期信封已进内核但休眠，开关的打开等测试方的精确率读数）：`lane` 只有 `confirm` 与 `refuse`。答案来自原文答案行时回传一次（`secret`），前端只拿它写保密库；答案栏里的不回传。
 - 不持有令牌、不写图服务、不写保密库：前端用人的令牌依次 `PUT /v1/blobs`（三方核对哈希）、`PUT /v1/vault`、`POST /v1/problems`。
-- 起草模型：`kaiti.draft` 取 `heuristic`（演示起草，不调模型；假 CLI 后端的缺省）、`messages` 或 `off`。`messages` 的令牌只从环境变量读（`kaiti.token_env`，缺省 `PD_DRAFT_TOKEN`），配置文件里写密钥即报错。经端点代理的"开题"账户与钥匙环归生命周期地图线程；接上之前请求直接打到 `kaiti.url`（缺省同上游）。
+- 起草模型：`kaiti.draft` 取 `heuristic`（演示起草，不调模型；假 CLI 后端的缺省）、`messages` 或 `off`。`messages` 每次起草按设置解析（宪章 Q28）：档案取 `profile`（确认卡的“起草用”，只许已登记的档案名，未登记即 400），缺省取角色路由的“起草”；端点、模型 id、密钥槽都来自档案，密钥从钥匙环那个槽位取（`KaitiService(pick=…)`）。槽位空着时才用 `kaiti.token_env`（缺省 `PD_DRAFT_TOKEN`）兜底，这是过渡期做法；密钥写进配置文件即报错。起草的花费还没有经端点代理计量（“开题”账户待做）。
 - 设置快照：全栈组装读设置存储（`/v1/settings`）的当前快照，与内核的单题硬顶同源；`kaiti.settings` 文件只用于没有设置存储的独立部署。`KaitiService` 收的是取快照的函数。
 
 ## 还没有做的

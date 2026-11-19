@@ -1,11 +1,12 @@
 """起草服务（设计 §6 service.py、§7）：网页 /new 的后端。不持有令牌，不写图服务，不写保密库。
 
     POST /v1/drafts/extract {text}                                  → 前置抽取（确定性，不调模型）
-    POST /v1/drafts {text, answer?, draft?, model?, nonce?, overrides?} → 校验结果 + 待提交的批次
+    POST /v1/drafts {text, answer?, profile?, draft?, model?, nonce?, overrides?} → 校验结果 + 待提交的批次
 
 开题仍由前端用人的令牌提交（禁令三）：先 PUT /v1/blobs 存题面等材料（本机核对哈希），有答案时 PUT /v1/vault
 换回 VaultRef 替换批次里的 "$answer"，最后 POST /v1/problems。这里只算，不落任何东西。
 
+- profile：这次起草用哪个已登记的模型档案（确认卡的“起草用”）；缺省取设置里角色路由的“起草”。
 - 交回 draft 即不调模型：确认卡改风险或预算（overrides）后重新校验走这条路，模型只在第一次回车时调一次。
 - 零确认在第二期一律关（cz 2026-11-19 裁决 #83 第 2 条附条件；内核信封随第三期）：lane 只有 confirm 与 refuse，
   练习道候选照样标 eligible，卡上写"零确认未放行"。
@@ -30,6 +31,8 @@ from .vet import ANSWER_SLOT, Vetted, override, vet
 
 MAX_TEXT = 64 * 1024  # 原文上限（字节）
 Drafter = Callable[[Extraction, bool], Any]  # (抽取结果, 有没有答案) → 草案的 JSON 形态
+# 档案名（None 即设置里角色路由的“起草”）→ (起草器或 None, 档案名, 没有起草器的原因)；未登记的档案名抛 ValueError
+Picker = Callable[[str | None], tuple[Drafter | None, str, str]]
 
 
 class BadRequest(ValueError):
@@ -97,11 +100,15 @@ class KaitiService:
         drafter: Drafter | None,
         profile: str = "",
         catalog: Catalog | None = None,
+        pick: Picker | None = None,
     ) -> None:
         """settings 是取设置快照的函数：生命周期地图的设置存储（/v1/settings）上线后由组装根换成它。
-        catalog 是判据形态目录（注册表与连接器档案驱动，见 catalog.py）；缺省只有 answer 与 command。"""
+        catalog 是判据形态目录（注册表与连接器档案驱动，见 catalog.py）；缺省只有 answer 与 command。
+        pick 按档案名逐次给出起草器（宪章 Q28：档案、端点、密钥槽都在设置页，密钥在钥匙环）；
+        给了它，drafter 与 profile 就不再用。"""
         self.intake, self.settings, self.priors, self.drafter, self.profile = intake, settings, priors, drafter, profile
         self.catalog = catalog
+        self.pick = pick
 
     def _extract(self, text: str) -> Extraction:
         return self.intake.extract(text)
@@ -120,17 +127,29 @@ class KaitiService:
             raise BadRequest("nonce 须是不超过 64 字的字符串")
         ext = self._extract(text)
         has = bool((answer or "").strip()) or any(ext.answers)
+        want = body.get("profile")
+        if want is not None and (not isinstance(want, str) or not 0 < len(want) <= 64):
+            raise BadRequest("profile 须是已登记的模型档案名")
         settings = self.settings()
         doc, err, model = body.get("draft"), "", self.profile
         if doc is not None:
             model = str(body.get("model") or "")[:64]
-        elif self.drafter is None:
-            err = "本部署没有配置起草模型"
         else:
-            try:
-                doc = self.drafter(ext, has)
-            except (DraftError, OSError, ValueError) as e:
-                err = str(e)
+            drafter = self.drafter
+            if self.pick is not None:
+                try:
+                    drafter, model, err = self.pick(want)
+                except ValueError as e:
+                    raise BadRequest(str(e)) from None
+            elif want is not None:
+                raise BadRequest("本部署的起草不按档案选模型")
+            if drafter is None:
+                err = err or "本部署没有配置起草模型"
+            else:
+                try:
+                    doc = drafter(ext, has)
+                except (DraftError, OSError, ValueError) as e:
+                    err = str(e)
         d = None
         if doc is not None:
             try:

@@ -67,7 +67,8 @@ class KeyRing:
     # ---------- 读 ----------
 
     def get(self, slot: str) -> str | None:
-        """只供端点代理在转发时换密钥。别的调用方一律用 status()。"""
+        """只给要用真实密钥出站的组件：端点代理转发时换密钥、外部裁决的连接器、起草服务（宪章 Q28）。
+        都在组装根这一个进程里，密钥不落盘、不进日志；别的调用方一律用 status()。"""
         e = self._keys.get(slot)
         return e.key if e else None
 

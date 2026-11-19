@@ -326,7 +326,7 @@ class Stack:
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
         self.catalog = catalog_of(self.registry, self.connectors)  # 判据形态目录（注册表驱动，§5.8）
-        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog)
+        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog, key=self.keyring.get)
         self.kaiti.mount(self.http)
         self.platforms = ConnectorHub(
             self.connectors, self.catalog, self.keyring.get, self.keyring.ready, self.kaiti.svc
