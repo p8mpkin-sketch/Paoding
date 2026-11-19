@@ -215,6 +215,10 @@ def test_draft_profile_and_key_come_from_settings_and_keyring(monkeypatch, caplo
         out = hub.svc.draft_view({"text": TEXT, "profile": "cheap"})
         assert seen[-1]["path"] == "/alt/v1/messages" and seen[-1]["model"] == "m-light" and out["model"] == "cheap"
         assert seen[-1]["key"] == "sk-canary-light-" + "e" * 20
+        # 交回草案重新校验（卡上改预算）时带回同一个 profile：不再调模型，出处仍记“人”
+        n = len(seen)
+        again = hub.svc.draft_view({"text": TEXT, "draft": {}, "model": "cheap", "profile": "cheap"})
+        assert len(seen) == n and again["model"] == "cheap"
 
         with pytest.raises(BadRequest):
             hub.svc.draft_view({"text": TEXT, "profile": "nope"})
@@ -234,3 +238,18 @@ def test_heuristic_ignores_profile_choice():
     hub = KaitiHub({}, real=False, upstream="")
     out = hub.svc.draft_view({"text": TEXT, "profile": "whatever"})
     assert out["model"] == "heuristic" and out["lane"] != "refuse"
+    row = next(r for r in out["derivation"] if r["field"] == "draft.model")
+    assert row["source"] == "table"  # 演示起草不按档案，不记成人选的
+
+
+def test_chosen_profile_is_recorded_as_human():
+    from kaiti_hub import KaitiHub
+
+    from paoding_qicao.contract import heuristic_drafter
+
+    hub = KaitiHub({}, real=False, upstream="")
+    hub.pick = lambda want: (heuristic_drafter, want or "main", "")  # 模拟按档案起草
+    hub.svc.pick = hub.pick
+    out = hub.svc.draft_view({"text": TEXT, "profile": "cheap"})
+    row = next(r for r in out["derivation"] if r["field"] == "draft.model")
+    assert out["model"] == "cheap" and row["source"] == "human" and row["value"] == "cheap"

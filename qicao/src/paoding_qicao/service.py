@@ -176,6 +176,11 @@ class KaitiService:
                 v = override(v, ov, settings)
             except (ValueError, TypeError) as e:
                 raise BadRequest(str(e)) from None
+        if want is not None and model == want:
+            # 人在确认卡上选的起草档案：出处记“人”（重新校验时前端带回同一个 profile；演示起草不按档案，不记）
+            for r in v.derivation:
+                if r["field"] == "draft.model":
+                    r["source"], r["note"] = "human", "你选的起草档案"
         return self._view(v, ext, d, model, nonce, answer)
 
     def _view(self, v: Vetted, ext: Extraction, d: Any, model: str, nonce: str, answer: str | None) -> dict[str, Any]:
