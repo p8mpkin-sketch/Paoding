@@ -100,7 +100,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
                     <td className="t2">{p.profile.info} · {p.profile.judge} · {p.profile.reversibility}</td>
                     <td className="r k-mono">{usd(p.spent_usd_milli)}<span className="ink3"> / {p.cap_usd_milli === null ? "—" : usd(p.cap_usd_milli)}</span></td>
                     <td className="r k-mono ink3">{p.opened_seq}</td>
-                    <td className="r"><Link to={{ page: "new", from: p.id }} className={btnClass("bare", "sm")} data-action="clone">克隆</Link></td>
+                    <td className="r"><Link to={{ page: "new", advanced: true, from: p.id }} className={btnClass("bare", "sm")} data-action="clone">克隆</Link></td>
                   </tr>
                 );
               })}

@@ -11,7 +11,8 @@ import { submitDraft } from "../app/submit";
 import { sha256Hex } from "../model/hash";
 import { GRADE_WORD } from "../model/levels";
 import { shortHash, usd } from "../model/text";
-import { buildOpen, draftFromProblem, draftFromTemplate, judgesFor, problemsOf, scopeOf, STEPS, textMaterial, uploadedOf, type Draft, type DraftMaterial, type MaterialKind } from "../model/wizard";
+import { buildOpen, draftFromProblem, draftFromTemplate, judgesFor, problemsOf, scopeOf, STEPS, textMaterial, touch, uploadedOf, type Draft, type DraftMaterial, type MarkedField, type MaterialKind } from "../model/wizard";
+import { SOURCE } from "../model/kaiti";
 import { FileUp } from "lucide-react";
 import { Mark, Mast, SectionHead, btnClass } from "../kit";
 import { Plain } from "../ui/registers";
@@ -88,13 +89,18 @@ export function Wizard({ from }: { from?: string } = {}) {
   const issues = useMemo(() => (d ? problemsOf(d) : STEPS.map(() => [])), [d]);
   if (!templates || !registry || !d) return <p className={err ? "error" : "muted"}>{err ? rejectText(err) : "读取模板与判定器注册表…"}</p>;
   const judges = judgesFor(d, registry);
-  const set = (patch: Partial<Draft>) => setD({ ...d, ...patch });
-  const setMat = (i: number, patch: Partial<DraftMaterial>) => setD((cur) => cur && { ...cur, materials: cur.materials.map((m, k) => (k === i ? { ...m, ...patch } : m)) });
+  const set = (patch: Partial<Draft>) => setD(touch(d, patch));
+  const setMat = (i: number, patch: Partial<DraftMaterial>) => setD((cur) => cur && touch(cur, { materials: cur.materials.map((m, k) => (k === i ? { ...m, ...patch } : m)) }));
+  /** 出处记号（从一句话开题带进来时才有）：摘、表、估、起草、人。 */
+  const src = (f: MarkedField) => {
+    const m = d.marks?.[f];
+    return m ? <span className="kt-src" data-src={f} data-source={m}><Mark ch={SOURCE[m].ch} tone={SOURCE[m].tone} label={SOURCE[m].word} /></span> : null;
+  };
   const uploaded = uploadedOf(d);
   const allOk = issues.every((s) => s.length === 0);
   const open = buildOpen(d);
   const pick = (name: string) => setD(draftFromTemplate(templates.find((x) => x.name === name) ?? null, d));
-  const restart = () => { clearDraft(); setRestored(false); setStep(0); setD(draftFromTemplate(templates[0] ?? null)); if (from) navigate({ page: "new" }, true); };
+  const restart = () => { clearDraft(); setRestored(false); setStep(0); setD(draftFromTemplate(templates[0] ?? null)); if (from) navigate({ page: "new", advanced: true }, true); };
   const writable = cfg.token !== null;
 
   async function store(i: number, bytes: Uint8Array, name: string, media_type: string) {
@@ -142,7 +148,9 @@ export function Wizard({ from }: { from?: string } = {}) {
     <div className="wizard" data-wizard data-step-index={step}>
       <Mast vol={["卷三", "新建"]} cap={d.clonedFrom ? "克隆任务" : "新建任务"}
         title={d.clonedFrom ? <>从 <span className="k-mono" data-cloned-from={d.clonedFrom}><Plain text={d.clonedFrom} /></span> 克隆一个任务</> : "四步新建一个任务"}
-        dek="说清要做什么、怎么算做完、能动用什么、花多少。右边的任务单随填随变，缺什么会直接标出来。草稿只存在本机。"
+        dek={d.kaiti
+          ? "来自一句话新建：预填的字段旁标着出处（摘自原文、查表、估值、起草），你改过的变成“人”。从这里提交的一律要你确认。"
+          : "说清要做什么、怎么算做完、能动用什么、花多少。右边的任务单随填随变，缺什么会直接标出来。草稿只存在本机。"}
         actions={
           <div className="wizard-tpl">
             <label className="sel-u">模板
@@ -169,20 +177,26 @@ export function Wizard({ from }: { from?: string } = {}) {
 
       <div className="wizard-body">
         <div className="wizard-main">
+          {d.kaiti && (
+            <details className="kt-origin" data-kaiti-origin>
+              <summary>来自一句话新建的原文<span className="t2">已剪去答案</span></summary>
+              <p className="kt-origin-text"><Plain text={d.kaiti.text} /></p>
+            </details>
+          )}
           {on(0) && (
             <section className="today-sec" data-step="basics">
               <SectionHead title="基本信息" note="任务名与要达成什么" />
               <div className="form-grid">
                 <label>任务编号<span className="t2">字母、数字、点、下划线、连字符</span><input value={d.id} data-field="id" onChange={(e) => set({ id: e.target.value })} /></label>
-                <label>任务名<input value={d.title} data-field="title" onChange={(e) => set({ title: e.target.value })} /></label>
-                <label className="wide">目标陈述<span className="t2">要达成什么；怎么判定在第二步填</span><textarea value={d.statement} data-field="statement" onChange={(e) => set({ statement: e.target.value })} /></label>
+                <label>任务名{src("title")}<input value={d.title} data-field="title" onChange={(e) => set({ title: e.target.value })} /></label>
+                <label className="wide">目标陈述{src("statement")}<span className="t2">要达成什么；怎么判定在第二步填</span><textarea value={d.statement} data-field="statement" onChange={(e) => set({ statement: e.target.value })} /></label>
               </div>
             </section>
           )}
 
           {on(1) && (
             <section className="today-sec" data-step="origin">
-              <SectionHead title="起点：材料" note="第一份必填；网址只当文字存，不抓取" />
+              <SectionHead title={<>起点：材料{src("materials")}</>} note="第一份必填；网址只当文字存，不抓取" />
               <ul className="materials">
                 {d.materials.map((m, i) => {
                   const kind = m.kind ?? "file";
@@ -228,7 +242,8 @@ export function Wizard({ from }: { from?: string } = {}) {
 
           {on(2) && (
             <section className="today-sec" data-step="criterion">
-              <SectionHead title="终点：怎么判定“做完了”" note={`判定器来自注册表${d.judgeFilter.length ? "，按模板过滤" : ""}`} />
+              <SectionHead title={<>终点：怎么判定“做完了”{src("judge")}</>} note={`判定器来自注册表${d.judgeFilter.length ? "，按模板过滤" : ""}`} />
+              {d.sealed?.length ? <p className="t2" data-sealed>标准答案已在保密库（{d.sealed.length} 份引用），只给判定器；这里看不到也改不了。要换答案，回到一句话新建重来。</p> : null}
               <fieldset className="accept">
                 <legend className="sr-only">判定方式</legend>
                 <label className="choice" data-on={d.accept === "judge"}><input type="radio" name="accept" checked={d.accept === "judge"} onChange={() => set({ accept: "judge" })} /> <span><b>判定器判定</b><span className="t2">判定通过即解决（solved）</span></span></label>
@@ -253,14 +268,14 @@ export function Wizard({ from }: { from?: string } = {}) {
                     {uploaded.map(({ m, slot }) => <option key={slot} value={String(slot)}>{m.slot} · {shortHash(m.hash!)}</option>)}
                   </select>
                 </label>
-                <label>最多尝试 max_attempts<input inputMode="numeric" value={d.maxAttempts} data-field="max_attempts" onChange={(e) => set({ maxAttempts: e.target.value })} /></label>
+                <label>最多尝试 max_attempts{src("maxAttempts")}<input inputMode="numeric" value={d.maxAttempts} data-field="max_attempts" onChange={(e) => set({ maxAttempts: e.target.value })} /></label>
               </div>
             </section>
           )}
 
           {on(3) && (
             <section className="today-sec" data-step="scope">
-              <SectionHead title="资源：目标环境与授权" note="每条规则逐条标风险；这是授权，不是画像" />
+              <SectionHead title={<>资源：目标环境与授权{src("scope")}</>} note="每条规则逐条标风险；这是授权，不是画像" />
               <div className="form-grid">
                 <label>环境 base<span className="t2">环境模板或镜像名</span><input value={d.env.base} data-field="env-base" onChange={(e) => set({ env: { ...d.env, base: e.target.value } })} /></label>
                 <label>baseline_ref<span className="t2">可空</span><input value={d.env.baseline_ref} data-field="env-baseline" onChange={(e) => set({ env: { ...d.env, baseline_ref: e.target.value } })} /></label>
@@ -297,8 +312,8 @@ export function Wizard({ from }: { from?: string } = {}) {
             <section className="today-sec" data-step="budget">
               <SectionHead title="预算" note={d.b1CapMilli && Number(d.usd) > 0 ? `B1 单任务上限 ${usd(d.b1CapMilli)}，这份是它的 ${((Number(d.usd) * 1000) / d.b1CapMilli).toFixed(1)} 倍（默认 3 倍）` : "模板没有给出 B1 单任务上限"} />
               <div className="form-grid four">
-                <label>成本上限<span className="t2">美元</span><input inputMode="decimal" value={d.usd} data-field="usd" onChange={(e) => set({ usd: e.target.value })} /></label>
-                <label>时间上限 wall_s<span className="t2">{Number(d.wall_s) > 0 ? `约 ${(Number(d.wall_s) / 3600).toFixed(1)} 小时` : "秒"}</span><input inputMode="numeric" value={d.wall_s} data-field="wall_s" onChange={(e) => set({ wall_s: e.target.value })} /></label>
+                <label>成本上限{src("usd")}<span className="t2">美元</span><input inputMode="decimal" value={d.usd} data-field="usd" onChange={(e) => set({ usd: e.target.value })} /></label>
+                <label>时间上限 wall_s{src("wall_s")}<span className="t2">{Number(d.wall_s) > 0 ? `约 ${(Number(d.wall_s) / 3600).toFixed(1)} 小时` : "秒"}</span><input inputMode="numeric" value={d.wall_s} data-field="wall_s" onChange={(e) => set({ wall_s: e.target.value })} /></label>
                 <label>判定预算占比<span className="t2">verify_share，0–1</span><input inputMode="decimal" value={d.verify_share} data-field="verify_share" onChange={(e) => set({ verify_share: e.target.value })} /></label>
                 <label>起步占比<span className="t2">bootstrap_share，0–1</span><input inputMode="decimal" value={d.bootstrap_share} data-field="bootstrap_share" onChange={(e) => set({ bootstrap_share: e.target.value })} /></label>
               </div>

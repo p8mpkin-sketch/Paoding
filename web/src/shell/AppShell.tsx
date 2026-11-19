@@ -28,7 +28,7 @@ export function navOf(r: Route): { key: NavKey | null; vol: string; crumbs: stri
     case "home": return { key: "home", vol: "卷一", crumbs: ["今日"] };
     case "inbox": return { key: "inbox", vol: "卷二", crumbs: ["待办"] };
     case "problems": return { key: "tasks", vol: "卷三", crumbs: ["任务"] };
-    case "new": return { key: "tasks", vol: "卷三", crumbs: ["任务", r.from ? "克隆" : "新建"] };
+    case "new": return { key: "tasks", vol: "卷三", crumbs: ["任务", r.from ? "克隆" : r.advanced ? "高级模式" : "新建"] };
     case "import": return { key: "tasks", vol: "卷三", crumbs: ["任务", "导入任务集"] };
     case "readings": return { key: "readings", vol: "卷四", crumbs: ["读数"] };
     case "settings": return { key: "settings", vol: "卷五", crumbs: ["设置"] };

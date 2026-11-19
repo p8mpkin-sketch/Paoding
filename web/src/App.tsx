@@ -9,6 +9,7 @@ import { Cockpit } from "./pages/Cockpit";
 import { Dashboard } from "./pages/Dashboard";
 import { Import } from "./pages/Import";
 import { Inbox } from "./pages/Inbox";
+import { Kaiti } from "./pages/Kaiti";
 import { Problems, useProblems } from "./pages/Problems";
 import { Readings } from "./pages/Readings";
 import { SettingsPage } from "./pages/Settings";
@@ -51,7 +52,8 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
     <AppShell route={route} problems={view} problemsError={error} canWrite={!!cfg.token} token={token}>
       {route.page === "home" && <Home />}
       {route.page === "problems" && <Problems filter={{ q: route.q ?? "", terminal: route.terminal ?? "", judge: route.judge ?? "" }} />}
-      {route.page === "new" && <Wizard key={route.from ?? ""} from={route.from} />}
+      {route.page === "new" && !route.advanced && <Kaiti />}
+      {route.page === "new" && route.advanced && <Wizard key={route.from ?? ""} from={route.from} />}
       {route.page === "import" && <Import />}
       {route.page === "readings" && <Readings />}
       {route.page === "inbox" && <Inbox />}

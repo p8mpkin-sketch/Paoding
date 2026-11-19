@@ -1,7 +1,8 @@
 // 开题向导的草稿 → 提交体（HMI 设计 §3.2、§10.1）。草稿只在本机；提交体里没有 profile 字段。
 // 材料先把字节传成 Blob，登记与开题在同一批里原子提交：Origin 用 "$<下标>" 指向同批前面的登记。
 import { ops } from "../api/ops";
-import type { ArtifactView, BudgetResponse, CatalogItem, JudgeEntry, Op, ProblemInput, Risk, ScopeRule, StatusView } from "../api/types";
+import type { ArtifactView, BudgetResponse, CatalogItem, JudgeEntry, Op, ProblemInput, Risk, ScopeRule, StatusView, VaultRef } from "../api/types";
+import type { KaitiSource } from "../api/kaiti";
 
 export type DraftRule = { resource: string; pattern: string; actions: string; risk: Risk | "" };
 /**
@@ -37,7 +38,25 @@ export type Draft = {
   hint?: string;
   /** 克隆来源题目 id；只用于显示。 */
   clonedFrom?: string;
+  /** 从一句话开题带进来的答案引用（答案已在保密库，草稿里只有引用）。 */
+  sealed?: VaultRef[];
+  /** 从一句话开题带进来的出处记号（设计 §7.5）：字段名 → 出处；人改过即为 human。 */
+  marks?: Partial<Record<MarkedField, KaitiSource>>;
+  /** 一句话开题的原文（已剪去答案），向导左栏顶部折叠显示。 */
+  kaiti?: { text: string };
 };
+
+/** 带出处记号的字段。 */
+export type MarkedField = "title" | "statement" | "judge" | "maxAttempts" | "scope" | "usd" | "wall_s" | "materials";
+const MARKED: readonly string[] = ["title", "statement", "judge", "maxAttempts", "scope", "usd", "wall_s", "materials"];
+
+/** 人改了带记号的字段：记号变为"人"。没有记号的草稿原样。 */
+export function touch(d: Draft, patch: Partial<Draft>): Draft {
+  if (!d.marks) return { ...d, ...patch };
+  const marks = { ...d.marks };
+  for (const k of Object.keys(patch)) if (MARKED.includes(k) && k in marks) marks[k as MarkedField] = "human";
+  return { ...d, ...patch, marks };
+}
 
 /**
  * 六页（异议 web-workbench 第 2 条）：中间四页就是 HMI §3.2 的 Origin、判据、授权、预算，不增不藏；
@@ -134,6 +153,7 @@ export function goalOf(d: Draft): ProblemInput["goal"] {
       judge_id: d.judge,
       ...(spec ? { spec_ref: spec } : {}),
       ...(expect && !(expect instanceof Error) ? { expect } : {}),
+      ...(d.sealed?.length ? { sealed: d.sealed } : {}),
     },
     max_attempts: Number(d.maxAttempts),
     accept: d.accept,

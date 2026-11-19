@@ -26,8 +26,9 @@ def blobs(v: Vetted) -> dict[str, Blob]:
     return out
 
 
-def batch(v: Vetted, put: Callable[[bytes], str], vault_ref: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """put(字节) → sha256；vault_ref 是保密库返回的 {vault, digest}（有答案时必填）。"""
+def batch(v: Vetted, put: Callable[[bytes], str], vault_ref: dict[str, Any] | str | None) -> list[dict[str, Any]]:
+    """put(字节) → sha256；vault_ref 是保密库返回的 {vault, digest}（有答案时必填）。
+    网页的起草服务传 ANSWER_SLOT 本身：批次原样带着占位符交给前端，前端写完保密库再换（service.py）。"""
     if v.input is None or v.lane == "refuse":
         raise ValueError("拒绝道不开题")
     ops: list[dict[str, Any]] = []

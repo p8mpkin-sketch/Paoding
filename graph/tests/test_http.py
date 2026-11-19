@@ -1292,3 +1292,14 @@ def test_vault_put_is_write_only_and_human_only(tmp_path):
 def test_vault_put_absent_without_injection(api):
     st, body, _ = api.req("PUT", "/v1/vault", b"x", token="tok-human")
     assert st == 404 and body["code"] == "unknown_ref"
+
+
+def test_mount_human_only_for_drafts(api):
+    """组装根挂的端点可只认人的令牌（一句话开题 /v1/drafts：起草要花钱）。"""
+    api.http.mount("POST", r"/v1/drafts", lambda q, b: {"echo": b}, human=True)
+    st, body, _ = api.req("POST", "/v1/drafts", {"text": "x"}, token="tok-human")
+    assert st == 200 and body == {"echo": {"text": "x"}}
+    st, body, _ = api.req("POST", "/v1/drafts", {"text": "x"}, token="tok-sinan")
+    assert st == 403 and body["code"] == "forbidden_op"
+    st, _, _ = api.req("POST", "/v1/drafts", {"text": "x"})
+    assert st == 401

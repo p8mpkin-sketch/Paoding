@@ -391,7 +391,7 @@ HTTP 层（不是内核）：`PUT /v1/vault`，人的令牌，只写，返回 `V
 | 期 | 内容 | 前提 |
 | --- | --- | --- |
 | 一 | `qicao/` 的抽取与 `vet`；`pd kaiti` 只有确认道；内核加单题硬顶；`PUT /v1/vault` | 本稿裁决 |
-| 二 | 网页 `/new` 换成输入框与确认卡；向导移到 `/new/advanced`，加出处记号；拒绝页 | 一期合入 |
+| 二 | 网页 `/new` 换成输入框与确认卡；向导移到 `/new/advanced`，加出处记号；拒绝页（已实现：`qicao/service.py`、`scripts/kaiti_hub.py`、`web/src/pages/Kaiti.tsx`） | 一期合入 |
 | 三 | 内核加练习道信封与 `origin.draft`；开放零确认 | §10 第 3 条的精确率达到 100%；测试方的档位表已注入（未注入时用占位表照样能跑） |
 | 四 | 预算先验接 M2 的花费画像；`accept = human`（若 §9 第 6 条采纳） | M2 资产与内核放开 |
 
