@@ -151,7 +151,18 @@ define(
     ),
 )
 define("ScopeRule", obj({"resource": STR, "pattern": STR, "actions": arr(STR), "risk": ref("Risk")}))
-define("Origin", obj({"statement_ref": ref("ArtifactId"), "materials": arr(ref("ArtifactId"))}))
+define(
+    "DraftRef",
+    obj(
+        {"record": ref("ArtifactId"), "lane": lit("practice", "confirm")},
+        {"policy": obj({"version": INT, "digest": STR})},
+        doc="一句话开题的出处账引用与道别（增量 13）；policy 只在练习道，由图服务从信封抄入。",
+    ),
+)
+define(
+    "Origin",
+    obj({"statement_ref": ref("ArtifactId"), "materials": arr(ref("ArtifactId"))}, {"draft": ref("DraftRef")}),
+)
 define("Env", obj({"base": STR, "baseline_ref": STR}))
 define(
     "ProblemInput",

@@ -6,6 +6,7 @@ POST /v1/drafts → PUT /v1/blobs（逐份核对哈希）→ PUT /v1/vault（答
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 import urllib.error
 from pathlib import Path
@@ -54,7 +55,12 @@ def test_drafts_then_open_like_the_web(stack):
     assert p["scope"][0]["pattern"] == "q1:8080" and p["scope"][0]["risk"] == "r2"  # 没有风险表：r2
     assert (s.vault.root / ref["vault"]).read_bytes() == b"PD-7Q2M9XKD"
     assert ref["digest"] != hashlib.sha256(b"PD-7Q2M9XKD").hexdigest()  # 加盐
-    assert s.kaiti.state == {"draft": "heuristic", "profile": "heuristic", "priors": "placeholder:placeholder-0"}
+    assert s.kaiti.state == {
+        "draft": "heuristic",
+        "profile": "heuristic",
+        "priors": "placeholder:placeholder-0",
+        "zero_confirm": False,
+    }
 
 
 def test_kaiti_config_rejects_keys_in_file(tmp_path):
@@ -73,3 +79,59 @@ def test_real_backend_without_token_means_no_drafter(tmp_path, monkeypatch):
     assert hub.state["draft"] == "off"
     out = hub.svc.draft_view({"text": TEXT})
     assert out["lane"] == "refuse"
+
+
+def _open(s, url, out, lane, risk=None, key="k"):
+    tok = s.human_token
+    for b in out["blobs"]:
+        call(url, "/v1/blobs", token=tok, raw=b["text"].encode())
+    ref = call(url, "/v1/vault", token=tok, raw=out["secret"].encode())
+    ops = json.loads(json.dumps(out["ops"]))
+    body = ops[-1]["body"]
+    body["goal"]["check"]["sealed"] = [ref]
+    body["origin"]["draft"]["lane"] = lane
+    if risk:
+        for r in body["scope"]:
+            r["risk"] = risk
+        body["budget"]["usd_milli"] = 500
+    return call(url, "/v1/problems", {"id": out["pid"], "idem_key": key, "ops": ops}, token=tok)
+
+
+def test_practice_envelope_is_loaded_but_dormant(stack):
+    """第三期：内核加载信封即休眠。起草服务只给确认道；手工把道别改成 practice 的提交体由内核逐条对信封。"""
+    s, url = stack
+    pol = s.graph.cfg.practice
+    assert pol is not None
+    caps = s.settings.store.settings["caps"]
+    assert (pol.usd_milli_max, pol.wall_s_max) == (caps["practice_usd_milli"], caps["practice_wall_s"])
+    out = call(url, "/v1/drafts", {"text": TEXT}, token=s.human_token)
+    assert out["lane"] == "confirm" and out["ops"][-1]["body"]["origin"]["draft"]["lane"] == "confirm"
+    # 没有风险表：规则是 r2，不在信封里，整单拒绝
+    res = _open(s, url, out, "practice", key="k1")
+    assert not res["ok"] and any(r.get("code") == "forbidden_op" for r in res["results"])
+    assert out["pid"] not in s.graph.state["problems"]
+    # 人把风险标成 r0、金额压到练习上限内：信封接受，版本与摘要抄进事件体
+    res = _open(s, url, out, "practice", risk="r0", key="k2")
+    assert res["ok"], res
+    draft = s.graph.state["problems"][out["pid"]]["origin"]["draft"]
+    assert draft["lane"] == "practice" and draft["policy"] == {"version": pol.version, "digest": pol.digest}
+    assert s.graph.state["artifacts"][draft["record"]]["class"] == "input"
+
+
+def test_practice_caps_follow_settings(stack):
+    s, _ = stack
+    before = s.graph.cfg.practice
+    caps = {**s.settings.store.settings["caps"], "practice_usd_milli": 300}
+    s._practice({**s.settings.store.settings, "caps": caps})
+    after = s.graph.cfg.practice
+    assert after.usd_milli_max == 300 and after.digest != before.digest and after.version == before.version
+
+
+def test_drafts_read_the_settings_store(stack):
+    """确认卡上的单题硬顶取设置存储的当前快照，与内核 open_cap_* 同源。"""
+    s, url = stack
+    store = s.settings.store
+    store.settings = {**store.settings, "caps": {**store.settings["caps"], "open_usd_milli": 4321}}
+    s.settings.apply()
+    out = call(url, "/v1/drafts", {"text": TEXT}, token=s.human_token)
+    assert out["caps"]["open_usd_milli"] == 4321 == s.graph.cfg.open_cap_usd_milli
