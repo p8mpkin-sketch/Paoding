@@ -4,7 +4,7 @@
 
 ## 实现的契约接口
 
-- `pd problem open | status | report | profile | hint | approve`。
+- `pd problem open | status | report | profile | hint | approve | accept | reject`。
 - 文本输出四语域标记：`[证据]` `[叙述]` `[人]` `[估]`；等级词表；判据徽章。
 - `pd report` 首行写终态（solved / accepted / unsolved）与根结论的等级上限；accepted 不呈现为"已证明"。
 - 画像只能事后覆盖（`profile_override`），**不存在人填三轴的入口**。
@@ -22,11 +22,13 @@
 
 ## 实现（骨架，离线预备）
 
-- `cli.py`：`problem open`、`status`、`report`、`profile`、`hint add|close`、`approve`、`deny`。pid 取 `--pid` 或 `PD_PROBLEM`，数据目录取 `--home` 或 `PD_HOME`。
+- `cli.py`：`problem open`、`status`、`report`、`profile`、`hint add|close`、`approve`、`deny`、`accept`、`reject`。pid 取 `--pid` 或 `PD_PROBLEM`，数据目录取 `--home` 或 `PD_HOME`。
 - `render.py`：渲染入口 `Out.add(出处类别, 文本)`，语域查 `REGISTER` 表得到，没有直接写语域的入口；模型撰写的文本压成单行，内容里伪造的行首标记不成行。等级词表 `LEVEL_WORDS` 固定；E3、E3d、X 带作出裁决的 `judge@version`；`solved` 带目标判官徽章；`accepted` 写“人验收，未经判官判定”。
 - 观察类论断：首行是谓词（判官徽章、规格哈希、`expect`）与等级，第二行是证据根，标题与摘要在其后，按叙述。
 - `pd status` 对每条 Hint 列出“之后新增的 Intent”，注明是时序关联，不是因果。
 - `pd approve` 先打印审批卡文本，再要求输入 yes（`--yes` 跳过）；`deny` 理由必填。文本卡末行是 `card_hash`（与网页卡相同）；提交带 `seen {seq, card_hash}`，取自打印时的那份状态快照，卡片在确认期间变了就被拒为 `stale_view`，并重新打印最新的卡。
+- `pd accept` / `pd reject`（人工验收，设计 02 §3.3）：只对 `accept=human` 的任务。先打印验收清单、待验收的交付物与结构检查的读数（标明"只是读数"）、历次验收记录与收尾卡的 `card_hash`；清单每一条都判，`reject --fail a1,a2` 列出不过的项、其余算过，理由必填；`--ref 项=产物`、`--note 项=文本` 给条目附依据。提交带 `seen`（收尾卡）。
+- `status` 与 `report` 都有一行"判定来源"（本地判定、外部判定、人工验收，external-verdict §5.7）；accepted 的报告首行是"终态 accepted（人工验收，未经判官判定）"，不出现"证明"。
 
 ### 实现取值（待评审方确认）
 

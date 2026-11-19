@@ -196,3 +196,9 @@
 @media (max-width: 720px) {
   .stations { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
+
+/* 人工验收卡与结果页（地图 Q22、Q23） */
+.card.acceptance .accept-items { display: grid; gap: var(--s-2, 8px); padding-left: 1.5em; }
+.card.acceptance .accept-row { display: flex; flex-wrap: wrap; gap: var(--s-2, 8px); align-items: center; border: 0; padding: 0; margin: 4px 0 0; }
+.card.acceptance .accept-row input:not([type]) { flex: 1 1 12em; min-width: 0; }
+.result [data-result-head] { margin: 0 0 4px; }

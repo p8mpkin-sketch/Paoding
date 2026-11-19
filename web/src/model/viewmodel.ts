@@ -2,7 +2,7 @@
 // 入参全部是图服务对同一序号给出的投影；这里只做排版前的整理：
 // 不读本机时钟（时间取事件的 ts），排序只用 seq 与 id，不算等级，不解释事件体的语义。
 import type {
-  Badge, BudgetResponse, GraphView, IntentState, LeaseRow, Level, Predicate, Profile, ProfileOverride, Risk, ScopeRule,
+  AcceptanceItem, AcceptRecord, Authority, Badge, BudgetResponse, GraphView, IntentState, LeaseRow, Level, Predicate, Profile, ProfileOverride, Risk, ScopeRule,
   StatusView, Tagged, Terminal, WireTick, WorkItem, WorkView,
 } from "../api/types";
 import { layout, type Layout } from "./layout";
@@ -58,7 +58,13 @@ export type ViewModel = {
   scope: ScopeRule[];
   /** 题面的 Artifact（扩权卡做原文对照时读它）。 */
   statementRef: string;
-  goal: { predicate: Predicate; badge: Badge; levelWord: string; statement: Tagged; accept: "judge" | "human" };
+  goal: {
+    predicate: Predicate; badge: Badge; levelWord: string; statement: Tagged; accept: "judge" | "human";
+    /** 判定来源（external-verdict §5.7）：服务端只在非本地时给出 */
+    authority: Authority;
+    /** 人工验收的清单与历次验收记录（只在 accept=human 的任务上） */
+    acceptance: AcceptanceItem[]; acceptLog: AcceptRecord[];
+  };
   rows: NodeRow[];
   hints: HintRow[];
   frontier: FrontierGroup[];
@@ -157,7 +163,8 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     scope: status.problem.scope,
     statementRef: status.problem.origin.statement_ref,
     leases: status.leases,
-    goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept },
+    goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept,
+      authority: g.authority ?? "local", acceptance: g.acceptance ?? [], acceptLog: g.accept_log ?? [] },
     rows, hints, frontier, todo, budget: budgetVM,
     ticks: ticksOf(ticks, seq),
     layout: layout({

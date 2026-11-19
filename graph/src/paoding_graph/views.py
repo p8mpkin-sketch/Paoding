@@ -317,7 +317,12 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
     每行另带总览要的几项（工作台设计 §6 A 组），都是现有投影的搬运：Goal 的等级、在途租约的种类与目标、
     待人处理的项数、墙钟。`closed_ts` 是关题那条事件的 ts，由调用方经 `ts_of(pid, seq)` 从日志取；
     状态里不存它，所以不给 `ts_of` 时为 null。"""
-    items, spent_all, solved = [], 0, 0
+    items, spent_all = [], 0
+    # 按判定来源分列（external-verdict §5.7、宪章裁决附加 1）：local 与 external 的 solved 各数各的，
+    # human 那一行只有 accepted；成功率、每解成本的分子只取本地判定的 solved
+    tally: dict[str, dict[str, int]] = {
+        a: {"problems": 0, "solved": 0, "accepted": 0, "unsolved": 0, "open": 0} for a in ("local", "external", "human")
+    }
     for pid in sorted(state["problems"], key=lambda k: state["problems"][k]["opened_seq"]):
         p = state["problems"][pid]
         b = wk.budget_view(state, pid)
@@ -326,7 +331,9 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
         closed_ts = ts_of(pid, closed_seq) if ts_of and closed_seq is not None else None
         end = closed_ts if closed_ts is not None else state["now"]
         spent_all += b["spent"]["usd_milli"]
-        solved += term == "solved"
+        auth = p["goal"].get("authority", "local")
+        tally[auth]["problems"] += 1
+        tally[auth][term or "open"] += 1
         items.append(
             {
                 "id": pid,
@@ -334,6 +341,7 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
                 "closed": bool(p.get("closed")),
                 "terminal": term,
                 "terminal_badge": _badge(p, p["goal"]["check"]["judge_id"]),
+                "authority": auth,
                 "profile": dict(p["profile"]),
                 "opened_seq": p["opened_seq"],
                 "opened_ts": p["opened_ts"],
@@ -354,9 +362,10 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
         "items": items,
         "totals": {
             "problems": len(items),
-            "solved": solved,
+            "solved": tally["local"]["solved"],
             "spent_usd_milli": spent_all,
-            "cost_per_solve_usd_milli": spent_all // solved if solved else None,
+            "cost_per_solve_usd_milli": spent_all // tally["local"]["solved"] if tally["local"]["solved"] else None,
+            "by_authority": tally,
         },
     }
 
@@ -398,7 +407,19 @@ def status(state: State, pid: str) -> View:
         "goal": {
             "statement": tag("statement", p["goal"]["statement"]),
             "accept": p["goal"]["accept"],
+            # 判定来源：与事件体同法，local 时不写（旧日志的视图逐字节不变）
+            **({"authority": p["goal"]["authority"]} if "authority" in p["goal"] else {}),
             "predicate": _predicate(state, pid, "goal", p["goal"]["check"], goal_level, p["goal"]["max_attempts"]),
+            # 人工验收（宪章 D3）：开题时登记的清单、待验收交付物所在的裁决 seq、历次验收与拒收
+            **(
+                {
+                    "acceptance": [dict(a) for a in p["goal"]["acceptance"]],
+                    "acceptance_ready": wk.acceptance_ready(state, pid),
+                    "accept_log": [dict(a) for a in p.get("accept_log", [])],
+                }
+                if "acceptance" in p["goal"]
+                else {}
+            ),
         },
         "facts": [_fact(state, pid, f, ctx, "summary") for f in _facts(state, pid)],
         "intents": [_intent(state, pid, i, ctx, "summary") for i in _intents(state, pid)],

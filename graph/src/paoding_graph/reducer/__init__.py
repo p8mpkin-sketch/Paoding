@@ -80,7 +80,7 @@ def _who(actor: Actor, kind: str) -> bool:
         return (k == "adapter" and role in grants.REQUEST_ROLES) or k in ("human", "graph")
     if kind == "grant_scope":  # 人；或图服务按确定性判定（另查，判定在 validate 里重算）
         return k in ("human", "graph")
-    if kind == "revoke_scope":
+    if kind in ("revoke_scope", "accept"):
         return k == "human"
     return False
 
@@ -107,6 +107,7 @@ KINDS = (
     "grant_scope",
     "revoke_scope",
     "bind_deadline",
+    "accept",
 )
 AFTER_CLOSE = ("cost", "release")  # 关题后在途任务仍可交回用量与释放租约
 
@@ -147,6 +148,7 @@ _VALIDATORS: dict[str, Validator] = {
     "grant_scope": grants._v_grant_scope,
     "revoke_scope": grants._v_revoke_scope,
     "bind_deadline": problem._v_bind_deadline,
+    "accept": close._v_accept,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -171,6 +173,7 @@ _APPLIERS: dict[str, Applier] = {
     "grant_scope": grants._a_grant_scope,
     "revoke_scope": grants._a_revoke_scope,
     "bind_deadline": problem._a_bind_deadline,
+    "accept": close._a_accept,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 

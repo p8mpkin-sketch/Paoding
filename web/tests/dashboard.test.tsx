@@ -15,7 +15,7 @@ const NOW = new Date(2026, 10, 18, 15, 0).getTime();
 const H = 3600_000;
 function item(id: string, patch: Partial<ProblemItem> = {}): ProblemItem {
   return {
-    id, title: { src: "title", register: "叙述", value: `题 ${id}` }, closed: false, terminal: null,
+    id, authority: "local", title: { src: "title", register: "叙述", value: `题 ${id}` }, closed: false, terminal: null,
     terminal_badge: { judge_id: "exact_match", version: "1", grade: "decisive", kind: "hard", label: "exact_match@1" },
     opened_seq: 1, opened_ts: NOW - 5 * H, closed_seq: null, profile: { info: "complete", judge: "hard", reversibility: "r0" },
     spent_usd_milli: 100, cap_usd_milli: 1000, closed_ts: null, goal_level: "E0", active: [], human_todo: 0, wall: { cap_s: 7200, elapsed_s: 60 },

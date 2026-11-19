@@ -404,3 +404,88 @@ def test_scope_list_grant_revoke(home):
     assert code == 0 and f"已撤销 {k}" in out
     code, out = pd(home, "--pid", "p1", "scope", "list")
     assert f"规则 {k} net q7.lab:8443 connect r2（已撤销）" in out
+
+
+# ---------- 人工验收（设计 02 §3.3） ----------
+
+HUMAN_PROBLEM = PROBLEM.replace(
+    "goal: {statement: 给出配置项的实际取值, check: {judge_id: exact_match}, max_attempts: 3, accept: judge}",
+    "goal: {statement: 写一份配置说明, check: {judge_id: structure_check, expect: {format: text}}, max_attempts: 3,"
+    " accept: human, acceptance: [{text: 说明覆盖三个场景, src: span},"
+    " {text: 附运行结果, src: human, needs: artifact}]}",
+).replace("judges: [exact_match, replay]", "judges: [structure_check, exact_match]")
+
+
+def _art(g, tok, cls, content):
+    body = {"hash": hashlib.sha256(content).hexdigest(), "size": len(content), "media_type": "text/plain", "class": cls}
+    if cls in ("exec", "judge"):
+        body["exec"] = {
+            "sandbox_id": "s", "base": "b", "baseline_ref": "r", "tool": "shell", "command": "true", "cwd": "/",
+            "exit_code": 0, "touched": [], "started_at": 1, "ended_at": 2, "truncated": False,
+        }  # fmt: skip
+    out = g.submit(tok, "p1", f"art:{content!r}", [{"op": "register_artifact", "body": body}])
+    return out["results"][0]["id"]
+
+
+def _delivered(home, result="pass"):
+    """开一个人工验收的任务，交一份候选并由结构检查给出读数；返回一份 exec 类的运行结果供验收项引用。"""
+    (home / "h.yaml").write_text(HUMAN_PROBLEM)
+    code, out = pd(home, "problem", "open", str(home / "h.yaml"))
+    assert code == 0, out
+    local = Local(home / "data", {"kind": "human", "id": "cz"})
+    g = local.graph
+    g.tokens.issue({"kind": "judge", "id": "jr"}, "j")
+    g.tokens.issue({"kind": "executor", "id": "ex1"}, "e")
+    cand = _art(g, "pd-local-human", "input", b"config notes " + result.encode())
+    out = g.submit(
+        "pd-local-human",
+        "p1",
+        f"rj:{result}",
+        [{"op": "request_judge", "body": {"target": "goal", "judge_id": "structure_check", "candidate": cand}}],
+    )
+    rid = out["results"][0]["id"]
+    ev = _art(g, "j", "judge", f"report {result}".encode())
+    out = g.submit(
+        "j",
+        "p1",
+        f"v:{rid}",
+        [{"op": "judge_verdict", "body": {"request": rid, "result": result, "version": "1", "evidence": [ev]}}],
+    )
+    assert out["ok"], out
+    return _art(g, "e", "exec", b"run output")
+
+
+def test_accept_lists_items_then_closes_as_accepted(home):
+    run = _delivered(home)
+    code, out = pd(home, "status", "p1")
+    assert code == 0 and well_formed(out)
+    assert "[证据] 判定来源 人工验收" in out and "[人] a1：说明覆盖三个场景" in out
+    assert "待验收" in out and "structure_check@1，只是读数" in out
+    code, out = pd(home, "--pid", "p1", "accept")  # a2 要附交付物
+    assert code == 1 and "missing_evidence" in out
+    code, out = pd(home, "--pid", "p1", "accept", "--ref", f"a2={run}", "--yes")
+    assert code == 0 and "已验收通过" in out and "accepted（人工验收，未经判官判定）" in out, out
+    code, out = pd(home, "report", "p1")
+    first = out.splitlines()[0]
+    assert first.startswith("[证据] 终态 accepted（人工验收") and "证明" not in out and well_formed(out)
+    assert "验收通过：a1=过 a2=过" in out
+
+
+def test_reject_needs_fail_items_and_reason(home):
+    _delivered(home)
+    with pytest.raises(SystemExit):
+        pd(home, "--pid", "p1", "reject", "--fail", "a1")  # 没写理由
+    code, out = pd(home, "--pid", "p1", "reject", "--fail", "a9", "--reason", "x", "--yes")
+    assert code == 2 and "清单里没有 a9" in out
+    code, out = pd(home, "--pid", "p1", "reject", "--fail", "a1,a2", "--reason", "第三个场景没写", "--yes")
+    assert code == 0 and "已拒收" in out
+    code, out = pd(home, "status", "p1")
+    assert "拒收：a1=不过 a2=不过" in out and "[人] seq" in out and "没有待验收的交付物" in out
+
+
+def test_accept_refused_on_judge_tasks(home):
+    pd(home, "problem", "open", str(home / "p.yaml"))
+    code, out = pd(home, "--pid", "p1", "accept", "--yes")
+    assert code == 1 and "不由人验收" in out
+    code, out = pd(home, "status", "p1")
+    assert "[证据] 判定来源 本地判定" in out

@@ -5,7 +5,7 @@
 ## 实现的契约接口
 
 - 判官注册表 = 配置目录（YAML），领域词只允许出现在判官配置里，不在本目录代码里。
-- 内建判官只有领域中立的三个：`replay`、`exact_match`（M0），`seal_check`（M3）。`lean_check` 不是内建判官，M3 以 `judges.d/` 里的配置条目存在（异议报告 001 第 3 项，2026-11-17 裁决）。
+- 内建判官只有领域中立的四个：`replay`、`exact_match`（M0），`seal_check`（M3），`structure_check`（L2，advisory：只看交付物形状，给人工验收当读数，自身不能关题）。`lean_check` 不是内建判官，M3 以 `judges.d/` 里的配置条目存在（异议报告 001 第 3 项，2026-11-17 裁决）。
 - 洁净重放：从 `baseline_ref` 新建容器；抖动策略与次数上限。
 - 保密库：含密级资产（`VaultRef`）只在判官容器内解引用；`show` 对其返回 `forbidden_op`。
 
@@ -15,7 +15,7 @@
 | --- | --- |
 | `registry.py` | `load_registry(dir)` 读 `judges.d/*.yaml`；`kernel_judges()` 给出图服务 `Config.judges` 的形状（version、grade、kind、max_cost 抄进题目快照） |
 | `vault.py` | `Vault.put(key, content) → VaultRef{vault, digest}`，摘要加盐；`open(ref)` 校验摘要，资产被换过即拒。目录 0700、文件 0600，内容不进日志、Blob 与任何容器 |
-| `builtin.py` | `exact_match`：答案取自 `Check.sealed`（保密库）或公开的 `expect.sha256`，输出只有候选摘要与结论；`replay`：洁净容器（不挂工作区、上限不超过 r1）里执行 `spec_ref`，没有规格时执行候选，按 `expect {exit_code, stdout_contains, stdout_regex}` 比对 |
+| `builtin.py` | `exact_match`：答案取自 `Check.sealed`（保密库）或公开的 `expect.sha256`，输出只有候选摘要与结论；`replay`：洁净容器（不挂工作区、上限不超过 r1）里执行 `spec_ref`，没有规格时执行候选，按 `expect {exit_code, stdout_contains, stdout_regex}` 比对；`structure_check`：按 `expect {format: any|text|json, min_bytes}` 检查候选的大小、UTF-8 与 JSON 可解析，报告只含大小、格式、问题列表与候选摘要 |
 | `runner.py` | `JudgeRunner.tick()`：从 `/work` 领 judge 租约 → 运行 → 输出登记为 judge 类 → `judge_verdict` → `cost(source=judge)` 计入验证池 → 释放。同一请求最多领 3 次租约 |
 
 裁决取值：`pass`、`fail`、`flaky`（一次请求内 `1 + flake.reruns` 次不一致）、`inconclusive`（原因码 `timeout`、`env_error`、`unsupported`、`untouched`）。

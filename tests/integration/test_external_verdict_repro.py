@@ -7,7 +7,8 @@
 每条用例断言的都是**设计稿写成时的行为**，作为设计的证据，不是期望的行为。翻转后的版本是验收门，
 在 test_external_verdict_flip.py：一期（内核）翻转了行 1（结构化开题一侧）、4、4b、5，二期（connector 运行器）
 翻转了行 2（开题时领题，资源公告进材料）并把行 5 换成真运行器。这里留下的断言对应的是入口一侧
-（行 1、1b 的起草与校验，三期）与 accept=human（行 3，D3），到期再翻；行 2 这里留的是"起草时没有地址"这条证据，
+（行 1、1b 的起草与校验，三期）；行 3（accept=human，D3）已随 L2 翻转为“必须带验收清单”；
+行 2 这里留的是"起草时没有地址"这条证据，
 翻转后仍然成立。
 行 4 的"wall_s=21600 被单题硬顶拒"在新设计下仍然成立且正确：平台时限进 deadline，不进花费预算。
 
@@ -156,10 +157,12 @@ def case_human_accept(s: Stack, url: str, plat: Platform) -> list[tuple[str, str
     return _rejects(_submit(s, url, out, human, "k-human"))
 
 
-def test_3_accept_human_is_rejected_by_kernel(stack, plat):
+def test_3_accept_human_needs_an_acceptance_list(stack, plat):
+    """行 3 已随 L2（宪章 D3）翻转：内核放开 accept=human，但必须带开题时登记的验收清单；
+    只把 accept 改成 human、不给清单的，仍被拒（不能用"人看一眼"代替判定标准）。"""
     s, url = stack
     rej = case_human_accept(s, url, plat)
-    assert ("schema_error", "M0 只实现 accept=judge") in rej
+    assert ("schema_error", "accept=human 的题须带非空的验收清单 goal.acceptance[]") in rej
 
 
 # ---------------------------------------------------------------- 表现四：时限外部规定型
@@ -212,10 +215,10 @@ def test_4b_wall_budget_is_elapsed_time_not_spend(stack, plat):
 
 
 def test_5_judge_side_has_no_external_verdict_path(stack, plat):
-    """注册表里只有 exact_match 与 replay；判官运行器同步出裁决（fn(ctx) → Outcome），没有 pending。
-    平台回执要轮询两次以上才出结果。"""
+    """注册表里能判定的只有 exact_match 与 replay（L2 加的 structure_check 是 advisory，只给读数）；
+    判官运行器同步出裁决（fn(ctx) → Outcome），没有 pending。平台回执要轮询两次以上才出结果。"""
     s, _ = stack
-    assert sorted(s.registry) == ["exact_match", "replay"]
+    assert sorted(k for k, v in s.registry.items() if v.get("grade") != "advisory") == ["exact_match", "replay"]
     assert all(spec["kind"] != "deferred" for spec in s.registry.values())
     sid = plat.post("/api/tasks/T-17/submissions", {"answer": "x"})["submission_id"]
     assert plat.get(f"/api/submissions/{sid}")["status"] == "pending"

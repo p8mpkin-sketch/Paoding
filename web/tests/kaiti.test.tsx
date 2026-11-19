@@ -199,17 +199,40 @@ describe("输入框与确认卡", () => {
 });
 
 describe("拒绝页", () => {
-  it("说不清怎样算做完：引用目标句，四条路，人工验收灰显；输入框保留原文", async () => {
+  it("说不清怎样算做完：引用目标句，四条路；输入框保留原文", async () => {
     const { container } = await drafted(rec("refuse").text);
     const page = container.querySelector("[data-kaiti-refuse]")!;
     expect(page.textContent).toContain("这件事还说不清怎样算做完");
     expect(page.querySelector(".kt-quote")?.textContent).toBeTruthy();
     expect(page.querySelectorAll(".kt-ways > li")).toHaveLength(4);
     expect(page.querySelector('[data-way="register_platform"] [data-action="refuse-register"]')?.getAttribute("href")).toBe("/settings");
-    expect(page.querySelector('[data-way="human"]')?.getAttribute("aria-disabled")).toBe("true");
-    expect((page.querySelector('[data-way="human"] button') as HTMLButtonElement).disabled).toBe(true);
+    expect(page.querySelector('[data-way="human"]')?.getAttribute("aria-disabled")).toBeNull();
+    expect((page.querySelector('[data-action="refuse-human"]') as HTMLButtonElement).disabled).toBe(true); // 清单为空时不能走
     expect((container.querySelector('[data-field="kaiti-text"]') as HTMLTextAreaElement).value).toBe(rec("refuse").text);
     expect(container.querySelector("[data-kaiti-card]")).toBeNull();
+  });
+
+  it("第 02 条路：选原句、自己写一条，按清单起草成人工验收的确认卡，再创建", async () => {
+    const { r, container } = await drafted(rec("refuse").text);
+    const span = container.querySelector("[data-acc-span]") as HTMLInputElement;
+    fireEvent.click(span);
+    fireEvent.change(container.querySelector('[data-acc-text="0"]')!, { target: { value: "附上对比表" } });
+    fireEvent.click(container.querySelector('[data-acc-needs="0"]')!);
+    fireEvent.click(container.querySelector('[data-action="refuse-human"]')!);
+    await waitFor(() => expect(container.querySelector("[data-kaiti-card]")).not.toBeNull());
+    expect(container.querySelector("[data-human-accept]")?.textContent).toContain("终态最多为人工验收");
+    const rows = [...container.querySelectorAll('[data-field^="goal.acceptance"]')];
+    expect(rows.map((x) => x.querySelector("dt")?.textContent)).toEqual(["验收 1", "验收 2"]);
+    expect(rows[1].textContent).toContain("附上对比表");
+    const want = KAITI.acceptance[0].out.input!.goal;
+    expect(want.accept).toBe("human");
+    fireEvent.click(container.querySelector('[data-action="open-problem"]')!);
+    await until(() => window.location.pathname.startsWith("/p/"), "跳到新任务");
+    const pid = decodeURIComponent(window.location.pathname.split("/")[2]);
+    const st = await r.api.status(pid);
+    expect(st.goal.accept).toBe("human");
+    expect(st.goal.authority).toBe("human");
+    expect(st.goal.acceptance?.map((a) => a.id)).toEqual(["a1", "a2"]);
   });
 
   it("进高级模式：带着原文，从第二步开始", async () => {

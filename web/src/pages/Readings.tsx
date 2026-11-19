@@ -1,5 +1,5 @@
 // 读数面板（量具；HMI 设计 §3.8、§4）。只显示，不驱动任何按钮的默认值。
-// F1 只有能从现有端点读到的量：每解成本（服务端给的 totals）、按角色分项、验证池花费。
+// F1 只有能从现有端点读到的量：每解成本（服务端给的 totals）、按判定来源分列、按角色分项、验证池花费。
 // 评测台四臂、归因表、折损、切口命中率、校准、留出还没有读端点，显示"暂不可用"，不编数字。
 import { useEffect, useState } from "react";
 import type { BudgetResponse } from "../api/types";
@@ -10,6 +10,7 @@ import { usd } from "../model/text";
 import { Plain } from "../ui/registers";
 import { Link, useProblems } from "./Problems";
 
+const AUTHORITIES = [["local", "本地判定"], ["external", "外部判定"], ["human", "人工验收"]] as const;
 const UNAVAILABLE = ["评测台四臂与消融结果", "结构归因表", "折损账（割与折）", "切口命中率", "校准曲线（预测账）", "常设留出", "退役距离", "学习曲线"];
 
 export function Readings() {
@@ -40,9 +41,21 @@ export function Readings() {
         <h3>任务集</h3>
         <dl className="kv">
           <dt>任务数</dt><dd>{totals.problems}（已关 {closed.length}）</dd>
-          <dt>终态</dt><dd>{(["solved", "accepted", "unsolved"] as const).map((t) => `${t} ${closed.filter((p) => p.terminal === t).length}`).join(" · ")}</dd>
-          <dt>每解成本</dt><dd data-cost-per-solve>{totals.cost_per_solve_usd_milli !== null ? `${usd(totals.cost_per_solve_usd_milli)}（全部花费 ${usd(totals.spent_usd_milli)} ÷ solved ${totals.solved} 题；图服务给出）` : "尚无 solved 的题"}</dd>
+          <dt>每解成本</dt><dd data-cost-per-solve>{totals.cost_per_solve_usd_milli !== null ? `${usd(totals.cost_per_solve_usd_milli)}（全部花费 ${usd(totals.spent_usd_milli)} ÷ 本地判定 solved ${totals.solved} 题；图服务给出）` : "尚无本地判定 solved 的任务"}</dd>
         </dl>
+      </section>
+      <section>
+        <h3>按判定来源分列</h3>
+        <p className="muted">已验收（accepted）只出现在人工验收一行，不并进 solved；成功率与每解成本的分子只取本地判定的 solved。</p>
+        <table className="mini" data-by-authority>
+          <thead><tr><th>判定来源</th><th>任务</th><th>进行中</th><th>solved</th><th>accepted</th><th>unsolved</th></tr></thead>
+          <tbody>
+            {AUTHORITIES.map(([k, word]) => {
+              const t = totals.by_authority[k];
+              return <tr key={k} data-authority={k}><td>{word}</td><td>{t.problems}</td><td>{t.open}</td><td>{k === "human" ? "—" : t.solved}</td><td>{k === "human" ? t.accepted : "—"}</td><td>{t.unsolved}</td></tr>;
+            })}
+          </tbody>
+        </table>
       </section>
       <section>
         <h3>按角色分项</h3>

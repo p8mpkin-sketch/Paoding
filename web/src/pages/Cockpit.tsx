@@ -6,6 +6,8 @@ import { hrefOf, navigate } from "../app/router";
 import { canWrite, ProblemSession } from "../app/session";
 import { countUsage } from "../app/usage";
 import { shortHash } from "../model/text";
+import { AcceptanceCard } from "../ui/AcceptanceCard";
+import { ResultReport } from "../ui/ResultReport";
 import { ApprovalCard } from "../ui/ApprovalCard";
 import { ScopeCard } from "../ui/ScopeCard";
 import { CostMeter } from "../ui/CostMeter";
@@ -153,6 +155,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
         </aside>
 
         <main className="main">
+          {vm.closed && <ResultReport vm={vm} />}
           {sheet && (
             <div className="sheet" data-sheet={sheet.kind}>
               <button type="button" className={`${btnClass("bare", "sm")} sheet-close`} onClick={() => setSheet(null)}>收起<Kbd>Esc</Kbd></button>
@@ -161,6 +164,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
               {sheet.kind === "todo" && openTodo?.why === "needs_human" && <ApprovalCard key={openTodo.target} pid={pid} intentId={openTodo.target} head={s.head} canWrite={writable} onInspect={select} />}
               {sheet.kind === "todo" && openTodo?.why === "scope_request" && <ScopeCard key={openTodo.target} pid={pid} requestId={openTodo.target} head={s.head} canWrite={writable} statementRef={vm.statementRef} />}
               {sheet.kind === "todo" && openTodo?.why === "extension" && <ExtensionDialog pid={pid} head={s.head} canWrite={writable} />}
+              {sheet.kind === "todo" && openTodo?.why === "acceptance" && <AcceptanceCard pid={pid} head={s.head} canWrite={writable} log={vm.goal.acceptLog} />}
               {sheet.kind === "todo" && !openTodo && <p className="muted">这一项已不在待办里。</p>}
             </div>
           )}

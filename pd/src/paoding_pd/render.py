@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from paoding_graph.contract import LEVEL_WORDS, REGISTER, intent_status, node_levels, seen_card
+from paoding_graph.contract import LEVEL_WORDS, REGISTER, acceptance_ready, intent_status, node_levels, seen_card
 
 # 出处类别 → 语域的表与等级词表在图服务一侧（views.py）：pd 的文本与网页的卡片读同一张表（一卡多端）。
 
@@ -58,6 +58,43 @@ def level_phrase(state: dict, pid: str, target: str, level: str | None) -> str:
     return f"{level} {word}"
 
 
+AUTHORITY_WORDS = {"local": "本地判定", "external": "外部判定", "human": "人工验收"}
+
+
+def authority(p: dict) -> str:
+    """开题时派生的判定来源（external-verdict §5.7）：内核只在非本地时写进 goal。"""
+    return str(p["goal"].get("authority", "local"))
+
+
+def acceptance(o: Out, state: dict, pid: str) -> None:
+    """人工验收的题：清单逐条、待验收的交付物、历次验收记录。条目原文是人写的或原文区间，按"人"语域。"""
+    g = state["problems"][pid]["goal"]
+    if "acceptance" not in g:
+        return
+    for a in g["acceptance"]:
+        need = {"artifact": "；要附交付物", "note": "；要附说明"}.get(a.get("needs", ""), "")
+        o.add("structure", f"验收项 {a['id']}（{'原文' if a['src'] == 'span' else '人写'}{need}）")
+        o.add("statement", f"{a['id']}：{a['text']}")
+    d = seen_card(state, pid, "closeout", pid)
+    seq = acceptance_ready(state, pid)
+    if seq is None:
+        o.add("status", "验收：没有待验收的交付物")
+    else:
+        v = next(v for v in state["verdicts"] if v["seq"] == seq and v["problem_id"] == pid)
+        o.add(
+            "verdict",
+            f"待验收：候选 {v.get('candidate') or '无'}，"
+            f"结构检查 {v['result']}（{v['judge']}@{v['version']}，只是读数）",
+        )
+    for e in state["problems"][pid].get("accept_log", []):
+        word = "验收通过" if e["decision"] == "accept" else "拒收"
+        marks = " ".join(f"{c['id']}={'过' if c['verdict'] == 'pass' else '不过'}" for c in e["checks"])
+        o.add("status", f"seq {e['seq']} {word}：{marks}")
+        if e.get("reason"):
+            o.add("human_reason", f"seq {e['seq']} 理由：{e['reason']}")
+    o.add("structure", f"card_hash {d['card_hash'][:12]} · 所见 seq {d['seq']}")
+
+
 def terminal_phrase(state: dict, pid: str) -> str:
     p = state["problems"][pid]
     if not p.get("closed"):
@@ -66,7 +103,7 @@ def terminal_phrase(state: dict, pid: str) -> str:
     if t == "solved":
         return f"solved（{judge_badge(state, pid, p['goal']['check']['judge_id'])}）"
     if t == "accepted":
-        return "accepted（人验收，未经判官判定）"
+        return "accepted（人工验收，未经判官判定）"
     return "unsolved"
 
 
@@ -93,7 +130,9 @@ def status(state: dict, pid: str, budget: dict) -> str:
         + " ".join(f"{k}={v}" for k, v in sorted(p["profile"].items()))
         + ("（含人工覆盖）" if p.get("profile_overrides") else ""),
     )
+    o.add("structure", f"判定来源 {AUTHORITY_WORDS[authority(p)]}")
     o.add("budget", _budget_line(budget))
+    acceptance(o, state, pid)
     o.blank()
     facts = sorted((f for f in state["facts"].values() if f["problem_id"] == pid), key=lambda f: int(f["id"][2:]))
     for f in facts:
@@ -169,7 +208,9 @@ def report(state: dict, pid: str, budget: dict) -> str:
         "terminal",
         f"终态 {terminal_phrase(state, pid)}；根结论等级上限 {level_phrase(state, pid, 'goal', lv.get('goal'))}",
     )
+    o.add("structure", f"判定来源 {AUTHORITY_WORDS[authority(state['problems'][pid])]}")
     o.add("budget", _budget_line(budget))
+    acceptance(o, state, pid)
     o.blank()
     rank = {"E3": 0, "E3d": 1, "E2": 2, "E1": 3, "E0": 4, "X": 5}
     facts = sorted(

@@ -44,9 +44,24 @@ def card_object(state: State, pid: str, kind: str, target: str, ref: tuple[Any, 
                 "goal_level": res.levels.get("goal"),
                 "closed": bool(p.get("closed")),
                 "terminal": p.get("terminal", "unsolved") if p.get("closed") else None,
+                # accept=human 的题（宪章 D3）：验收清单与待验收的那份交付物进哈希，人勾的是这一份
+                **(
+                    {"acceptance": p["goal"]["acceptance"], "deliverable": _deliverable(state, pid)}
+                    if "acceptance" in p["goal"]
+                    else {}
+                ),
             },
         }
     return None
+
+
+def _deliverable(state: State, pid: str) -> dict[str, Any] | None:
+    """待验收的交付物：最近一条通过的 Goal 裁决所指的候选；没有待验收的时为 None。"""
+    seq = wk.acceptance_ready(state, pid)
+    if seq is None:
+        return None
+    v = next(v for v in state["verdicts"] if v["seq"] == seq and v["problem_id"] == pid)
+    return {"verdict_seq": seq, "candidate": v["candidate"]}
 
 
 def _scope_card(state: State, pid: str, rid: str) -> Card | None:
