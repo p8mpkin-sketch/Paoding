@@ -57,7 +57,7 @@ skip_empty = true
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian"]
+files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian", "eval/src/paoding_eval"]
 untyped_calls_exclude = ["paoding_graph.refmodel"]
 
 [[tool.mypy.overrides]]
@@ -67,7 +67,7 @@ ignore_errors = true
 # 各组件的 contract.py 就是再导出（ci/check_deps.py 只许跨组件 import 它）：在这些模块上放开隐式再导出，
 # 不用把每个名字改写成 `import X as X`。
 [[tool.mypy.overrides]]
-module = ["paoding_graph.contract", "paoding_executor.contract", "paoding_adapter.contract", "paoding_judgebox.contract", "paoding_tongjian.contract"]
+module = ["paoding_graph.contract", "paoding_executor.contract", "paoding_adapter.contract", "paoding_judgebox.contract", "paoding_tongjian.contract", "paoding_eval.contract"]
 implicit_reexport = true
 
 [[tool.mypy.overrides]]

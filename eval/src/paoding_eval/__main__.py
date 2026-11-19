@@ -22,17 +22,19 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
+from .arms import run_arm
 from .readings import collect_records, run_meta
-from .runner import run_baseline, run_full
+from .runner import run_full
 from .spec import DRYRUN, load
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="paoding_eval", description="庖丁评测台：baseline 与 full 两种模式")
-    ap.add_argument("mode", choices=("baseline", "full", "collect"))
+    ap.add_argument("mode", choices=("baseline", "bk", "bn", "full", "collect"))
     ap.add_argument("--problem", type=Path, help="题目清单（YAML）；缺省用内建干跑题")
     ap.add_argument("--dryrun", action="store_true", help="内建干跑题（假后端）")
     ap.add_argument("--run", type=int, default=1, help="同一配置的第几次（从 1 起）")
@@ -45,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default="", help="模型名（价目表里的名字）")
     ap.add_argument("--image", default="", help="baseline 的沙箱镜像（装有 CLI）；真题运行必填，干跑可选")
     ap.add_argument("--transport", default="", choices=("", "unix", "tcp"), help="中继到代理的通路；缺省按平台")
+    # bk、bn：瘦基线的等成本重试与共享笔记两臂
+    ap.add_argument("--budget-usd", type=float, help="bk/bn 的等成本预算（美元）：取 full 臂在这道题上的每题成本")
+    ap.add_argument("--rounds", type=int, default=0, help="bk/bn 的轮数上限；缺省 bk 20、bn 10，先到预算先停")
+    ap.add_argument("--workers", type=int, default=3, help="bn 每轮并行的 Worker 数（缺省 3）")
     # collect：把一批运行的 record.json 与 meta.json 收进仓库
     ap.add_argument("--into", type=Path, help="collect 的目标目录，如 docs/m1/readings/<批次>/records")
     # full 栈配置
@@ -64,38 +70,41 @@ def main(argv: list[str] | None = None) -> int:
     a.out.mkdir(parents=True, exist_ok=True)
     meta = run_meta(spec)
 
-    if a.mode == "baseline":
+    if a.mode in ("baseline", "bk", "bn"):
+        real: dict[str, Any] = {}
         if a.program:
             import shlex
 
             key = os.environ.get(a.api_key_env, "") if a.api_key_env else ""
             if not key:
-                print(f"baseline 真实直连要密钥：环境变量 {a.api_key_env!r} 没有设", file=sys.stderr)
+                print(f"真实直连要密钥：环境变量 {a.api_key_env!r} 没有设", file=sys.stderr)
                 return 2
-            rec = run_baseline(
+            real = {"real_program": shlex.split(a.program), "upstream_url": a.upstream, "api_key": key}
+        arm: dict[str, Any] = {}
+        if a.mode == "bk":
+            arm = {"workers": 1, "rounds": a.rounds or 20, "budget_usd": a.budget_usd}
+        elif a.mode == "bn":
+            arm = {"workers": a.workers, "rounds": a.rounds or 10, "budget_usd": a.budget_usd}
+        if a.mode != "baseline" and a.budget_usd is None and not a.rounds:
+            print(f"{a.mode} 要等成本预算：--budget-usd <full 臂的每题成本>（或显式给 --rounds）", file=sys.stderr)
+            return 2
+        try:
+            rec = run_arm(
+                a.mode,
                 spec,
                 a.run,
                 out_root=a.out,
                 model=a.model,
-                real_program=shlex.split(a.program),
-                upstream_url=a.upstream,
-                api_key=key,
                 timeout_s=a.timeout,
                 image=a.image,
                 transport=a.transport,
                 meta=meta,
+                **real,
+                **arm,
             )
-        else:
-            rec = run_baseline(
-                spec,
-                a.run,
-                out_root=a.out,
-                model=a.model,
-                timeout_s=a.timeout,
-                image=a.image,
-                transport=a.transport,
-                meta=meta,
-            )
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            return 2
     else:
         if not a.config:
             print("full 模式要栈配置：--config <YAML>", file=sys.stderr)

@@ -11,34 +11,28 @@
 from __future__ import annotations
 
 import json
-import secrets
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import yaml
 
-from paoding_adapter.contract import FAKE_CLI, EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, fake_program
 from paoding_tongjian.contract import MODES as MEMORY_MODES
 from paoding_tongjian.contract import with_recall
 
-from .box import PD_DIR, BaselineBox, write_connects
+from .arms import run_arm
 from .harness import (
-    NATIVE_TOOLS,
-    PRICES,
     ROOT,
-    MeteringLedger,
     collect,
-    empty_mcp_config,
     match_memory,
     open_problem,
-    run_cli,
     wait_terminal,
 )
 from .record import Record, log_dir_field, run_dirname, stamp
-from .spec import ProblemSpec, sha256_hex
+from .spec import ProblemSpec
 
 
 def run_baseline(
@@ -50,12 +44,12 @@ def run_baseline(
     real_program: list[str] | None = None,
     upstream_url: str = "",
     api_key: str = "",
-    usage: dict | None = None,
-    fake_steps: list | None = None,
+    usage: dict[str, Any] | None = None,
+    fake_steps: list[Any] | None = None,
     timeout_s: float = 300,
     image: str = "",
     transport: str = "",
-    meta: dict | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> Record:
     """baseline 模式（单 CLI 直连）。real_program 为 None 时干跑（假 CLI + 假上游）；否则用真 CLI 直连 upstream_url。
 
@@ -63,113 +57,29 @@ def run_baseline(
     真题运行必须给 image，否则两臂环境不对等（M1 第一批读数的教训）；只有干跑允许在宿主上跑。
     fake_steps 只用于干跑测试：覆盖假 CLI 的步骤（默认是把 spec.answer 写进 answer.txt）。
     meta：写进 log_dir/meta.json 的运行信息（运行器提交号、清单摘要等），不进记录本身。"""
-    if real_program is not None and not image:
-        raise ValueError("真题 baseline 要给沙箱镜像（--image）：CLI 在宿主上连不到题目环境，对照不成立")
-    t0 = time.monotonic()
-    log_dir = out_root / run_dirname("baseline", spec.id, run_no, stamp())
-    workspace = log_dir / "workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    dry = real_program is None
-
-    ledger = MeteringLedger()
-    upstream = None
-    if dry:
-        upstream = FakeUpstream(usage)
-        up_url, key, program = upstream.url, "sk-fake-upstream", fake_program()
-        steps = fake_steps or [{"tool": "Write", "input": {"file_path": "answer.txt", "content": spec.answer}}]
-        script: Path | None = log_dir / "baseline.script.json"
-        script.write_text(json.dumps({"steps": steps}), encoding="utf-8")
-        model_name = model or "fake/claude-sonnet-5-5"
-        cli_model = ""
-    else:
-        up_url, key, program, script = upstream_url, api_key, list(real_program), None
-        model_name = cli_model = model
-
-    proxy = EndpointProxy(
-        ProxyConfig(up_url, key, "eval-baseline", global_cap_usd_milli=1_000_000_000), PriceTable.load(PRICES), ledger
-    )
-    _, proxy_port = proxy.serve()
-    proxy_url = proxy.url
-    token = secrets.token_urlsafe(16)
-    proxy.register_task(
-        token, "baseline", spec.id, reserve_usd_milli=max(int(spec.budget.get("usd_milli", 5000)), 1_000_000)
+    return run_arm(
+        "baseline",
+        spec,
+        run_no,
+        out_root=out_root,
+        model=model,
+        real_program=real_program,
+        upstream_url=upstream_url,
+        api_key=api_key,
+        usage=usage,
+        fake_steps=fake_steps,
+        timeout_s=timeout_s,
+        image=image,
+        transport=transport,
+        meta=meta,
     )
 
-    box: BaselineBox | None = None
-    touched = 0
-    try:
-        if image:
-            box = BaselineBox(
-                spec.scope,
-                image,
-                workspace,
-                proxy_port,
-                name=log_dir.name[-24:],
-                wall_s=int(timeout_s) + 120,
-                transport=transport,
-            ).__enter__()
-            if dry:
-                box.copy_in(FAKE_CLI, f"{PD_DIR}/fakecli.py")
-                program = ["python", "-I", f"{PD_DIR}/fakecli.py"]
-        res = run_cli(
-            program,
-            spec.goal_prompt,
-            workspace=workspace,
-            proxy_url=proxy_url,
-            token=token,
-            mcp_config=empty_mcp_config(log_dir / "mcp.json"),
-            model=cli_model,
-            fake_script=script,
-            timeout_s=timeout_s,
-            box=box,
-        )
-        if box is not None:
-            touched = write_connects(box, log_dir / "gate.jsonl")
-    finally:
-        if box is not None:
-            box.close()
-        proxy.close()
-        if upstream is not None:
-            upstream.close()
 
-    produced = workspace / "answer.txt"
-    if res["timed_out"] or not res["ok"]:
-        terminal = "failed"
-    else:
-        got = produced.read_text(encoding="utf-8").strip() if produced.exists() else None
-        terminal = "solved" if got is not None and sha256_hex(got) == spec.expect()["sha256"] else "unsolved"
-
-    (log_dir / "cli.stream-json").write_text(res["stdout"], encoding="utf-8")
-    if res["stderr"]:
-        (log_dir / "cli.stderr").write_text(res["stderr"], encoding="utf-8")
-    rec = Record(
-        mode="baseline",
-        problem=spec.id,
-        run=run_no,
-        model=model_name,
-        duration_s=time.monotonic() - t0,
-        terminal=terminal,
-        cost_usd=ledger.usd_milli / 1000,
-        events=res["turns"],
-        log_dir=log_dir_field(out_root, log_dir.name),
-    )
-    rec.write(log_dir)
-    info = {
-        **(meta or {}),
-        "image": image or None,
-        "sandbox": bool(image),
-        "tools": list(NATIVE_TOOLS),
-        "target_connects": touched if image else None,
-    }
-    (log_dir / "meta.json").write_text(json.dumps(info, ensure_ascii=False, sort_keys=True, indent=1), encoding="utf-8")
-    return rec
-
-
-def _write_meta(log_dir: Path, meta: dict) -> None:
+def _write_meta(log_dir: Path, meta: dict[str, Any]) -> None:
     (log_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, sort_keys=True, indent=1), encoding="utf-8")
 
 
-def _wait_ready(proc: subprocess.Popen, ready: Path, timeout_s: float) -> str:
+def _wait_ready(proc: subprocess.Popen[Any], ready: Path, timeout_s: float) -> str:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if ready.exists() and ready.read_text(encoding="utf-8").strip():
@@ -185,12 +95,12 @@ def run_full(
     run_no: int,
     *,
     out_root: Path,
-    config: dict,
+    config: dict[str, Any],
     port: int = 0,
     model: str = "",
     boot_timeout_s: float = 60,
     timeout_s: float = 300,
-    meta: dict | None = None,
+    meta: dict[str, Any] | None = None,
     memory: str = "off",
     drop: tuple[str, ...] = (),
     home: Path | None = None,
@@ -215,7 +125,7 @@ def run_full(
         "recall_noverify": memory == "noverify",
         "case_seal": bool((config.get("memory") or {}).get("case_seal", True)),
     }
-    recall_info: dict = {}
+    recall_info: dict[str, Any] = {}
 
     argv = [
         sys.executable,

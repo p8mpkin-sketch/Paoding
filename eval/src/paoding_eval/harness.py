@@ -33,9 +33,9 @@ class MeteringLedger:
 
     def __init__(self) -> None:
         self.usd_milli = 0
-        self.costs: list[dict] = []
+        self.costs: list[dict[str, Any]] = []
 
-    def submit(self, token: str, pid: str, idem_key: str, ops: list[dict]) -> dict:
+    def submit(self, token: str, pid: str, idem_key: str, ops: list[dict[str, Any]]) -> dict[str, Any]:
         results = []
         for op in ops:
             if op.get("op") == "cost":
@@ -65,7 +65,7 @@ def run_cli(
     fake_script: Path | None = None,
     timeout_s: float = 300,
     box: Any = None,
-) -> dict:
+) -> dict[str, Any]:
     """起一次 CLI 会话（原生工具面，直连端点代理）。返回 {ok, turns, cost_self_usd, stdout, stderr, timed_out}。
 
     fake_script 给出时用脚本化假 CLI（program 指向 fakecli.py），不需要真模型；否则按真 CLI 的参数起 program。
@@ -166,7 +166,9 @@ def run_cli(
 # ---------- 和图服务说话（full；人只做开题，之后旁观） ----------
 
 
-def _call(url: str, path: str, body: object = None, token: str | None = None, raw: bytes | None = None) -> dict:
+def _call(
+    url: str, path: str, body: object = None, token: str | None = None, raw: bytes | None = None
+) -> dict[str, Any]:
     data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
     method = "PUT" if raw is not None else ("GET" if body is None else "POST")
     headers = {"Content-Type": "application/octet-stream" if raw is not None else "application/json"}
@@ -174,21 +176,22 @@ def _call(url: str, path: str, body: object = None, token: str | None = None, ra
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url + path, data=data, method=method, headers=headers)
     with urllib.request.urlopen(req, timeout=40) as r:
-        return json.loads(r.read())
+        out: dict[str, Any] = json.loads(r.read())
+        return out
 
 
-def open_problem(url: str, token: str, pid: str, spec_ops: list[dict], statement: bytes) -> dict:
+def open_problem(url: str, token: str, pid: str, spec_ops: list[dict[str, Any]], statement: bytes) -> dict[str, Any]:
     """把题面 Blob 放进仓库，再提交开题操作（register_artifact + open_problem）。"""
     _call(url, "/v1/blobs", token=token, raw=statement)
     return _call(url, "/v1/problems", {"id": pid, "idem_key": f"open-{pid}", "ops": spec_ops}, token=token)
 
 
-def match_memory(url: str, problem: dict) -> dict:
+def match_memory(url: str, problem: dict[str, Any]) -> dict[str, Any]:
     """开题前向通鉴要匹配结果（v1.5）：problem 是开题事件体，应答见 scripts/memory_hub.py。"""
     return _call(url, "/v1/memory/match", {"problem": problem})
 
 
-def wait_terminal(url: str, pid: str, timeout_s: float) -> dict:
+def wait_terminal(url: str, pid: str, timeout_s: float) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         st = _call(url, f"/v1/problems/{pid}/status")
@@ -198,7 +201,7 @@ def wait_terminal(url: str, pid: str, timeout_s: float) -> dict:
     return _call(url, f"/v1/problems/{pid}/status")
 
 
-def collect(url: str, pid: str) -> dict:
+def collect(url: str, pid: str) -> dict[str, Any]:
     """终态后的读数：事件数、花费、终态。"""
     st = _call(url, f"/v1/problems/{pid}/status")
     budget = _call(url, f"/v1/problems/{pid}/budget")
