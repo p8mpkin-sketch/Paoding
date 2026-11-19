@@ -189,7 +189,8 @@ class Problem(TypedDict):
     opened_ts: int
     terminal: NotRequired[str]  # solved | accepted | unsolved，关题时写入
     closed_seq: NotRequired[int]
-    accepted: NotRequired[bool]  # 人的验收（M4 的 accept）；M0 没有写入方
+    accepted: NotRequired[bool]  # 人的验收（accept 操作，宪章 D3）：只在 goal.accept = human 的题上写入
+    accept_log: NotRequired[list[Body]]  # 每次 accept 操作（验收或拒收）：{seq, decision, checks, reason?}；拒收之后要等新的 Goal 通过
     marks: NotRequired[list[int]]
     mark_seqs: NotRequired[list[int]]
     derived_profile: NotRequired[Profile]

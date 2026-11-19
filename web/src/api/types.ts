@@ -51,11 +51,25 @@ export type ScopeRule = {
 export type DraftRef = { record: ArtifactId; lane: "practice" | "confirm"; policy?: { version: number; digest: string } };
 export type Origin = { statement_ref: ArtifactId; materials: ArtifactId[]; draft?: DraftRef };
 export type Env = { base: string; baseline_ref: string };
+/** 验收清单的一条（宪章 D3、02 §3.3）：只许原文区间或人写；编号由图服务分配，提交时不接受。 */
+export type AcceptanceInput = { text: string; src: "span" | "human"; needs?: "artifact" | "note" };
+export type AcceptanceItem = AcceptanceInput & { id: string };
+export type Authority = "local" | "external" | "human";
+/** 按判定来源分列的计数（external-verdict §5.7、宪章裁决附加 1）：accepted 只出现在 human 一行。 */
+export type AuthorityTally = { problems: number; solved: number; accepted: number; unsolved: number; open: number };
+export type AcceptCheck = { id: string; verdict: "pass" | "fail"; ref?: ArtifactId; note?: string };
+export type AcceptRecord = { seq: number; decision: "accept" | "reject"; checks: AcceptCheck[]; reason?: string };
 /** open_problem 的事件体。没有 profile 字段：画像是派生量，提交时不接受（HMI §3.2 强制点）。题目 id 在批次外层。 */
 export type ProblemInput = {
   title: string;
   origin: Origin;
-  goal: { statement: string; check: Check; max_attempts: number; accept: "judge" | "human" };
+  goal: {
+    statement: string;
+    check: Check;
+    max_attempts: number;
+    accept: "judge" | "human";
+    acceptance?: AcceptanceInput[];
+  };
   scope: ScopeRule[];
   budget: Budget & { verify_share: number; bootstrap_share: number };
   env: Env;
@@ -226,7 +240,16 @@ export type StatusView = Envelope & {
     judges: string[];
     origin: Origin;
   };
-  goal: { statement: Tagged; accept: "judge" | "human"; predicate: Predicate };
+  goal: {
+    statement: Tagged;
+    accept: "judge" | "human";
+    predicate: Predicate;
+    /** 判定来源；缺省即 local */
+    authority?: Authority;
+    acceptance?: AcceptanceItem[];
+    acceptance_ready?: number | null;
+    accept_log?: AcceptRecord[];
+  };
   facts: FactNode[];
   intents: IntentNode[];
   hints: HintNode[];
@@ -388,10 +411,19 @@ export type ProblemItem = ProblemHead & {
   active: { kind: string; target?: string }[];
   human_todo: number;
   wall: { cap_s: number; elapsed_s: number };
+  authority: Authority;
 };
 export type ProblemsView = Envelope & {
   items: ProblemItem[];
-  totals: { problems: number; solved: number; spent_usd_milli: number; cost_per_solve_usd_milli: number | null };
+  totals: {
+    problems: number;
+    /** 只数本地判定的 solved；外部判定与人工验收见 by_authority */
+    solved: number;
+    spent_usd_milli: number;
+    /** 全部花费 ÷ 本地判定的 solved */
+    cost_per_solve_usd_milli: number | null;
+    by_authority: { local: AuthorityTally; external: AuthorityTally; human: AuthorityTally };
+  };
 };
 export type EventsResponse = { events: Event[]; head: number; next_after: number };
 export type HealthResponse = { ok: boolean; head: number; api: string };

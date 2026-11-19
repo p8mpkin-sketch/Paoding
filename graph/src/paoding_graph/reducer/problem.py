@@ -44,6 +44,38 @@ def authority_of(goal_judge: JudgeEntry, accept: str) -> str:
     return "external" if goal_judge.get("authority") == "external" else "local"
 
 
+ACCEPTS = ("judge", "human")
+ACCEPTANCE_MAX = 32  # 验收清单条目上限
+ACCEPTANCE_TEXT_MAX = 200  # 每条陈述的字数上限（宪章 02 §3.3）
+ACCEPTANCE_SRC = ("span", "human")  # 只许原文区间或人写（裁决附加 1）；模型起草的条目不进清单
+ACCEPTANCE_NEEDS = ("artifact", "note")
+
+
+def _acceptance(g: Obj, accept: str) -> list[Body] | Reject:
+    """验收清单（宪章 D3、02 §3.3）：accept=human 的题必带，开题时登记、之后不可改；编号 a1、a2… 由图服务分配。
+    accept=judge 的题不接受清单：A 道与 B1 没有 accept 操作，终态只有 solved 与 unsolved。"""
+    if accept == "judge":
+        return Reject("schema_error", "只有 accept=human 的题带验收清单") if "acceptance" in g else []
+    items = g.children("acceptance", None) if "acceptance" in g else None
+    if not items:
+        return Reject("schema_error", "accept=human 的题须带非空的验收清单 goal.acceptance[]")
+    if len(items) > ACCEPTANCE_MAX:
+        return Reject("schema_error", f"验收清单至多 {ACCEPTANCE_MAX} 条")
+    out: list[Body] = []
+    for i, it in enumerate(items, start=1):
+        if not {"text", "src"} <= it.keys() <= {"text", "src", "needs"}:
+            return Reject("schema_error", "验收条目须为 {text, src, needs?}；编号由图服务分配，提交时不接受")
+        text = it.text("text").strip()
+        if not text or len(text) > ACCEPTANCE_TEXT_MAX:
+            return Reject("schema_error", f"验收条目 {i} 的陈述须非空、不超过 {ACCEPTANCE_TEXT_MAX} 字")
+        if it.get("src") not in ACCEPTANCE_SRC:
+            return Reject("schema_error", f"验收条目的来源只许 {ACCEPTANCE_SRC}：模型起草的条目不进清单")
+        if "needs" in it and it.get("needs") not in ACCEPTANCE_NEEDS:
+            return Reject("schema_error", f"验收条目的 needs 取 {ACCEPTANCE_NEEDS}")
+        out.append({"id": f"a{i}", "text": text, "src": it.string("src"), **({"needs": it.string("needs")} if "needs" in it else {})})
+    return out
+
+
 def _deadline(state: State, pid: str, d: Obj) -> Body | Reject:
     """时限（§5.6）：local 开题即给绝对时刻；external 开题时给（附出处）或留待 bind_deadline 绑定一次。"""
     if not d.keys() <= {"source", "at", "bound_by"} or d.get("source") not in DEADLINE_SOURCES:
@@ -91,12 +123,16 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
     check = _check(g.child("check"), goal=True)
     if check["judge_id"] not in judges:
         return Reject("unknown_ref", "Goal 判官不在本题启用的判官里")
-    if g.get("accept") != "judge":
-        return Reject("schema_error", "M0 只实现 accept=judge")
+    accept = g.get("accept")
+    if accept not in ACCEPTS:
+        return Reject("schema_error", f"goal.accept 取 {ACCEPTS}")
+    acceptance = _acceptance(g, accept)
+    if isinstance(acceptance, Reject):
+        return acceptance
     max_attempts = g.get("max_attempts")
     if type(max_attempts) is not int or max_attempts < 1:
         return Reject("schema_error", "goal.max_attempts 必须是正整数")
-    goal = {**g.raw, "check": check}
+    goal = {**g.raw, "check": check, **({"acceptance": acceptance} if acceptance else {})}
     scope = [_rule(r) for r in body.children("scope")]
     if not scope:
         return Reject("schema_error", "scope 必填且非空")
@@ -144,6 +180,8 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
     gj = snapshot[check["judge_id"]]
     authority = authority_of(gj, g.string("accept"))
     # 外部裁决的开题三条检查（external-verdict §5.2）：只认结构，不读档案内容（红线 3）
+    if authority == "human" and gj.get("authority") == "external":
+        return Reject("schema_error", "判定权在外部平台的题不接受 accept=human：终态由平台回执定")
     if authority == "external":
         conn = gj.get("connector")
         if conn is None:

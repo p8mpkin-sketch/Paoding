@@ -88,6 +88,25 @@ def world():
     }
     assert k.submit(HUMAN, "p3", "open_problem", open3) == "ok"
     a_judge3 = k.art("p3", "judge", b"brief receipt")
+    # 人工验收的题（宪章 D3）：accept 的合法样本
+    st4 = k.art("p4", "input", b"statement p4")
+    open4 = {
+        **open3,
+        "origin": {"statement_ref": st4, "materials": []},
+        "goal": {
+            "statement": "写一份说明",
+            "check": {"judge_id": "advice"},
+            "max_attempts": 3,
+            "accept": "human",
+            "acceptance": [{"text": "说明覆盖三个场景", "src": "span"}, {"text": "附运行结果", "src": "human", "needs": "artifact"}],
+        },
+        "judges": ["advice"],
+    }
+    del open4["deadline"]
+    assert k.submit(HUMAN, "p4", "open_problem", open4) == "ok"
+    cand4 = k.art("p4", "authored", b"deliverable")
+    assert k.verdict("p4", "goal", "pass", judge="advice", candidate=cand4) == "ok"
+    run4 = k.art("p4", "exec", b"run output")
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -190,6 +209,16 @@ def world():
         ),
         (WATCHDOG, "p1", "expire_lease", {"lease": lid}),
         (HUMAN, "p1", "abandon_intent", {"intent": gated, "reason": "不做"}),
+        (
+            HUMAN,
+            "p4",
+            "accept",
+            {
+                "decision": "accept",
+                "checks": [{"id": "a1", "verdict": "pass", "note": "看过"}, {"id": "a2", "verdict": "pass", "ref": run4}],
+                "seen": seen_card(k.state, "p4", "closeout", "p4"),
+            },
+        ),
         (
             HUMAN,
             "p1",

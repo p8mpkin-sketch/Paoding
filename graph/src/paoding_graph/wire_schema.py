@@ -172,13 +172,39 @@ define(
 )
 define("Env", obj({"base": STR, "baseline_ref": STR}))
 define(
+    "AcceptanceInput",
+    obj(
+        {"text": STR, "src": lit("span", "human")},
+        {"needs": lit("artifact", "note")},
+        doc="验收清单的一条（宪章 D3、02 §3.3）：只许原文区间或人写；编号由图服务分配，提交时不接受。",
+    ),
+)
+define("AcceptanceItem", both(ref("AcceptanceInput"), obj({"id": STR})))
+define("Authority", lit("local", "external", "human"))
+define(
+    "AuthorityTally",
+    obj(
+        {"problems": INT, "solved": INT, "accepted": INT, "unsolved": INT, "open": INT},
+        doc="按判定来源分列的计数（external-verdict §5.7、宪章裁决附加 1）：accepted 只出现在 human 一行。",
+    ),
+)
+define(
+    "AcceptCheck",
+    obj({"id": STR, "verdict": lit("pass", "fail")}, {"ref": ref("ArtifactId"), "note": STR}),
+)
+define(
+    "AcceptRecord",
+    obj({"seq": INT, "decision": lit("accept", "reject"), "checks": arr(ref("AcceptCheck"))}, {"reason": STR}),
+)
+define(
     "ProblemInput",
     obj(
         {
             "title": STR,
             "origin": ref("Origin"),
             "goal": obj(
-                {"statement": STR, "check": ref("Check"), "max_attempts": INT, "accept": lit("judge", "human")}
+                {"statement": STR, "check": ref("Check"), "max_attempts": INT, "accept": lit("judge", "human")},
+                {"acceptance": arr(ref("AcceptanceInput"))},
             ),
             "scope": arr(ref("ScopeRule")),
             "budget": both(ref("Budget"), obj({"verify_share": NUM, "bootstrap_share": NUM})),
@@ -440,7 +466,17 @@ define(
                     ),
                 ),
                 "goal": obj(
-                    {"statement": ref("Tagged"), "accept": lit("judge", "human"), "predicate": ref("Predicate")}
+                    {
+                        "statement": ref("Tagged"),
+                        "accept": lit("judge", "human"),
+                        "predicate": ref("Predicate"),
+                    },
+                    {
+                        "authority": doc(ref("Authority"), "判定来源；缺省即 local"),
+                        "acceptance": arr(ref("AcceptanceItem")),
+                        "acceptance_ready": null(INT),
+                        "accept_log": arr(ref("AcceptRecord")),
+                    },
                 ),
                 "facts": arr(ref("FactNode")),
                 "intents": arr(ref("IntentNode")),
@@ -717,8 +753,9 @@ define(
                 "active": arr(obj({"kind": STR}, {"target": STR})),
                 "human_todo": INT,
                 "wall": obj({"cap_s": INT, "elapsed_s": INT}),
+                "authority": ref("Authority"),
             },
-            doc="题目列表的一行。closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。",
+            doc="题目列表的一行。authority 是判定来源（派生，external-verdict §5.7）。closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。",
         ),
     ),
 )
@@ -729,7 +766,15 @@ define(
             {
                 "items": arr(ref("ProblemItem")),
                 "totals": obj(
-                    {"problems": INT, "solved": INT, "spent_usd_milli": INT, "cost_per_solve_usd_milli": null(INT)}
+                    {
+                        "problems": INT,
+                        "solved": doc(INT, "只数本地判定的 solved；外部判定与人工验收见 by_authority"),
+                        "spent_usd_milli": INT,
+                        "cost_per_solve_usd_milli": doc(null(INT), "全部花费 ÷ 本地判定的 solved"),
+                        "by_authority": obj(
+                            {"local": ref("AuthorityTally"), "external": ref("AuthorityTally"), "human": ref("AuthorityTally")}
+                        ),
+                    }
                 ),
             }
         )

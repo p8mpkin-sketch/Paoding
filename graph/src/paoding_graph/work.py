@@ -340,7 +340,10 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
     )
     for rid in pending_for_human(state, pid):
         items.append({"kind": "human", "target": rid, "why": "scope_request"})
-    if stalled:
+    ready = acceptance_ready(state, pid) is not None
+    if ready:
+        items.append({"kind": "human", "target": pid, "why": "acceptance"})
+    if stalled and not ready:
         items.append({"kind": "human", "target": pid, "why": "stalled"})
     return items
 
@@ -353,6 +356,21 @@ def terminal(state: State, pid: str) -> str:
     if p["goal"]["accept"] == "judge" and lv.levels(state, pid)["goal"] == "E3":
         return "solved"
     return "accepted" if p.get("accepted") else "unsolved"
+
+
+def acceptance_ready(state: State, pid: str) -> int | None:
+    """accept=human 的题（宪章 D3）：最近一条 Goal 裁决为 pass、且晚于上一次验收或拒收时，交付物等人验收。
+    返回那条裁决的 seq；不该验收时返回 None。拒收之后要等会话交出新的、再次通过结构检查的交付物。"""
+    p = state["problems"][pid]
+    if p["goal"]["accept"] != "human" or p.get("closed") or p.get("accepted"):
+        return None
+    goal = [v for v in state["verdicts"] if v["problem_id"] == pid and v["target"] == "goal"]
+    if not goal:
+        return None
+    last = max(goal, key=lambda v: v["seq"])
+    if last["result"] != "pass" or last["seq"] <= max([a["seq"] for a in p.get("accept_log", [])] or [0]):
+        return None
+    return last["seq"]
 
 
 def closeout_items(state: State, pid: str) -> list[dict[str, Any]]:
@@ -381,4 +399,6 @@ def followups(state: State, pid: str) -> list[tuple[str, dict[str, Any]]]:
             out.append(("budget_mark", {"mark": m, "axis": crossed[0]}))
     if lv.levels(state, pid)["goal"] == "E3" and not closeout_items(state, pid):
         out.append(("close_problem", {"terminal": "solved", "card_hash": None, "by": "goal_e3"}))
+    elif p.get("accepted"):  # 人逐条验收全部通过（accept 事件已绑定收尾卡）：图服务随即关题，终态 accepted
+        out.append(("close_problem", {"terminal": "accepted", "card_hash": None, "by": "accept"}))
     return out
