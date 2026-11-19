@@ -18,6 +18,7 @@ RISKS = ("r0", "r1", "r2")
 
 
 RISK_RANK = {r: i for i, r in enumerate(RISKS)}
+WALL_MODES = ("elapsed", "spend")
 RiskRow = dict[str, Any]  # 设置层风险表的一行 {resource, pattern, actions, risk}
 
 
@@ -57,6 +58,10 @@ class Config:
     grants_auto_practice: bool = True
     risk_table: tuple[RiskRow, ...] = ()
     scope_request_quota: int = 4  # 每个会话的扩权申请数
+    # 时限与花费分开（external-verdict §5.6）：elapsed 为旧行为（哮天犬按开题墙钟关题）；spend 时 budget.wall_s 只管
+    # 花费墙钟，另由 deadline 与题的最长存活 life_s 兜底。开题时把取值抄进事件体，重放不读设置
+    wall_mode: str = "elapsed"
+    life_s: int = 7 * 86400
 
 
 def empty_state() -> State:
@@ -93,9 +98,10 @@ def _rule(r: Obj) -> ScopeRule:
 MAX_CONTROL_INPUTS = 8
 
 
-def _check(c: Obj, observation: bool = False) -> Check:
-    """判据。observation：这是观察类论断的判据，才接受对照 `control`（§3.3.3，N1 提前）。"""
-    extra = c.keys() - {"judge_id", "spec_ref", "expect", "sealed", "control"}
+def _check(c: Obj, observation: bool = False, goal: bool = False) -> Check:
+    """判据。observation：这是观察类论断的判据，才接受对照 `control`（§3.3.3，N1 提前）。
+    goal：Goal 的判据，才接受外部裁决的绑定单 `binding`（external-verdict §5.2）。"""
+    extra = c.keys() - {"judge_id", "spec_ref", "expect", "sealed", "control", "binding"}
     if extra:
         raise BadBody(f"check 多余字段 {sorted(extra)}")
     out: Check = {"judge_id": c.string("judge_id")}
@@ -109,6 +115,16 @@ def _check(c: Obj, observation: bool = False) -> Check:
         if not 1 <= len(inputs) <= MAX_CONTROL_INPUTS or len(set(inputs)) != len(inputs):
             raise BadBody(f"control.inputs 须为 1 到 {MAX_CONTROL_INPUTS} 个互不相同的 ArtifactId")
         out["control"] = {"inputs": inputs}
+    if "binding" in c:
+        if not goal:
+            raise BadBody("check.binding 只用于 Goal 的判据")
+        b = c.child("binding")
+        if b.keys() != {"connector", "task", "max_submissions"}:
+            raise BadBody("binding 须为 {connector, task, max_submissions}")
+        n = b.get("max_submissions")
+        if type(n) is not int or n < 1:
+            raise BadBody("binding.max_submissions 须为正整数")
+        out["binding"] = {"connector": b.string("connector"), "task": b.string("task"), "max_submissions": n}
     if "spec_ref" in c:
         out["spec_ref"] = c.string("spec_ref")
     if "expect" in c:

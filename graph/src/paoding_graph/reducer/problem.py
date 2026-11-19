@@ -9,7 +9,7 @@ from ..parse import Obj
 from ..practice import LANES, violations
 from ..state import Actor, Artifact, Body, Event, JudgeEntry, Problem, Profile, ScopeRule, State
 from . import recall
-from .common import _HEX64, RISK_RANK, RISKS, Config, Ok, Reject, _check, _reason, _ref, _rule
+from .common import _HEX64, RISK_RANK, RISKS, WALL_MODES, Config, Ok, Reject, _check, _reason, _ref, _rule
 
 # ---------- 校验 ----------
 
@@ -29,13 +29,56 @@ def _derive_profile(scope: list[ScopeRule], goal_judge: JudgeEntry, cfg: Config)
     return {"info": info, "judge": judge, "reversibility": reversibility}
 
 
+AUTHORITIES = ("local", "external", "human")
+DEADLINE_SOURCES = ("local", "external")
+
+
+def authority_of(goal_judge: JudgeEntry, accept: str) -> str:
+    """判定来源（external-verdict §4.2）：由 Goal 判官快照与 goal.accept 推出，不由提交方声明。
+
+    与 `_derive_profile` 同为开题时的派生量，放在一处：#93 的扩权随 scope 重算画像，判定来源不随 scope 变，
+    所以扩权路径只调 `_derive_profile`，开题路径两者都调。accept=human（宪章 D3）落地之前，内核只会推出 local
+    或 external。"""
+    if accept == "human":
+        return "human"
+    return "external" if goal_judge.get("authority") == "external" else "local"
+
+
+def _deadline(state: State, pid: str, d: Obj) -> Body | Reject:
+    """时限（§5.6）：local 开题即给绝对时刻；external 开题时给（附出处）或留待 bind_deadline 绑定一次。"""
+    if not d.keys() <= {"source", "at", "bound_by"} or d.get("source") not in DEADLINE_SOURCES:
+        return Reject("schema_error", "deadline 须为 {source: local|external, at?, bound_by?}")
+    out: Body = {"source": d.string("source")}
+    if "at" in d:
+        at = d.get("at")
+        if type(at) is not int or at <= 0:
+            return Reject("schema_error", "deadline.at 须为正整数（毫秒）")
+        out["at"] = at
+    if out["source"] == "local":
+        if "at" not in out or "bound_by" in d:
+            return Reject("schema_error", "source=local 的 deadline 须给 at，不带 bound_by")
+    elif ("at" in out) != ("bound_by" in d):
+        return Reject(
+            "schema_error", "source=external 的 deadline：at 与 bound_by 同给（开题时领题）或都不给（运行时绑定）"
+        )
+    if "bound_by" in d:
+        ref = d.string("bound_by")
+        err = _ref(state, pid, ref, "deadline.bound_by")
+        if err:
+            return err
+        if state["artifacts"][ref]["class"] != "input":
+            return Reject("inadmissible_class", "开题时的 deadline.bound_by 只接受 input 类（资源公告）")
+        out["bound_by"] = ref
+    return out
+
+
 def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
     if pid in state["problems"]:
         return Reject("schema_error", "题目已存在")
     if "profile" in body:
         return Reject("schema_error", "profile 是派生字段，提交时不接受")
     allowed = {"title", "origin", "goal", "scope", "budget", "env", "judges"}
-    optional = {"labels", "recall"}  # v1.5 增量 9、10：可选，缺省时事件体与旧版相同
+    optional = {"labels", "recall", "deadline"}  # v1.5 增量 9、10；external-verdict §5.6：可选，缺省时事件体与旧版相同
     if not allowed <= body.keys() <= allowed | optional:
         return Reject("schema_error", f"字段应为 {sorted(allowed)}，可选 {sorted(optional)}")
     judges = body.strings("judges")
@@ -43,7 +86,9 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         if j not in cfg.judges:
             return Reject("unknown_ref", f"判官 {j} 未注册")
     g = body.child("goal")
-    check = _check(g.child("check"))
+    if "authority" in g:
+        return Reject("schema_error", "goal.authority 是派生字段，提交时不接受")
+    check = _check(g.child("check"), goal=True)
     if check["judge_id"] not in judges:
         return Reject("unknown_ref", "Goal 判官不在本题启用的判官里")
     if g.get("accept") != "judge":
@@ -96,6 +141,34 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             return Reject("forbidden_op", "练习道信封不许：" + "；".join(bad))
         draft["policy"] = cfg.practice.stamp()
     snapshot = {j: cfg.judges[j] for j in judges}
+    gj = snapshot[check["judge_id"]]
+    authority = authority_of(gj, g.string("accept"))
+    # 外部裁决的开题三条检查（external-verdict §5.2）：只认结构，不读档案内容（红线 3）
+    if authority == "external":
+        conn = gj.get("connector")
+        if conn is None:
+            return Reject("unknown_ref", f"判官 {check['judge_id']} 的连接器档案没有加载，不接受外部裁决开题")
+        binding = check.get("binding")
+        if binding is None:
+            return Reject("schema_error", "外部裁决的 Goal 判据须带 binding {connector, task, max_submissions}")
+        if binding["connector"] != conn["id"]:
+            return Reject(
+                "schema_error", f"binding.connector={binding['connector']} 与判官快照的连接器 {conn['id']} 不符"
+            )
+        if max_attempts > binding["max_submissions"]:
+            return Reject(
+                "schema_error", f"goal.max_attempts={max_attempts} 超过平台提交额度 {binding['max_submissions']}"
+            )
+    elif "binding" in check:
+        return Reject("schema_error", "只有外部裁决的判官接受 binding")
+    deadline: Body | None = None
+    if "deadline" in body:
+        dl = _deadline(state, pid, body.child("deadline"))
+        if isinstance(dl, Reject):
+            return dl
+        deadline = dl
+    if cfg.wall_mode not in WALL_MODES:
+        raise ValueError(f"Config.wall_mode 只取 {WALL_MODES}")  # 组装根的缺陷，不是输入错误
     extras = recall.open_extras(state, pid, body, judges)
     if isinstance(extras, Reject):
         return extras
@@ -107,14 +180,17 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
                 "materials": materials,
                 **({"draft": draft} if draft is not None else {}),
             },
-            "goal": goal,
+            "goal": {**goal, **({"authority": authority} if authority != "local" else {})},
             "scope": scope,
             "budget": budget,
             "env": body.child("env").raw,
             "judges": judges,
             "judge_snapshot": {j: dict(e) for j, e in snapshot.items()},
-            "profile": _derive_profile(scope, snapshot[check["judge_id"]], cfg),
+            "profile": _derive_profile(scope, gj, cfg),
             **extras,
+            **({"deadline": deadline} if deadline is not None else {}),
+            # 时限语义开关（§5.6）：缺省 elapsed 时事件体与旧版相同；spend 时连同最长存活一起抄入
+            **({"wall_mode": "spend", "life_s": cfg.life_s} if cfg.wall_mode == "spend" else {}),
             # 宪章 D5：开在哪一版设置之下。由图服务抄入，提交体里不接受；不进等级、消费门与画像
             **({"settings": {"version": cfg.settings[0], "digest": cfg.settings[1]}} if cfg.settings else {}),
         }
@@ -197,6 +273,27 @@ def _v_profile_override(state: State, actor: Actor, pid: str, body: Obj, cfg: Co
     return Ok({"axis": axis, "value": value, "reason": reason, "derived": derived[axis]})
 
 
+def _v_bind_deadline(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
+    """运行时领题的外部时限（external-verdict §5.6）：判官令牌提交，只绑定一次，证据是本题的 judge 类回执。"""
+    if body.keys() != {"at", "evidence"}:
+        return Reject("schema_error", "bind_deadline 须为 {at, evidence}")
+    dl = state["problems"][pid].get("deadline")
+    if dl is None or dl["source"] != "external":
+        return Reject("forbidden_op", "本题没有待绑定的外部时限")
+    if "at" in dl:
+        return Reject("forbidden_op", "外部时限已绑定，之后不可改")
+    at = body.get("at")
+    if type(at) is not int or at <= 0:
+        return Reject("schema_error", "at 须为正整数（毫秒）")
+    ref = body.string("evidence")
+    err = _ref(state, pid, ref, "evidence")
+    if err:
+        return err
+    if state["artifacts"][ref]["class"] != "judge":
+        return Reject("inadmissible_class", "外部时限的证据须是判官运行器登记的 judge 类回执")
+    return Ok({"at": at, "evidence": ref})
+
+
 # ---------- 应用 ----------
 
 
@@ -233,3 +330,10 @@ def _a_profile_override(s: State, ev: Event) -> None:
             ],
         },
     }
+
+
+def _a_bind_deadline(s: State, ev: Event) -> None:
+    pid = ev["problem_id"]
+    p = s["problems"][pid]
+    bound: Problem = {**p, "deadline": {**p["deadline"], "at": ev["body"]["at"], "bound_by": ev["body"]["evidence"]}}
+    s["problems"] = {**s["problems"], pid: bound}

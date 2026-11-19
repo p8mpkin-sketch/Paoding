@@ -98,8 +98,9 @@ def _no_secrets(obj: object, where: str = "settings") -> None:
 
 def validate(raw: object) -> dict[str, Any]:
     # grants 节可缺：这一节加进来之前写下的快照照旧有效、摘要不变，缺省即"运行时扩权关"
-    if not isinstance(raw, dict) or not {"caps", "risk", "models"} <= set(raw) <= {"caps", "risk", "models", "grants"}:
-        raise BadBody("settings 是 {caps, risk, models} 三项，可选 grants")
+    allowed = {"caps", "risk", "models", "grants", "budget"}
+    if not isinstance(raw, dict) or not {"caps", "risk", "models"} <= set(raw) <= allowed:
+        raise BadBody("settings 是 {caps, risk, models} 三项，可选 grants、budget")
     _no_secrets(raw)
     caps = raw["caps"]
     if not isinstance(caps, dict) or set(caps) != set(CAP_KEYS):
@@ -166,7 +167,22 @@ def validate(raw: object) -> dict[str, Any]:
         ):
             raise BadBody("grants 是 {runtime: bool, auto: {practice: bool}}")
         out["grants"] = {"runtime": g["runtime"], "auto": {"practice": g["auto"]["practice"]}}
+    if "budget" in raw:
+        # 时限与花费分开的开关（docs/design/external-verdict/ §5.6）：缺省 elapsed 即旧行为
+        bd = raw["budget"]
+        if not isinstance(bd, dict) or set(bd) != {"wall_mode", "life_s"} or bd["wall_mode"] not in WALL_MODES:
+            raise BadBody(f"budget 是 {{wall_mode: {'|'.join(WALL_MODES)}, life_s: 正整数}}")
+        out["budget"] = {"wall_mode": bd["wall_mode"], "life_s": _pos_int(bd["life_s"], "budget.life_s")}
     return out
+
+
+WALL_MODES = ("elapsed", "spend")
+DEFAULT_BUDGET = {"wall_mode": "elapsed", "life_s": 7 * 86400}
+
+
+def budget_of(settings: dict[str, Any]) -> dict[str, Any]:
+    """设置里的 budget 节；缺省（旧快照）即 wall_mode=elapsed，哮天犬照旧按开题墙钟关题。"""
+    return settings.get("budget") or dict(DEFAULT_BUDGET)
 
 
 def grants_of(settings: dict[str, Any]) -> dict[str, Any]:
@@ -276,6 +292,8 @@ class SettingsHub:
             grants_runtime=grants_of(self.store.settings)["runtime"],
             grants_auto_practice=grants_of(self.store.settings)["auto"]["practice"],
             risk_table=tuple(dict(r) for r in self.store.settings["risk"]),
+            wall_mode=budget_of(self.store.settings)["wall_mode"],
+            life_s=budget_of(self.store.settings)["life_s"],
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]
         for fn in self.listeners:

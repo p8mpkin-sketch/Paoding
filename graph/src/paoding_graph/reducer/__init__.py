@@ -11,8 +11,9 @@ JCSError）转成 schema_error。校验函数里其余的异常是内核自己�
 状态与事件的类型在 state.py。
 
 按事件族分成子模块，每个子模块里校验（`_v_*`）与应用（`_a_*`）分开写：
-`problem`（开题、登记、画像覆盖）、`fact`（论断）、`intent`（Intent、审批、Hint）、`judge`（判官请求与裁决）、
-`lease`（租约四操作与用量）、`close`（关题与预算标记）、`grants`（运行时扩权）；共用的结果类型、配置与解析在 `common`。
+`problem`（开题、登记、画像覆盖、外部时限的 bind_deadline）、`fact`（论断）、`intent`（Intent、审批、Hint）、
+`judge`（判官请求与裁决）、`lease`（租约四操作与用量）、`close`（关题与预算标记）、`grants`（运行时扩权）；
+共用的结果类型、配置与解析在 `common`。
 本模块只做分派：谁能提交什么、题目与令牌的前置检查、异常到 schema_error 的转换。
 IO 前置条件不在这里：Blob 是否存在、哈希是否相符由服务层在调用 validate 之前检查。
 """
@@ -55,9 +56,9 @@ def _who(actor: Actor, kind: str) -> bool:
         return k == "adapter" and role in ("bootstrap", "explore", "reason", "recall")  # recall 另有白名单
     if kind == "add_intent":
         return (k == "adapter" and role == "reason") or k == "human"
-    if kind == "request_judge":
-        return k in ("adapter", "sinan", "human")
-    if kind == "judge_verdict":
+    if kind == "request_judge":  # 判官令牌只能复判：沿用已有请求的目标、判官与候选（另查）
+        return k in ("adapter", "sinan", "human", "judge")
+    if kind in ("judge_verdict", "bind_deadline"):
         return k == "judge"
     if kind == "lease":
         return k in ("sinan", "judge")  # 租约种类与身份的匹配另查
@@ -105,6 +106,7 @@ KINDS = (
     "request_scope",
     "grant_scope",
     "revoke_scope",
+    "bind_deadline",
 )
 AFTER_CLOSE = ("cost", "release")  # 关题后在途任务仍可交回用量与释放租约
 
@@ -144,6 +146,7 @@ _VALIDATORS: dict[str, Validator] = {
     "request_scope": grants._v_request_scope,
     "grant_scope": grants._v_grant_scope,
     "revoke_scope": grants._v_revoke_scope,
+    "bind_deadline": problem._v_bind_deadline,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -167,6 +170,7 @@ _APPLIERS: dict[str, Applier] = {
     "request_scope": grants._a_request_scope,
     "grant_scope": grants._a_grant_scope,
     "revoke_scope": grants._a_revoke_scope,
+    "bind_deadline": problem._a_bind_deadline,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 

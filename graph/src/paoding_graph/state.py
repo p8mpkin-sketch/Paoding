@@ -99,6 +99,14 @@ class Control(TypedDict):
     inputs: list[str]  # ArtifactId；对照运行时按序写到 /workspace/inputs/1、2、…
 
 
+class Binding(TypedDict):
+    """外部裁决的绑定单（定源登记）：判定程序随开题登记、之后不可改；值（回执）运行时经连接器交付。"""
+
+    connector: str  # 连接器档案 id，须与判官快照里的连接器相同
+    task: str  # 平台任务号（不透明的串，内核不解释）
+    max_submissions: int  # 平台的提交额度；goal.max_attempts 不得超过它
+
+
 class Check(TypedDict):
     """判据（I4 判据先行）：创建时登记，判官只能是这一个。"""
 
@@ -107,6 +115,7 @@ class Check(TypedDict):
     expect: NotRequired[Any]
     sealed: NotRequired[list[VaultRef]]
     control: NotRequired[Control]
+    binding: NotRequired[Binding]  # 外部裁决（external-verdict §5.2）：只在 Goal 判官的 authority 为 external 时
 
 
 class Done(Check):
@@ -120,6 +129,7 @@ class Goal(TypedDict):
     check: Check
     max_attempts: int
     accept: str  # M0 只有 judge
+    authority: NotRequired[str]  # 派生，不接受提交：external 时写入；缺省即 local（external-verdict §4.2）
 
 
 class DraftRef(TypedDict):
@@ -145,6 +155,8 @@ class JudgeEntry(TypedDict):
     grade: str  # decisive | consistent | advisory
     kind: str  # builtin | container | deferred
     max_cost: float
+    authority: NotRequired[str]  # external 时写入；缺省 local（external-verdict §5.1）
+    connector: NotRequired[dict[str, str]]  # authority=external：连接器档案 {id, version, digest}，开题时抄入
 
 
 class ProfileOverride(TypedDict):
@@ -177,6 +189,9 @@ class Problem(TypedDict):
     mark_seqs: NotRequired[list[int]]
     derived_profile: NotRequired[Profile]
     profile_overrides: NotRequired[list[ProfileOverride]]
+    deadline: NotRequired[Body]  # external-verdict §5.6：{source: local|external, at?, bound_by?}；at 只绑定一次
+    wall_mode: NotRequired[str]  # elapsed | spend，开题时由图服务按设置抄入；缺省 elapsed（旧行为）
+    life_s: NotRequired[int]  # wall_mode=spend：题的最长存活（全局设置，开题时抄入）
     labels: NotRequired[Body]  # v1.5 增量 10：{tags, env?}，env 即通鉴的环境键；不进等级与画像
     recall: NotRequired[Body]  # v1.5 增量 9：召回清单 {items, excluded_by_human, match_digest, mode?, notes?}
     settings: NotRequired[Body]  # 宪章 D5：{version, digest}，开题时的设置快照；不进等级、消费门与画像
@@ -255,6 +270,7 @@ class Request(TypedDict):
     candidate: str | None
     verdict_seq: NotRequired[int]
     inconclusive: NotRequired[str]
+    recheck_at: NotRequired[int]  # inconclusive(pending)：延迟判官下次读回执的时刻（毫秒）
     control_end: NotRequired[str]
 
 

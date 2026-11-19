@@ -74,6 +74,20 @@ def world():
     st_in = k.art("p9", "input", b"statement p9")
     net = {"resource": "net", "pattern": "q7.lab:8443", "actions": ["connect"]}
     sreq = k.submit(explore(lid), "p1", "request_scope", {"rules": [net], "why": "要读接口"})
+    # 外部时限待绑定的题（external-verdict §5.6）：bind_deadline 的合法样本
+    st3 = k.art("p3", "input", b"statement p3")
+    open3 = {
+        "title": "t",
+        "origin": {"statement_ref": st3, "materials": []},
+        "goal": {"statement": "g", "check": {"judge_id": "exact_match"}, "max_attempts": 3, "accept": "judge"},
+        "scope": [{"resource": "workspace", "pattern": "", "actions": ["read", "write"], "risk": "r0"}],
+        "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
+        "env": {"base": "basic"},
+        "judges": ["exact_match"],
+        "deadline": {"source": "external"},
+    }
+    assert k.submit(HUMAN, "p3", "open_problem", open3) == "ok"
+    a_judge3 = k.art("p3", "judge", b"brief receipt")
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -110,6 +124,7 @@ def world():
                 "budget": {"usd_milli": 5000, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
                 "env": {"base": "basic"},
                 "judges": ["replay", "exact_match"],
+                "deadline": {"source": "local", "at": 10**13},
             },
         ),
         (
@@ -232,6 +247,7 @@ def world():
             {"request": sreq, "decision": "deny", "reason": "不放", "seen": seen_card(k.state, "p1", "scope", sreq)},
         ),
         (HUMAN, "p1", "revoke_scope", {"rule": 1, "reason": "用不到了"}),
+        (JUDGE, "p3", "bind_deadline", {"at": 10**13, "evidence": a_judge3}),
     ]
     return k, cases
 

@@ -118,6 +118,12 @@
   - `revoke_scope {rule, reason}`：只有人；规则带上 `revoked: seq` 留在原位（`touches` 按下标引用），至少留一条有效规则；`compile_spec`、`work.holds`、Intent 的风险上限都跳过已撤销的规则。撤销是收窄，不绑定卡片。
   - `needs_scope` 接上扩权（修规格 3.6.2 `approve --scope-amend` 一直没有落地的缺陷）：带 `needs_scope` 的 Intent 由图服务追加一条随它的申请；人在审批卡上批或拒这个 Intent 之后，图服务按审批结果批或拒这条申请。人在审批卡上看到的是 Intent 申报的风险：风险表未命中时以它为准，命中时取两者较高者。回归测试 `tests/integration/test_stack_scope_grants.py` 是第一步的验收门。
   - 图服务自己追加的事件按轮重算（`service.FOLLOWUP_ROUNDS`），申请与自动批准可以在同一批里接连发生。状态里的 `scope_requests` 在第一条申请时才出现，旧日志的状态哈希不变。`/work` 的 human 项多一种 `why: scope_request`（不自动批、也不随 Intent 的申请）。
+- 外部裁决（设计 `docs/design/external-verdict/`，§11 一期）：
+  - 判官快照条目可带 `authority: external` 与 `connector {id, version, digest}`（组装根由 `judgebox` 的 `kernel_judges(registry, load_connectors())` 给出；本地判官的条目逐字同旧版）。Goal 判官为 external 时，开题三条检查：快照里有 `connector`（否则 `unknown_ref`）、`goal.check.binding {connector, task, max_submissions}` 必带且 `connector` 与快照一致、`max_attempts ≤ max_submissions`（否则 `schema_error`）；本地判官带 `binding`、论断与 Intent 的判据带 `binding` 都是 `schema_error`。
+  - `goal.authority` 派生（`problem.authority_of`，与 `_derive_profile` 同处；#93 的扩权只重算画像，判定来源不随 scope 变）：external 时写进事件体，local 时不写，事件体与旧版相同；提交体带它是 `schema_error`。
+  - 待定：`judge_verdict` 的 `inconclusive` 原因码多一个 `pending`，只用于 `kind = deferred` 的判官，必带 `recheck_at`（毫秒）；`recheck_at` 只随 pending。待定不进裁决序列，等级不变。`/work` 对"最近一次请求是 pending"的（目标、候选）派生 `{kind: rejudge, why: pending, not_before}`，有它时不算停滞；判官运行器按自己的时钟等到 `not_before` 才补请求。判官令牌可以 `request_judge`，但只能重复本题已有请求的同一目标、判官与候选（一期之前判官令牌不许 `request_judge`，runner 补 unstable 复判的那条请求一直被拒，这里一并修好）。
+  - `deadline {source: local|external, at?, bound_by?}`（开题可选）：local 必给 `at`；external 开题时领题的 `at` 与 `bound_by`（本题 input 类资源公告）同给，否则都不给、留待 `bind_deadline {at, evidence}`：只有判官令牌、只绑一次、证据是本题 judge 类 Artifact。
+  - 时限语义开关 `Config.wall_mode`（设置层 `budget {wall_mode, life_s}`，缺省 elapsed）：spend 时开题把 `wall_mode: spend` 与 `life_s` 抄进事件体；elapsed 时不写，事件体与旧版相同。哮天犬按题上的取值执行（`watchdog/dog.py` 的 `_over_time`）；`deadline` 两种取值下都执行，到点停工作租约，延迟判官待定时 `settle_s` 之内不关题。
 - 四顾清单：r0 且 `accept=judge` 的题恒为空（M0 形态）；r1/r2 题先给一条占位项，阻止自动关题，完整清单随 M4。
 
 ## 进度
