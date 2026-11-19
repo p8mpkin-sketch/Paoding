@@ -3,7 +3,10 @@
 1. 过期租约：expires_at 已过的在途租约，提交 expire_lease；Intent 回到 open（Adapter 崩溃时的回收）。
 2. 超预算终止：读 /budget 与 cost 事件。任务花费越过软线（预留额的 90%）→ 通知 Adapter 进入收尾轮，
    每个任务只通知一次；越过硬顶（预留额）→ 终止任务。题花费达到 cap → 终止题内所有任务，以 unsolved 关题。
-   题的墙钟（wall_s）用尽 → 同样终止并关题。
+   题的墙钟（wall_s）用尽 → 同样终止并关题。墙钟的含义随开题时抄进事件体的 wall_mode（external-verdict §5.6）：
+   elapsed（缺省，旧行为）按开题以来的墙钟；spend 按花费墙钟（cost 事件的 wall_s 累计），另有题的最长存活
+   life_s 兜底。两种取值下都执行 deadline：到点停掉工作租约，等待中的延迟判官复判在 settle_s 之内照常进行，
+   之后关题。
 3. 清理孤儿容器：调用注入的清扫函数（执行层按标签回收）。
 4. 健康告警：某后端最近 N 个任务里失败占比超过阈值 → backend_unhealthy 告警交人。
 
@@ -32,6 +35,7 @@ class DogConfig:
     health_window: int = 10  # 最近多少个已结束任务
     health_threshold: float = 0.5  # 失败占比超过它就告警
     health_min: int = 4  # 样本不足不告警
+    settle_s: int = 3600  # deadline 之后还等延迟判官回执多久（二期改取连接器档案的 poll.settle_s）
 
 
 @dataclass
@@ -42,6 +46,21 @@ class TickReport:
     closed: list = field(default_factory=list)
     swept: list = field(default_factory=list)
     alerts: list = field(default_factory=list)
+
+
+def _over_time(p: dict, view: dict, now: int) -> str | None:
+    """墙钟与存活（§5.6）。elapsed：开题以来的墙钟 ≥ wall_s（旧行为，逐字不变）。spend：花费墙钟 ≥ wall_s，
+    或开题以来 ≥ life_s。"""
+    if "wall_s" not in p["budget"] or "opened_ts" not in p:
+        return None
+    age_ms = now - p["opened_ts"]
+    if p.get("wall_mode", "elapsed") == "elapsed":
+        return "wall_s" if age_ms >= p["budget"]["wall_s"] * 1000 else None
+    if (view["spent"].get("wall_s") or 0) >= p["budget"]["wall_s"]:
+        return "wall_s"
+    if "life_s" in p and age_ms >= p["life_s"] * 1000:
+        return "life_s"
+    return None
 
 
 class Watchdog:
@@ -115,11 +134,18 @@ class Watchdog:
         p = st["problems"][pid]
         cap = view["cap"].get("usd_milli")
         over_cap = cap is not None and view["spent"]["usd_milli"] >= cap
-        over_wall = (
-            "wall_s" in p["budget"] and "opened_ts" in p and now - p["opened_ts"] >= p["budget"]["wall_s"] * 1000
-        )
-        if over_cap or over_wall:
-            why = "problem_budget" if over_cap else "wall_s"
+        why = "problem_budget" if over_cap else _over_time(p, view, now)
+        dl = (p.get("deadline") or {}).get("at")
+        if why is None and dl is not None and now >= dl:
+            # 外部时限到了：停掉工作租约；延迟判官的回执还在路上时，settle_s 之内不关题（§5.6）
+            for l in self._active(pid):
+                if l["kind"] != "judge":
+                    self._halt(l["id"], "deadline", r)
+            waiting = any(i["kind"] == "rejudge" and i.get("why") == "pending" for i in self.reader.work(pid))
+            if waiting and now < dl + self.cfg.settle_s * 1000:
+                return
+            why = "deadline"
+        if why is not None:
             for l in self._active(pid):
                 self._halt(l["id"], why, r)
             out = self.graph.submit(

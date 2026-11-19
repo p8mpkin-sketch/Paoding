@@ -11,7 +11,7 @@ from typing import Any, TypedDict, cast
 
 from . import levels as lv
 from . import refmodel as rm
-from .state import Lease, ScopeRequest, ScopeRule, State
+from .state import Lease, Request, ScopeRequest, ScopeRule, State
 
 TASK_KINDS = ("bootstrap", "reason", "explore")
 FAIL_OUTCOMES = ("failed", "nothing", "budget_exhausted", "expired")
@@ -247,6 +247,38 @@ def recall_pending(state: State, pid: str) -> bool:
     return not any(l["kind"] == "recall" and not l["active"] for l in leases_of(state, pid))
 
 
+def recheck_wanted(state: State, pid: str) -> list[dict[str, Any]]:
+    """延迟判官的复判（external-verdict §5.3）：最近一次请求的裁决是 inconclusive(pending)，就派生一项复判。
+
+    `not_before` 是判官给的 recheck_at；本函数不读时钟，到没到时候由判官运行器按自己的时钟判断。
+    同一候选的复判不消耗次数上限（request_judge 按不同候选计数）。"""
+    p = state["problems"][pid]
+    latest: dict[tuple[str, str | None], Request] = {}
+    for r in state["requests"].values():
+        if r["problem_id"] != pid:
+            continue
+        key = (r["target"], r.get("candidate"))
+        if key not in latest or int(r["id"][2:]) > int(latest[key]["id"][2:]):
+            latest[key] = r
+    out = []
+    for (target, candidate), r in sorted(latest.items(), key=lambda kv: int(kv[1]["id"][2:])):
+        if r.get("inconclusive") != "pending" or "recheck_at" not in r:
+            continue
+        jid = r["judge_id"]
+        out.append(
+            {
+                "kind": "rejudge",
+                "target": target,
+                "judge": jid,
+                "version": p["judge_snapshot"][jid]["version"],
+                "candidate": candidate,
+                "not_before": r["recheck_at"],
+                "why": "pending",
+            }
+        )
+    return out
+
+
 def work(state: State, pid: str) -> list[dict[str, Any]]:
     p = state["problems"].get(pid)
     if p is None or p.get("closed"):
@@ -293,6 +325,8 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
             items.append(
                 {"kind": "rejudge", "target": target, "judge": judge, "version": version, "candidate": candidate}
             )
+    rechecks = recheck_wanted(state, pid)
+    items += rechecks
     for iid, s in statuses.items():
         if s == "needs_human":
             items.append({"kind": "human", "target": iid, "why": "needs_human"})
@@ -300,6 +334,7 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
         not active_leases(state, pid)
         and "open" not in statuses.values()
         and not pending
+        and not rechecks
         and not reason_due
         and boot_done
     )

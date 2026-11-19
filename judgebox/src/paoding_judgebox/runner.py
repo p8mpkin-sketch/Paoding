@@ -56,6 +56,8 @@ class JudgeRunner:
         for p in sorted(st["problems"]) if pid is None else [pid]:
             for item in self.reader.work(p):
                 if item["kind"] == "rejudge":
+                    if item.get("not_before") is not None and self.clock() < item["not_before"]:
+                        continue  # 延迟判官的回执还没到时候（external-verdict §5.3）
                     out = self.graph.submit(
                         self.cfg.token,
                         p,
@@ -126,6 +128,7 @@ class JudgeRunner:
                             "evidence": [aid],
                             "reason": o.reason,
                             **({"control_end": o.control_end} if o.control_end is not None else {}),
+                            **({"recheck_at": o.recheck_at} if o.recheck_at is not None else {}),
                         },
                     }
                 ],

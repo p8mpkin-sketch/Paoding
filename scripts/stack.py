@@ -43,7 +43,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 from kaiti_hub import KaitiHub, kaiti_config, practice_doc  # noqa: E402
 from memory_hub import MemoryHub, memory_config  # noqa: E402
-from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
+from paoding_judgebox.contract import (  # noqa: E402
+    JudgeConfig,
+    JudgeRunner,
+    Vault,
+    kernel_judges,
+    load_connectors,
+    load_registry,
+)
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
 from settings_hub import KEY_NOTE, SettingsHub, SettingsStore  # noqa: E402
 from settings_hub import defaults as settings_defaults  # noqa: E402
@@ -278,7 +285,8 @@ class Stack:
 
         # 图服务
         self.registry = load_registry()
-        self.judges = kernel_judges(self.registry)
+        self.connectors = load_connectors()  # 外部裁决的连接器档案（external-verdict §5.1）；摘要抄进判官快照
+        self.judges = kernel_judges(self.registry, self.connectors)
         self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges), self.tokens)
         self.blobs = BlobStore(home / "blobs")
         self.vault = Vault(home / "vault")

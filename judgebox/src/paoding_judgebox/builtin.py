@@ -30,6 +30,7 @@ class Outcome:
     provenance: dict[str, Any] = field(default_factory=dict)
     wall_s: int = 0
     control_end: str | None = None  # 判据带对照时：对照运行的结束类别（§3.3.3），见 replay
+    recheck_at: int | None = None  # 延迟判官 inconclusive(pending) 时：下次读回执的时刻（毫秒）
 
 
 @dataclass

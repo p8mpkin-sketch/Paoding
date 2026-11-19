@@ -38,6 +38,12 @@ def _v_request_judge(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
     if judge != check["judge_id"]:
         return Reject("schema_error", "判官必须是登记判据时的那一个（判据先行）")
     candidate = body.opt_string("candidate")
+    if actor["kind"] == "judge" and not any(
+        r["problem_id"] == pid and r["target"] == target and r["judge_id"] == judge and r.get("candidate") == candidate
+        for r in state["requests"].values()
+    ):
+        # 判官运行器补的复判（unstable 或延迟判官的 pending）只能重复已有的请求，不能自己挑候选
+        return Reject("forbidden_op", "判官令牌只能复判已有请求的同一目标、判官与候选")
     if max_attempts is not None:
         if candidate is None:
             return Reject("schema_error", "Goal 与带判据的 Intent 须给候选")
@@ -55,7 +61,8 @@ def _v_request_judge(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
 
 
 # §3.3.2 reason_code 的无结论各项；no_contrast 是对照判据的：主运行与对照都通过，结果不依赖输入（§3.3.3）
-INCONCLUSIVE_REASONS = ("timeout", "env_error", "unsupported", "untouched", "no_contrast")
+# pending 是延迟判官的"回执还没出"（external-verdict §5.3）：带 recheck_at，图服务到时派生复判，等级不变
+INCONCLUSIVE_REASONS = ("timeout", "env_error", "unsupported", "untouched", "no_contrast", "pending")
 # 对照运行的结束类别（§3.3.3 的 control_end）：not_run 表示主运行没通过，对照不必跑
 CONTROL_ENDS = ("pass", "fail", "flaky", "timeout", "env_error", "untouched", "unsupported", "not_run")
 
@@ -92,6 +99,16 @@ def _v_judge_verdict(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
     reason = body.text("reason") if "reason" in body else None
     if result == "inconclusive" and reason not in INCONCLUSIVE_REASONS:
         return Reject("schema_error", f"inconclusive 须带原因码 {INCONCLUSIVE_REASONS}")
+    recheck_at: int | None = None
+    snap = state["problems"][pid]["judge_snapshot"][req["judge_id"]]
+    if reason == "pending":
+        if result != "inconclusive" or snap["kind"] != "deferred":
+            return Reject("schema_error", "pending 只用于延迟判官（kind=deferred）的 inconclusive")
+        recheck_at = body.get("recheck_at")
+        if type(recheck_at) is not int or recheck_at <= 0:
+            return Reject("schema_error", "pending 须带 recheck_at（毫秒，正整数）")
+    elif "recheck_at" in body:
+        return Reject("schema_error", "recheck_at 只随 pending 给出")
     end = body.text("control_end") if "control_end" in body else None
     controlled = _controlled(state, pid, req["target"])
     why = _control_rule(result, reason, end, controlled)
@@ -104,7 +121,6 @@ def _v_judge_verdict(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
             return err
         if state["artifacts"][ref]["class"] != "judge":
             return Reject("inadmissible_class", "evidence 必须是 judge 类")
-    snap = state["problems"][pid]["judge_snapshot"][req["judge_id"]]
     return Ok(
         {
             "request": rid,
@@ -113,6 +129,7 @@ def _v_judge_verdict(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
             "grade": snap["grade"],
             "evidence": evidence,
             **({"reason": reason} if reason is not None else {}),
+            **({"recheck_at": recheck_at} if recheck_at is not None else {}),
             **({"control_end": end, "controlled": result == "pass"} if controlled else {}),
         }
     )
@@ -132,6 +149,8 @@ def _a_judge_verdict(s: State, ev: Event) -> None:
     judged: Request = {**req, "verdict_seq": seq}
     if body["result"] == "inconclusive":
         judged["inconclusive"] = body["reason"]
+        if "recheck_at" in body:
+            judged["recheck_at"] = body["recheck_at"]
     if "control_end" in body:
         judged["control_end"] = body["control_end"]
     s["requests"] = {**s["requests"], req["id"]: judged}
