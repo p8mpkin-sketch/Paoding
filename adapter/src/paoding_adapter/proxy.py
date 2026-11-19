@@ -44,6 +44,8 @@ import yaml
 
 from paoding_graph.contract import GraphPort, GraphReader
 
+from .keyring import KeyRing
+
 LOG = logging.getLogger("adapter")
 # 系统没配好 CA 时（macOS 上 python.org 与 uv 装的 Python 常见）依次试的证书包
 CA_CANDIDATES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
@@ -136,15 +138,23 @@ class Task:
 @dataclass
 class ProxyConfig:
     upstream: str  # 例如 https://api.anthropic.com
-    api_key: str  # 真实密钥，只在本进程
+    api_key: str  # 过渡期：直接给的真实密钥；给了 keyring 时忽略。空串 = 未设
     adapter_token: str  # 向图服务提交 cost 事件用的组件令牌
     global_cap_usd_milli: int = 500_000  # M0 总额上限，暂定 500 美元
     problem_caps: dict[str, Any] = field(default_factory=dict)  # pid → usd_milli
+    keyring: KeyRing | None = None  # 真实密钥只在这里（宪章 03 §4）；缺省由 api_key 建一个
+    key_slot: str = "default"  # 转发时换上哪个槽的密钥
 
 
 class EndpointProxy:
     def __init__(self, cfg: ProxyConfig, prices: PriceTable, graph: GraphPort, reader: GraphReader | None = None):
         self.cfg, self.prices, self.graph = cfg, prices, graph
+        if cfg.keyring is None:
+            cfg.keyring = KeyRing({cfg.key_slot: ""})
+            if cfg.api_key:
+                cfg.keyring.set(cfg.key_slot, cfg.api_key, source="config")
+        cfg.api_key = ""  # 密钥只留在钥匙环里：配置对象可能被打印、比较、序列化
+        self.keyring: KeyRing = cfg.keyring
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
         # 实例号，进 cost 的幂等键：重启后同一租约的计数重新从 1 起，不能撞上旧键
@@ -277,6 +287,10 @@ class EndpointProxy:
                     LOG.warning("代理：%s %s → %d %s", self.command, self.path, status, why)
                     return self._reject(status, why)
                 assert task is not None  # admit 放行（200）时必给任务
+                key = proxy.keyring.get(proxy.cfg.key_slot)
+                if key is None:
+                    LOG.warning("代理：%s %s → 503 key_not_set（槽 %s）", self.command, self.path, proxy.cfg.key_slot)
+                    return self._reject(503, "key_not_set")
                 up = urllib.parse.urlsplit(proxy.cfg.upstream)
                 conn: http.client.HTTPConnection
                 if up.scheme == "https":
@@ -284,7 +298,7 @@ class EndpointProxy:
                 else:
                     conn = http.client.HTTPConnection(up.netloc, timeout=600)
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
-                headers["x-api-key"] = proxy.cfg.api_key
+                headers["x-api-key"] = key
                 headers["accept-encoding"] = "identity"  # 压缩的响应没法边转边计量
                 path = (up.path.rstrip("/") + self.path) if up.path else self.path
                 try:

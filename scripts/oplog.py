@@ -63,7 +63,9 @@ class JsonFormatter(logging.Formatter):
             v = record.__dict__.get(k)
             if v is not None:
                 out[k] = v
-        if record.exc_info:
+        if record.exc_text:  # 遮盖过滤器（钥匙环）已经生成并遮盖过
+            out["exc"] = record.exc_text.rstrip()
+        elif record.exc_info:
             out["exc"] = "".join(traceback.format_exception(*record.exc_info)).rstrip()
         return json.dumps(out, ensure_ascii=False, default=str)
 

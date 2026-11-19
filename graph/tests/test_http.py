@@ -1294,9 +1294,9 @@ def test_vault_put_absent_without_injection(api):
     assert st == 404 and body["code"] == "unknown_ref"
 
 
-def test_mount_with_who_requires_that_token(api):
-    """组装根挂的端点可要求令牌种类（一句话开题 /v1/drafts 只给人）。"""
-    api.http.mount("POST", r"/v1/drafts", lambda q, b: {"echo": b}, who="human")
+def test_mount_human_only_for_drafts(api):
+    """组装根挂的端点可只认人的令牌（一句话开题 /v1/drafts：起草要花钱）。"""
+    api.http.mount("POST", r"/v1/drafts", lambda q, b: {"echo": b}, human=True)
     st, body, _ = api.req("POST", "/v1/drafts", {"text": "x"}, token="tok-human")
     assert st == 200 and body == {"echo": {"text": "x"}}
     st, body, _ = api.req("POST", "/v1/drafts", {"text": "x"}, token="tok-sinan")

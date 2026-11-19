@@ -66,6 +66,9 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         and budget.get("tokens", 1) > 0
     ):
         return Reject("schema_error", "预算必须为正，份额在 [0,1]")
+    for key, cap, unit in (("usd_milli", cfg.open_cap_usd_milli, "毫美元"), ("wall_s", cfg.open_cap_wall_s, "秒")):
+        if cap is not None and budget[key] > cap:
+            return Reject("over_budget", f"budget.{key}={budget[key]} 超过单题硬顶 {cap} {unit}")
     o = body.child("origin")
     statement_ref, materials = o.string("statement_ref"), o.strings("materials")
     for ref in [statement_ref, *materials]:
@@ -90,6 +93,8 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             "judge_snapshot": {j: dict(e) for j, e in snapshot.items()},
             "profile": _derive_profile(scope, snapshot[check["judge_id"]], cfg),
             **extras,
+            # 宪章 D5：开在哪一版设置之下。由图服务抄入，提交体里不接受；不进等级、消费门与画像
+            **({"settings": {"version": cfg.settings[0], "digest": cfg.settings[1]}} if cfg.settings else {}),
         }
     )
 

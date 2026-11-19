@@ -65,7 +65,9 @@ def test_real_backend_takes_program_api_base_model_and_key(tmp_path, monkeypatch
     )
     s = Stack(cfg)
     try:
-        assert s.proxy.cfg.upstream == "https://api.deepseek.com/anthropic" and s.proxy.cfg.api_key == FAKE_KEY
+        assert s.proxy.cfg.upstream == "https://api.deepseek.com/anthropic"
+        assert s.keyring.get("default") == FAKE_KEY and s.keyring.slot_status("default")["source"] == "config"
+        assert s.proxy.cfg.api_key == ""  # 配置对象里不留密钥，只在钥匙环
         argv = _argv(s, tmp_path)
         assert argv[:2] == [str(cli), "--debug"]
         assert argv[argv.index("--model") + 1] == "deepseek-chat"
@@ -80,16 +82,24 @@ def test_env_key_wins_over_config_key(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{_fake_cli(tmp_path / 'bin').parent}:{os.environ['PATH']}")
     s = Stack(_cfg(tmp_path, program=["claude"], api_key=FAKE_KEY))
     try:
-        assert s.proxy.cfg.api_key == "sk-fake-env"
+        assert s.keyring.get("default") == "sk-fake-env" and s.keyring.slot_status("default")["source"] == "env"
         assert "--model" not in _argv(s, tmp_path)  # 没给 model 就不传
     finally:
         _close(s)
 
 
-def test_real_backend_without_any_key_refuses(tmp_path, monkeypatch):
+def test_real_backend_without_any_key_starts_and_waits(tmp_path, monkeypatch, caplog):
+    """宪章 03 §4.2：没有密钥也照常组装，钥匙环该槽未设，告警里写明怎么注入；司南等密钥（见 test_keys_canary）。"""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    with pytest.raises(StackError, match="backend.api_key"):
-        Stack(_cfg(tmp_path))
+    monkeypatch.setenv("PATH", f"{_fake_cli(tmp_path / 'bin').parent}:{os.environ['PATH']}")
+    caplog.set_level(logging.WARNING)
+    s = Stack(_cfg(tmp_path, program=["claude"]))
+    try:
+        assert not s.keyring.ready("default")
+        assert s.keyring.slot_status("default")["env"] == "ANTHROPIC_API_KEY"
+        assert any("密钥未设" in r.getMessage() and "环境变量持久注入" in r.getMessage() for r in caplog.records)
+    finally:
+        _close(s)
 
 
 def test_local_cli_resolved_on_host_path(tmp_path, monkeypatch):

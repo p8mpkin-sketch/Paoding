@@ -82,8 +82,8 @@ class KaitiHub:
         self.svc = KaitiService(Intake.load(), lambda: settings, priors, drafter, profile)
 
     def mount(self, http: GraphHttp) -> None:
-        http.mount("POST", r"/v1/drafts/extract", self._wrap(self.svc.extract_view), who="human")
-        http.mount("POST", r"/v1/drafts", self._wrap(self.svc.draft_view), who="human")
+        http.mount("POST", r"/v1/drafts/extract", self._wrap(self.svc.extract_view), human=True)
+        http.mount("POST", r"/v1/drafts", self._wrap(self.svc.draft_view), human=True)
 
     @staticmethod
     def _wrap(fn: Any) -> Any:
