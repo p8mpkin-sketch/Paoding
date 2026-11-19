@@ -590,6 +590,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       profiles: [{ name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" }],
       routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
     },
+    grants: { runtime: true, auto: { practice: true } },
   };
   let settingsVersion = 1;
   const settingsLog: { version: number; from: string | null; to: string; keys: string[]; by: string; ts: number }[] = [

@@ -15,7 +15,7 @@ import { renderWith, rig, until } from "./helpers";
 beforeEach(() => { localStorage.clear(); window.history.pushState(null, "", "/new"); });
 afterEach(cleanup);
 
-const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external") => KAITI.drafts[k];
+const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external" | "zero") => KAITI.drafts[k];
 const SECRET = "PD-7Q2M9XKD";
 
 describe("视图模型", () => {
@@ -129,6 +129,22 @@ describe("输入框与确认卡", () => {
     const posts = r.fetch.calls.filter((c) => c.method === "POST" && c.url === "/v1/drafts");
     expect(JSON.parse(posts.at(-1)!.body!)).toMatchObject({ profile: "default" });
     expect(JSON.parse(posts.at(-1)!.body!).draft).toBeUndefined(); // 换档案是重新起草，不是重新校验
+  });
+
+  it("运行时扩权开着：开题零出站，原文地址只作展示，卡上没有风险可改", async () => {
+    const { r, container } = await drafted(rec("zero").text);
+    const card = container.querySelector("[data-kaiti-card]")!;
+    const mention = card.querySelector('[data-field="scope.mention"]')!;
+    expect(mention.textContent).toMatch(/原文提到的地址/);
+    expect(mention.textContent).toMatch(/q2:8080/);
+    expect(mention.textContent).toMatch(/执行时如需访问，会按需申请/);
+    expect(mention.querySelector('[data-source="span"]')?.textContent).toMatch(/[①-⑳]/);
+    expect(card.querySelector("[data-risk]")).toBeNull();
+    expect(card.querySelector('[data-field="scope[0]"]')?.textContent).toMatch(/不开任何出站/);
+    fireEvent.keyDown(card, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${rec("zero").out.pid}`));
+    const st = await r.api.status(rec("zero").out.pid);
+    expect(st.problem.scope.map((x) => x.resource)).toEqual(["workspace"]);
   });
 
   it("卡上改风险与预算：重新校验不再调模型，出处变“人”", async () => {

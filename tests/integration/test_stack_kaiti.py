@@ -32,8 +32,16 @@ def stack(tmp_path):
     s.http.close()
 
 
+def runtime_off(s):
+    """旧路：设置写一版 grants.runtime=off，起草回到原文地址即授权（回退路径，§3.1）。"""
+    store = s.settings.store
+    store.settings = {**store.settings, "grants": {**store.settings["grants"], "runtime": False}}
+    s.settings.apply()
+
+
 def test_drafts_then_open_like_the_web(stack):
     s, url = stack
+    runtime_off(s)
     tok = s.human_token
     with pytest.raises(urllib.error.HTTPError) as e:
         call(url, "/v1/drafts", {"text": TEXT}, token=s.tok["sinan"])
@@ -100,6 +108,7 @@ def _open(s, url, out, lane, risk=None, key="k"):
 def test_practice_envelope_is_loaded_but_dormant(stack):
     """第三期：内核加载信封即休眠。起草服务只给确认道；手工把道别改成 practice 的提交体由内核逐条对信封。"""
     s, url = stack
+    runtime_off(s)
     pol = s.graph.cfg.practice
     assert pol is not None
     caps = s.settings.store.settings["caps"]
@@ -272,3 +281,18 @@ def test_settings_sources_are_read_only_and_follow_caps(stack):
     with pytest.raises(urllib.error.HTTPError) as e:
         call(url, "/v1/settings/sources", {"x": 1}, token=s.human_token)
     assert e.value.code in (404, 405)
+
+
+def test_one_sentence_opens_with_zero_egress(stack):
+    """扩权第四步（§3.1）：新装缺省 runtime=on，开题只有工作区一条；原文里的地址只作展示，执行时按需申请。"""
+    s, url = stack
+    out = call(url, "/v1/drafts", {"text": TEXT}, token=s.human_token)
+    assert out["lane"] == "confirm"
+    assert out["ops"][-1]["body"]["scope"] == [
+        {"resource": "workspace", "pattern": "", "actions": ["read", "write"], "risk": "r0"}
+    ]
+    assert [m["value"] for m in out["mentions"]] == ["q1:8080"]
+    assert any(d["field"] == "scope.mention" for d in out["derivation"])
+    res = _open(s, url, out, "confirm", key="z1")
+    assert res["ok"], res
+    assert s.graph.state["problems"][out["pid"]]["scope"][0]["resource"] == "workspace"

@@ -24,6 +24,7 @@
 
 - `PriorSource`：`lookup(tier, signature) → Prior | None`、`version()`；`TablePriors` 是注入表的实现。
 - `Settings.from_doc`：读 `/v1/settings` 的形状（生命周期地图 PR #84）：`caps`、`risk`（顺序匹配，未命中 r2）、`models`（起草档案取 `routes.draft`，可按档案名覆盖，不许填端点或密钥）。
+- `Settings.grants_runtime`：读设置快照的 `grants.runtime`（运行时扩权，`docs/design/runtime-grants/` §3.1、§12 第四步），没有 `grants` 节即关。开着时 `vet` 的授权恒为工作区一条（`workspace r0`，零出站），起草模型标的入口与参考地址只进 `Vetted.mentions`（`{value, span}`）与 `scope.mention` 出处行（注"执行时如需访问，会按需申请"），不生成规则、不查风险表、不影响道别；`overrides.risk` 无行可改。关着时走旧分支（入口地址即授权），保留作回退与对照臂。
 - `offline.py`：§10 第 3 条的离线读数；练习道判定精确率达到 1.0 是零确认放行的前提。
 
 ## 起草服务（第二期）

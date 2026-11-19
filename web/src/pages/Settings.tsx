@@ -21,6 +21,27 @@ const SOURCE_WORD: Record<string, string> = { page: "设置页", env: "环境变
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+/** 旧快照没有 grants 节：按“关”呈现（与服务端 grants_of 的缺省一致）；勾选即写入这一节。 */
+const GRANTS_OFF = { runtime: false, auto: { practice: true } };
+
+function GrantsSec({ draft, set, writable }: { draft: Settings; set: (p: (s: Settings) => void) => void; writable: boolean }) {
+  const g = draft.grants ?? GRANTS_OFF;
+  return (
+    <div className="grants" data-grants>
+      <label>
+        <input type="checkbox" checked={g.runtime} disabled={!writable} data-field="grants.runtime"
+          onChange={(e) => set((s) => { s.grants = { ...(s.grants ?? GRANTS_OFF), runtime: e.target.checked }; })} />
+        {" "}新建零出站：一句话新建的任务不预先给网络授权，执行时智能体按需申请，你在扩权卡上批
+      </label>
+      <label>
+        <input type="checkbox" checked={g.auto.practice} disabled={!writable || !g.runtime} data-field="grants.auto.practice"
+          onChange={(e) => set((s) => { const cur = s.grants ?? GRANTS_OFF; s.grants = { ...cur, auto: { practice: e.target.checked } }; })} />
+        {" "}练习道白名单内的申请自动批准（地址在练习道信封里、风险表给 r0、预算在练习上限内）
+      </label>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { api, cfg } = useServices();
   const writable = !!cfg.token;
@@ -89,6 +110,11 @@ export function SettingsPage() {
       <section className="settings-sec" aria-labelledby="sec-risk">
         <SectionHead id="sec-risk" title="风险表" note="自上而下顺序匹配；没命中的一律 r2，新建的任务起生效" />
         <Risk draft={draft} set={set} writable={writable} />
+      </section>
+
+      <section className="settings-sec" aria-labelledby="sec-grants">
+        <SectionHead id="sec-grants" title="运行时扩权" note="新建的任务起生效；关掉即回到新建时预测授权的旧做法" />
+        <GrantsSec draft={draft} set={set} writable={writable} />
       </section>
 
       <div className="settings-foot" data-settings-foot>

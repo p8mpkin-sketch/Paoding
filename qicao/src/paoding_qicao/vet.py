@@ -49,6 +49,8 @@ class Vetted:
     secret: str | None = field(default=None, repr=False)  # 答案；只交给保密库，不序列化
     pid: str = ""
     priors_version: str = ""
+    # 运行时扩权开着时：原文里起草指认的入口地址，只作展示（确认卡上的原文高亮），不生成规则、不影响道别
+    mentions: list[dict[str, Any]] = field(default_factory=list)
     external: dict[str, Any] | None = None  # 外部裁决：{connector, judge_id, task}；批次由导入时领题生成（§5.8）
     needs_ack: str | None = None  # "command"：命令有外发的形状，人勾“只检查、不提交”之前不给批次
     notice: bytes | None = None  # 资源公告（导入时领题的说明全文）；有它时 deadline.bound_by 指向它
@@ -62,6 +64,7 @@ class Vetted:
             "derivation": self.derivation,
             "input": self.input,
             "priors": self.priors_version,
+            **({"mentions": self.mentions} if self.mentions else {}),
             "external": self.external,
             "needs_ack": self.needs_ack,
         }
@@ -212,6 +215,7 @@ def vet(
     # ---------- 授权 ----------
     scope: list[dict[str, Any]] = []
     refs: list[str] = []
+    mentions: list[dict[str, Any]] = []
     for sid, role in d.entries:
         sp = ext.span(sid)
         assert sp is not None
@@ -222,6 +226,11 @@ def vet(
         if role == "reference":
             refs.append(sp.text)
             der.append(_src("materials", sp.text, "span", [sid], "参考资料，只当文字，不开通路"))
+            continue
+        if settings.grants_runtime:
+            # 开题零出站（runtime-grants §3.1）：入口只作原文高亮，执行时智能体按需申请，人或练习道白名单批
+            mentions.append({"value": str(sp.value), "span": sid})
+            der.append(_src("scope.mention", sp.value, "span", [sid], "执行时如需访问，会按需申请"))
             continue
         risk, row = settings.risk_of("net", str(sp.value), ["connect"])
         rule = {"resource": "net", "pattern": str(sp.value), "actions": ["connect"], "risk": risk}
@@ -244,7 +253,8 @@ def vet(
             der.append(_src("materials", sp.text, "span", [sp.id], "起草没有指认的地址：只当文字，不开通路"))
     if not scope:
         scope.append({"resource": "workspace", "pattern": "", "actions": ["read", "write"], "risk": "r0"})
-        der.append(_src("scope[0]", "workspace（不开任何出站）", "table", note="原文里没有入口"))
+        why = "开题零出站，执行时按需申请" if settings.grants_runtime else "原文里没有入口"
+        der.append(_src("scope[0]", "workspace（不开任何出站）", "table", note=why))
 
     # ---------- 预算 ----------
     caps = settings.caps
@@ -347,6 +357,7 @@ def vet(
     elif not caps_ok:
         note("over_practice_cap", "budget", "预算超过练习上限")
     v = _done(notes, der, problem, ext, secret, refs, spec, nonce, priors, eligible, intake, zero_confirm, d)
+    v.mentions = mentions
     if v.lane != "refuse":
         v.external, v.needs_ack = external, needs_ack
     return v

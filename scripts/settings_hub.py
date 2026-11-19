@@ -53,8 +53,9 @@ def defaults(*, endpoint: str = "", model: str = "", global_cap_usd_milli: int =
             "practice_wall_s": 1_800,
         },
         "risk": [],
-        # 运行时扩权（docs/design/runtime-grants/ §10.3）：缺省关；练习道白名单就是信封的 allow.net_patterns
-        "grants": {"runtime": False, "auto": {"practice": True}},
+        # 运行时扩权（docs/design/runtime-grants/ §12 第四步起缺省开）：一句话开题零出站，执行时按需申请；
+        # 练习道白名单就是信封的 allow.net_patterns。旧快照没有这一节时仍按关（grants_of），切换要写一版设置
+        "grants": {"runtime": True, "auto": {"practice": True}},
         "models": {
             "profiles": [
                 {
