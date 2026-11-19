@@ -119,7 +119,6 @@ def test_cn_durations(text, secs):
         ("花费不超过 $ 0.5。", 500),
         ("最多5美元。", 5000),
         ("最多 5 美元。", 5000),
-        ("预算20元。", 2800),
     ],
 )
 def test_money(text, milli):
@@ -136,10 +135,10 @@ def test_yuan_needs_rate_and_is_not_tuple():
 
 def test_money_and_duration_feed_budget_default():
     """抽到才用原文数：草案指认金额与时长区间后，预算缺省取原文数，出处记"span"。"""
-    e = ext("在一个半小时内算出结果，预算 20 元。\n答案：7")
+    e = ext("在一个半小时内算出结果，预算 5 美元。\n答案：7")
     d = parse_draft(heuristic_drafter(e, True), e, "cheap")
     v = vet(e, None, d, INTAKE, SETTINGS, placeholder_priors())
-    assert v.input is not None and v.input["budget"]["wall_s"] == 5400 and v.input["budget"]["usd_milli"] == 2800
+    assert v.input is not None and v.input["budget"]["wall_s"] == 5400 and v.input["budget"]["usd_milli"] == 5000
     src = {r["field"]: r["source"] for r in v.derivation}
     assert src["budget.wall_s"] == "span" and src["budget.usd_milli"] == "span"
     assert v.secret == "7"  # 答案行仍决定保密库
