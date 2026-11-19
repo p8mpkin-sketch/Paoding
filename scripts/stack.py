@@ -19,8 +19,8 @@ TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，
     program   CLI 的命令（字符串按 shell 规则切分，或列表），缺省 claude
     api_base  模型端点，等同 upstream，例如 https://api.deepseek.com/anthropic
     model     传给 CLI 的 --model
-    api_key   密钥直接写在配置里（cz 2026-11-18 同意）。环境变量有值时以环境变量为准；用它会记一条警告，
-              配置文件要自己收好权限，数据目录不入 git
+    api_key   密钥直接写在配置里（cz 2026-11-18 同意；宪章 D4 起为过渡期，下一版退役）。环境变量有值时以
+              环境变量为准；用它会记一条警告。密钥都进端点代理的钥匙环，也可以启动后在设置页或 pd keys set 注入
 """
 
 from __future__ import annotations
@@ -43,6 +43,8 @@ ROOT = Path(__file__).resolve().parents[1]
 from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
+from settings_hub import KEY_NOTE, SettingsHub, SettingsStore  # noqa: E402
+from settings_hub import defaults as settings_defaults  # noqa: E402
 
 from paoding_adapter.contract import (  # noqa: E402
     FAKE_CLI,
@@ -51,6 +53,7 @@ from paoding_adapter.contract import (  # noqa: E402
     ContainerLauncher,
     EndpointProxy,
     FakeUpstream,
+    KeyRing,
     PriceTable,
     ProxyConfig,
     SessionRunner,
@@ -211,19 +214,28 @@ class Stack:
         self.launch_mode = cfg.launcher or ("container" if cfg.backend == "real" else "local")
         if self.launch_mode not in ("container", "local"):
             raise StackError(f"launcher 取 container 或 local，不是 {cfg.launcher!r}")
-        api_key = "sk-fake-upstream"
-        if cfg.backend == "real":
-            api_key = os.environ.get(cfg.api_key_env, "")
-            if not api_key and cfg.api_key:
-                api_key = cfg.api_key
+        # 钥匙环（宪章 03 §4）：真实密钥只在端点代理这一个进程的内存里。启动时从环境变量注入；
+        # 配置文件的 backend.api_key 是过渡期（D4），照用但告警；都没有也照常启动，等设置页注入。
+        self.keyring = KeyRing({"default": cfg.api_key_env if cfg.backend == "real" else ""})
+        self.keyring.install_redaction()
+        if cfg.backend == "fake":
+            self.keyring.set("default", "sk-fake-upstream", source="fake")
+        else:
+            if os.environ.get(cfg.api_key_env, "").strip():
+                self.keyring.set("default", os.environ[cfg.api_key_env], source="env")
+            elif cfg.api_key:
+                self.keyring.set("default", cfg.api_key, source="config")
                 log("stack").warning(
-                    "模型密钥取自配置文件的 backend.api_key（环境变量 %s 没有设）：配置文件请只给自己读",
+                    "模型密钥取自配置文件的 backend.api_key（环境变量 %s 没有设）：这条路下一版退役（宪章 D4），"
+                    "请改在设置页输入或用环境变量注入；配置文件请只给自己读",
                     cfg.api_key_env,
                 )
-            if not api_key:
-                raise StackError(
-                    f"真实后端要模型密钥：环境变量 {cfg.api_key_env} 没有设，配置里也没有 backend.api_key。"
-                    "密钥只交给端点代理，不进任何容器"
+            else:
+                log("stack").warning(
+                    "模型密钥未设：环境变量 %s 没有设，配置里也没有 backend.api_key。司南等密钥注入后才开会话"
+                    "（设置页“密钥”一节，或 pd keys set default）。%s",
+                    cfg.api_key_env,
+                    KEY_NOTE,
                 )
             if self.launch_mode == "container" and not cfg.cli_image:
                 raise StackError("真实后端在模型容器里起 CLI：配置里要给 backend.image（装有该 CLI 的镜像）")
@@ -294,7 +306,7 @@ class Stack:
         self.upstream = None if real else FakeUpstream(cfg.usage)
         self.upstream_url = cfg.upstream if real else self.upstream.url
         self.proxy = EndpointProxy(
-            ProxyConfig(self.upstream_url, api_key, self.tok["adapter"]),
+            ProxyConfig(self.upstream_url, "", self.tok["adapter"], keyring=self.keyring),
             PriceTable.load(PRICES),
             self.graph,
             reader=self.graph,
@@ -305,6 +317,13 @@ class Stack:
                 self.proxy.restored["global"],
                 sum(1 for v in self.proxy.restored["problems"].values() if v),
             )
+        # 设置存储（宪章 03 §7）：第一次启动从 config.yaml 迁入端点与模型 id，之后以设置存储为准
+        self.settings = SettingsHub(
+            SettingsStore(home / "settings", settings_defaults(endpoint=cfg.upstream if real else "", model=cfg.model)),
+            self.graph,
+            self.proxy,
+        )
+        self.settings.mount(self.http)
         self.endpoint = ToolEndpoint()
         # 端点先起：模型容器的启动器要知道它们在本机回环上的端口
         proxy_port = self.proxy.serve()[1]
@@ -483,6 +502,7 @@ class Stack:
                 "backend": self.cfg.backend,
                 "launcher": self.cfg.launcher or None,
                 "sessions_in_flight": len(self.runner.live),
+                "key_set": self.keyring.ready(self.proxy.cfg.key_slot),
             },
         }
         if self.executor is None:
@@ -607,6 +627,8 @@ class Stack:
                     return
                 if "do" in choice and not self.cfg.scripts.get(choice["do"]["kind"]):
                     note = f"没有 {choice['do']['kind']} 的会话后端（假 CLI 脚本），等配置"
+                elif "do" in choice and not self.keyring.ready(self.proxy.cfg.key_slot):
+                    note = f"模型密钥未设（槽 {self.proxy.cfg.key_slot}），等设置页或 pd keys set 注入"
                 else:
                     r = sinan.dispatch(pid) if "do" in choice else choice
                     if "started" in r:

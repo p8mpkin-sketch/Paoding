@@ -35,7 +35,7 @@ from .blobs import BlobError, BlobNotFound, BlobStore, CorruptBlob, Readable  # 
 from .eventlog import BatchRejected, EventLog  # noqa: E402,F401
 
 # HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
-from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
+from .httpapi import GraphHttp, HttpConfig, MountError  # noqa: E402,F401
 from .levels import compute as compute_levels  # noqa: E402,F401
 
 # 组装根（pd、测试台）构造服务用。组件之间仍只经下面的端口协议交互。

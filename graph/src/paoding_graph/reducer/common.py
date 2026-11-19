@@ -41,6 +41,11 @@ class Config:
     fact_quota: int = 20  # 每个任务（会话）的写入配额
     intent_quota: int = 8
     intent_budget_usd_milli: tuple[int, int] = (1, 10_000_000)  # add_intent 预算区间
+    # 单题硬顶（宪章 03 §5、一句话开题内核增量 14）：所有开题的预算上限，None 即不设。由设置存储给出，
+    # 组装根在设置变更时整体替换 Config；校验结果连同设置摘要写进事件体，重放不读设置
+    open_cap_usd_milli: int | None = None
+    open_cap_wall_s: int | None = None
+    settings: tuple[int, str] | None = None  # 设置存储当时的 (版本, 摘要)，开题时抄进事件体（宪章 D5）
 
 
 def empty_state() -> State:
