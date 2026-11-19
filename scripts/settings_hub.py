@@ -40,15 +40,16 @@ _SECRETISH = re.compile(r"(api_?key|secret|password|token)$", re.I)
 
 
 def defaults(*, endpoint: str = "", model: str = "", global_cap_usd_milli: int = 500_000) -> dict[str, Any]:
-    """第一次启动时的设置：全局硬顶取今天写死的 500 美元，单题与练习不设顶（null = 不收窄上一层）；
-    一个缺省模型档案，五个角色都指它，密钥槽 default。端点与模型 id 从 config.yaml 迁入（03 §7）。"""
+    """第一次启动时的设置：全局硬顶取今天写死的 500 美元；单题与练习的顶取占位值（与 qicao 的 DEFAULT_CAPS
+    同一组数，起草的默认预算与内核硬顶对得上），在设置页改。一个缺省模型档案，五个角色都指它，密钥槽 default。
+    端点与模型 id 从 config.yaml 迁入（03 §7）。"""
     return {
         "caps": {
             "global_usd_milli": global_cap_usd_milli,
-            "open_usd_milli": None,
-            "open_wall_s": None,
-            "practice_usd_milli": None,
-            "practice_wall_s": None,
+            "open_usd_milli": min(20_000, global_cap_usd_milli),
+            "open_wall_s": 14_400,
+            "practice_usd_milli": min(500, global_cap_usd_milli),
+            "practice_wall_s": 1_800,
         },
         "risk": [],
         "models": {
@@ -74,11 +75,9 @@ def digest_of(settings: dict[str, Any]) -> str:
 # ---------- 校验：确定性代码在写入时检查，不靠界面“不给选”（03 §1） ----------
 
 
-def _int_or_none(v: object, where: str) -> int | None:
-    if v is None:
-        return None
+def _pos_int(v: object, where: str) -> int:
     if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
-        raise BadBody(f"{where} 取正整数或 null，不是 {v!r}")
+        raise BadBody(f"{where} 取正整数，不是 {v!r}")
     return v
 
 
@@ -101,16 +100,13 @@ def validate(raw: object) -> dict[str, Any]:
     caps = raw["caps"]
     if not isinstance(caps, dict) or set(caps) != set(CAP_KEYS):
         raise BadBody(f"caps 是 {list(CAP_KEYS)} 五项")
-    c = {k: _int_or_none(caps[k], f"caps.{k}") for k in CAP_KEYS}
-    if c["global_usd_milli"] is None:
-        raise BadBody("caps.global_usd_milli 必须给：全局硬顶不可关")
-    # 三道顶的次序：练习 ≤ 单题 ≤ 全局；null 即沿用上一层（03 §5）
-    open_usd = c["open_usd_milli"] or c["global_usd_milli"]
-    if open_usd > c["global_usd_milli"]:
-        raise BadBody(f"单题硬顶 {open_usd} 超过全局硬顶 {c['global_usd_milli']}（毫美元）")
-    if c["practice_usd_milli"] is not None and c["practice_usd_milli"] > open_usd:
-        raise BadBody(f"练习上限 {c['practice_usd_milli']} 超过单题硬顶 {open_usd}（毫美元）")
-    if c["practice_wall_s"] is not None and c["open_wall_s"] is not None and c["practice_wall_s"] > c["open_wall_s"]:
+    c = {k: _pos_int(caps[k], f"caps.{k}") for k in CAP_KEYS}  # 每道顶都必须给：硬顶不可关
+    # 三道顶的次序：练习 ≤ 单题 ≤ 全局（03 §5）
+    if c["open_usd_milli"] > c["global_usd_milli"]:
+        raise BadBody(f"单题硬顶 {c['open_usd_milli']} 超过全局硬顶 {c['global_usd_milli']}（毫美元）")
+    if c["practice_usd_milli"] > c["open_usd_milli"]:
+        raise BadBody(f"练习上限 {c['practice_usd_milli']} 超过单题硬顶 {c['open_usd_milli']}（毫美元）")
+    if c["practice_wall_s"] > c["open_wall_s"]:
         raise BadBody(f"练习墙钟上限 {c['practice_wall_s']} 超过单题墙钟硬顶 {c['open_wall_s']}（秒）")
 
     risk = raw["risk"]

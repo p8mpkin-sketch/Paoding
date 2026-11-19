@@ -31,6 +31,7 @@ from settings_hub import KEY_NOTE  # noqa: E402
 from stack import Stack, StackConfig  # noqa: E402
 
 from paoding_pd.cli import main as pd  # noqa: E402
+from paoding_qicao.contract import Settings as QicaoSettings  # noqa: E402
 
 
 def req(url: str, method: str, path: str, body=None, token: str | None = None) -> tuple[int, dict]:
@@ -76,6 +77,9 @@ def test_settings_roundtrip_and_concurrency(stack):
     code, doc = req(url, "GET", "/v1/settings")
     assert code == 200 and doc["version"] == 1 and doc["settings"]["caps"]["global_usd_milli"] == 500_000
     assert doc["settings"]["models"]["routes"]["draft"] == "default"  # 起草模型的钩子（03 §3.4）
+    # 一句话开题（qicao）读的就是这份形状
+    qs = QicaoSettings.from_doc(doc)
+    assert qs.caps == doc["settings"]["caps"] and qs.draft_profile(None)["key_slot"] == "default"
     new = json.loads(json.dumps(doc["settings"]))
     new["caps"]["open_usd_milli"] = 4000
     body = {"base_digest": doc["digest"], "settings": new}
@@ -97,7 +101,8 @@ def test_settings_roundtrip_and_concurrency(stack):
     [
         (("caps", "open_usd_milli"), 600_000, "超过全局硬顶"),
         (("caps", "practice_usd_milli"), 600_000, "超过单题硬顶"),
-        (("caps", "global_usd_milli"), None, "不可关"),
+        (("caps", "global_usd_milli"), None, "正整数"),
+        (("caps", "practice_wall_s"), 20_000, "超过单题墙钟硬顶"),
         (("caps", "open_usd_milli"), -1, "正整数"),
         (("models", "routes", "draft"), "nope", "不是已登记的档案"),
         (("models", "api_key"), "sk-x", "设置里不放密钥"),
@@ -157,8 +162,8 @@ def test_pd_settings_and_keys(stack, monkeypatch):
     assert pd(["--url", stack.url, "settings", "show"], out=out) == 0
     assert "global_usd_milli: 500000" in out.getvalue()
     out = io.StringIO()
-    assert pd(["--url", stack.url, "settings", "set", "caps.open_usd_milli", "20000"], out=out) == 0
-    assert stack.graph.cfg.open_cap_usd_milli == 20000 and "v2" in out.getvalue()
+    assert pd(["--url", stack.url, "settings", "set", "caps.open_usd_milli", "30000"], out=out) == 0
+    assert stack.graph.cfg.open_cap_usd_milli == 30000 and "v2" in out.getvalue()
     out = io.StringIO()
     assert pd(["--url", stack.url, "settings", "set", "caps.open_usd_milli", "900000"], out=out) == 1
     assert "超过全局硬顶" in out.getvalue()
