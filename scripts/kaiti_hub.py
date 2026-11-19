@@ -9,7 +9,9 @@
     settings: 设置快照文件（YAML/JSON，形状同 GET /v1/settings）；设置存储上线后换成它
     priors:   预算先验表（档位 → 默认预算）；缺省占位表
 
-零确认在第二期一律关（cz 2026-11-19，#83 第 2 条附条件），这里没有开关可开。
+零确认一律关（cz 2026-11-19，#83 第 2 条附条件；第三期"信封落地即休眠"）：起草服务只给确认道。
+第三期起内核加载练习道信封（practice_doc：信封数据 + 设置层的练习上限），设置变更时一并换；
+没有人提交 lane=practice 时它只是休眠的墙，开关的打开等测试方的精确率读数。
 """
 
 from __future__ import annotations
@@ -61,6 +63,18 @@ def _load(path: str | None) -> Any:
     return yaml.safe_load(Path(path).read_text(encoding="utf-8")) if path else {}
 
 
+def practice_doc(envelope: dict[str, Any], caps: dict[str, Any]) -> dict[str, Any]:
+    """内核的练习道信封全文（设计 §4.4）= 起草组件的信封数据（kaiti.d/practice.yaml）+ 设置层的练习上限。
+    金额与时长的上限只在设置层有一份（caps.practice_*），这里抄进信封，摘要随之变。"""
+    return {
+        "version": envelope["version"],
+        "allow": envelope["allow"],
+        "judge": envelope["judge"],
+        "budget": {"usd_milli_max": int(caps["practice_usd_milli"]), "wall_s_max": int(caps["practice_wall_s"])},
+        "goal": envelope["goal"],
+    }
+
+
 class KaitiHub:
     def __init__(self, cfg: dict[str, Any], real: bool, upstream: str) -> None:
         settings = Settings.from_doc(_load(cfg.get("settings")))
@@ -78,8 +92,15 @@ class KaitiHub:
             if model and token and url:
                 drafter = model_drafter(MessagesClient(url, token, model))
                 profile = str((prof or {}).get("name") or model)
-        self.state = {"draft": kind if drafter else "off", "profile": profile, "priors": priors.version()}
-        self.svc = KaitiService(Intake.load(), lambda: settings, priors, drafter, profile)
+        intake = Intake.load()
+        self.envelope = dict(intake.envelope)
+        self.state = {
+            "draft": kind if drafter else "off",
+            "profile": profile,
+            "priors": priors.version(),
+            "zero_confirm": False,  # 第三期休眠：开关的打开等测试方的精确率读数
+        }
+        self.svc = KaitiService(intake, lambda: settings, priors, drafter, profile)
 
     def mount(self, http: GraphHttp) -> None:
         http.mount("POST", r"/v1/drafts/extract", self._wrap(self.svc.extract_view), human=True)

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from .. import cards
 from .. import refmodel as rm
 from ..parse import BadBody, Obj
+from ..practice import PracticePolicy
 from ..resources import external_resources
 from ..state import Actor, Amount, Body, Check, Event, Fact, Intent, JudgeEntry, ScopeRule, State
 
@@ -46,6 +47,8 @@ class Config:
     open_cap_usd_milli: int | None = None
     open_cap_wall_s: int | None = None
     settings: tuple[int, str] | None = None  # 设置存储当时的 (版本, 摘要)，开题时抄进事件体（宪章 D5）
+    # 练习道信封（一句话开题增量 13、15）：None 即本部署不接受 lane=practice 的开题。版本与摘要开题时抄进事件体
+    practice: PracticePolicy | None = None
 
 
 def empty_state() -> State:

@@ -24,6 +24,7 @@ import json
 import re
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +241,8 @@ class SettingsHub:
     def __init__(self, store: SettingsStore, graph: GraphService, proxy: EndpointProxy) -> None:
         self.store, self.graph, self.proxy = store, graph, proxy
         self.keyring: KeyRing = proxy.keyring
+        # 设置变更后要跟着换的别处（一句话开题：内核的练习道信封抄设置层的练习上限）
+        self.listeners: list[Callable[[dict[str, Any]], None]] = []
         self.apply()
 
     def apply(self) -> None:
@@ -251,6 +254,8 @@ class SettingsHub:
             settings=(self.store.version, self.store.digest),
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]
+        for fn in self.listeners:
+            fn(self.store.settings)
 
     def mount(self, http: GraphHttp) -> None:
         http.mount("GET", r"/v1/settings", lambda q, b: self.store.doc())

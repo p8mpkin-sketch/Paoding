@@ -6,6 +6,7 @@ from typing import cast
 
 from .. import refmodel as rm
 from ..parse import Obj
+from ..practice import LANES, violations
 from ..state import Actor, Artifact, Body, Event, JudgeEntry, Problem, Profile, ScopeRule, State
 from . import recall
 from .common import _HEX64, RISK_RANK, RISKS, Config, Ok, Reject, _check, _reason, _ref, _rule
@@ -70,13 +71,30 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         if cap is not None and budget[key] > cap:
             return Reject("over_budget", f"budget.{key}={budget[key]} 超过单题硬顶 {cap} {unit}")
     o = body.child("origin")
+    if not {"statement_ref", "materials"} <= o.keys() <= {"statement_ref", "materials", "draft"}:
+        return Reject("schema_error", "origin 字段应为 statement_ref、materials，可选 draft")
     statement_ref, materials = o.string("statement_ref"), o.strings("materials")
-    for ref in [statement_ref, *materials]:
+    draft: Body | None = None
+    if "draft" in o:
+        # 一句话开题（增量 13）：出处账的引用与道别。policy 由图服务从已加载的信封抄入，提交时不接受
+        d = o.child("draft")
+        if d.keys() != {"record", "lane"} or d.get("lane") not in LANES:
+            return Reject("schema_error", "origin.draft 须为 {record, lane: practice|confirm}")
+        draft = {"record": d.string("record"), "lane": d.string("lane")}
+    for ref in [statement_ref, *materials, *([draft["record"]] if draft else [])]:
         err = _ref(state, pid, ref, "Origin 引用")
         if err:
             return err
         if state["artifacts"][ref]["class"] != "input":
             return Reject("inadmissible_class", "Origin 只接受 input 类")
+    if draft is not None and draft["lane"] == "practice":
+        # 练习道信封（增量 15）：零确认没有人在回路里，"它最多能做什么"只在这里、由唯一写入者检查
+        if cfg.practice is None:
+            return Reject("forbidden_op", "本部署没有加载练习道信封，不接受练习道开题")
+        bad = violations(cfg.practice, list(scope), check, budget, max_attempts)
+        if bad:
+            return Reject("forbidden_op", "练习道信封不许：" + "；".join(bad))
+        draft["policy"] = cfg.practice.stamp()
     snapshot = {j: cfg.judges[j] for j in judges}
     extras = recall.open_extras(state, pid, body, judges)
     if isinstance(extras, Reject):
@@ -84,7 +102,11 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
     return Ok(
         {
             "title": body.text("title"),
-            "origin": {"statement_ref": statement_ref, "materials": materials},
+            "origin": {
+                "statement_ref": statement_ref,
+                "materials": materials,
+                **({"draft": draft} if draft is not None else {}),
+            },
             "goal": goal,
             "scope": scope,
             "budget": budget,

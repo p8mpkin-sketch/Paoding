@@ -392,7 +392,7 @@ HTTP 层（不是内核）：`PUT /v1/vault`，人的令牌，只写，返回 `V
 | --- | --- | --- |
 | 一 | `qicao/` 的抽取与 `vet`；`pd kaiti` 只有确认道；内核加单题硬顶；`PUT /v1/vault` | 本稿裁决 |
 | 二 | 网页 `/new` 换成输入框与确认卡；向导移到 `/new/advanced`，加出处记号；拒绝页（已实现：`qicao/service.py`、`scripts/kaiti_hub.py`、`web/src/pages/Kaiti.tsx`） | 一期合入 |
-| 三 | 内核加练习道信封与 `origin.draft`；开放零确认 | §10 第 3 条的精确率达到 100%；测试方的档位表已注入（未注入时用占位表照样能跑） |
+| 三 | 内核加练习道信封与 `origin.draft`；开放零确认（信封与 `origin.draft` 已实现、落地即休眠：`graph/src/paoding_graph/practice.py`、`graph/tests/test_practice_envelope.py`；零确认开关仍关，打开不在本期） | §10 第 3 条的精确率达到 100%；测试方的档位表已注入（未注入时用占位表照样能跑） |
 | 四 | 预算先验接 M2 的花费画像；`accept = human`（若 §9 第 6 条采纳） | M2 资产与内核放开 |
 
 迁移不动的东西：导入页（它的输入本来就是结构化的，逐题走同一个 `app/submit.ts`）；克隆（直接进高级模式）；模板目录的五个字段约定（裁决 005-10）；`/v1/profile/preview`。向导的草稿键 `paoding.wizard_draft` 不变，从一句话开题带入时写同一个键。

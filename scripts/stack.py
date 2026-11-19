@@ -25,6 +25,7 @@ TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import secrets
@@ -40,7 +41,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from kaiti_hub import KaitiHub, kaiti_config  # noqa: E402
+from kaiti_hub import KaitiHub, kaiti_config, practice_doc  # noqa: E402
 from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
@@ -63,7 +64,7 @@ from paoding_adapter.contract import (  # noqa: E402
     local_launcher,
 )
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry  # noqa: E402
+from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry, load_policy  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
@@ -329,6 +330,9 @@ class Stack:
             self.proxy,
         )
         self.settings.mount(self.http)
+        # 练习道信封（一句话开题第三期）：内核加载即休眠；练习上限跟着设置层走
+        self.settings.listeners.append(self._practice)
+        self._practice(self.settings.store.settings)
         self.endpoint = ToolEndpoint()
         # 端点先起：模型容器的启动器要知道它们在本机回环上的端口
         proxy_port = self.proxy.serve()[1]
@@ -488,6 +492,12 @@ class Stack:
             ok = docker_available()
             self._docker_probe = (time.monotonic(), ok)
         return ok
+
+    def _practice(self, settings: dict) -> None:
+        """内核的练习道信封 = 起草组件的信封数据 + 设置层的练习上限；版本与摘要开题时抄进事件体。"""
+        self.graph.cfg = dataclasses.replace(
+            self.graph.cfg, practice=load_policy(practice_doc(self.kaiti.envelope, settings["caps"]))
+        )
 
     def health(self) -> dict:
         """图服务之外各组件的状态，交给 GET /healthz（图服务自己的那一项由 HTTP 绑定填）。只读，不改任何状态。"""
