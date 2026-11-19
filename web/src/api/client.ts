@@ -7,7 +7,7 @@ import type {
   ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
   NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, VaultRef, WorkView,
 } from "./types";
-import type { KaitiExtract, KaitiOverrides, KaitiVetted } from "./kaiti";
+import type { KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
 import type { KeySlot, KeysView, Settings, SettingsDoc, SettingsLogEntry } from "./settings-types";
 
@@ -116,6 +116,14 @@ export function createApi(cfg: ApiConfig) {
     /** 起草并校验。交回 draft（与 nonce）即不再调模型，只重新校验；overrides 是确认卡上人改的风险与预算。 */
     draftVet: (body: { text: string; answer?: string; draft?: Record<string, unknown>; model?: string; nonce?: string; overrides?: KaitiOverrides }) =>
       post<KaitiVetted>("/v1/drafts", body),
+    // ---- 从平台导入（external-verdict §5.8）----
+    // 读也要人的令牌（服务端只对人开放）
+    platforms: async () => (await call("GET", "/v1/connectors", undefined, undefined, true)).json() as Promise<{ items: PlatformEntry[] }>,
+    platformTasks: async (id: string) =>
+      (await call("GET", `/v1/connectors/${enc(id)}/tasks`, undefined, undefined, true)).json() as Promise<{ items: PlatformTask[] }>,
+    /** 领题：平台从此刻开始计时。回来的是与起草同形的确认卡与批次，仍由人的令牌提交。 */
+    platformImport: (id: string, body: { task: string; nonce?: string; budget?: { usd_milli?: number; wall_s?: number } }) =>
+      post<KaitiVetted>(`/v1/connectors/${enc(id)}/import`, body),
     /** 开题：若干条 input 类登记加最后一条 open_problem，Origin 用 "$<下标>" 指向前面的材料。整批原子。 */
     openProblem: async (id: string, materials: Op[], problem: ProblemInput, idemKey: string) => {
       const ops: Op[] = [...materials, { op: "open_problem", body: problem as unknown as Record<string, unknown> }];

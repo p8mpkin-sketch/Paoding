@@ -42,6 +42,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+from connector_hub import ConnectorHub  # noqa: E402
 from kaiti_hub import KaitiHub, kaiti_config, practice_doc  # noqa: E402
 from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import (  # noqa: E402
@@ -78,6 +79,7 @@ from paoding_adapter.contract import (  # noqa: E402
 )
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
 from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry, load_policy  # noqa: E402
+from paoding_qicao.contract import catalog_of  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
@@ -323,8 +325,13 @@ class Stack:
         )
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
-        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream)
+        self.catalog = catalog_of(self.registry, self.connectors)  # 判据形态目录（注册表驱动，§5.8）
+        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog)
         self.kaiti.mount(self.http)
+        self.platforms = ConnectorHub(
+            self.connectors, self.catalog, self.keyring.get, self.keyring.ready, self.kaiti.svc
+        )
+        self.platforms.mount(self.http)
 
         # 执行层
         self.executor = (

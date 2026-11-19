@@ -104,6 +104,66 @@
     "answers": 0
    }
   },
+  "outbound": {
+   "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+   "out": {
+    "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "code",
+      "start": 7,
+      "end": 49,
+      "text": "`curl -X POST https://q1:8080/check -d ok`"
+     },
+     {
+      "id": "s2",
+      "kind": "sentence",
+      "start": 0,
+      "end": 55,
+      "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。"
+     }
+    ],
+    "answers": 0
+   }
+  },
+  "external": {
+   "text": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。限时 6 小时。",
+   "out": {
+    "text": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。限时 6 小时。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "url",
+      "start": 10,
+      "end": 40,
+      "text": "https://plat-a.test/tasks/T-17"
+     },
+     {
+      "id": "s2",
+      "kind": "duration",
+      "start": 68,
+      "end": 72,
+      "text": "6 小时"
+     },
+     {
+      "id": "s3",
+      "kind": "sentence",
+      "start": 0,
+      "end": 65,
+      "text": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。"
+     },
+     {
+      "id": "s4",
+      "kind": "sentence",
+      "start": 65,
+      "end": 73,
+      "text": "限时 6 小时。"
+     }
+    ],
+    "answers": 0
+   }
+  },
   "zero": {
    "text": "目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。半小时内搞定。答案：PD-3R8W1ZNA",
    "out": {
@@ -271,6 +331,8 @@
      ]
     },
     "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
     "pid": "kt-1fb90939e158",
     "nonce": "fixture-practice",
     "text": "练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。半小时内搞定。",
@@ -342,9 +404,9 @@
      {
       "name": "derivation",
       "media_type": "application/vnd.paoding.kaiti-derivation+json",
-      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":\"练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"练习题：目标在 q1:8080，是个登录页，登录\"},{\"field\":\"goal.check\",\"note\":\"答案由人给出，起草模型看不到\",\"source\":\"table\",\"value\":\"exact_match · 答案在保密库\"},{\"field\":\"deliverable\",\"source\":\"table\",\"value\":\"answer.txt\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"q1:8080\"},{\"field\":\"scope[0].risk\",\"note\":\"风险表第 1 行\",\"source\":\"table\",\"value\":\"r0\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 easy（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":500},{\"field\":\"budget.wall_s\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":true,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":500,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"judge_id\":\"exact_match\",\"sealed\":[\"$answer\"]},\"max_attempts\":5,\"statement\":\"练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。\"},\"judges\":[\"exact_match\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"q1:8080\",\"resource\":\"net\",\"risk\":\"r0\"}],\"title\":\"练习题：目标在 q1:8080，是个登录页，登录\"},\"lane\":\"confirm\",\"notes\":[{\"code\":\"zero_confirm_off\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"练习道候选；零确认尚未放行，请确认\"}],\"pid\":\"kt-1fb90939e158\",\"priors\":\"placeholder:placeholder-0\"}",
-      "hash": "6885f386d5315bd5fa5cd7bde73f913e7b143c72b7b253bb601299fc329e6ebf",
-      "size": 1904
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":\"练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"练习题：目标在 q1:8080，是个登录页，登录\"},{\"field\":\"goal.check\",\"note\":\"答案由人给出，起草模型看不到\",\"source\":\"table\",\"value\":\"exact_match · 答案在保密库\"},{\"field\":\"deliverable\",\"source\":\"table\",\"value\":\"answer.txt\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"q1:8080\"},{\"field\":\"scope[0].risk\",\"note\":\"风险表第 1 行\",\"source\":\"table\",\"value\":\"r0\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 easy（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":500},{\"field\":\"budget.wall_s\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":true,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":500,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"judge_id\":\"exact_match\",\"sealed\":[\"$answer\"]},\"max_attempts\":5,\"statement\":\"练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。\"},\"judges\":[\"exact_match\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"q1:8080\",\"resource\":\"net\",\"risk\":\"r0\"}],\"title\":\"练习题：目标在 q1:8080，是个登录页，登录\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"zero_confirm_off\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"练习道候选；零确认尚未放行，请确认\"}],\"pid\":\"kt-1fb90939e158\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "fbf8e553fe3e247bb76c15b59f4d3ec6470a67ec583aa8bc5c2052c02240be94",
+      "size": 1937
      }
     ],
     "ops": [
@@ -360,8 +422,8 @@
      {
       "op": "register_artifact",
       "body": {
-       "hash": "6885f386d5315bd5fa5cd7bde73f913e7b143c72b7b253bb601299fc329e6ebf",
-       "size": 1904,
+       "hash": "fbf8e553fe3e247bb76c15b59f4d3ec6470a67ec583aa8bc5c2052c02240be94",
+       "size": 1937,
        "media_type": "application/vnd.paoding.kaiti-derivation+json",
        "class": "input"
       }
@@ -427,7 +489,7 @@
      {
       "code": "command_criterion",
       "field": "goal.check",
-      "text": "没有标准答案，完成标准是原文里的一条命令；开题后不能改",
+      "text": "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
       "lane": "confirm"
      },
      {
@@ -557,6 +619,8 @@
      ]
     },
     "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
     "pid": "kt-3ac25d961cce",
     "nonce": "fixture-command",
     "text": "仓库在 git.lab:8443，修好构建失败。完成标准：在仓库根目录跑 `make test` 全部通过。预算 $5。",
@@ -652,9 +716,9 @@
      {
       "name": "derivation",
       "media_type": "application/vnd.paoding.kaiti-derivation+json",
-      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"未命中风险表，按规格缺省 r2\",\"source\":\"table\",\"value\":\"r2\"},{\"field\":\"budget.usd_milli\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":5000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":5000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r2\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案，完成标准是原文里的一条命令；开题后不能改\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
-      "hash": "5c5999ad47bf5ce3cdf05c153173647189f0f924bf89801abc10aa468724d947",
-      "size": 2036
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"未命中风险表，按规格缺省 r2\",\"source\":\"table\",\"value\":\"r2\"},{\"field\":\"budget.usd_milli\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":5000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":5000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r2\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "b2a0168b2c1f32a99f0285fa49401cefd84763ac9928ad575b3de63140764474",
+      "size": 2279
      }
     ],
     "ops": [
@@ -679,8 +743,8 @@
      {
       "op": "register_artifact",
       "body": {
-       "hash": "5c5999ad47bf5ce3cdf05c153173647189f0f924bf89801abc10aa468724d947",
-       "size": 2036,
+       "hash": "b2a0168b2c1f32a99f0285fa49401cefd84763ac9928ad575b3de63140764474",
+       "size": 2279,
        "media_type": "application/vnd.paoding.kaiti-derivation+json",
        "class": "input"
       }
@@ -810,6 +874,8 @@
     ],
     "input": null,
     "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
     "pid": "kt-cdbd3b8377c2",
     "nonce": "fixture-refuse",
     "text": "帮我调研一下主流的智能体框架，写一份对比。",
@@ -834,6 +900,412 @@
       "form": "none"
      },
      "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [],
+    "ops": null,
+    "ways": [
+     "endpoint",
+     "human",
+     "advanced",
+     "register_platform"
+    ]
+   }
+  },
+  "outbound": {
+   "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+   "out": {
+    "lane": "confirm",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "command_criterion",
+      "field": "goal.check",
+      "text": "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
+      "lane": "confirm"
+     },
+     {
+      "code": "command_outbound",
+      "field": "goal.check",
+      "text": "这条命令有外发的形状（写方法 -X POST、-d）：勾选“我确认这条命令只检查、不提交”之后才能创建",
+      "lane": "confirm"
+     },
+     {
+      "code": "no_answer",
+      "field": "goal.check",
+      "text": "没有标准答案：不能零确认",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+      "source": "span",
+      "spans": [
+       "s2"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "完成标准：跑 `curl -X POST htt",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "replay · curl -X POST https://q1:8080/check -d ok",
+      "source": "span",
+      "spans": [
+       "s1"
+      ],
+      "note": "“这条命令就是完成标准”由起草模型指认"
+     },
+     {
+      "field": "goal.max_attempts",
+      "value": 5,
+      "source": "table"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "原文里没有入口"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     }
+    ],
+    "input": {
+     "title": "完成标准：跑 `curl -X POST htt",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+      "check": {
+       "judge_id": "replay",
+       "spec_ref": "$spec",
+       "expect": {
+        "exit_code": 0
+       }
+      },
+      "max_attempts": 5,
+      "accept": "judge"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [
+      "replay"
+     ]
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": "command",
+    "pid": "kt-782f62962c0b",
+    "nonce": "fixture-outbound",
+    "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "code",
+      "start": 7,
+      "end": 49,
+      "text": "`curl -X POST https://q1:8080/check -d ok`"
+     },
+     {
+      "id": "s2",
+      "kind": "sentence",
+      "start": 0,
+      "end": 55,
+      "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "完成标准：跑 `curl -X POST htt",
+     "goal_sentence": [
+      "s2"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "command",
+      "spans": [
+       "s1"
+      ]
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [],
+    "ops": null
+   }
+  },
+  "external": {
+   "text": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。限时 6 小时。",
+   "out": {
+    "lane": "confirm",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "external_platform",
+      "field": "goal.check",
+      "text": "判定权在平台 plat-a：创建时由连接器领题（平台此刻开始计时），候选由判官代为提交，按平台回执判定；外部判定的任务都要你确认",
+      "lane": "confirm"
+     },
+     {
+      "code": "no_answer",
+      "field": "goal.check",
+      "text": "没有标准答案：不能零确认",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。",
+      "source": "span",
+      "spans": [
+       "s3"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "平台任务 T-17（https://plat-a",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "ext_receipt · 平台 plat-a 的回执",
+      "source": "table",
+      "spans": [
+       "s1"
+      ],
+      "note": "地址查连接器档案"
+     },
+     {
+      "field": "goal.binding.task",
+      "value": "T-17",
+      "source": "span",
+      "note": "按档案的任务号形状，逐字取自原文"
+     },
+     {
+      "field": "goal.max_attempts",
+      "value": 5,
+      "source": "table"
+     },
+     {
+      "field": "materials",
+      "value": "https://plat-a.test/tasks/T-17",
+      "source": "span",
+      "spans": [
+       "s1"
+      ],
+      "note": "平台地址：连接器经档案的固定通道访问，不进授权"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "原文里没有入口"
+     },
+     {
+      "field": "deadline",
+      "value": "6 小时",
+      "source": "span",
+      "spans": [
+       "s2"
+      ],
+      "note": "平台时限进截止时刻（领题时换算），不进花费预算"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     }
+    ],
+    "input": {
+     "title": "平台任务 T-17（https://plat-a",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": [
+       "$references"
+      ]
+     },
+     "goal": {
+      "statement": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。",
+      "check": {
+       "judge_id": "ext_receipt",
+       "binding": {
+        "connector": "plat-a",
+        "task": "T-17"
+       }
+      },
+      "max_attempts": 5,
+      "accept": "judge"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [
+      "ext_receipt"
+     ]
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": {
+     "connector": "plat-a",
+     "judge_id": "ext_receipt",
+     "task": "T-17"
+    },
+    "needs_ack": null,
+    "pid": "kt-d09890c51012",
+    "nonce": "fixture-external",
+    "text": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。限时 6 小时。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "url",
+      "start": 10,
+      "end": 40,
+      "text": "https://plat-a.test/tasks/T-17"
+     },
+     {
+      "id": "s2",
+      "kind": "duration",
+      "start": 68,
+      "end": 72,
+      "text": "6 小时"
+     },
+     {
+      "id": "s3",
+      "kind": "sentence",
+      "start": 0,
+      "end": 65,
+      "text": "平台任务 T-17（https://plat-a.test/tasks/T-17）：找出服务里的口令，交给平台，回执通过就算完成。"
+     },
+     {
+      "id": "s4",
+      "kind": "sentence",
+      "start": 65,
+      "end": 73,
+      "text": "限时 6 小时。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "平台任务 T-17（https://plat-a",
+     "goal_sentence": [
+      "s3"
+     ],
+     "entries": [
+      {
+       "span": "s1",
+       "role": "entry"
+      }
+     ],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": "s2",
      "spend": null,
      "tier_guess": null,
      "materials": []
@@ -984,6 +1456,8 @@
       "span": "s1"
      }
     ],
+    "external": null,
+    "needs_ack": null,
     "pid": "kt-2acc5e7b424d",
     "nonce": "fixture-zero",
     "text": "目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。半小时内搞定。",
@@ -1055,9 +1529,9 @@
      {
       "name": "derivation",
       "media_type": "application/vnd.paoding.kaiti-derivation+json",
-      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":\"目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"目标在 q2:8080，登录后页面会显示一个答案\"},{\"field\":\"goal.check\",\"note\":\"答案由人给出，起草模型看不到\",\"source\":\"table\",\"value\":\"exact_match · 答案在保密库\"},{\"field\":\"deliverable\",\"source\":\"table\",\"value\":\"answer.txt\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope.mention\",\"note\":\"执行时如需访问，会按需申请\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"q2:8080\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 easy（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":500},{\"field\":\"budget.wall_s\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":true,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":500,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"judge_id\":\"exact_match\",\"sealed\":[\"$answer\"]},\"max_attempts\":5,\"statement\":\"目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。\"},\"judges\":[\"exact_match\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"目标在 q2:8080，登录后页面会显示一个答案\"},\"lane\":\"confirm\",\"mentions\":[{\"span\":\"s1\",\"value\":\"q2:8080\"}],\"notes\":[{\"code\":\"zero_confirm_off\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"练习道候选；零确认尚未放行，请确认\"}],\"pid\":\"kt-2acc5e7b424d\",\"priors\":\"placeholder:placeholder-0\"}",
-      "hash": "0bbe966cda794df8b02e3a606c33e7479a6df572f78f83b6e79d9adf2aba1e2f",
-      "size": 1986
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":\"目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"目标在 q2:8080，登录后页面会显示一个答案\"},{\"field\":\"goal.check\",\"note\":\"答案由人给出，起草模型看不到\",\"source\":\"table\",\"value\":\"exact_match · 答案在保密库\"},{\"field\":\"deliverable\",\"source\":\"table\",\"value\":\"answer.txt\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope.mention\",\"note\":\"执行时如需访问，会按需申请\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"q2:8080\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 easy（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":500},{\"field\":\"budget.wall_s\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":true,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":500,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"judge_id\":\"exact_match\",\"sealed\":[\"$answer\"]},\"max_attempts\":5,\"statement\":\"目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。\"},\"judges\":[\"exact_match\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"目标在 q2:8080，登录后页面会显示一个答案\"},\"lane\":\"confirm\",\"mentions\":[{\"span\":\"s1\",\"value\":\"q2:8080\"}],\"needs_ack\":null,\"notes\":[{\"code\":\"zero_confirm_off\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"练习道候选；零确认尚未放行，请确认\"}],\"pid\":\"kt-2acc5e7b424d\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "0ba17ace40047a018b9d017c4eee571c641f5402169b5a9e22f80313f9362ba4",
+      "size": 2019
      }
     ],
     "ops": [
@@ -1073,8 +1547,8 @@
      {
       "op": "register_artifact",
       "body": {
-       "hash": "0bbe966cda794df8b02e3a606c33e7479a6df572f78f83b6e79d9adf2aba1e2f",
-       "size": 1986,
+       "hash": "0ba17ace40047a018b9d017c4eee571c641f5402169b5a9e22f80313f9362ba4",
+       "size": 2019,
        "media_type": "application/vnd.paoding.kaiti-derivation+json",
        "class": "input"
       }
@@ -1148,7 +1622,7 @@
      {
       "code": "command_criterion",
       "field": "goal.check",
-      "text": "没有标准答案，完成标准是原文里的一条命令；开题后不能改",
+      "text": "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
       "lane": "confirm"
      },
      {
@@ -1284,6 +1758,8 @@
      ]
     },
     "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
     "pid": "kt-3ac25d961cce",
     "nonce": "fixture-command",
     "text": "仓库在 git.lab:8443，修好构建失败。完成标准：在仓库根目录跑 `make test` 全部通过。预算 $5。",
@@ -1379,9 +1855,9 @@
      {
       "name": "derivation",
       "media_type": "application/vnd.paoding.kaiti-derivation+json",
-      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":\"r1\"},{\"field\":\"budget.usd_milli\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":5000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":5000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r1\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案，完成标准是原文里的一条命令；开题后不能改\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 scope[0].risk\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
-      "hash": "fb0897289dc5e05779722b19e6178d6e3fb6b70b402abbaaa04b8ac988b92de4",
-      "size": 2114
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":\"r1\"},{\"field\":\"budget.usd_milli\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":5000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":5000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r1\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 scope[0].risk\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "66c69126cf1f084c0bcdbb5f829934cdeedc8ac97efa1444291f4b2d9049191f",
+      "size": 2357
      }
     ],
     "ops": [
@@ -1406,8 +1882,8 @@
      {
       "op": "register_artifact",
       "body": {
-       "hash": "fb0897289dc5e05779722b19e6178d6e3fb6b70b402abbaaa04b8ac988b92de4",
-       "size": 2114,
+       "hash": "66c69126cf1f084c0bcdbb5f829934cdeedc8ac97efa1444291f4b2d9049191f",
+       "size": 2357,
        "media_type": "application/vnd.paoding.kaiti-derivation+json",
        "class": "input"
       }
@@ -1479,7 +1955,7 @@
      {
       "code": "command_criterion",
       "field": "goal.check",
-      "text": "没有标准答案，完成标准是原文里的一条命令；开题后不能改",
+      "text": "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
       "lane": "confirm"
      },
      {
@@ -1613,6 +2089,8 @@
      ]
     },
     "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
     "pid": "kt-3ac25d961cce",
     "nonce": "fixture-command",
     "text": "仓库在 git.lab:8443，修好构建失败。完成标准：在仓库根目录跑 `make test` 全部通过。预算 $5。",
@@ -1708,9 +2186,9 @@
      {
       "name": "derivation",
       "media_type": "application/vnd.paoding.kaiti-derivation+json",
-      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":\"r1\"},{\"field\":\"budget.usd_milli\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":3000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":3000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r1\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案，完成标准是原文里的一条命令；开题后不能改\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 scope[0].risk、budget.usd_milli\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
-      "hash": "fa45b377436cd27b978ee6b76600b90aacec595e8fcac05508a20210332f6928",
-      "size": 2150
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":\"r1\"},{\"field\":\"budget.usd_milli\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":3000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":3000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r1\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 scope[0].risk、budget.usd_milli\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "1e43fdce2267de76084c0e7644ddfff035d7492a870a9ff2b80d068da2372dee",
+      "size": 2393
      }
     ],
     "ops": [
@@ -1735,8 +2213,8 @@
      {
       "op": "register_artifact",
       "body": {
-       "hash": "fa45b377436cd27b978ee6b76600b90aacec595e8fcac05508a20210332f6928",
-       "size": 2150,
+       "hash": "1e43fdce2267de76084c0e7644ddfff035d7492a870a9ff2b80d068da2372dee",
+       "size": 2393,
        "media_type": "application/vnd.paoding.kaiti-derivation+json",
        "class": "input"
       }
@@ -1792,6 +2270,582 @@
      }
     ]
    }
+  },
+  {
+   "name": "outbound",
+   "overrides": {
+    "ack_command": true
+   },
+   "out": {
+    "lane": "confirm",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "command_criterion",
+      "field": "goal.check",
+      "text": "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
+      "lane": "confirm"
+     },
+     {
+      "code": "command_outbound",
+      "field": "goal.check",
+      "text": "这条命令有外发的形状（写方法 -X POST、-d）：勾选“我确认这条命令只检查、不提交”之后才能创建",
+      "lane": "confirm"
+     },
+     {
+      "code": "no_answer",
+      "field": "goal.check",
+      "text": "没有标准答案：不能零确认",
+      "lane": "confirm"
+     },
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 goal.check.ack",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+      "source": "span",
+      "spans": [
+       "s2"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "完成标准：跑 `curl -X POST htt",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "replay · curl -X POST https://q1:8080/check -d ok",
+      "source": "span",
+      "spans": [
+       "s1"
+      ],
+      "note": "“这条命令就是完成标准”由起草模型指认"
+     },
+     {
+      "field": "goal.max_attempts",
+      "value": 5,
+      "source": "table"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "原文里没有入口"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     },
+     {
+      "field": "goal.check.ack",
+      "value": "我确认这条命令只检查、不提交",
+      "source": "human",
+      "note": "人在确认卡上勾选"
+     }
+    ],
+    "input": {
+     "title": "完成标准：跑 `curl -X POST htt",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+      "check": {
+       "judge_id": "replay",
+       "spec_ref": "$spec",
+       "expect": {
+        "exit_code": 0
+       }
+      },
+      "max_attempts": 5,
+      "accept": "judge"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [
+      "replay"
+     ]
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-782f62962c0b",
+    "nonce": "fixture-outbound",
+    "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "code",
+      "start": 7,
+      "end": 49,
+      "text": "`curl -X POST https://q1:8080/check -d ok`"
+     },
+     {
+      "id": "s2",
+      "kind": "sentence",
+      "start": 0,
+      "end": 55,
+      "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "完成标准：跑 `curl -X POST htt",
+     "goal_sentence": [
+      "s2"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "command",
+      "spans": [
+       "s1"
+      ]
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+      "hash": "e02f1643977e0aae484d8f91d519ea01db64510bd76d70ec98f90865daa18573",
+      "size": 73
+     },
+     {
+      "name": "spec",
+      "media_type": "text/x-shellscript",
+      "text": "curl -X POST https://q1:8080/check -d ok\n",
+      "hash": "fb8a3001a3cdec8904506d14ce8861637d400a884d884ef708c3ddb388410276",
+      "size": 41
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"完成标准：跑 `curl -X POST htt\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"replay · curl -X POST https://q1:8080/check -d ok\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0]\",\"note\":\"原文里没有入口\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"},{\"field\":\"goal.check.ack\",\"note\":\"人在确认卡上勾选\",\"source\":\"human\",\"value\":\"我确认这条命令只检查、不提交\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"完成标准：跑 `curl -X POST htt\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入\"},{\"code\":\"command_outbound\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"这条命令有外发的形状（写方法 -X POST、-d）：勾选“我确认这条命令只检查、不提交”之后才能创建\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 goal.check.ack\"}],\"pid\":\"kt-782f62962c0b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "debd262e6ae8831cc71922f561916d5e0f68b45b8a6fb6fdfa0b62b81f24d29d",
+      "size": 2617
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "e02f1643977e0aae484d8f91d519ea01db64510bd76d70ec98f90865daa18573",
+       "size": 73,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "fb8a3001a3cdec8904506d14ce8861637d400a884d884ef708c3ddb388410276",
+       "size": 41,
+       "media_type": "text/x-shellscript",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "debd262e6ae8831cc71922f561916d5e0f68b45b8a6fb6fdfa0b62b81f24d29d",
+       "size": 2617,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "完成标准：跑 `curl -X POST htt",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$2",
+         "lane": "confirm"
+        }
+       },
+       "goal": {
+        "statement": "完成标准：跑 `curl -X POST https://q1:8080/check -d ok` 返回 0。",
+        "check": {
+         "judge_id": "replay",
+         "spec_ref": "$1",
+         "expect": {
+          "exit_code": 0
+         }
+        },
+        "max_attempts": 5,
+        "accept": "judge"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [
+        "replay"
+       ]
+      }
+     }
+    ]
+   }
   }
- ]
+ ],
+ "platforms": [
+  {
+   "id": "plat-a",
+   "version": "1",
+   "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "judges": [
+    "ext_receipt"
+   ],
+   "hosts": [
+    "plat-a.test"
+   ],
+   "deliver": "judge",
+   "slot": "plat-a",
+   "slot_set": true
+  }
+ ],
+ "tasks": [
+  {
+   "task": "T-17",
+   "title": "找出服务里的口令",
+   "time_limit_s": 21600,
+   "max_submissions": 3
+  }
+ ],
+ "imports": {
+  "T-17": {
+   "lane": "confirm",
+   "eligible": false,
+   "notes": [
+    {
+     "code": "external_platform",
+     "field": "goal.check",
+     "text": "判定权在平台 plat-a：已领题（平台从此刻开始计时），候选由判官代为提交，按平台回执判定；外部判定的任务都要你确认",
+     "lane": "confirm"
+    }
+   ],
+   "derivation": [
+    {
+     "field": "title",
+     "value": "找出服务里的口令",
+     "source": "table",
+     "note": "平台清单"
+    },
+    {
+     "field": "goal.statement",
+     "value": "平台回执为通过",
+     "source": "table"
+    },
+    {
+     "field": "goal.check",
+     "value": "ext_receipt · 平台 plat-a 的回执",
+     "source": "table",
+     "note": "连接器档案"
+    },
+    {
+     "field": "goal.binding.task",
+     "value": "T-17",
+     "source": "table",
+     "note": "平台清单"
+    },
+    {
+     "field": "goal.max_attempts",
+     "value": 3,
+     "source": "table",
+     "note": "平台额度 3 次，取较小者"
+    },
+    {
+     "field": "deadline",
+     "value": "领题后 21600 秒",
+     "source": "table",
+     "note": "平台时限进截止时刻，不进花费预算"
+    },
+    {
+     "field": "budget.usd_milli",
+     "value": 2000,
+     "source": "prior",
+     "note": "档位 medium（table）· placeholder:placeholder-0"
+    },
+    {
+     "field": "budget.wall_s",
+     "value": 1800,
+     "source": "prior",
+     "note": "档位 medium（table）· placeholder:placeholder-0"
+    },
+    {
+     "field": "budget.shares",
+     "value": {
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "source": "table"
+    },
+    {
+     "field": "scope[0]",
+     "value": "workspace（不开任何出站）",
+     "source": "table",
+     "note": "服务地址在资源公告里；要用照运行时扩权申请"
+    }
+   ],
+   "input": {
+    "title": "找出服务里的口令",
+    "origin": {
+     "statement_ref": "$statement",
+     "materials": [
+      "$notice"
+     ]
+    },
+    "goal": {
+     "statement": "平台回执为通过",
+     "check": {
+      "judge_id": "ext_receipt",
+      "binding": {
+       "connector": "plat-a",
+       "task": "T-17",
+       "max_submissions": 3
+      }
+     },
+     "max_attempts": 3,
+     "accept": "judge"
+    },
+    "scope": [
+     {
+      "resource": "workspace",
+      "pattern": "",
+      "actions": [
+       "read",
+       "write"
+      ],
+      "risk": "r0"
+     }
+    ],
+    "budget": {
+     "usd_milli": 2000,
+     "wall_s": 1800,
+     "verify_share": 0.2,
+     "bootstrap_share": 0.3
+    },
+    "env": {
+     "base": "basic",
+     "baseline_ref": "basic@1"
+    },
+    "judges": [
+     "ext_receipt"
+    ],
+    "deadline": {
+     "source": "external",
+     "bound_by": "$notice",
+     "at": 1700021600000
+    }
+   },
+   "priors": "placeholder:placeholder-0",
+   "external": {
+    "connector": "plat-a",
+    "judge_id": "ext_receipt",
+    "task": "T-17"
+   },
+   "needs_ack": null,
+   "pid": "kt-c08565c4160a",
+   "nonce": "fixture-import",
+   "text": "服务里藏着一个口令，找到后交给平台。",
+   "spans": [],
+   "has_answer": false,
+   "draft": null,
+   "model": "",
+   "zero_confirm": false,
+   "caps": {
+    "open_usd_milli": 20000,
+    "open_wall_s": 14400
+   },
+   "blobs": [
+    {
+     "name": "statement",
+     "media_type": "text/plain; charset=utf-8",
+     "text": "服务里藏着一个口令，找到后交给平台。",
+     "hash": "c39877d9768a887ee52eb27ea1ef13bdfd0d43cede4e88f4f9be0f7f440078cb",
+     "size": 54
+    },
+    {
+     "name": "notice",
+     "media_type": "application/json",
+     "text": "{\"id\":\"T-17\",\"instance\":\"10.9.0.7:31000\",\"statement\":\"服务里藏着一个口令，找到后交给平台。\",\"time_limit_s\":21600}",
+     "hash": "d878bf2e20122a92fabe3648a2844e129340fb3f1811a626b53f8985ef64a760",
+     "size": 131
+    },
+    {
+     "name": "derivation",
+     "media_type": "application/vnd.paoding.kaiti-derivation+json",
+     "text": "{\"derivation\":[{\"field\":\"title\",\"note\":\"平台清单\",\"source\":\"table\",\"value\":\"找出服务里的口令\"},{\"field\":\"goal.statement\",\"source\":\"table\",\"value\":\"平台回执为通过\"},{\"field\":\"goal.check\",\"note\":\"连接器档案\",\"source\":\"table\",\"value\":\"ext_receipt · 平台 plat-a 的回执\"},{\"field\":\"goal.binding.task\",\"note\":\"平台清单\",\"source\":\"table\",\"value\":\"T-17\"},{\"field\":\"goal.max_attempts\",\"note\":\"平台额度 3 次，取较小者\",\"source\":\"table\",\"value\":3},{\"field\":\"deadline\",\"note\":\"平台时限进截止时刻，不进花费预算\",\"source\":\"table\",\"value\":\"领题后 21600 秒\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"scope[0]\",\"note\":\"服务地址在资源公告里；要用照运行时扩权申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"}],\"eligible\":false,\"external\":{\"connector\":\"plat-a\",\"judge_id\":\"ext_receipt\",\"task\":\"T-17\"},\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"deadline\":{\"at\":1700021600000,\"bound_by\":\"$notice\",\"source\":\"external\"},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"binding\":{\"connector\":\"plat-a\",\"max_submissions\":3,\"task\":\"T-17\"},\"judge_id\":\"ext_receipt\"},\"max_attempts\":3,\"statement\":\"平台回执为通过\"},\"judges\":[\"ext_receipt\"],\"origin\":{\"materials\":[\"$notice\"],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"找出服务里的口令\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"external_platform\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"判定权在平台 plat-a：已领题（平台从此刻开始计时），候选由判官代为提交，按平台回执判定；外部判定的任务都要你确认\"}],\"pid\":\"kt-c08565c4160a\",\"priors\":\"placeholder:placeholder-0\"}",
+     "hash": "9c748a63cb2a7037a232b008f7778df3854ae90b0d160e5e30057783d120b05e",
+     "size": 2137
+    }
+   ],
+   "ops": [
+    {
+     "op": "register_artifact",
+     "body": {
+      "hash": "c39877d9768a887ee52eb27ea1ef13bdfd0d43cede4e88f4f9be0f7f440078cb",
+      "size": 54,
+      "media_type": "text/plain; charset=utf-8",
+      "class": "input"
+     }
+    },
+    {
+     "op": "register_artifact",
+     "body": {
+      "hash": "d878bf2e20122a92fabe3648a2844e129340fb3f1811a626b53f8985ef64a760",
+      "size": 131,
+      "media_type": "application/json",
+      "class": "input"
+     }
+    },
+    {
+     "op": "register_artifact",
+     "body": {
+      "hash": "9c748a63cb2a7037a232b008f7778df3854ae90b0d160e5e30057783d120b05e",
+      "size": 2137,
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "class": "input"
+     }
+    },
+    {
+     "op": "open_problem",
+     "body": {
+      "title": "找出服务里的口令",
+      "origin": {
+       "statement_ref": "$0",
+       "materials": [
+        "$1"
+       ],
+       "draft": {
+        "record": "$2",
+        "lane": "confirm"
+       }
+      },
+      "goal": {
+       "statement": "平台回执为通过",
+       "check": {
+        "judge_id": "ext_receipt",
+        "binding": {
+         "connector": "plat-a",
+         "task": "T-17",
+         "max_submissions": 3
+        }
+       },
+       "max_attempts": 3,
+       "accept": "judge"
+      },
+      "scope": [
+       {
+        "resource": "workspace",
+        "pattern": "",
+        "actions": [
+         "read",
+         "write"
+        ],
+        "risk": "r0"
+       }
+      ],
+      "budget": {
+       "usd_milli": 2000,
+       "wall_s": 1800,
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "env": {
+       "base": "basic",
+       "baseline_ref": "basic@1"
+      },
+      "judges": [
+       "ext_receipt"
+      ],
+      "deadline": {
+       "source": "external",
+       "bound_by": "$1",
+       "at": 1700021600000
+      }
+     }
+    }
+   ]
+  }
+ }
 }

@@ -30,6 +30,8 @@ from paoding_qicao.contract import (
     TablePriors,
     batch,
     draft,
+    installed_catalog,
+    override,
     parse_draft,
     placeholder_priors,
     render_card,
@@ -49,6 +51,11 @@ def add_parser(sp: Any) -> None:
     k.add_argument("--settings")
     k.add_argument("--priors")
     k.add_argument("--yes", action="store_true")
+    k.add_argument(
+        "--yes-command",
+        action="store_true",
+        help="命令判据有外发的形状时，确认这条命令只检查、不提交（记进出处账，来源记人）",
+    )
 
 
 def _doc(path: str | None) -> Any:
@@ -66,6 +73,7 @@ def cmd_kaiti(local: Any, a: Any, w: Any, read: Any, model: ModelPort | None = N
     settings = Settings.from_doc(_doc(a.settings))
     priors = TablePriors.load(a.priors) if a.priors else placeholder_priors()
     ext = intake.extract(raw)
+    catalog = installed_catalog()  # 判据形态目录：注册表与连接器档案驱动（external-verdict §5.8）
     has_answer = bool((answer or "").strip()) or bool(ext.answers)
 
     d, err = None, ""
@@ -83,12 +91,35 @@ def cmd_kaiti(local: Any, a: Any, w: Any, read: Any, model: ModelPort | None = N
                     w("，或用 --draft-file\n")
                     return 2
                 model = MessagesClient(url, token, mname)
-            d = draft(ext, has_answer, model, name)
+            d = draft(ext, has_answer, model, name, kinds=catalog.kinds())
     except (DraftError, ValueError, OSError) as e:
         err = str(e)
-    v = vet(ext, answer, d, intake, settings, priors, zero_confirm=False, nonce=str(time.time_ns()), draft_error=err)
+    v = vet(
+        ext,
+        answer,
+        d,
+        intake,
+        settings,
+        priors,
+        zero_confirm=False,
+        nonce=str(time.time_ns()),
+        draft_error=err,
+        catalog=catalog,
+    )
+    if v.needs_ack == "command" and getattr(a, "yes_command", False):
+        v = override(v, {"ack_command": True}, settings)
     w(render_card(v))
     if v.lane == "refuse":
+        w("[人] 还有一条路：判定权在外部平台的任务，先登记这个平台（judgebox/connectors.d），再 pd connector import\n")
+        return 3
+    if v.external is not None:
+        w(
+            f"[人] 判定权在平台 {v.external['connector']}：用 pd connector import {v.external['connector']} "
+            f"{v.external['task']} 领题开题（要运行中的全栈：平台凭据在它的钥匙环里）\n"
+        )
+        return 3
+    if v.needs_ack == "command":
+        w("[人] 这条命令有外发的形状：确认它只检查、不提交，再加 --yes-command 重跑\n")
         return 3
     if not a.yes and read("按回车开题，输入 n 放弃：").strip().lower() in ("n", "no", "否"):
         w("[人] 已放弃，没有开题\n")

@@ -18,6 +18,7 @@ from .connector import ProfileError, validate_profile
 KINDS = ("deterministic", "programmatic", "panel", "deferred")
 AUTHORITIES = ("local", "external")  # 判定来源（external-verdict §5.1）；人工验收走 goal.accept，不进注册表
 GRADES = ("decisive", "consistent", "advisory")
+FORMS = ("answer", "command", "external")  # 一句话开题的判据形态；外部裁决的条目恒为 external
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / "judges.d"
 CONNECTORS_DIR = Path(__file__).resolve().parents[2] / "connectors.d"
 
@@ -47,6 +48,12 @@ def load_registry(directory: str | Path = DEFAULT_DIR) -> dict[str, dict[str, An
                 raise RegistryError(f"{f.name}：外部裁决的判官 kind 须为 deferred（回执异步到达）")
             if not isinstance((spec.get("params") or {}).get("connector"), str):
                 raise RegistryError(f"{f.name}：外部裁决的判官须在 params.connector 指明连接器档案")
+        if spec["authority"] == "external":
+            spec.setdefault("form", "external")
+        if spec.get("form") is not None and (
+            spec["form"] not in FORMS or (spec["form"] == "external") != (spec["authority"] == "external")
+        ):
+            raise RegistryError(f"{f.name}：form 取 {FORMS}，external 与 authority: external 互为充要")
         spec.setdefault("flake", {"reruns": 0, "require": "all"})
         spec.setdefault("params", {})
         spec.setdefault("timeout_s", 60)

@@ -15,7 +15,7 @@ import { renderWith, rig, until } from "./helpers";
 beforeEach(() => { localStorage.clear(); window.history.pushState(null, "", "/new"); });
 afterEach(cleanup);
 
-const rec = (k: "practice" | "command" | "refuse" | "zero") => KAITI.drafts[k];
+const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external" | "zero") => KAITI.drafts[k];
 const SECRET = "PD-7Q2M9XKD";
 
 describe("视图模型", () => {
@@ -134,7 +134,7 @@ describe("输入框与确认卡", () => {
   it("卡上改风险与预算：重新校验不再调模型，出处变“人”", async () => {
     const { r, container } = await drafted(rec("command").text);
     const card = () => container.querySelector("[data-kaiti-card]")!;
-    expect(card().querySelector('[data-field="command-note"]')?.textContent).toMatch(/唯一标准/);
+    expect(card().querySelector('[data-field="command-note"]')?.textContent).toMatch(/重放/);
     const sent = () => r.fetch.calls.filter((c) => String(c.url).endsWith("/v1/drafts")).map((c) => JSON.parse(String(c.body)) as Record<string, unknown>);
     fireEvent.change(card().querySelector('[data-risk="0"]')!, { target: { value: "r1" } });
     await waitFor(() => expect(card().querySelector('[data-field="scope[0].risk"] [data-source="human"]')).not.toBeNull());
@@ -175,12 +175,13 @@ describe("输入框与确认卡", () => {
 });
 
 describe("拒绝页", () => {
-  it("说不清怎样算做完：引用目标句，三条路，人工验收灰显；输入框保留原文", async () => {
+  it("说不清怎样算做完：引用目标句，四条路，人工验收灰显；输入框保留原文", async () => {
     const { container } = await drafted(rec("refuse").text);
     const page = container.querySelector("[data-kaiti-refuse]")!;
     expect(page.textContent).toContain("这件事还说不清怎样算做完");
     expect(page.querySelector(".kt-quote")?.textContent).toBeTruthy();
-    expect(page.querySelectorAll(".kt-ways > li")).toHaveLength(3);
+    expect(page.querySelectorAll(".kt-ways > li")).toHaveLength(4);
+    expect(page.querySelector('[data-way="register_platform"] [data-action="refuse-register"]')?.getAttribute("href")).toBe("/settings");
     expect(page.querySelector('[data-way="human"]')?.getAttribute("aria-disabled")).toBe("true");
     expect((page.querySelector('[data-way="human"] button') as HTMLButtonElement).disabled).toBe(true);
     expect((container.querySelector('[data-field="kaiti-text"]') as HTMLTextAreaElement).value).toBe(rec("refuse").text);
@@ -212,5 +213,47 @@ describe("令牌", () => {
     expect(container.textContent).toMatch(/人的令牌/);
     await until(() => true);
     expect(r.fetch.calls.length).toBe(0);
+  });
+});
+
+describe("外部判定与命令警告（external-verdict §5.8）", () => {
+  it("认出已登记的平台：卡上写外部判定；按创建才领题，用导入的批次新建任务", async () => {
+    const { r, container } = await drafted(rec("external").text);
+    expect(container.querySelector("[data-external]")?.textContent).toContain("plat-a");
+    const go = container.querySelector('[data-action="open-problem"]') as HTMLButtonElement;
+    expect(go.textContent).toContain("领题");
+    fireEvent.click(go);
+    await waitFor(() => expect(container.querySelector("[data-reject]")?.textContent ?? window.location.pathname).toBe(`/p/${KAITI.imports["T-17"].pid}`));
+    const calls = r.fetch.calls.map((c) => `${c.method} ${new URL(c.url, "http://m").pathname}`);
+    expect(calls).toContain("POST /v1/connectors/plat-a/import");
+    expect(calls.indexOf("POST /v1/connectors/plat-a/import")).toBeLessThan(calls.indexOf("POST /v1/problems"));
+  });
+
+  it("命令有外发的形状：不勾“只检查、不提交”不能创建；勾了出处记“人”", async () => {
+    const { container } = await drafted(rec("outbound").text);
+    const go = () => container.querySelector('[data-action="open-problem"]') as HTMLButtonElement;
+    expect(go().disabled).toBe(true);
+    expect(container.querySelector('[data-note="command_outbound"]')).not.toBeNull();
+    fireEvent.click(container.querySelector('[data-action="ack-command"]')!);
+    await waitFor(() => expect(go().disabled).toBe(false));
+    expect(container.querySelector('[data-field="goal.check.ack"] [data-source="human"]')).not.toBeNull();
+  });
+});
+
+describe("从平台导入页", () => {
+  it("只有一个平台时直接列清单；领题出确认卡，创建走同一条提交路", async () => {
+    const { PlatformImport } = await import("../src/pages/PlatformImport");
+    window.history.pushState(null, "", "/import/platform");
+    const r = rig();
+    const { container } = renderWith(r, <PlatformImport />);
+    await waitFor(() => expect(container.querySelector('[data-task="T-17"]')).not.toBeNull());
+    expect(r.fetch.calls.some((c) => c.url.endsWith("/import"))).toBe(false); // 列清单不领题
+    fireEvent.click(container.querySelector('[data-task="T-17"] [data-action="claim"]')!);
+    await waitFor(() => expect(container.querySelector("[data-kaiti-card]")).not.toBeNull());
+    expect(container.querySelector('[data-note="external_platform"]')).not.toBeNull();
+    fireEvent.click(container.querySelector('[data-action="open-problem"]')!);
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${KAITI.imports["T-17"].pid}`));
+    expect(parseRoute("/import/platform", "?id=plat-a")).toEqual({ page: "platform", id: "plat-a" });
+    expect(hrefOf({ page: "platform", id: "plat-a" })).toBe("/import/platform?id=plat-a");
   });
 });

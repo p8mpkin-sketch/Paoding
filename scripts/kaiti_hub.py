@@ -26,6 +26,7 @@ import yaml
 from paoding_graph.contract import BadBody, GraphHttp
 from paoding_qicao.contract import (
     BadRequest,
+    Catalog,
     Drafter,
     Intake,
     KaitiService,
@@ -77,7 +78,8 @@ def practice_doc(envelope: dict[str, Any], caps: dict[str, Any]) -> dict[str, An
 
 
 class KaitiHub:
-    def __init__(self, cfg: dict[str, Any], real: bool, upstream: str) -> None:
+    def __init__(self, cfg: dict[str, Any], real: bool, upstream: str, catalog: Catalog | None = None) -> None:
+        """catalog：判据形态目录（注册表与连接器档案驱动）；起草提示与 vet 的分支都按它。"""
         settings = Settings.from_doc(_load(cfg.get("settings")))
         priors = TablePriors.load(cfg["priors"]) if cfg.get("priors") else placeholder_priors()
         kind = cfg.get("draft") or ("messages" if real else "heuristic")
@@ -91,7 +93,7 @@ class KaitiHub:
             token = os.environ.get(str(cfg.get("token_env") or "PD_DRAFT_TOKEN"), "")
             url = str(cfg.get("url") or upstream)
             if model and token and url:
-                drafter = model_drafter(MessagesClient(url, token, model))
+                drafter = model_drafter(MessagesClient(url, token, model), catalog=catalog)
                 profile = str((prof or {}).get("name") or model)
         intake = Intake.load()
         self.envelope = dict(intake.envelope)
@@ -101,7 +103,7 @@ class KaitiHub:
             "priors": priors.version(),
             "zero_confirm": False,  # 第三期休眠：开关的打开等测试方的精确率读数
         }
-        self.svc = KaitiService(intake, lambda: settings, priors, drafter, profile)
+        self.svc = KaitiService(intake, lambda: settings, priors, drafter, profile, catalog)
 
     def use_settings(self, current: Callable[[], dict[str, Any]]) -> None:
         """换成设置存储（/v1/settings）的当前快照：确认卡上的单题硬顶、风险表与内核读的是同一份。

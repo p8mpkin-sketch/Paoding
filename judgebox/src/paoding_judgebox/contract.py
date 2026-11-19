@@ -8,6 +8,7 @@ from .connector import (  # noqa: F401
     SubmissionStore,
     connector_judge,
     connector_plugins,
+    pointer,
     validate_profile,
 )
 from .registry import CONNECTORS_DIR, DEFAULT_DIR, RegistryError, kernel_judges, load_connectors, load_registry  # noqa: F401

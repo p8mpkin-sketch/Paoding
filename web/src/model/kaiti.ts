@@ -56,6 +56,7 @@ export function fieldWord(field: string): string {
     title: "任务名", "goal.statement": "目标", deliverable: "交付物", materials: "参考材料", "goal.check": "判定",
     "goal.max_attempts": "最多尝试", "budget.usd_milli": "成本上限", "budget.wall_s": "时间上限", "budget.shares": "占比", "draft.model": "起草档案",
     "scope.mention": "原文提到的地址",
+    "goal.binding.task": "平台任务号", "goal.check.ack": "命令确认", deadline: "截止时刻",
   } as Record<string, string>)[field] ?? field;
 }
 
@@ -64,8 +65,8 @@ export const GROUPS = ["目标与题面", "判据", "授权", "预算"] as const
 export type Group = (typeof GROUPS)[number];
 export function groupOf(field: string): Group | null {
   if (field.startsWith("scope")) return "授权";
-  if (field.startsWith("budget")) return "预算";
-  if (field.startsWith("goal.check") || field === "goal.max_attempts") return "判据";
+  if (field.startsWith("budget") || field === "deadline") return "预算";
+  if (field.startsWith("goal.check") || field.startsWith("goal.binding") || field === "goal.max_attempts") return "判据";
   if (field === "draft.model") return null;
   return "目标与题面";
 }

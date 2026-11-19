@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import type { KeySlot, KeysView, ModelProfile, RiskRule, Settings, SettingsDoc, SettingsLogEntry } from "../api/settings-types";
+import type { PlatformEntry } from "../api/kaiti";
 import { fmtTs, useServices } from "../app/context";
 import { Button, Mark, Mast, SectionHead } from "../kit";
 import {
@@ -92,6 +93,8 @@ export function SettingsPage() {
 
       <Keys />
 
+      <Platforms />
+
       <section className="settings-sec" aria-labelledby="sec-caps">
         <SectionHead id="sec-caps" title="预算与硬顶" note="练习 ≤ 单任务 ≤ 全局；保存时由服务端校验次序" />
         <Caps draft={draft} set={set} writable={writable} />
@@ -142,6 +145,40 @@ export function SettingsPage() {
         </table>
       </section>
     </div>
+  );
+}
+
+// ---------- 已登记的外部平台（external-verdict §10 第 7 条：只读呈现） ----------
+
+function Platforms() {
+  const { api, cfg } = useServices();
+  const [items, setItems] = useState<PlatformEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cfg.token) return;
+    api.platforms().then((x) => { setItems(x.items); setError(null); }, (e) => setError(errText(e)));
+  }, [api, cfg.token]);
+  return (
+    <section className="settings-sec" aria-labelledby="sec-platforms" data-settings-platforms>
+      <SectionHead id="sec-platforms" title="外部平台" note="连接器档案在 judgebox/connectors.d，启动时加载、摘要进新建任务时的快照；这里只读，凭据在上面的密钥槽位" />
+      {!cfg.token ? <p className="muted">填了人的令牌才能看。</p>
+        : error ? <p className="error">读不到平台：<Plain text={error} /></p>
+        : !items ? <p className="muted">读取中…</p>
+        : items.length === 0 ? <p className="muted" data-no-platform>没有登记任何平台。判定权在外部平台的任务，先把平台档案放进 judgebox/connectors.d，重启后在这里看到它，再设好它的密钥槽位。</p>
+        : (
+          <table className="bank"><tbody>
+            {items.map((p) => (
+              <tr key={p.id} data-platform={p.id}>
+                <td className="k-mono"><Plain text={`${p.id}@${p.version}`} /></td>
+                <td className="k-mono t2" title={p.digest}>{shortHash(p.digest)}</td>
+                <td>判定器 <Plain text={p.judges.join("、") || "—"} /> · 交付 {p.deliver === "judge" ? "判定器代交" : "智能体自交"}</td>
+                <td>槽位 <span className="k-mono"><Plain text={p.slot} /></span> {p.slot_set ? "已设" : "未设"}</td>
+                <td className="t2"><Plain text={p.hosts.join("、")} /></td>
+              </tr>
+            ))}
+          </tbody></table>
+        )}
+    </section>
   );
 }
 
