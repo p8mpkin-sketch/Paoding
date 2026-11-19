@@ -136,6 +136,14 @@ def closeout_items(state: State, pid: str) -> list[Body]:
     return _items(state, pid)
 
 
+def extension_card(state: State, pid: str) -> Body | None:
+    """续期卡进哈希的字段（规格 3.5.2）：题开在 extension=gate 且越过 80% 标记时才有，否则 None。"""
+    from .cards import card_object
+
+    card = card_object(state, pid, "extension", pid)
+    return None if card is None else dict(card["fields"])
+
+
 def seen_card(state: State, pid: str, kind: str, target: str) -> Body:
     """人的决策操作要带的 seen {seq, card_hash}：取自调用方展示给人的那份状态快照（§3.1.9）。"""
     from .cards import seen

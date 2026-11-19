@@ -28,6 +28,7 @@
 - `pd status` 对每条 Hint 列出“之后新增的 Intent”，注明是时序关联，不是因果。
 - `pd approve` 先打印审批卡文本，再要求输入 yes（`--yes` 跳过）；`deny` 理由必填。文本卡末行是 `card_hash`（与网页卡相同）；提交带 `seen {seq, card_hash}`，取自打印时的那份状态快照，卡片在确认期间变了就被拒为 `stale_view`，并重新打印最新的卡。
 - `pd accept` / `pd reject`（人工验收，设计 02 §3.3）：只对 `accept=human` 的任务。先打印验收清单、待验收的交付物与结构检查的读数（标明"只是读数"）、历次验收记录与收尾卡的 `card_hash`；清单每一条都判，`reject --fail a1,a2` 列出不过的项、其余算过，理由必填；`--ref 项=产物`、`--note 项=文本` 给条目附依据；验收通过要用 `--confirm` 列出逐条确认过的四顾项（打印的“四顾”行），缺项由内核点名拒绝。提交带 `seen`（收尾卡）。
+- `pd extend` / `pd budget add <美元>`（续期门，规格 3.5.2，地图 Q18）：`pd status` 在越过 80% 标记的题上打印续期门一行（关着时写出两个放行命令）与续期卡的 `card_hash`。`extend` 只在门关着时提交；`budget add` 追加题预算，门关着时同时放行。两者都带 `seen`（续期卡），卡在查看之后变了即 `stale_view`，不提交。
 - `status` 与 `report` 都有一行"判定来源"（本地判定、外部判定、人工验收，external-verdict §5.7）；accepted 的报告首行是"终态 accepted（人工验收，未经判官判定）"，不出现"证明"。
 
 ### 实现取值（待评审方确认）
@@ -43,7 +44,7 @@
 
 ### 按里程碑走（不在 M0）
 
-`--scope-amend`、`--waive-premise`、`pd extend`，以及 `rule`、`accept`、`judge_revoke`、`intent_done`（变更 #41）。r2 缺回退时禁用批准（HMI H1）随 M4 的 `rollback` 字段落地，M0 卡面只写“未声明回退”。
+`--scope-amend`、`--waive-premise`，以及 `rule`、`judge_revoke`、`intent_done`（变更 #41）。r2 缺回退时禁用批准（HMI H1）随 M4 的 `rollback` 字段落地，M0 卡面只写“未声明回退”。
 
 ### 与网页同源（HMI §2、§11）
 

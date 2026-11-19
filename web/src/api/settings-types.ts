@@ -13,7 +13,8 @@ export type ModelRole = "draft" | "bootstrap" | "reason" | "explore" | "verify";
 // grants：运行时扩权（docs/design/runtime-grants/ §10.3），设置页的呈现随 §12 第三步；旧快照里可缺
 export type Grants = { runtime: boolean; auto: { practice: boolean } };
 // budget：时限与花费分开的开关（docs/design/external-verdict/ §5.6）；旧快照里可缺，缺省 wall_mode=elapsed（旧行为）
-export type BudgetMode = { wall_mode: "elapsed" | "spend"; life_s: number };
+// extension：续期门（规格 3.5.2），缺省 gate；always 即消融臂（不设门）
+export type BudgetMode = { wall_mode: "elapsed" | "spend"; life_s: number; extension?: "gate" | "always" };
 export type Settings = {
   caps: Caps;
   risk: RiskRule[];

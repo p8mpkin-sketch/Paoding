@@ -16,6 +16,7 @@ from paoding_graph.contract import (
     REGISTER,
     acceptance_ready,
     closeout_items,
+    extension_card,
     intent_status,
     node_levels,
     seen_card,
@@ -115,6 +116,24 @@ def acceptance(o: Out, state: dict, pid: str) -> None:
     o.add("structure", f"card_hash {d['card_hash'][:12]} · 所见 seq {d['seq']}")
 
 
+def extension(o: Out, state: dict, pid: str) -> None:
+    """续期门（规格 3.5.2）：越过 80% 标记之后才有这一行；门关着时给出两个放行的命令。"""
+    f = extension_card(state, pid)
+    if f is None:
+        return
+    got = "、".join(f["progress_since_50"]) or "无"
+    if f["pending"]:
+        o.add(
+            "status",
+            "续期门关着：越过 80% 标记，50% 以来没有新到 E3 的带判据对象；不再开新的探索"
+            "（放行：pd extend；追加预算并放行：pd budget add <美元>）",
+        )
+    else:
+        o.add("status", f"续期门开着：50% 以来的进展 {got}")
+    d = seen_card(state, pid, "extension", pid)
+    o.add("structure", f"续期卡 card_hash {d['card_hash'][:12]} · 所见 seq {d['seq']}")
+
+
 def terminal_phrase(state: dict, pid: str) -> str:
     p = state["problems"][pid]
     if not p.get("closed"):
@@ -152,6 +171,7 @@ def status(state: dict, pid: str, budget: dict) -> str:
     )
     o.add("structure", f"判定来源 {AUTHORITY_WORDS[authority(p)]}")
     o.add("budget", _budget_line(budget))
+    extension(o, state, pid)
     acceptance(o, state, pid)
     o.blank()
     facts = sorted((f for f in state["facts"].values() if f["problem_id"] == pid), key=lambda f: int(f["id"][2:]))

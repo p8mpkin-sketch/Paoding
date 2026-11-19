@@ -4,6 +4,6 @@
  "body": {
   "ok": false,
   "code": "not_enabled",
-  "detail": "extension 卡随 M1 落地（续期门、争议裁决）"
+  "detail": "这道题开在 extension=always 之下（消融臂或旧题），没有续期门"
  }
 }

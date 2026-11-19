@@ -258,7 +258,7 @@ export type StatusView = Envelope & {
   review: boolean;
   closeout: unknown[];
 };
-/** why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；M1 起还有续期门等。 */
+/** why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）、scope_request（扩权申请）、acceptance（人工验收）、extension（续期门关着，target 为题目 id）。 */
 export type HumanWorkItem = { kind: "human"; target: string; why: string };
 export type WorkItem =
   | { kind: "bootstrap" | "recall" }
@@ -385,8 +385,8 @@ export type ScopeDisplay = {
   approve_enabled: boolean;
   decision: ScopeDecision | null;
 };
-/** 续期卡随 M1 落地（真图服务现在返回 not_enabled）；字段形状是 F1 的暂行约定。 */
-export type ExtensionFields = { progress_since_50: string[]; spent_usd_milli: number; cap_usd_milli: number };
+/** 续期卡（规格 3.5.2）：只在开在 extension=gate 之下、且越过 80% 标记的题上有；extension=always 的题返回 not_enabled。progress_since_50 是 50% 标记以来新到 E3 的带判据对象，pending 为门是否关着。 */
+export type ExtensionFields = { progress_since_50: string[]; spent_usd_milli: number; cap_usd_milli: number; pending: boolean };
 export type HintTrace = Envelope & {
   hint: HintNode;
   closed_seq: number | null;
@@ -461,7 +461,7 @@ export type ViewFrame = { as_of: number; parts_hash: PartsHash };
 
 // ---------- 写 ----------
 
-/** add_intent 之后的几种随后续里程碑启用（规格 3.1.9）；M0 的图服务以 schema_error 拒绝。 */
+/** pause、resume、rule 随后续里程碑启用（规格 3.1.9），图服务以 schema_error 拒绝。 */
 export type HumanOpKind =
   | "open_problem"
   | "register_artifact"

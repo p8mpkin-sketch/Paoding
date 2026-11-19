@@ -16,7 +16,7 @@ from . import work as wk
 from .state import State
 
 Card = dict[str, Any]  # {kind, target, fields}：进 card_hash 的部分
-CARD_KINDS = ("approval", "closeout", "scope", "extension", "dispute")  # 后两种随 M1
+CARD_KINDS = ("approval", "closeout", "scope", "extension", "dispute")  # dispute 随 M1
 
 
 def card_object(state: State, pid: str, kind: str, target: str, ref: tuple[Any, Any] | None = None) -> Card | None:
@@ -52,7 +52,28 @@ def card_object(state: State, pid: str, kind: str, target: str, ref: tuple[Any, 
                 ),
             },
         }
+    if kind == "extension":
+        return _extension_card(state, pid, target)
     return None
+
+
+def _extension_card(state: State, pid: str, target: str) -> Card | None:
+    """续期卡（§3.5.2、HMI §3.10）：只在本题开在 gate 模式、且越过 80% 标记之后才有。
+    进哈希的是人放行时所依据的东西：50% 以来的进展、花费与上限、门是否关着；放行之后卡随之变化。"""
+    p = state["problems"][pid]
+    if target != pid or p.get("extension") != "gate" or wk.mark_seq(state, pid, 80) is None:
+        return None
+    view = wk.budget_view(state, pid)
+    return {
+        "kind": "extension",
+        "target": pid,
+        "fields": {
+            "progress_since_50": wk.progress_since(state, pid, wk.mark_seq(state, pid, 50) or 0),
+            "spent_usd_milli": view["spent"]["usd_milli"],
+            "cap_usd_milli": p["budget"]["usd_milli"],
+            "pending": wk.extension_pending(state, pid),
+        },
+    }
 
 
 def _deliverable(state: State, pid: str) -> dict[str, Any] | None:

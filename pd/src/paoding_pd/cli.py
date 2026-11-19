@@ -7,6 +7,7 @@
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
     pd accept --confirm 四顾项[,…] [--ref 项=产物] [--note 项=文本] [--yes]   人工验收：清单逐条判过，四顾逐条确认
     pd reject --fail 项[,项…] --reason "<文本>" [--ref …] [--note …] [--yes]   拒收：列出不过的项，其余算过
+    pd extend [--yes]    pd budget add <美元> [--yes]       续期门：放行，或追加预算并放行（规格 3.5.2）
     pd scope list    pd scope grant <申请> [--risk r1,…] [--yes]    pd scope deny <申请> --reason "<文本>"
     pd scope revoke <规则下标> --reason "<文本>"     运行时扩权（docs/design/runtime-grants/）
     pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
@@ -35,7 +36,7 @@ from pathlib import Path
 
 import yaml
 
-from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, seen_card
+from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, extension_card, seen_card
 
 from . import connector, kaiti, render
 
@@ -334,6 +335,51 @@ def cmd_accept(local: Local, a, w, decision: str, read=input) -> int:
     return 0
 
 
+def cmd_extend(local: Local, a, w, read=input) -> int:
+    """续期门（规格 3.5.2）：pd extend 放行；pd budget add <美元> 追加预算，门关着时同时放行。seen 绑定续期卡。"""
+    pid = _pid(a)
+    st = local.graph.state
+    if not _known(local, pid, w):
+        return 1
+    o = render.Out()
+    render.extension(o, st, pid)
+    w(o.text())
+    card = extension_card(st, pid)
+    if a.cmd == "extend":
+        if card is None or not card["pending"]:
+            w("[证据] 续期门没有关着，不需要放行\n")
+            return 1
+        op, body = "extend", {"seen": seen_card(st, pid, "extension", pid)}
+    else:
+        try:
+            milli = round(float(a.usd) * 1000)
+        except ValueError:
+            milli = 0
+        if milli <= 0:
+            w("[人] 追加的金额须为正的美元数\n")
+            return 2
+        body = {"usd_milli": milli, **({"seen": seen_card(st, pid, "extension", pid)} if card is not None else {})}
+        op = "budget_add"
+        w(f"[人] 追加 {milli} 毫美元\n")
+    if not a.yes:
+        ans = read("确认？输入 yes 继续：")
+        if ans.strip() != "yes":
+            w("[证据] 未确认，未提交\n")
+            return 1
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:12]
+    out = local.submit(pid, f"pd-{op}:{pid}:{st['seq']}:{digest}", [{"op": op, "body": body}])
+    if not out["ok"]:
+        w(f"[证据] 被拒：{_fail(out)}\n")
+        if any(r.get("code") == "stale_view" for r in out["results"]):
+            w("[证据] 续期卡在你查看之后已变化，未提交，请重看后再决定\n")
+        return 1
+    if op == "extend":
+        w("[证据] 已放行续期门\n")
+    else:
+        w(f"[证据] 已追加预算，上限 {local.graph.state['problems'][pid]['budget']['usd_milli']} 毫美元\n")
+    return 0
+
+
 # ---------- 设置与密钥：经 HTTP 找运行中的全栈 ----------
 
 
@@ -479,6 +525,12 @@ def parser() -> argparse.ArgumentParser:
         else:
             x.set_defaults(fail=None)
             x.add_argument("--confirm", help="已逐条确认的四顾项，逗号分隔（见打印出的“四顾”行）")
+    ex = sp.add_parser("extend")
+    ex.add_argument("--yes", action="store_true")
+    bg = sp.add_parser("budget").add_subparsers(dest="sub", required=True)
+    ba = bg.add_parser("add")
+    ba.add_argument("usd")
+    ba.add_argument("--yes", action="store_true")
     sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
     sc.add_parser("list")
     for name in ("grant", "deny", "revoke"):
@@ -526,6 +578,8 @@ def main(
         return cmd_scope(local, a, w, read)
     if a.cmd in ("accept", "reject"):
         return cmd_accept(local, a, w, a.cmd, read)
+    if a.cmd in ("extend", "budget"):
+        return cmd_extend(local, a, w, read)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)
 
 

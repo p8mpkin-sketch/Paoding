@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import cast
 
 from .. import refmodel as rm
+from .. import work as wk
 from ..parse import Obj
 from ..practice import LANES, violations
 from ..state import Actor, Artifact, Body, Event, JudgeEntry, Problem, Profile, ScopeRule, State
@@ -214,6 +215,8 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         deadline = dl
     if cfg.wall_mode not in WALL_MODES:
         raise ValueError(f"Config.wall_mode 只取 {WALL_MODES}")  # 组装根的缺陷，不是输入错误
+    if cfg.extension not in wk.EXTENSION_MODES:
+        raise ValueError(f"Config.extension 只取 {wk.EXTENSION_MODES}")
     extras = recall.open_extras(state, pid, body, judges)
     if isinstance(extras, Reject):
         return extras
@@ -236,6 +239,8 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             **({"deadline": deadline} if deadline is not None else {}),
             # 时限语义开关（§5.6）：缺省 elapsed 时事件体与旧版相同；spend 时连同最长存活一起抄入
             **({"wall_mode": "spend", "life_s": cfg.life_s} if cfg.wall_mode == "spend" else {}),
+            # 续期门（§3.5.2）：缺省 always 时事件体与旧版相同
+            **({"extension": "gate"} if cfg.extension == "gate" else {}),
             # 宪章 D5：开在哪一版设置之下。由图服务抄入，提交体里不接受；不进等级、消费门与画像
             **({"settings": {"version": cfg.settings[0], "digest": cfg.settings[1]}} if cfg.settings else {}),
         }
