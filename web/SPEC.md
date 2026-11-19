@@ -60,9 +60,29 @@
 
 ## 依赖
 
-只依赖图服务的 HTTP 接口。运行时依赖只有 React；路由、布局、SSE 解析都是手写的小模块。`src/` 不引用 `mock/`。
+只依赖图服务的 HTTP 接口。路由、布局、SSE 解析仍是手写的小模块。`src/` 不引用 `mock/`。
+
+视觉重做（设计方案：庖丁前端视觉重做设计方案，第四版）推翻了异议 web-workbench 第 1 条“不引 UI 库”。运行时依赖白名单：
+
+| 包 | 用途 |
+| --- | --- |
+| react、react-dom | 界面 |
+| @radix-ui/react-dialog、react-popover、react-tooltip | 无样式的交互骨架（焦点、键盘、读屏器） |
+| cmdk | ⌘K 命令面板 |
+| sonner | 操作反馈提示条（提交中、已记录 seq、被拒） |
+| lucide-react | 图标 |
+| @fontsource/noto-serif-sc、ibm-plex-sans、ibm-plex-mono、ma-shan-zheng，lxgw-wenkai-webfont | 自托管字体（CSP 只许同源），中文按 unicode-range 分片，构建只留 woff2 |
+
+构建期：tailwindcss 与 @tailwindcss/vite（产物是普通 CSS）。测试期：@axe-core/playwright。不加状态库，不用 WebSocket。
+
+外观只来自 `src/index.css` 的令牌（宣、墨、素三套主题，缺省跟随系统）与 `src/kit/` 的基础组件；页面不各自定义颜色。
 
 ## 界面（P2-2）
+
+- 外壳（`src/shell/`）：左侧栏（导航、⌘K 搜索、正在运行）、顶栏（面包屑与本页主操作，下沿制图刻度）、内容区（十二栏界栏）、底部状态行（连接、令牌、在途、等你处理、累计花费，全部来自 `/v1/problems`）。工作区把侧栏收成图标栏。快捷键：⌘K 或 Ctrl+K 命令面板；C 新建任务，只在顶栏有“新建任务”按钮的页面生效；工作区里 H 打开“给出指导”，Esc 收起卡片（焦点在输入框里时都不触发）。
+- 工作区左栏三节：01 待你（`/work` 的 human 项）、02 会话（`status.leases` 原样排版，在途与结局取服务端字段，不推断进度）、03 你的指导（未关闭的 Hint）。图节点的无障碍名称以可见的三行文字开头，再补全称（WCAG 2.5.3）。
+- 写操作的反馈三段式（`src/ui/feedback.ts`）：提交中 → 已记录（带 seq）→ 被拒（拒绝码翻成人话）。仍不做乐观更新。
+- 可访问性：`e2e/a11y.spec.ts` 对每个页面在宣、墨、素三套主题下跑 axe（WCAG 2.1 AA），不许有违规。
 
 - 顶栏分主次：主栏只放题名、终态与判官徽章、连接状态、花费仪表；Goal 尝试次数、画像、状态哈希收在“详情”里。
 - 窄屏（宽度 < 1024px）：三栏改为一栏，顶部一排按钮切换“待办、前沿与图、检视”；选中节点自动切到检视，打开待办自动切到主区。
@@ -124,8 +144,9 @@
 
 ## 工作台（设计：`docs/design/web-workbench-v1.md`；待裁决的出入：`docs/m0/dissent-web-workbench.md`）
 
-- **总览**（`/`）：读 `/v1/problems`（每 5 秒，页面不可见时跳过）。进行中卡片列在途租约的种类（服务端的 `active`），不推断“阶段”；Goal 根结论取 `goal_level`；待人处理数取 `human_todo`；墙钟取 `wall`。最近完成按终态三值筛。今日解题与近 7 日趋势按 `closed_ts` 在本机时区分日计数，成功率 = solved ÷ 当天已关题数；本机时钟由 `app/clock.ts` 注入，视图层不读时钟。
-- **题库**（`/problems?q=&terminal=&judge=`）：搜索与筛选都在 URL 里。标签、难度、领域要 Problem 新字段，暂缺。
+- **今日**（`/`）：读 `/v1/problems`（每 5 秒，页面不可见时跳过）。标题写成结论句（几件事等你拍板），下面四格读数、等你处理、运行中、近七日、最近完成。进行中卡片列在途租约的种类（服务端的 `active`），不推断“阶段”；Goal 根结论取 `goal_level`；待人处理数取 `human_todo`；墙钟取 `wall`。最近完成按终态三值筛。今日解题与近 7 日趋势按 `closed_ts` 在本机时区分日计数，成功率 = solved ÷ 当天已关题数；本机时钟由 `app/clock.ts` 注入，视图层不读时钟。
+- **待办**（`/inbox`）：读 `/v1/problems`（每 8 秒），对 `human_todo > 0` 的在跑任务再读 `/work` 的 human 项，按任务分组；类别取服务端的 `why`，“去处理”带 `node=<target>` 进工作区。链头或待办数变了才重读 `/work`。
+- **任务库**（`/problems?q=&terminal=&judge=`，别名 `/tasks`）：终态用页签切换，搜索与筛选都在 URL 里。标签、难度、领域要 Problem 新字段，暂缺。
 - **主题**：跟随系统、亮色、暗色、高对比，写在 `<html data-theme>`，存本机 `paoding.theme`。等级与终态仍是形状记号加文字，颜色不承载信息。
-- **开题向导**（`/new`、克隆 `/new?from=<pid>`）：六页，中间四页即 HMI §3.2 的四步。材料可以是文件、文字或网址（网址只当文字存，`text/uri-list`，不抓取）；文字类材料在提交时先 `PUT /v1/blobs`（本机核对哈希）再进开题批次。初始提示在开题成功后作为第一条 Hint 提交，不进开题批次。草稿存本机 `paoding.wizard_draft`，提交成功即清。克隆从原题的 `status`、`budget`、材料登记预填，材料按哈希重新登记为 input 类。
+- **开题向导**（`/new`、克隆 `/new?from=<pid>`）：四步——要做什么（基本信息与材料）、怎么算做完（判据）、能动用什么（授权）、花多少（预算、初始提示与复核），即 HMI §3.2 的四步各占一页，基本信息并入第一步、复核并入最后一步。右侧“任务单”随草稿实时变化，只回显草稿内容与服务端的画像预览，不推导任何量。材料可以是文件、文字或网址（网址只当文字存，`text/uri-list`，不抓取）；文字类材料在提交时先 `PUT /v1/blobs`（本机核对哈希）再进开题批次。初始提示在开题成功后作为第一条 Hint 提交，不进开题批次。草稿存本机 `paoding.wizard_draft`，提交成功即清。克隆从原题的 `status`、`budget`、材料登记预填，材料按哈希重新登记为 input 类。
 - **导入**（`/import`）：JSON（数组或 `{problems: [...]}`）与 CSV（列映射：id、题名、目标陈述、题面文字）在本机解析成草稿，没写的字段取自所选模板；逐题走与向导相同的 `app/submit.ts`，逐题显示 seq 或拒绝码。YAML 暂不支持。

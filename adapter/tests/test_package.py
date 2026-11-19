@@ -226,3 +226,21 @@ def test_prompts_say_how_to_finish(role):
         assert "add_intent" in text and "提交答案" in text and "exec" in text  # reason 没有 exec，交给 explore
     else:
         assert "claim_done" in text and 'target="goal"' in text
+
+
+def test_memory_notes_go_into_section_three_only_when_present(graph):  # noqa: F811
+    """v1.5：开题登记的召回叙述（排除路径、花费画像、recall_noverify 的事实）列进③；没有时③与旧版相同。"""
+    from adapter_rig import open_problem
+
+    open_problem(graph)
+    lease = _reason_lease(graph)
+    plain = _render(graph, lease)
+    assert "记忆（叙述" not in plain.system and "memory_notes" not in plain.package
+    p = graph.state["problems"]["p1"]
+    notes = [{"mem": "a" * 64, "kind": "excluded", "title": "直连 8080 走不通"}]
+    graph.state = {**graph.state, "problems": {"p1": {**p, "recall": {"items": [], "notes": notes}}}}
+    shown = _render(graph, lease)
+    third = shown.system.split("# ③ 锦囊\n", 1)[1].split("\n# ④", 1)[0]
+    assert third.startswith(plain.system.split("# ③ 锦囊\n", 1)[1].split("\n", 1)[0])  # 锦囊索引不变
+    assert "直连 8080 走不通" in third and "未在本题复核" in third
+    assert "直连 8080 走不通" in shown.package["memory_notes"]

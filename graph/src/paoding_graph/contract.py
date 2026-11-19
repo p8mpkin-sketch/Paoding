@@ -31,11 +31,20 @@ from typing import Protocol  # noqa: E402
 from . import views  # noqa: E402,F401
 from .blobs import BlobError, BlobNotFound, BlobStore, CorruptBlob, Readable  # noqa: E402,F401
 
+# 同种基质的第二个实例（v1.5 通鉴日志，规格 2.4）：事件日志、重放与状态哈希、等级重算都复用这里的实现
+from .eventlog import BatchRejected, EventLog  # noqa: E402,F401
+
 # HTTP 绑定（HMI §11 方案 A）与只读投影。四语域表与等级词表是 pd 与网页的同一事实源。
 from .httpapi import GraphHttp, HttpConfig  # noqa: E402,F401
+from .levels import compute as compute_levels  # noqa: E402,F401
 
 # 组装根（pd、测试台）构造服务用。组件之间仍只经下面的端口协议交互。
-from .reducer import Config  # noqa: E402,F401
+from .reducer import (  # noqa: E402,F401
+    Config,  # noqa: E402,F401
+    apply,
+    empty_state,
+)
+from .replay import replay, state_hash  # noqa: E402,F401
 from .service import GraphService  # noqa: E402,F401
 
 # 状态与事件的类型（TypedDict；运行时仍是普通 dict）
@@ -59,7 +68,11 @@ from .state import (  # noqa: E402,F401
 )
 from .tokens import TokenRegistry, UnknownToken  # noqa: E402,F401
 from .views import LEVEL_WORDS, REGISTER, REGISTERS  # noqa: E402,F401
-from .work import BudgetView  # noqa: E402,F401
+from .work import (  # noqa: E402,F401
+    BudgetView,  # noqa: E402,F401
+    in_flight,
+    leases_of,
+)
 
 
 class GraphPort(Protocol):

@@ -39,6 +39,41 @@ def in_flight(state: State, pid: str, kind: str, target: str | None = None) -> L
     return None
 
 
+# ---------- 资源占用（v1.5 增量 11，规格 4.1） ----------
+
+_RANK = {"r0": 0, "r1": 1, "r2": 2}
+
+
+def holds(state: State, iid: str) -> dict[int, str]:
+    """Intent 占用的授权规则：下标 → read | write。声明了 touches 就用 add_intent 校验过的那份；
+    没声明时保守展开为"全部 risk ≤ Intent 风险的规则，r1 以上按写"，所以不声明也正确，只是并行度低。"""
+    rec = state["intents"][iid]
+    if "touches" in rec:
+        return {t["rule"]: t["mode"] for t in rec["touches"]}
+    scope = state["problems"][rec["problem_id"]]["scope"]
+    rank = _RANK[rec["risk"]]
+    return {k: "read" if r["risk"] == "r0" else "write" for k, r in enumerate(scope) if _RANK[r["risk"]] <= rank}
+
+
+def clash(a: Mapping[int, str], b: Mapping[int, str]) -> list[int]:
+    """两份占用之间的写冲突：任一方写、另一方碰的规则下标（升序）。"""
+    return sorted(k for k in a.keys() & b.keys() if "write" in (a[k], b[k]))
+
+
+def resource_conflict(state: State, pid: str, iid: str) -> tuple[Lease, int] | None:
+    """iid 与某个在途 explore 租约所服务的 Intent 有写冲突时，返回第一个这样的租约与冲突规则。
+    同一条写规则同时只给一个在途租约：后来者不进 /work，等前一个租约结束。"""
+    mine = holds(state, iid)
+    for l in active_leases(state, pid):
+        other = l.get("target")
+        if l["kind"] != "explore" or other == iid or other not in state["intents"]:
+            continue
+        both = clash(mine, holds(state, other))
+        if both:
+            return l, both[0]
+    return None
+
+
 # ---------- Intent 的完整状态（3.1.2 状态机 = 参考模型的资格状态 + 租约生命周期） ----------
 
 
@@ -181,6 +216,14 @@ def in_review(state: State, pid: str) -> bool:
 # ---------- /work（§3.1.2） ----------
 
 
+def recall_pending(state: State, pid: str) -> bool:
+    """召回还没做完：开题登记了要复核的召回清单，且还没有一个 recall 租约结束过（过期也算结束）。"""
+    rec = state["problems"][pid].get("recall") or {}
+    if not rec.get("items"):
+        return False
+    return not any(l["kind"] == "recall" and not l["active"] for l in leases_of(state, pid))
+
+
 def work(state: State, pid: str) -> list[dict[str, Any]]:
     p = state["problems"].get(pid)
     if p is None or p.get("closed"):
@@ -191,7 +234,10 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     review = in_review(state, pid)
     task_leases = [l for l in leases if l["kind"] in TASK_KINDS]
-    if not task_leases:
+    recalling = recall_pending(state, pid)
+    if recalling and in_flight(state, pid, "recall") is None:
+        items.append({"kind": "recall"})  # v1.5 增量 8：召回复核先于 Bootstrap，由不含模型的召回运行器领走
+    if not task_leases and not recalling:
         items.append({"kind": "bootstrap"})
     boot_done = any(l["kind"] == "bootstrap" and not l["active"] for l in leases)
     reason_now = in_flight(state, pid, "reason") is not None
@@ -213,7 +259,7 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
     statuses = {iid: intent_status(state, pid, iid, cache) for iid in st.intents}
     if not review:
         for iid, s in statuses.items():
-            if s == "open":
+            if s == "open" and resource_conflict(state, pid, iid) is None:
                 items.append({"kind": "explore", "target": iid})
     pending = [r for r in state["requests"].values() if r["problem_id"] == pid and r.get("verdict_seq") is None]
     for r in pending:

@@ -123,16 +123,22 @@ export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected:
                 );
               }
               const r = rows.get(n.id)!;
+              // 可见的三行原样放在名字开头（WCAG 2.5.3 名称含可见文字），再补全称
+              const l1 = clip(`${n.id}${r.level ? ` · ${r.level}` : ""}${r.predicate ? ` · ${r.predicate.label}` : ""}`, 22);
+              const l2 = clip(r.predicateText ?? (n.kind === "fact" ? "推断" : "Intent"), 22);
+              const l3 = `“${clip(r.title.value, 22)}”`;
               return (
                 <g
                   key={n.id} data-graph-node={n.id} data-x={n.x} data-y={n.y} className={`gnode gnode-${n.kind}${selected === n.id ? " selected" : ""} level-${r.level ?? "none"}`}
-                  tabIndex={0} role="button" aria-pressed={selected === n.id} aria-label={`${n.kind === "fact" ? "论断" : "Intent"} ${n.id}${r.level ? `，${r.level}` : ""}：${visible(r.title.value)}`}
+                  tabIndex={0} role="button" aria-pressed={selected === n.id} aria-label={`${l1} ${l2} ${l3}；${n.kind === "fact" ? "论断" : "尝试"}，全称：${visible(r.title.value)}`}
                   onClick={() => { if (!drag.current?.moved) onSelect(n.id); }} onKeyDown={activate(n.id)}
                 >
                   <rect x={n.x} y={n.y} width={CELL.w} height={CELL.h} rx={n.kind === "intent" ? 18 : 0} />
-                  <text x={n.x + 8} y={n.y + 18} className="g-id">{clip(`${n.id}${r.level ? ` · ${r.level}` : ""}${r.predicate ? ` · ${r.predicate.label}` : ""}`, 22)}</text>
-                  <text x={n.x + 8} y={n.y + 36} className="g-pred">{clip(r.predicateText ?? (n.kind === "fact" ? "推断" : "Intent"), 22)}</text>
-                  <text x={n.x + 8} y={n.y + 54} className="g-title">“{clip(r.title.value, 22)}”</text>
+                  <text>
+                    <tspan x={n.x + 8} y={n.y + 18} className="g-id">{l1}</tspan>{" "}
+                    <tspan x={n.x + 8} y={n.y + 36} className="g-pred">{l2}</tspan>{" "}
+                    <tspan x={n.x + 8} y={n.y + 54} className="g-title">{l3}</tspan>
+                  </text>
                 </g>
               );
             })}

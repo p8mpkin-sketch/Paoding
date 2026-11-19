@@ -73,11 +73,11 @@ describe("向导页", () => {
     const first = renderWith(r, <Wizard />).container;
     await waitFor(() => expect(first.querySelector("[data-wizard]")).not.toBeNull());
     fireEvent.change(first.querySelector('[data-field="title"]')!, { target: { value: "留着" } });
-    fireEvent.click(first.querySelector('[data-step-tab="4"]')!);
+    fireEvent.click(first.querySelector('[data-step-tab="3"]')!);
     cleanup();
     const again = renderWith(r, <Wizard />).container;
     await waitFor(() => expect(again.querySelector("[data-restored]")).not.toBeNull());
-    expect(again.querySelector("[data-wizard]")?.getAttribute("data-step-index")).toBe("4");
+    expect(again.querySelector("[data-wizard]")?.getAttribute("data-step-index")).toBe("3");
     fireEvent.click(again.querySelector('[data-step-tab="0"]')!);
     expect((again.querySelector('[data-field="title"]') as HTMLInputElement).value).toBe("留着");
     fireEvent.click(again.querySelector('[data-action="restart"]')!);
@@ -92,7 +92,7 @@ describe("向导页", () => {
     await waitFor(() => expect(container.querySelector(`[data-cloned-from="${pid}"]`)).not.toBeNull());
     expect((container.querySelector('[data-field="id"]') as HTMLInputElement).value).toBe("");
     fireEvent.change(container.querySelector('[data-field="id"]')!, { target: { value: "clone-1" } });
-    fireEvent.click(container.querySelector('[data-step-tab="5"]')!);
+    fireEvent.click(container.querySelector('[data-step-tab="3"]')!);
     const batch = JSON.parse(container.querySelector("[data-problem-json]")!.textContent!) as { ops: { op: string; body: Record<string, unknown> }[] };
     const open = batch.ops.at(-1)!.body as { scope: unknown; goal: { check: { judge_id: string } } };
     expect(open.scope).toEqual(src.problem.scope);

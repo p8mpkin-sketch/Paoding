@@ -25,7 +25,7 @@ from .. import work as wk  # noqa: F401  —— 测试经 reducer.wk 替换内�
 from ..jcs import JCSError, canonicalize
 from ..parse import BadBody, Obj
 from ..state import Actor, Body, Event, State
-from . import close, fact, intent, judge, lease, problem
+from . import close, fact, intent, judge, lease, problem, recall
 from .common import Applier, Config, Ok, Reject, TimedValidator, Validator, empty_state
 from .fact import content_key
 
@@ -52,7 +52,7 @@ def _who(actor: Actor, kind: str) -> bool:
     if kind == "register_artifact":
         return k in ("executor", "adapter", "judge", "human")  # 类别与令牌的匹配另查
     if kind == "add_fact":
-        return k == "adapter" and role in ("bootstrap", "explore", "reason")
+        return k == "adapter" and role in ("bootstrap", "explore", "reason", "recall")  # recall 另有白名单
     if kind == "add_intent":
         return (k == "adapter" and role == "reason") or k == "human"
     if kind == "request_judge":
@@ -175,6 +175,9 @@ def validate(
         held = state["leases"].get(actor.get("session") or "")
         if held is not None and held["problem_id"] != pid:  # 任务令牌随租约签发，只在租约所属的题内有效
             return Reject("scope_mismatch", f"令牌的会话 {held['id']} 属于别题")
+    narrowed = recall.whitelist(state, actor, pid, kind, body)  # 增量 8：recall 角色的操作白名单
+    if narrowed is not None:
+        return narrowed
     try:  # 只接解析层的异常：提议体形状不对，或其中有不可规范化的值
         b = Obj(body)
         if kind in _TIMED:

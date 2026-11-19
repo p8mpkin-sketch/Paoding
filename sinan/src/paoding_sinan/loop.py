@@ -78,6 +78,9 @@ class Sinan:
         # 判定未决 = /work 里还有 judge 项，或判官已领走、裁决还没落盘（领走后它就不在 /work 里了）。
         # 多线程部署里判官与司南并行，只看 /work 会让 Reason 读到裁决之前的图。
         judging = any(w["kind"] in ("judge", "rejudge") for w in work) or any(l["kind"] == "judge" for l in leases)
+        # 召回复核（v1.5）由不含模型的召回运行器做，先于 Bootstrap：没做完之前司南什么都不开
+        if any(w["kind"] == "recall" for w in work) or any(l["kind"] == "recall" for l in leases):
+            return {"wait": "recall"}
         if self.cfg.wait_for_judges and judging:
             return {"wait": "judge"}
         mine = {(f["item"]["kind"], f["item"].get("target")) for f in self.in_flight(pid)}

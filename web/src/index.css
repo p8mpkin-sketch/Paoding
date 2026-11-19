@@ -1,0 +1,110 @@
+/* 设计系统（视觉重做第四版：纸、墨、朱印、界栏）。
+   令牌全部是 CSS 变量，四套主题只换变量；Tailwind 只在构建期运行，产物是普通 CSS。
+   字体全部自托管（CSP 只许同源）：标题思源宋体，正文 IBM Plex Sans 配系统中文黑体，
+   编号与金额 IBM Plex Mono，朱批马善政，模型撰写的文字霞鹜文楷。中文字体按 unicode-range 分片，只下载用到的字。 */
+@import "tailwindcss";
+
+@import "@fontsource/noto-serif-sc/600.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ma-shan-zheng/400.css";
+@import "lxgw-wenkai-webfont/lxgwwenkai-regular.css";
+
+/* 宣：纸本（亮色） */
+:root, :root[data-theme="light"] {
+  --paper: #F2EEE5; --paper-2: #EAE5D9; --sheet: #FAF8F3; --hover: rgba(27,25,22,.045); --sel: rgba(27,25,22,.075);
+  --ink: #1B1916; --ink-2: #5A5449; --ink-3: #6A6458; --ink-4: #B9B2A4;
+  --rule: #DCD5C6; --rule-2: #C7BEAC; --rule-3: #A69C88;
+  --zhu: #B83924; --zhu-ink: #A0301E; --zhu-soft: rgba(184,57,36,.08); --zhu-line: rgba(184,57,36,.55);
+  --qing: #3B6A5C; --qing-soft: rgba(59,106,92,.10);
+  --zhe: #96601C; --zhe-soft: rgba(163,104,31,.11);
+  --dai: #3F4C68; --dai-soft: rgba(63,76,104,.09);
+  --btn-ink-bg: #1B1916; --btn-ink-fg: #F7F4EC; --on-zhu: #FBF6EC;
+  --jie: rgba(27,25,22,.045); --shade: rgba(27,25,22,.28);
+  color-scheme: light;
+}
+/* 墨：夜间 */
+:root[data-theme="dark"] {
+  --paper: #151412; --paper-2: #100F0E; --sheet: #1C1B18; --hover: rgba(236,231,221,.045); --sel: rgba(236,231,221,.075);
+  --ink: #ECE7DC; --ink-2: #A8A194; --ink-3: #8C8678; --ink-4: #4D4A43;
+  --rule: #2A2824; --rule-2: #38352F; --rule-3: #57534A;
+  --zhu: #E25A3F; --zhu-ink: #F07A60; --zhu-soft: rgba(226,90,63,.11); --zhu-line: rgba(226,90,63,.6);
+  --qing: #82B4A3; --qing-soft: rgba(130,180,163,.12);
+  --zhe: #D7A253; --zhe-soft: rgba(215,162,83,.12);
+  --dai: #93A5C8; --dai-soft: rgba(147,165,200,.12);
+  --btn-ink-bg: #ECE7DC; --btn-ink-fg: #151412; --on-zhu: #1B1110;
+  --jie: rgba(236,231,221,.035); --shade: rgba(0,0,0,.5);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --paper: #151412; --paper-2: #100F0E; --sheet: #1C1B18; --hover: rgba(236,231,221,.045); --sel: rgba(236,231,221,.075);
+    --ink: #ECE7DC; --ink-2: #A8A194; --ink-3: #8C8678; --ink-4: #4D4A43;
+    --rule: #2A2824; --rule-2: #38352F; --rule-3: #57534A;
+    --zhu: #E25A3F; --zhu-ink: #F07A60; --zhu-soft: rgba(226,90,63,.11); --zhu-line: rgba(226,90,63,.6);
+    --qing: #82B4A3; --qing-soft: rgba(130,180,163,.12);
+    --zhe: #D7A253; --zhe-soft: rgba(215,162,83,.12);
+    --dai: #93A5C8; --dai-soft: rgba(147,165,200,.12);
+    --btn-ink-bg: #ECE7DC; --btn-ink-fg: #151412; --on-zhu: #1B1110;
+    --jie: rgba(236,231,221,.035); --shade: rgba(0,0,0,.5);
+    color-scheme: dark;
+  }
+}
+/* 素：高对比。纸纹、界栏、朱批这些装饰全部关掉 */
+:root[data-theme="contrast"] {
+  --paper: #FFFFFF; --paper-2: #FFFFFF; --sheet: #FFFFFF; --hover: rgba(0,0,0,.06); --sel: rgba(0,0,0,.1);
+  --ink: #000000; --ink-2: #000000; --ink-3: #1F1F1F; --ink-4: #4A4A4A;
+  --rule: #000000; --rule-2: #000000; --rule-3: #000000;
+  --zhu: #B0220C; --zhu-ink: #8F1A08; --zhu-soft: rgba(176,34,12,.1); --zhu-line: #B0220C;
+  --qing: #0F4D3B; --qing-soft: rgba(15,77,59,.1);
+  --zhe: #6B4100; --zhe-soft: rgba(107,65,0,.1);
+  --dai: #1A2B52; --dai-soft: rgba(26,43,82,.1);
+  --btn-ink-bg: #000000; --btn-ink-fg: #FFFFFF; --on-zhu: #FFFFFF;
+  --jie: transparent; --shade: rgba(0,0,0,.4);
+  color-scheme: light;
+}
+
+:root {
+  --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+  --sans: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --brush: "Ma Shan Zheng", "Kaiti SC", "STKaiti", cursive;
+  /* 霞鹜文楷用按 unicode-range 分片的包（只下载页面用到的字）；拉丁字母仍交给 Plex Sans */
+  --kai: "IBM Plex Sans", "LXGW WenKai", "Kaiti SC", "STKaiti", serif;
+  --side-w: 216px;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-sheet: var(--sheet);
+  --color-hover: var(--hover);
+  --color-sel: var(--sel);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
+  --color-rule-3: var(--rule-3);
+  --color-zhu: var(--zhu);
+  --color-zhu-soft: var(--zhu-soft);
+  --color-qing: var(--qing);
+  --color-zhe: var(--zhe);
+  --color-dai: var(--dai);
+  --font-serif: var(--serif);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+  --font-brush: var(--brush);
+  --font-kai: var(--kai);
+}
+
+@layer base {
+  html, body { height: 100%; }
+  body { font: 400 13.5px/1.55 var(--sans); color: var(--ink); background: var(--paper); -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--zhu-soft); }
+  :focus-visible { outline: 2px solid var(--zhu); outline-offset: 2px; }
+}

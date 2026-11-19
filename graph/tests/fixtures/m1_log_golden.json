@@ -1,0 +1,1019 @@
+{
+ "note": "M1 日志（web 夹具录制）在 v1.5 记忆增量之前的重放结果。增量 8/9 只加可选字段，重放必须逐字节一致。",
+ "events": [
+  {
+   "v": 1,
+   "seq": 1,
+   "problem_id": "p1",
+   "ts": 1001,
+   "actor": {
+    "kind": "human",
+    "id": "cz"
+   },
+   "kind": "register_artifact",
+   "body": {
+    "hash": "2ae116bec9710bae5a25670d6c6c903bca7c210674dfd9d9ab79e1c64d8a25b8",
+    "size": 12,
+    "media_type": "text/plain",
+    "class": "input",
+    "parents": [],
+    "producer": {
+     "actor": "cz"
+    }
+   },
+   "idem_key": "open-p1#0",
+   "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "hash": "53fc2b90bee62b2477488802629b407317f18ccc63eee23297bf9d451256a009"
+  },
+  {
+   "v": 1,
+   "seq": 2,
+   "problem_id": "p1",
+   "ts": 1002,
+   "actor": {
+    "kind": "human",
+    "id": "cz"
+   },
+   "kind": "open_problem",
+   "body": {
+    "title": "题 p1",
+    "origin": {
+     "statement_ref": "a_1",
+     "materials": []
+    },
+    "goal": {
+     "statement": "取得答案并原样提交",
+     "check": {
+      "judge_id": "exact_match",
+      "expect": {
+       "digest": "ab"
+      }
+     },
+     "max_attempts": 3,
+     "accept": "judge"
+    },
+    "scope": [
+     {
+      "resource": "target",
+      "pattern": "*",
+      "actions": [
+       "read"
+      ],
+      "risk": "r0"
+     }
+    ],
+    "budget": {
+     "usd_milli": 5000,
+     "wall_s": 3600,
+     "verify_share": 0.2,
+     "bootstrap_share": 0.3
+    },
+    "env": {
+     "base": "basic",
+     "baseline_ref": "base@1"
+    },
+    "judges": [
+     "exact_match",
+     "replay"
+    ],
+    "judge_snapshot": {
+     "exact_match": {
+      "version": "1",
+      "grade": "decisive",
+      "kind": "builtin",
+      "max_cost": 0.0
+     },
+     "replay": {
+      "version": "1",
+      "grade": "decisive",
+      "kind": "builtin",
+      "max_cost": 0.01
+     }
+    },
+    "profile": {
+     "info": "complete",
+     "judge": "hard",
+     "reversibility": "r0"
+    }
+   },
+   "idem_key": "open-p1#1",
+   "prev_hash": "53fc2b90bee62b2477488802629b407317f18ccc63eee23297bf9d451256a009",
+   "hash": "68b9fdd5f10b605c34567fedf6f98272d56db4121d0c98cbb81ef99e403b2516"
+  },
+  {
+   "v": 1,
+   "seq": 3,
+   "problem_id": "p1",
+   "ts": 1003,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "bootstrap",
+    "holder": "sn1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 1
+   },
+   "idem_key": "lease:2593aff1785543768b5c44d8fbb4b64e#0",
+   "prev_hash": "68b9fdd5f10b605c34567fedf6f98272d56db4121d0c98cbb81ef99e403b2516",
+   "hash": "5bb7790d5169db2437f55e3270f0638fff5f21a03138459dc41e26c5bc4e2d73"
+  },
+  {
+   "v": 1,
+   "seq": 4,
+   "problem_id": "p1",
+   "ts": 1004,
+   "actor": {
+    "kind": "executor",
+    "id": "ex1"
+   },
+   "kind": "register_artifact",
+   "body": {
+    "hash": "5375a611b7ce4e9fc334c3c2d83d6e507639203866eaabdade48f62283e562ed",
+    "size": 16,
+    "media_type": "text/plain",
+    "class": "exec",
+    "parents": [],
+    "producer": {
+     "actor": "ex1"
+    },
+    "exec": {
+     "sandbox_id": "s",
+     "base": "b",
+     "baseline_ref": "r",
+     "tool": "shell",
+     "command": "cat /etc/hostname",
+     "cwd": "/",
+     "exit_code": 0,
+     "touched": [],
+     "started_at": 1,
+     "ended_at": 2,
+     "truncated": false
+    }
+   },
+   "idem_key": "k2#0",
+   "prev_hash": "5bb7790d5169db2437f55e3270f0638fff5f21a03138459dc41e26c5bc4e2d73",
+   "hash": "49d750786c534a029b207ba36ec7c47251de7c4ed200fc02cfcff76a9979c9f0"
+  },
+  {
+   "v": 1,
+   "seq": 5,
+   "problem_id": "p1",
+   "ts": 1005,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_3",
+    "role": "bootstrap"
+   },
+   "kind": "add_fact",
+   "body": {
+    "title": "主机名可读",
+    "summary": "读取主机名成功",
+    "claim_type": "observation",
+    "premises": [],
+    "grounds": [
+     "a_4"
+    ],
+    "check": {
+     "judge_id": "replay",
+     "expect": {
+      "exit_code": 0
+     }
+    },
+    "content_key": "o:df397ca8a17bfe6d775c9773844dd878cec7e0f59a3ce1b5af2cc73eaa23f35a"
+   },
+   "idem_key": "k3#0",
+   "prev_hash": "49d750786c534a029b207ba36ec7c47251de7c4ed200fc02cfcff76a9979c9f0",
+   "hash": "7f34c2d1d1d8f69452afbdbc6c58b48536251dd3a4bca93b9c1e6cdd095bc5b7"
+  },
+  {
+   "v": 1,
+   "seq": 6,
+   "problem_id": "p1",
+   "ts": 1006,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_3",
+    "role": "bootstrap"
+   },
+   "kind": "cost",
+   "body": {
+    "task_id": "l_3",
+    "source": "proxy",
+    "tokens_in": 10,
+    "tokens_cached": 0,
+    "tokens_out": 5,
+    "usd_milli": 30,
+    "wall_s": 1,
+    "price_table": "t1",
+    "model": "m"
+   },
+   "idem_key": "k4#0",
+   "prev_hash": "7f34c2d1d1d8f69452afbdbc6c58b48536251dd3a4bca93b9c1e6cdd095bc5b7",
+   "hash": "590e4f54464d7d072a81d32592cc3ce542d4c2275b1ba20b7b7119e18ac2abe5"
+  },
+  {
+   "v": 1,
+   "seq": 7,
+   "problem_id": "p1",
+   "ts": 1007,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_3",
+    "outcome": "done"
+   },
+   "idem_key": "release:l_3:0471e54e186541c8a08747144ee2b547#0",
+   "prev_hash": "590e4f54464d7d072a81d32592cc3ce542d4c2275b1ba20b7b7119e18ac2abe5",
+   "hash": "12481be8eb2f391ad0500b7ca9287a9a23ed0c27177669f06a8a6b9e809a0042"
+  },
+  {
+   "v": 1,
+   "seq": 8,
+   "problem_id": "p1",
+   "ts": 1008,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "reason",
+    "holder": "sn1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 1
+   },
+   "idem_key": "lease:84eb0a0154dc4fb2ae1bf79c43468c53#0",
+   "prev_hash": "12481be8eb2f391ad0500b7ca9287a9a23ed0c27177669f06a8a6b9e809a0042",
+   "hash": "18fb454d07c36b73a8beee612c0f20f557365ffd0bc67275dd19d809ca0e896f"
+  },
+  {
+   "v": 1,
+   "seq": 9,
+   "problem_id": "p1",
+   "ts": 1009,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_8",
+    "role": "reason"
+   },
+   "kind": "add_intent",
+   "body": {
+    "title": "取回答案",
+    "summary": "沿已知入口取回",
+    "premises": [
+     "f_5"
+    ],
+    "risk": "r0",
+    "budget": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "expected_gain": 0.7
+   },
+   "idem_key": "k5#0",
+   "prev_hash": "18fb454d07c36b73a8beee612c0f20f557365ffd0bc67275dd19d809ca0e896f",
+   "hash": "4ab1cd3b4f3573cefa88ec9219d5001f40d6beec75e86a928680f896daf20d41"
+  },
+  {
+   "v": 1,
+   "seq": 10,
+   "problem_id": "p1",
+   "ts": 1010,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_8",
+    "outcome": "done"
+   },
+   "idem_key": "release:l_8:2917bd94dca14bafb924fa24c7b7945f#0",
+   "prev_hash": "4ab1cd3b4f3573cefa88ec9219d5001f40d6beec75e86a928680f896daf20d41",
+   "hash": "418c154da391b2151c62a252eded5e13007a21436069a5c25eb4981bccf661ea"
+  },
+  {
+   "v": 1,
+   "seq": 11,
+   "problem_id": "p1",
+   "ts": 1011,
+   "actor": {
+    "kind": "human",
+    "id": "cz"
+   },
+   "kind": "hint",
+   "body": {
+    "text": "先看登录表单",
+    "about": "i_9"
+   },
+   "idem_key": "k6#0",
+   "prev_hash": "418c154da391b2151c62a252eded5e13007a21436069a5c25eb4981bccf661ea",
+   "hash": "d8c2ada86589ea41b6ddba19996deb1fc91bc6d107ac1565f3c7d2986866c6fe"
+  },
+  {
+   "v": 1,
+   "seq": 12,
+   "problem_id": "p1",
+   "ts": 1012,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "reason",
+    "holder": "sn1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 2
+   },
+   "idem_key": "lease:48f359d41dff44d38c023c545bc96780#0",
+   "prev_hash": "d8c2ada86589ea41b6ddba19996deb1fc91bc6d107ac1565f3c7d2986866c6fe",
+   "hash": "cb0028d5aa14f66b3c36927c5492ab4b2248df70ffc2d9d63c90ab38e479cecc"
+  },
+  {
+   "v": 1,
+   "seq": 13,
+   "problem_id": "p1",
+   "ts": 1013,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_12",
+    "role": "reason"
+   },
+   "kind": "add_intent",
+   "body": {
+    "title": "核对表单字段",
+    "summary": "",
+    "premises": [],
+    "risk": "r0",
+    "budget": {
+     "usd_milli": 100,
+     "wall_s": 60
+    }
+   },
+   "idem_key": "k7#0",
+   "prev_hash": "cb0028d5aa14f66b3c36927c5492ab4b2248df70ffc2d9d63c90ab38e479cecc",
+   "hash": "9335c2d3005cd0c703a9ff60bcf8b83be68797e760c9f94544673cab4352010e"
+  },
+  {
+   "v": 1,
+   "seq": 14,
+   "problem_id": "p1",
+   "ts": 1014,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_12",
+    "outcome": "done"
+   },
+   "idem_key": "release:l_12:5b073b3047d54399bc36076e17a90b21#0",
+   "prev_hash": "9335c2d3005cd0c703a9ff60bcf8b83be68797e760c9f94544673cab4352010e",
+   "hash": "cabb727aaeeda0e0d8976e0b8e77a123962d6088e7075d75a4b5c61112f64974"
+  },
+  {
+   "v": 1,
+   "seq": 15,
+   "problem_id": "p1",
+   "ts": 1015,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "explore",
+    "target": "i_9",
+    "holder": "sn1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 1
+   },
+   "idem_key": "lease:b3ad997648854b4492f17803ddac9882#0",
+   "prev_hash": "cabb727aaeeda0e0d8976e0b8e77a123962d6088e7075d75a4b5c61112f64974",
+   "hash": "a65e71390275f4de6d86faad9062292c26bc4f54b676b3d965558963da4a407b"
+  },
+  {
+   "v": 1,
+   "seq": 16,
+   "problem_id": "p1",
+   "ts": 1016,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_15",
+    "role": "explore"
+   },
+   "kind": "register_artifact",
+   "body": {
+    "hash": "6602db8e933c99b46bab4d6b2273a77c5debbd3eb7d31b52a936aea150125faf",
+    "size": 10,
+    "media_type": "text/plain",
+    "class": "authored",
+    "parents": [],
+    "producer": {
+     "actor": "ad1",
+     "session": "l_15"
+    }
+   },
+   "idem_key": "k8#0",
+   "prev_hash": "a65e71390275f4de6d86faad9062292c26bc4f54b676b3d965558963da4a407b",
+   "hash": "22b70fd1dcb8468928e19c32f3b7bcf5ce9696199d6bd03834c2717a640ee986"
+  },
+  {
+   "v": 1,
+   "seq": 17,
+   "problem_id": "p1",
+   "ts": 1017,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_15",
+    "role": "explore"
+   },
+   "kind": "request_judge",
+   "body": {
+    "target": "goal",
+    "judge_id": "exact_match",
+    "candidate": "a_16"
+   },
+   "idem_key": "k8#1",
+   "prev_hash": "22b70fd1dcb8468928e19c32f3b7bcf5ce9696199d6bd03834c2717a640ee986",
+   "hash": "2d010b95fc5cc4d450fea65114d6b83417cae333211219c5d3bb0d50c22b8dea"
+  },
+  {
+   "v": 1,
+   "seq": 18,
+   "problem_id": "p1",
+   "ts": 1018,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_15",
+    "role": "explore"
+   },
+   "kind": "cost",
+   "body": {
+    "task_id": "l_15",
+    "source": "proxy",
+    "tokens_in": 10,
+    "tokens_cached": 0,
+    "tokens_out": 5,
+    "usd_milli": 40,
+    "wall_s": 1,
+    "price_table": "t1",
+    "model": "m"
+   },
+   "idem_key": "k9#0",
+   "prev_hash": "2d010b95fc5cc4d450fea65114d6b83417cae333211219c5d3bb0d50c22b8dea",
+   "hash": "dffef07172844f585b37a1c7314855655747be61787c58e1be1fe8fd9fc51310"
+  },
+  {
+   "v": 1,
+   "seq": 19,
+   "problem_id": "p1",
+   "ts": 1019,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_15",
+    "outcome": "done"
+   },
+   "idem_key": "release:l_15:bdf6dba9fbea4e6db9ff01f75394b98b#0",
+   "prev_hash": "dffef07172844f585b37a1c7314855655747be61787c58e1be1fe8fd9fc51310",
+   "hash": "b56ea3e2b04d273b2f0fbce48e87293677dda136b972267ee64ba475eb41cb68"
+  },
+  {
+   "v": 1,
+   "seq": 20,
+   "problem_id": "p1",
+   "ts": 1020,
+   "actor": {
+    "kind": "judge",
+    "id": "jr1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "judge",
+    "target": "j_17",
+    "holder": "jr1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 1
+   },
+   "idem_key": "lease:0c66629586d443bdae34ce2b4c38fba6#0",
+   "prev_hash": "b56ea3e2b04d273b2f0fbce48e87293677dda136b972267ee64ba475eb41cb68",
+   "hash": "762c8eafe756fc51c3b71c21b05d3275f1e6c77aac7121b480854b0c711f79bc"
+  },
+  {
+   "v": 1,
+   "seq": 21,
+   "problem_id": "p1",
+   "ts": 1021,
+   "actor": {
+    "kind": "judge",
+    "id": "jr1"
+   },
+   "kind": "register_artifact",
+   "body": {
+    "hash": "6fffb0773693441307a3648655e03b104be14c5777ee14d410f39780e6d7ece5",
+    "size": 8,
+    "media_type": "text/plain",
+    "class": "judge",
+    "parents": [],
+    "producer": {
+     "actor": "jr1"
+    },
+    "exec": {
+     "sandbox_id": "s",
+     "base": "b",
+     "baseline_ref": "r",
+     "tool": "shell",
+     "command": "cat /etc/hostname",
+     "cwd": "/",
+     "exit_code": 0,
+     "touched": [],
+     "started_at": 1,
+     "ended_at": 2,
+     "truncated": false
+    }
+   },
+   "idem_key": "k10#0",
+   "prev_hash": "762c8eafe756fc51c3b71c21b05d3275f1e6c77aac7121b480854b0c711f79bc",
+   "hash": "077d82f33423fe830626bdf1a4a681a584206378055e951f80512bcea37e78cf"
+  },
+  {
+   "v": 1,
+   "seq": 22,
+   "problem_id": "p1",
+   "ts": 1022,
+   "actor": {
+    "kind": "judge",
+    "id": "jr1"
+   },
+   "kind": "judge_verdict",
+   "body": {
+    "request": "j_17",
+    "result": "pass",
+    "version": "1",
+    "grade": "decisive",
+    "evidence": [
+     "a_21"
+    ]
+   },
+   "idem_key": "k11#0",
+   "prev_hash": "077d82f33423fe830626bdf1a4a681a584206378055e951f80512bcea37e78cf",
+   "hash": "7955a69e023f4fccca76615c76f460206364a4265b7cd521ec3ed7045dd34c41"
+  },
+  {
+   "v": 1,
+   "seq": 23,
+   "problem_id": "p1",
+   "ts": 1022,
+   "actor": {
+    "kind": "graph",
+    "id": "graph"
+   },
+   "kind": "close_problem",
+   "body": {
+    "terminal": "solved",
+    "by": "graph",
+    "card_hash": null
+   },
+   "idem_key": "k11#auto-close_problem-1",
+   "prev_hash": "7955a69e023f4fccca76615c76f460206364a4265b7cd521ec3ed7045dd34c41",
+   "hash": "46c39233175efbb0472b2ce4b256b1b72743e8bc5fb36ea5962b7d43f649ecf5"
+  },
+  {
+   "v": 1,
+   "seq": 24,
+   "problem_id": "p1",
+   "ts": 1023,
+   "actor": {
+    "kind": "judge",
+    "id": "jr1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_20",
+    "outcome": "closed",
+    "after_close": true
+   },
+   "idem_key": "release:l_20:ec689575282846d59750877dda9ded98#0",
+   "prev_hash": "46c39233175efbb0472b2ce4b256b1b72743e8bc5fb36ea5962b7d43f649ecf5",
+   "hash": "8e4e9b93a27a1fed98b4c82cf8212b48e4ead52aa1fa0ebd05979c3e07976796"
+  },
+  {
+   "v": 1,
+   "seq": 25,
+   "problem_id": "p2",
+   "ts": 1024,
+   "actor": {
+    "kind": "human",
+    "id": "cz"
+   },
+   "kind": "register_artifact",
+   "body": {
+    "hash": "82f7ff5d1862d4ba96281d215884f2a97059be26343ccf3c4a161b97ef69fbff",
+    "size": 12,
+    "media_type": "text/plain",
+    "class": "input",
+    "parents": [],
+    "producer": {
+     "actor": "cz"
+    }
+   },
+   "idem_key": "open-p2#0",
+   "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "hash": "ed2b2db2c9873949c15356f8c25ca13fc16f5aa638fb7732f4b7672da70d30cf"
+  },
+  {
+   "v": 1,
+   "seq": 26,
+   "problem_id": "p2",
+   "ts": 1025,
+   "actor": {
+    "kind": "human",
+    "id": "cz"
+   },
+   "kind": "open_problem",
+   "body": {
+    "title": "题 p2",
+    "origin": {
+     "statement_ref": "a_25",
+     "materials": []
+    },
+    "goal": {
+     "statement": "取得答案并原样提交",
+     "check": {
+      "judge_id": "exact_match",
+      "expect": {
+       "digest": "ab"
+      }
+     },
+     "max_attempts": 3,
+     "accept": "judge"
+    },
+    "scope": [
+     {
+      "resource": "target",
+      "pattern": "*",
+      "actions": [
+       "read"
+      ],
+      "risk": "r0"
+     }
+    ],
+    "budget": {
+     "usd_milli": 5000,
+     "wall_s": 3600,
+     "verify_share": 0.2,
+     "bootstrap_share": 0.3
+    },
+    "env": {
+     "base": "basic",
+     "baseline_ref": "base@1"
+    },
+    "judges": [
+     "exact_match",
+     "replay"
+    ],
+    "judge_snapshot": {
+     "exact_match": {
+      "version": "1",
+      "grade": "decisive",
+      "kind": "builtin",
+      "max_cost": 0.0
+     },
+     "replay": {
+      "version": "1",
+      "grade": "decisive",
+      "kind": "builtin",
+      "max_cost": 0.01
+     }
+    },
+    "profile": {
+     "info": "complete",
+     "judge": "hard",
+     "reversibility": "r0"
+    }
+   },
+   "idem_key": "open-p2#1",
+   "prev_hash": "ed2b2db2c9873949c15356f8c25ca13fc16f5aa638fb7732f4b7672da70d30cf",
+   "hash": "537aad4d21a3f569352dc4ac3e5029621c00b44940d7110509ef3cb93dceab0e"
+  },
+  {
+   "v": 1,
+   "seq": 27,
+   "problem_id": "p2",
+   "ts": 1026,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "bootstrap",
+    "holder": "sn1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 1
+   },
+   "idem_key": "lease:36a45ffb9ca4446da1e0d7a7cbee2768#0",
+   "prev_hash": "537aad4d21a3f569352dc4ac3e5029621c00b44940d7110509ef3cb93dceab0e",
+   "hash": "ae842da7b5de16a637a1111c2c65d40eb988594fdef71468068055951215ab84"
+  },
+  {
+   "v": 1,
+   "seq": 28,
+   "problem_id": "p2",
+   "ts": 1027,
+   "actor": {
+    "kind": "executor",
+    "id": "ex1"
+   },
+   "kind": "register_artifact",
+   "body": {
+    "hash": "54034ac5c6e9ea95734ec2b729fd6d62abf64af34a9f9ce5d466cb788191a73d",
+    "size": 4,
+    "media_type": "text/plain",
+    "class": "exec",
+    "parents": [],
+    "producer": {
+     "actor": "ex1"
+    },
+    "exec": {
+     "sandbox_id": "s",
+     "base": "b",
+     "baseline_ref": "r",
+     "tool": "shell",
+     "command": "cat /etc/hostname",
+     "cwd": "/",
+     "exit_code": 0,
+     "touched": [],
+     "started_at": 1,
+     "ended_at": 2,
+     "truncated": false
+    }
+   },
+   "idem_key": "k13#0",
+   "prev_hash": "ae842da7b5de16a637a1111c2c65d40eb988594fdef71468068055951215ab84",
+   "hash": "47e130860f4158fa51b3a130eb9b89d81ae4a4a5ed68b98b04f4e0c22c4af05d"
+  },
+  {
+   "v": 1,
+   "seq": 29,
+   "problem_id": "p2",
+   "ts": 1028,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_27",
+    "role": "bootstrap"
+   },
+   "kind": "add_fact",
+   "body": {
+    "title": "入口可读",
+    "summary": "读到了入口",
+    "claim_type": "observation",
+    "premises": [],
+    "grounds": [
+     "a_28"
+    ],
+    "check": {
+     "judge_id": "replay",
+     "expect": {
+      "exit_code": 0
+     }
+    },
+    "content_key": "o:df397ca8a17bfe6d775c9773844dd878cec7e0f59a3ce1b5af2cc73eaa23f35a"
+   },
+   "idem_key": "k14#0",
+   "prev_hash": "47e130860f4158fa51b3a130eb9b89d81ae4a4a5ed68b98b04f4e0c22c4af05d",
+   "hash": "a801ce934b681f667b47619a246c7313fd375473d217e4dc6417785e2d53f605"
+  },
+  {
+   "v": 1,
+   "seq": 30,
+   "problem_id": "p2",
+   "ts": 1029,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_27",
+    "role": "bootstrap"
+   },
+   "kind": "add_fact",
+   "body": {
+    "title": "另有一处入口",
+    "summary": "由上一条推出",
+    "claim_type": "inference",
+    "premises": [
+     "f_29"
+    ],
+    "grounds": [],
+    "content_key": "i:c74cab0beb3ad274dfcd55f81751d255656943eada9c871414dbdb8f2f9d8449"
+   },
+   "idem_key": "k14#1",
+   "prev_hash": "a801ce934b681f667b47619a246c7313fd375473d217e4dc6417785e2d53f605",
+   "hash": "80969f46156b19e8d306da7d0b215f61cfd883021ccb8e364e219a6f7914fd07"
+  },
+  {
+   "v": 1,
+   "seq": 31,
+   "problem_id": "p2",
+   "ts": 1030,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_27",
+    "role": "bootstrap"
+   },
+   "kind": "cost",
+   "body": {
+    "task_id": "l_27",
+    "source": "proxy",
+    "tokens_in": 10,
+    "tokens_cached": 0,
+    "tokens_out": 5,
+    "usd_milli": 30,
+    "wall_s": 1,
+    "price_table": "t1",
+    "model": "m"
+   },
+   "idem_key": "k15#0",
+   "prev_hash": "80969f46156b19e8d306da7d0b215f61cfd883021ccb8e364e219a6f7914fd07",
+   "hash": "2bf7f65da0920aac05bd458c518f9667b7d21121531b53a8ea4b280db803cea7"
+  },
+  {
+   "v": 1,
+   "seq": 32,
+   "problem_id": "p2",
+   "ts": 1031,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_27",
+    "outcome": "done"
+   },
+   "idem_key": "release:l_27:f2a367c515a64c77b3c61cf1088d07e8#0",
+   "prev_hash": "2bf7f65da0920aac05bd458c518f9667b7d21121531b53a8ea4b280db803cea7",
+   "hash": "ea573dd37900c7c886b0187b83d6c2b0ad8d13636a4fc26c9fad80fd93c5dd24"
+  },
+  {
+   "v": 1,
+   "seq": 33,
+   "problem_id": "p2",
+   "ts": 1032,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "lease",
+   "body": {
+    "kind": "reason",
+    "holder": "sn1",
+    "reserve": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "ttl_s": 120,
+    "attempt": 1
+   },
+   "idem_key": "lease:93d3418910ab4d428af9c5b7ec3a9cff#0",
+   "prev_hash": "ea573dd37900c7c886b0187b83d6c2b0ad8d13636a4fc26c9fad80fd93c5dd24",
+   "hash": "776db43289a47286082a5895a5d90879bf65dfa2334d6fa14107c95ca5c532ac"
+  },
+  {
+   "v": 1,
+   "seq": 34,
+   "problem_id": "p2",
+   "ts": 1033,
+   "actor": {
+    "kind": "adapter",
+    "id": "ad1",
+    "session": "l_33",
+    "role": "reason"
+   },
+   "kind": "add_intent",
+   "body": {
+    "title": "扩大范围后再读",
+    "summary": "需要第二个目标",
+    "premises": [
+     "f_29"
+    ],
+    "risk": "r1",
+    "budget": {
+     "usd_milli": 100,
+     "wall_s": 60
+    },
+    "needs_scope": [
+     {
+      "resource": "target",
+      "pattern": "second",
+      "actions": [
+       "read"
+      ],
+      "risk": "r1"
+     }
+    ],
+    "expected_gain": 0.4
+   },
+   "idem_key": "k16#0",
+   "prev_hash": "776db43289a47286082a5895a5d90879bf65dfa2334d6fa14107c95ca5c532ac",
+   "hash": "a1aa13f7c3941284d673735cdb083685c860e7815cdab571b8c04c617b810807"
+  },
+  {
+   "v": 1,
+   "seq": 35,
+   "problem_id": "p2",
+   "ts": 1034,
+   "actor": {
+    "kind": "sinan",
+    "id": "sn1"
+   },
+   "kind": "release",
+   "body": {
+    "lease": "l_33",
+    "outcome": "done"
+   },
+   "idem_key": "release:l_33:39314bab6d5d4b64954931e3c4259247#0",
+   "prev_hash": "a1aa13f7c3941284d673735cdb083685c860e7815cdab571b8c04c617b810807",
+   "hash": "4e995d4b40413951718aba0386b8594351d51279a807081bd1c30714aea341d2"
+  },
+  {
+   "v": 1,
+   "seq": 36,
+   "problem_id": "p2",
+   "ts": 1035,
+   "actor": {
+    "kind": "human",
+    "id": "cz"
+   },
+   "kind": "hint",
+   "body": {
+    "text": "第二个目标更可能",
+    "about": "i_34"
+   },
+   "idem_key": "k17#0",
+   "prev_hash": "4e995d4b40413951718aba0386b8594351d51279a807081bd1c30714aea341d2",
+   "hash": "5ae4cc951d279084c24f23df2fed212a74d6fb8496dfa204f8e1b2736958f54d"
+  }
+ ],
+ "state_hash": "c47b533d8f91cb13be4ca96daa7c7154ed153c106a2ebe80951d8cb112533aef",
+ "views": {
+  "p1": {
+   "work": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "status": "8095640392ee578be793be8b98fcb8c35380960c93f0be244103752aa1aeda72"
+  },
+  "p2": {
+   "work": "fcd24cafb8782503c960b7db96afdb4877a52cc40f218422f43307a75c1d8d28",
+   "status": "4c30ccc49e14bee185ead97493319e0860504547fe26441fabb82169e0de4087"
+  }
+ },
+ "prefix_hashes": {
+  "5": "c9cd4e9cb081f148f5c72edd18eaf7a069854781d764cff5e23988372d06e215",
+  "12": "7605cc87f78564b4d5a76df2c2ed8c50e54270021a5cb6c9ed9468a36dd9578d",
+  "20": "be15b7bbfafa902ec6fa3140a2423a45a583d2b69c8251f0255b9099fbbd456b",
+  "30": "20fd691a0487bde871fae710577d10ff39f90876f30a9e705b99b1f1100eeaf6"
+ }
+}
