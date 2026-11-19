@@ -223,6 +223,7 @@ def world():
                     {"id": "a2", "verdict": "pass", "ref": run4},
                 ],
                 "seen": seen_card(k.state, "p4", "closeout", "p4"),
+                "closeout": ["closeout_review"],
             },
         ),
         (

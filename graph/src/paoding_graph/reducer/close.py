@@ -49,8 +49,8 @@ def _v_accept(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> O
     p = state["problems"][pid]
     if p["goal"]["accept"] != "human":
         return Reject("forbidden_op", "只有 accept=human 的题有验收：判官验收的题终态只有 solved 与 unsolved")
-    if not body.keys() <= {"decision", "checks", "seen", "reason"}:
-        return Reject("schema_error", "accept 的字段为 decision、checks、seen，可选 reason")
+    if not body.keys() <= {"decision", "checks", "seen", "reason", "closeout"}:
+        return Reject("schema_error", "accept 的字段为 decision、checks、seen，可选 reason、closeout")
     decision = body.get("decision")
     if decision not in ("accept", "reject"):
         return Reject("schema_error", "decision 取 accept 或 reject")
@@ -98,6 +98,17 @@ def _v_accept(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> O
     reason = body.text("reason").strip() if "reason" in body else ""
     if decision == "reject" and not reason:
         return Reject("schema_error", "拒收须写理由（会作为指导之外的记录留在时间轴上）")
+    # 关题三步不可跳（地图 Q21、AC9.2）：验收通过之前，四顾清单的每一项都要人逐条确认
+    confirmed = [str(x) for x in body.get("closeout") or []] if isinstance(body.get("closeout"), list) else None
+    if "closeout" in body and confirmed is None:
+        return Reject("schema_error", "closeout 是已确认的四顾项名单")
+    want = [str(i["item"]) for i in wk.closeout_items(state, pid)]
+    if decision == "accept":
+        missing = [x for x in want if x not in (confirmed or [])]
+        if missing:
+            return Reject("schema_error", f"四顾清单有未确认项（{'、'.join(missing)}）：逐条确认之后才能验收")
+        if confirmed and set(confirmed) - set(want):
+            return Reject("schema_error", f"四顾清单里没有 {'、'.join(sorted(set(confirmed) - set(want)))}")
     return Ok(
         {
             "decision": decision,
@@ -105,6 +116,7 @@ def _v_accept(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> O
             "seen": seen,
             "card_hash": seen["card_hash"],
             **({"reason": reason} if reason else {}),
+            **({"closeout": want} if decision == "accept" else {}),
         }
     )
 

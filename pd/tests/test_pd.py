@@ -463,7 +463,10 @@ def test_accept_lists_items_then_closes_as_accepted(home):
     assert "待验收" in out and "structure_check@1，只是读数" in out
     code, out = pd(home, "--pid", "p1", "accept")  # a2 要附交付物
     assert code == 1 and "missing_evidence" in out
-    code, out = pd(home, "--pid", "p1", "accept", "--ref", f"a2={run}", "--yes")
+    assert "[证据] 四顾 closeout_review：" in out
+    code, out = pd(home, "--pid", "p1", "accept", "--ref", f"a2={run}", "--yes")  # 四顾没确认
+    assert code == 1 and "四顾清单有未确认项（closeout_review）" in out
+    code, out = pd(home, "--pid", "p1", "accept", "--ref", f"a2={run}", "--confirm", "closeout_review", "--yes")
     assert code == 0 and "已验收通过" in out and "accepted（人工验收，未经判官判定）" in out, out
     code, out = pd(home, "report", "p1")
     first = out.splitlines()[0]

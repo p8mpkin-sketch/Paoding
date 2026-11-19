@@ -230,6 +230,20 @@ function extensionPending(s: State): boolean {
   return !s.verdicts.some((v) => v.result === "pass" && v.seq > (m50?.seq ?? 0));
 }
 
+/** 四顾清单（图服务 work.closeout_items 同规则）：r0 判定器判定的题为空；人工验收的题另列运行时扩过的权限与在途会话。 */
+function closeoutItems(s: State): Record<string, unknown>[] {
+  const p = s.problem!;
+  if (p.profile.reversibility === "r0" && p.goal.accept === "judge") return [];
+  const items: Record<string, unknown>[] = [{ item: "closeout_review", reason: p.profile.reversibility }];
+  if (p.goal.accept === "human") {
+    const granted = p.scope.filter((x) => "granted" in x && !("revoked" in x)).map((x) => ({ resource: x.resource, pattern: x.pattern, actions: x.actions, risk: x.risk }));
+    if (granted.length) items.push({ item: "scope_granted", rules: granted });
+    const live = [...s.leases.values()].filter((l) => l.ended_seq === undefined && l.kind !== "judge" && !closed(s)).map((l) => l.id).sort();
+    if (live.length) items.push({ item: "leases_active", leases: live });
+  }
+  return items;
+}
+
 /** 人工验收的题：最近一条 Goal 裁决为 pass、且晚于上一次验收记录时，返回它的 seq（与图服务 work.acceptance_ready 同规则）。 */
 function acceptanceReady(s: State): number | null {
   const p = s.problem;
@@ -289,7 +303,7 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
     },
     facts: bySeq(s.facts).map((f) => factNode(s, f)), intents: bySeq(s.intents).map((i) => intentNode(s, i)), hints: bySeq(s.hints).map(hintNode),
     leases, requests: bySeq(s.requests).map((r) => ({ id: r.id, seq: r.seq, target: r.target, judge_id: r.judge_id, candidate: r.candidate ?? null, verdict_seq: r.verdict_seq ?? null })),
-    review: false, closeout: [],
+    review: false, closeout: closeoutItems(s),
   };
 }
 
@@ -382,7 +396,7 @@ function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind
     const ready = acceptanceReady(s);
     const v = ready === null ? null : s.verdicts.find((x) => x.seq === ready)!;
     fields = {
-      items: [], goal_level: levelOf(s, "goal"), closed: closed(s), terminal: terminalOf(s),
+      items: closeoutItems(s), goal_level: levelOf(s, "goal"), closed: closed(s), terminal: terminalOf(s),
       ...(s.problem!.goal.acceptance ? { acceptance: s.problem!.goal.acceptance, deliverable: v ? { verdict_seq: v.seq, candidate: v.candidate ?? null } : null } : {}),
     };
     display = { steps: ["四顾", "满志", "藏刀"], terminal_if_closed_now: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", terminal_badge: badge(s.problem!.goal.check.judge_id) };
@@ -595,7 +609,13 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if (b.decision === "accept" && failed.length) throw new Rejected("schema_error", `有不通过的条目（${failed.join("、")}）：只能拒收`);
         const reason = String(b.reason ?? "").trim();
         if (b.decision === "reject" && !reason) throw new Rejected("schema_error", "拒收须写理由");
-        return { decision: b.decision, checks, seen: b.seen, card_hash: b.seen.card_hash, ...(reason ? { reason } : {}) };
+        const want = closeoutItems(s).map((x) => String(x.item));
+        if (b.decision === "accept") {
+          const got: string[] = Array.isArray(b.closeout) ? b.closeout : [];
+          const missing = want.filter((x) => !got.includes(x));
+          if (missing.length) throw new Rejected("schema_error", `四顾清单有未确认项（${missing.join("、")}）：逐条确认之后才能验收`);
+        }
+        return { decision: b.decision, checks, seen: b.seen, card_hash: b.seen.card_hash, ...(reason ? { reason } : {}), ...(b.decision === "accept" ? { closeout: want } : {}) };
       }
       default: throw new Rejected("schema_error", `未知操作 ${op}`);
     }

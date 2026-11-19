@@ -184,6 +184,10 @@ test("真实全栈：人工验收的任务交付后由结构检查给读数，�
   await card.locator('[data-accept-item="a2"] [data-verdict="pass"]').check();
   await expect(card.locator('[data-action="accept-submit"]')).toBeDisabled();       // a2 要附交付物
   await card.locator('[data-ref="a2"]').fill(table!);
+  // 关题三步不可跳（Q21、AC9.2）：四顾没逐条确认时“验收通过”不可用，并指出是哪一项
+  await expect(card.locator('[data-action="accept-submit"]')).toBeDisabled();
+  await expect(card.locator("[data-missing]")).toContainText("四顾还没确认：closeout_review");
+  await card.locator('[data-four="closeout_review"]').check();
   await card.locator('[data-action="accept-submit"]').click();
 
   // 图服务的后续：以 accepted 关题（待办随之清空）；结果页首行写人工验收，不写“已证明”
@@ -194,6 +198,8 @@ test("真实全栈：人工验收的任务交付后由结构检查给读数，�
   await expect(page.locator("[data-result]")).not.toContainText("已证明");
   const st = await (await request.get(`/v1/problems/${HPID}/status`, { headers: auth() })).json();
   expect(st.problem.terminal).toBe("accepted");
+  const ev = (await (await request.get(`/v1/problems/${HPID}/events`, { headers: auth() })).json()).events.find((e: { kind: string }) => e.kind === "accept");
+  expect(ev.body.closeout).toEqual(["closeout_review"]);
   expect(st.goal.accept_log[0]).toMatchObject({ decision: "accept", checks: [{ id: "a1", verdict: "pass" }, { id: "a2", verdict: "pass", ref: table }] });
 
   // 读数页：accepted 只进人工验收一行，不并进 solved

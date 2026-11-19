@@ -81,6 +81,7 @@ for (const theme of THEMES) {
     await expect(page.locator("[data-conn-label]")).toHaveText("实时");
     await page.locator('[data-todo-item="acceptance:demo-5"] button').click();
     await expect(page.locator('[data-card="acceptance"] [data-accept-item]')).toHaveCount(3);
+    await expect(page.locator('[data-card="acceptance"] [data-four]')).not.toHaveCount(0);
     await scan("验收卡（未判）");
     await page.locator('[data-accept-item="a1"] [data-verdict="pass"]').check();
     await page.locator('[data-accept-item="a2"] [data-verdict="fail"]').check();
