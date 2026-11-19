@@ -21,7 +21,7 @@ class Actor(TypedDict):
     kind: str  # human | sinan | adapter | judge | executor | watchdog | graph
     id: str
     session: NotRequired[str]  # 任务令牌才有：会话即租约 id
-    role: NotRequired[str]  # bootstrap | reason | explore | verify | idler
+    role: NotRequired[str]  # bootstrap | reason | explore | solve | verify | idler
 
 
 class Event(TypedDict):
@@ -131,16 +131,17 @@ class Done(Check):
 
 class Goal(TypedDict):
     statement: NotRequired[str]
-    check: Check
-    max_attempts: int
-    accept: str  # judge | human
+    check: NotRequired[Check]  # 开放道（accept=open）没有：Goal 不设判官（docs/design/open-lane/ §8）
+    max_attempts: NotRequired[int]  # 同上：开放道没有判官，也就没有候选次数
+    accept: str  # judge | human | open
     authority: NotRequired[str]  # 派生，不接受提交：external、human 时写入；缺省即 local（external-verdict §4.2）
     acceptance: NotRequired[list[Body]]  # accept=human 的验收清单（设计 02 §3.3）：开题时登记，之后不可改
+    self_checks: NotRequired[list[Body]]  # 开放道的必做自检项 {id, text, src}：原文里的检查命令（open-lane §4.2）
 
 
 class DraftRef(TypedDict):
     record: str  # 出处账（input 类 Artifact）
-    lane: str  # practice | confirm
+    lane: str  # practice | confirm | open
     policy: NotRequired[dict[str, Any]]  # 练习道：图服务抄入的信封 {version, digest}
 
 
@@ -188,12 +189,14 @@ class Problem(TypedDict):
     closed: bool
     opened_seq: int
     opened_ts: int
-    terminal: NotRequired[str]  # solved | accepted | unsolved，关题时写入
+    terminal: NotRequired[str]  # solved | accepted | delivered | unsolved，关题时写入
     closed_seq: NotRequired[int]
     accepted: NotRequired[bool]  # 人的验收（accept 操作，宪章 D3）：只在 goal.accept = human 的题上写入
     accept_log: NotRequired[
         list[Body]
     ]  # 每次 accept 操作（验收或拒收）：{seq, decision, checks, reason?}；拒收之后要等新的 Goal 通过
+    deliveries: NotRequired[list[Body]]  # 开放道的交付（deliver 操作，open-lane §3.4），按 seq 递增
+    feedback: NotRequired[str]  # 开放道关题时人的反馈 adopted | rejected | none；不是终态（裁决 §12 第 6 条）
     marks: NotRequired[list[int]]
     mark_seqs: NotRequired[list[int]]
     derived_profile: NotRequired[Profile]

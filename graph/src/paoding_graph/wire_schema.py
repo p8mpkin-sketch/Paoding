@@ -108,7 +108,13 @@ section("规格已定（§3.1.2、§3.2.2、§3.5.2）")
 define("ArtifactId", STR)
 define("Risk", lit("r0", "r1", "r2"))
 define("Level", lit("E0", "E1", "E2", "E3d", "E3", "X"))
-define("Terminal", lit("solved", "accepted", "unsolved"))
+define(
+    "Terminal",
+    {
+        **lit("solved", "accepted", "delivered", "unsolved"),
+        "description": "delivered 只来自开放道的交付（docs/design/open-lane/ §5.1）：未经判定，永不计入 solved。",
+    },
+)
 define("Grade", lit("decisive", "consistent", "advisory"))
 define("ActorKind", lit("human", "sinan", "adapter", "judge", "executor", "watchdog", "graph"))
 define("Actor", obj({"kind": ref("ActorKind"), "id": STR}, {"session": STR, "role": STR}))
@@ -161,7 +167,7 @@ define(
 define(
     "DraftRef",
     obj(
-        {"record": ref("ArtifactId"), "lane": lit("practice", "confirm")},
+        {"record": ref("ArtifactId"), "lane": lit("practice", "confirm", "open")},
         {"policy": obj({"version": INT, "digest": STR})},
         doc="一句话开题的出处账引用与道别（增量 13）；policy 只在练习道，由图服务从信封抄入。",
     ),
@@ -180,12 +186,13 @@ define(
     ),
 )
 define("AcceptanceItem", both(ref("AcceptanceInput"), obj({"id": STR})))
-define("Authority", lit("local", "external", "human"))
+define("Authority", lit("local", "external", "human", "self"))
 define(
     "AuthorityTally",
     obj(
-        {"problems": INT, "solved": INT, "accepted": INT, "unsolved": INT, "open": INT},
-        doc="按判定来源分列的计数（external-verdict §5.7、宪章裁决附加 1）：accepted 只出现在 human 一行。",
+        {"problems": INT, "solved": INT, "accepted": INT, "delivered": INT, "unsolved": INT, "open": INT},
+        doc="按判定来源分列的计数（external-verdict §5.7、宪章裁决附加 1）：accepted 只出现在 human 一行，"
+        "delivered 只出现在 self 一行（开放道，open-lane §5.2）。",
     ),
 )
 define(
@@ -197,14 +204,27 @@ define(
     obj({"seq": INT, "decision": lit("accept", "reject"), "checks": arr(ref("AcceptCheck"))}, {"reason": STR}),
 )
 define(
+    "SelfCheckInput",
+    obj(
+        {"text": STR, "src": lit("span", "human")},
+        doc="开放道的必做自检项（open-lane §4.2）：原文里的检查命令；会话交付前自己跑、如实报告，判官不重放。",
+    ),
+)
+define("SelfCheckItem", both(ref("SelfCheckInput"), obj({"id": STR})))
+define(
     "ProblemInput",
     obj(
         {
             "title": STR,
             "origin": ref("Origin"),
             "goal": obj(
-                {"statement": STR, "check": ref("Check"), "max_attempts": INT, "accept": lit("judge", "human")},
-                {"acceptance": arr(ref("AcceptanceInput"))},
+                {"statement": STR, "accept": lit("judge", "human", "open")},
+                {
+                    "check": doc(ref("Check"), "判定道必填；开放道（accept=open）没有"),
+                    "max_attempts": doc(INT, "判定道必填；开放道没有"),
+                    "acceptance": arr(ref("AcceptanceInput")),
+                    "self_checks": arr(ref("SelfCheckInput")),
+                },
             ),
             "scope": arr(ref("ScopeRule")),
             "budget": both(ref("Budget"), obj({"verify_share": NUM, "bootstrap_share": NUM})),
@@ -468,14 +488,17 @@ define(
                 "goal": obj(
                     {
                         "statement": ref("Tagged"),
-                        "accept": lit("judge", "human"),
-                        "predicate": ref("Predicate"),
+                        "accept": lit("judge", "human", "open"),
+                        "predicate": doc(ref("Predicate"), "开放道的判据卡是空的：没有判官、等级与裁决"),
                     },
                     {
                         "authority": doc(ref("Authority"), "判定来源；缺省即 local"),
                         "acceptance": arr(ref("AcceptanceItem")),
                         "acceptance_ready": null(INT),
                         "accept_log": arr(ref("AcceptRecord")),
+                        "self_checks": arr(ref("SelfCheckItem")),
+                        "deliveries": arr(ref("Delivery")),
+                        "feedback": lit("adopted", "rejected", "none"),
                     },
                 ),
                 "facts": arr(ref("FactNode")),
@@ -489,17 +512,42 @@ define(
         )
     ),
 )
+define("GroundBrief", obj({"id": ref("ArtifactId"), "class": ref("ArtifactClass")}))
+define(
+    "Delivery",
+    obj(
+        {
+            "id": STR,
+            "seq": INT,
+            "lease": STR,
+            "outcome": lit("answered", "partial", "blocked"),
+            "answer": null(ref("ArtifactId")),
+            "claims": arr(obj({"text": ref("Tagged"), "refs": arr(ref("GroundBrief")), "supported": BOOL})),
+            "self_check": arr(
+                obj(
+                    {"what": ref("Tagged"), "result": lit("pass", "fail", "skipped"), "refs": arr(ref("GroundBrief"))},
+                    {"item": STR},
+                )
+            ),
+            "unverified": arr(ref("Tagged")),
+            "needs": arr(ref("Tagged")),
+        },
+        doc="开放道的一次交付（open-lane §3.4）。内核只校验依据真实存在、类别可采信，不校验结论对不对；"
+        "supported=false 即这条主张没有任何留档支撑。",
+    ),
+)
 define(
     "HumanWorkItem",
     obj(
         {"kind": lit("human"), "target": STR, "why": STR},
-        doc="why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；M1 起还有续期门等。",
+        doc="why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；开放道另有 delivered、blocked"
+        "（交付了，等人看）；M1 起还有续期门等。",
     ),
 )
 define(
     "WorkItem",
     one(
-        obj({"kind": lit("bootstrap", "recall")}),
+        obj({"kind": lit("bootstrap", "recall", "solve")}),
         obj({"kind": lit("reason")}, {"reflect": BOOL}),
         obj({"kind": lit("explore", "judge"), "target": STR}),
         obj(
@@ -779,6 +827,7 @@ define(
                                 "local": ref("AuthorityTally"),
                                 "external": ref("AuthorityTally"),
                                 "human": ref("AuthorityTally"),
+                                "self": ref("AuthorityTally"),
                             }
                         ),
                     }

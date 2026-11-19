@@ -19,6 +19,13 @@ def _v_close_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
     if wk.closeout_items(state, pid) and actor["kind"] == "graph" and term != "accepted":
         return Reject("schema_error", "四顾清单非空，需人确认")  # 验收通过的题：清单已由 accept 事件逐条绑定
     seen: Body | None = None
+    p = state["problems"][pid]
+    feedback = body.get("feedback")
+    if feedback is not None:  # 开放道关题时人的反馈（open-lane §3.5、裁决 §12 第 6 条）：附加属性，不改终态
+        if actor["kind"] != "human" or p["goal"]["accept"] != "open":
+            return Reject("schema_error", "feedback 只用于人关开放道的题")
+        if feedback not in FEEDBACK:
+            return Reject("schema_error", f"feedback 取 {FEEDBACK}")
     if actor["kind"] == "human":
         if "card_hash" in body:
             return Reject("schema_error", "card_hash 不单独接受：所见的收尾清单经 seen {seq, card_hash} 给出并校验")
@@ -34,10 +41,12 @@ def _v_close_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
             "card_hash": seen["card_hash"] if seen else None,
             **({"seen": seen} if seen else {}),
             **({"reason": body.text("reason")} if "reason" in body else {}),
+            **({"feedback": feedback} if feedback is not None else {}),
         }
     )
 
 
+FEEDBACK = ("adopted", "rejected", "none")
 CHECK_NOTE_MAX = 2000
 
 
@@ -148,6 +157,8 @@ def _a_close_problem(s: State, ev: Event) -> None:
     pid = ev["problem_id"]
     p = s["problems"][pid]
     closed: Problem = {**p, "closed": True, "terminal": ev["body"]["terminal"], "closed_seq": ev["seq"]}
+    if "feedback" in ev["body"]:
+        closed["feedback"] = ev["body"]["feedback"]
     s["problems"] = {**s["problems"], pid: closed}
 
 

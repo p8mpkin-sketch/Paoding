@@ -17,11 +17,21 @@ from pathlib import Path
 from typing import Any
 
 FILE_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")  # 文件读写与检索；不含任何命令执行工具
-PROXY_TOOLS = ("exec", "submit", "show")
+PROXY_TOOLS = ("exec", "submit", "show")  # 开放道的 solve 用 exec、show、deliver（session.py 按角色给）
 MCP_NAME = "paoding"
 CLOSING_PROMPT = (
     "收尾：本任务即将结束。请用 submit 提交你已有的结论；"
     "若没有结论，提交 final.outcome=unsolved 并在 suggestions 里写下排除过的方向。"
+)
+# 开放道的两种收尾（docs/design/open-lane/ §3.3）
+SOLVE_CLOSING_BUDGET = (
+    "收尾：预算或时间快用完了。现在就用 deliver 交出你此刻最好的结果："
+    "做完了的部分写进答案与 claims，没做完的写进 unverified，做不下去就 outcome=blocked 并写 needs。不要再开新的探索。"
+)
+SOLVE_CLOSING_RELAY = (
+    "你还没有交付。如果已经满足交付标准，现在就用 deliver 交付。"
+    "如果还没做完，把进度写进工作区的 NOTES.md（做了什么、发现了什么、排除了什么、下一步），然后结束；"
+    "下一个会话会读这份笔记接着做。"
 )
 
 

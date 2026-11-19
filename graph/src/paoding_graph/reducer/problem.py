@@ -7,17 +7,18 @@ from typing import cast
 from .. import refmodel as rm
 from ..parse import Obj
 from ..practice import LANES, violations
-from ..state import Actor, Artifact, Body, Event, JudgeEntry, Problem, Profile, ScopeRule, State
+from ..state import Actor, Artifact, Body, Check, Event, JudgeEntry, Problem, Profile, ScopeRule, State
 from . import recall
 from .common import _HEX64, RISK_RANK, RISKS, WALL_MODES, Config, Ok, Reject, _check, _reason, _ref, _rule
 
 # ---------- 校验 ----------
 
 
-def _derive_profile(scope: list[ScopeRule], goal_judge: JudgeEntry, cfg: Config) -> Profile:
-    """画像推导（§3.1.2）。人不填写；只在开题、范围修订与人工覆盖时重算，结果写进事件体。"""
+def _derive_profile(scope: list[ScopeRule], goal_judge: JudgeEntry | None, cfg: Config) -> Profile:
+    """画像推导（§3.1.2）。人不填写；只在开题、范围修订与人工覆盖时重算，结果写进事件体。
+    goal_judge 为 None：开放道的题没有 Goal 判官（docs/design/open-lane/ §8），判定轴为 none。"""
     reversibility = max((r["risk"] for r in scope), key=RISK_RANK.__getitem__)
-    if goal_judge["grade"] == "advisory":
+    if goal_judge is None or goal_judge["grade"] == "advisory":
         judge = "none"
     elif goal_judge["kind"] == "deferred" or goal_judge["grade"] == "consistent":
         judge = "deferred"
@@ -29,22 +30,26 @@ def _derive_profile(scope: list[ScopeRule], goal_judge: JudgeEntry, cfg: Config)
     return {"info": info, "judge": judge, "reversibility": reversibility}
 
 
-AUTHORITIES = ("local", "external", "human")
+AUTHORITIES = ("local", "external", "human", "self")
 DEADLINE_SOURCES = ("local", "external")
 
 
-def authority_of(goal_judge: JudgeEntry, accept: str) -> str:
+def authority_of(goal_judge: JudgeEntry | None, accept: str) -> str:
     """判定来源（external-verdict §4.2）：由 Goal 判官快照与 goal.accept 推出，不由提交方声明。
 
     与 `_derive_profile` 同为开题时的派生量，放在一处：#93 的扩权随 scope 重算画像，判定来源不随 scope 变，
     所以扩权路径只调 `_derive_profile`，开题路径两者都调。accept=human（宪章 D3）落地之前，内核只会推出 local
-    或 external。"""
+    或 external。开放道（accept=open，docs/design/open-lane/ §5）没有判官，结论只是智能体的自述：self。"""
+    if accept == "open" or goal_judge is None:
+        return "self"
     if accept == "human":
         return "human"
     return "external" if goal_judge.get("authority") == "external" else "local"
 
 
-ACCEPTS = ("judge", "human")
+ACCEPTS = ("judge", "human", "open")
+SELF_CHECK_MAX = 16  # 开放道的必做自检项上限（原文里出现的检查命令，open-lane §4.2、裁决 §12 第 2 条）
+SELF_CHECK_TEXT_MAX = 2000
 ACCEPTANCE_MAX = 32  # 验收清单条目上限
 ACCEPTANCE_TEXT_MAX = 200  # 每条陈述的字数上限（宪章 02 §3.3）
 ACCEPTANCE_SRC = ("span", "human")  # 只许原文区间或人写（裁决附加 1）；模型起草的条目不进清单
@@ -80,6 +85,34 @@ def _acceptance(g: Obj, accept: str) -> list[Body] | Reject:
                 **({"needs": it.string("needs")} if "needs" in it else {}),
             }
         )
+    return out
+
+
+def _open_goal(g: Obj, judges: list[str]) -> Body | Reject:
+    """开放道的 Goal（docs/design/open-lane/ §3、§8）：只有陈述，不登记判据、不设候选次数、不带验收清单。
+    原文里的检查命令进 self_checks：会话交付前必须自己跑、如实报告，判官不重放它，终态也不因它而变。"""
+    if not g.keys() <= {"statement", "accept", "self_checks"}:
+        extra = sorted(g.keys() - {"statement", "accept", "self_checks"})
+        return Reject("schema_error", f"开放道的 Goal 只有 statement、accept，可选 self_checks；不接受 {extra}")
+    if judges:
+        return Reject("schema_error", "开放道不启用判官：judges 须为空")
+    statement = g.text("statement").strip()
+    if not statement:
+        return Reject("schema_error", "开放道的 Goal 须有非空的陈述")
+    out: Body = {"statement": g.text("statement"), "accept": "open"}
+    if "self_checks" in g:
+        items = g.children("self_checks")
+        if not 1 <= len(items) <= SELF_CHECK_MAX:
+            return Reject("schema_error", f"self_checks 须为 1 到 {SELF_CHECK_MAX} 条")
+        checks: list[Body] = []
+        for i, it in enumerate(items, start=1):
+            if it.keys() != {"text", "src"} or it.get("src") not in ACCEPTANCE_SRC:
+                return Reject("schema_error", f"自检项须为 {{text, src: {'|'.join(ACCEPTANCE_SRC)}}}；编号由图服务分配")
+            text = it.text("text").strip()
+            if not text or len(text) > SELF_CHECK_TEXT_MAX:
+                return Reject("schema_error", f"自检项 {i} 须非空、不超过 {SELF_CHECK_TEXT_MAX} 字")
+            checks.append({"id": f"c{i}", "text": text, "src": it.string("src")})
+        out["self_checks"] = checks
     return out
 
 
@@ -127,19 +160,30 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
     g = body.child("goal")
     if "authority" in g:
         return Reject("schema_error", "goal.authority 是派生字段，提交时不接受")
-    check = _check(g.child("check"), goal=True)
-    if check["judge_id"] not in judges:
-        return Reject("unknown_ref", "Goal 判官不在本题启用的判官里")
     accept = g.get("accept")
     if accept not in ACCEPTS:
         return Reject("schema_error", f"goal.accept 取 {ACCEPTS}")
-    acceptance = _acceptance(g, accept)
-    if isinstance(acceptance, Reject):
-        return acceptance
-    max_attempts = g.get("max_attempts")
-    if type(max_attempts) is not int or max_attempts < 1:
-        return Reject("schema_error", "goal.max_attempts 必须是正整数")
-    goal = {**g.raw, "check": check, **({"acceptance": acceptance} if acceptance else {})}
+    check: Check | None = None
+    max_attempts: int | None = None
+    if accept == "open":  # 开放道（open-lane §8）：Goal 没有判官，结论随交付附证据，不由判官判定
+        opened = _open_goal(g, judges)
+        if isinstance(opened, Reject):
+            return opened
+        goal: Body = opened
+    else:
+        check = _check(g.child("check"), goal=True)
+        if check["judge_id"] not in judges:
+            return Reject("unknown_ref", "Goal 判官不在本题启用的判官里")
+        acceptance = _acceptance(g, accept)
+        if isinstance(acceptance, Reject):
+            return acceptance
+        ma = g.get("max_attempts")
+        if type(ma) is not int or ma < 1:
+            return Reject("schema_error", "goal.max_attempts 必须是正整数")
+        max_attempts = ma
+        if "self_checks" in g:
+            return Reject("schema_error", "self_checks 只用于开放道：判定道的完成标准是登记的判据")
+        goal = {**g.raw, "check": check, **({"acceptance": acceptance} if acceptance else {})}
     scope = [_rule(r) for r in body.children("scope")]
     if not scope:
         return Reject("schema_error", "scope 必填且非空")
@@ -167,8 +211,10 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         # 一句话开题（增量 13）：出处账的引用与道别。policy 由图服务从已加载的信封抄入，提交时不接受
         d = o.child("draft")
         if d.keys() != {"record", "lane"} or d.get("lane") not in LANES:
-            return Reject("schema_error", "origin.draft 须为 {record, lane: practice|confirm}")
+            return Reject("schema_error", f"origin.draft 须为 {{record, lane: {'|'.join(LANES)}}}")
         draft = {"record": d.string("record"), "lane": d.string("lane")}
+        if (draft["lane"] == "open") != (accept == "open"):  # 道别与 Goal 的形态一一对应，不许错配
+            return Reject("schema_error", "lane=open 当且仅当 goal.accept=open")
     for ref in [statement_ref, *materials, *([draft["record"]] if draft else [])]:
         err = _ref(state, pid, ref, "Origin 引用")
         if err:
@@ -179,17 +225,18 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         # 练习道信封（增量 15）：零确认没有人在回路里，"它最多能做什么"只在这里、由唯一写入者检查
         if cfg.practice is None:
             return Reject("forbidden_op", "本部署没有加载练习道信封，不接受练习道开题")
+        assert check is not None and max_attempts is not None  # 练习道 ⇒ 不是开放道（上面已查错配）
         bad = violations(cfg.practice, list(scope), check, budget, max_attempts)
         if bad:
             return Reject("forbidden_op", "练习道信封不许：" + "；".join(bad))
         draft["policy"] = cfg.practice.stamp()
     snapshot = {j: cfg.judges[j] for j in judges}
-    gj = snapshot[check["judge_id"]]
+    gj = snapshot[check["judge_id"]] if check is not None else None
     authority = authority_of(gj, g.string("accept"))
     # 外部裁决的开题三条检查（external-verdict §5.2）：只认结构，不读档案内容（红线 3）
-    if authority == "human" and gj.get("authority") == "external":
+    if authority == "human" and gj is not None and gj.get("authority") == "external":
         return Reject("schema_error", "判定权在外部平台的题不接受 accept=human：终态由平台回执定")
-    if authority == "external":
+    if authority == "external" and gj is not None and check is not None and max_attempts is not None:
         conn = gj.get("connector")
         if conn is None:
             return Reject("unknown_ref", f"判官 {check['judge_id']} 的连接器档案没有加载，不接受外部裁决开题")
@@ -204,7 +251,7 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             return Reject(
                 "schema_error", f"goal.max_attempts={max_attempts} 超过平台提交额度 {binding['max_submissions']}"
             )
-    elif "binding" in check:
+    elif check is not None and "binding" in check:
         return Reject("schema_error", "只有外部裁决的判官接受 binding")
     deadline: Body | None = None
     if "deadline" in body:

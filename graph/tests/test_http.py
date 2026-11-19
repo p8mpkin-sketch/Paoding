@@ -47,8 +47,8 @@ def test_problem_list_terminal_and_cost_per_solve(api):
     assert p2["terminal"] is None and not p2["closed"]  # 未关题没有终态
     by = out["totals"].pop("by_authority")
     assert out["totals"] == {"problems": 2, "solved": 1, "spent_usd_milli": 70, "cost_per_solve_usd_milli": 70}
-    assert by["local"] == {"problems": 2, "solved": 1, "accepted": 0, "unsolved": 0, "open": 1}
-    assert by["external"]["problems"] == by["human"]["problems"] == 0
+    assert by["local"] == {"problems": 2, "solved": 1, "accepted": 0, "delivered": 0, "unsolved": 0, "open": 1}
+    assert by["external"]["problems"] == by["human"]["problems"] == by["self"]["problems"] == 0
 
 
 def test_problem_list_rows_carry_dashboard_fields(api):

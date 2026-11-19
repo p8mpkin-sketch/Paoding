@@ -193,7 +193,7 @@ class JudgeRunner:
                 _builtin_prov(jid, now),
             )
         target = req["target"]
-        if target == "goal":
+        if target == "goal":  # 开放道的 Goal 没有判据，内核不收它的判官请求，走不到这里
             check, risk = p["goal"]["check"], p["profile"]["reversibility"]
         elif target in st["facts"]:
             f = st["facts"][target]

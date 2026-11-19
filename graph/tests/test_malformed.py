@@ -110,6 +110,19 @@ def world():
     cand4 = k.art("p4", "authored", b"deliverable")
     assert k.verdict("p4", "goal", "pass", judge="advice", candidate=cand4) == "ok"
     run4 = k.art("p4", "exec", b"run output")
+    # 开放道（docs/design/open-lane/）：deliver 的合法样本要一个在途的求解会话
+    st5 = k.art("p5", "input", b"statement p5")
+    open5 = {
+        **open4,
+        "origin": {"statement_ref": st5, "materials": []},
+        "goal": {"statement": "查清楚 X", "accept": "open", "self_checks": [{"text": "make test", "src": "span"}]},
+        "judges": [],
+    }
+    assert k.submit(HUMAN, "p5", "open_problem", open5) == "ok"
+    lid5 = k.submit(SINAN, "p5", "lease", {"kind": "solve", "holder": "sn1", "reserve": R, "ttl_s": 600})
+    solve5 = {"kind": "adapter", "id": "ad1", "session": lid5, "role": "solve"}
+    ans5 = k.art("p5", "authored", b"answer", actor=solve5)
+    run5 = k.art("p5", "exec", b"curl output")
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -212,6 +225,19 @@ def world():
         ),
         (WATCHDOG, "p1", "expire_lease", {"lease": lid}),
         (HUMAN, "p1", "abandon_intent", {"intent": gated, "reason": "不做"}),
+        (
+            solve5,
+            "p5",
+            "deliver",
+            {
+                "outcome": "answered",
+                "answer": ans5,
+                "claims": [{"text": "X 是 42", "refs": [run5]}],
+                "self_check": [{"what": "make test", "result": "pass", "refs": [run5], "item": "c1"}],
+                "unverified": ["第二来源"],
+                "needs": [],
+            },
+        ),
         (
             HUMAN,
             "p4",
