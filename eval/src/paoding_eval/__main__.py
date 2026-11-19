@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--unit-usd",
         type=float,
-        help="bn 的单次尝试成本（美元）：取同一题 baseline 臂的平均每次花费；宽度 = max(1, ⌊预算 ÷ 它⌋)，不超过 --workers",
+        help="bn 的单次尝试成本（美元），取同题 baseline 的平均花费；宽度 = max(1, ⌊预算 ÷ 它⌋)，不超过 --workers",
     )
     # collect：把一批运行的 record.json 与 meta.json 收进仓库
     ap.add_argument("--into", type=Path, help="collect 的目标目录，如 docs/m1/readings/<批次>/records")
