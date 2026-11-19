@@ -411,6 +411,8 @@ class Stack:
             bases=dict(cfg.bases),
             env_for=env_for,
             grants_runtime=lambda: self.graph.cfg.grants_runtime,  # 设置层 grants.runtime（运行时扩权）
+            # 会话的模型档案（宪章 03 §3.2）：任务的 prefs.model 优先，否则按设置层的角色路由
+            resolve_model=lambda role, want: self.settings.store.resolve(role, want),
         )
         self.runner = SessionRunner(
             self.adapter_cfg,

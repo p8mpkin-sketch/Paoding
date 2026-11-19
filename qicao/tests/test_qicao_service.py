@@ -137,6 +137,27 @@ def test_overrides_mark_human_and_drop_candidate():
     assert same["eligible"]
 
 
+def test_run_profile_override_goes_into_prefs():
+    """确认卡“执行用”另选档案（宪章 03 §3.1、地图 Q12）：只认设置页登记过的名字，写进 open_problem 的 prefs.model。"""
+    import dataclasses
+
+    prof = [{"name": "default", "model": ""}, {"name": "light", "model": "light-1"}]
+    st = dataclasses.replace(SETTINGS, models={"profiles": prof, "routes": {}})
+    s = KaitiService(INTAKE, lambda: st, placeholder_priors(), heuristic_drafter, "heuristic")
+    first = s.draft_view({"text": T1})
+    assert "prefs" not in first["input"]
+    body = {"text": T1, "draft": first["draft"], "nonce": first["nonce"]}
+    out = s.draft_view({**body, "overrides": {"model": "light"}})
+    assert out["input"]["prefs"] == {"model": "light"}
+    row = next(r for r in out["derivation"] if r["field"] == "prefs.model")
+    assert row["source"] == "human" and row["value"] == "light"
+    batch = next(o for o in out["ops"] if o["op"] == "open_problem")
+    assert batch["body"]["prefs"] == {"model": "light"}
+    for bad in ("custom", 3, ""):
+        with pytest.raises(BadRequest):
+            s.draft_view({**body, "overrides": {"model": bad}})
+
+
 @pytest.mark.parametrize(
     "ov",
     [

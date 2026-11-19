@@ -122,7 +122,7 @@ describe("输入框与确认卡", () => {
     const { r, container } = await drafted(rec("practice").text);
     const block = () => container.querySelector("[data-model-block]")!;
     const sel = await waitFor(() => { const el = block().querySelector<HTMLSelectElement>('[data-action="pick-draft-profile"]'); expect(el).not.toBeNull(); return el!; });
-    expect([...sel.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(["default"]);
+    expect([...sel.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(["default", "light"]);
     expect(block().querySelector("[data-session-routes]")!.textContent).toBe("Bootstrap → default · Reason → default · Explore → default · Verify → default");
     fireEvent.change(sel, { target: { value: "default" } });
     await waitFor(() => expect(block().querySelector('[data-field="draft.model"] [data-source]')?.getAttribute("data-source")).toBe("human"));
@@ -177,6 +177,24 @@ describe("输入框与确认卡", () => {
     expect(second.nonce).toBe(rec("command").out.nonce);
     expect(third.overrides).toEqual({ risk: { 0: "r1" }, usd_milli: 3000 });
     expect(card().querySelector('[data-note="human_edit"]')).not.toBeNull();
+  });
+
+  it("执行用另选档案：写进任务的 prefs.model，出处记“人”；开出的任务带着它", async () => {
+    const { r, container } = await drafted(rec("command").text);
+    const block = () => container.querySelector("[data-model-block]")!;
+    const run = block().querySelector<HTMLSelectElement>('[data-action="pick-run-profile"]')!;
+    expect([...run.options].map((o) => o.value)).toEqual(["", "default", "light"]); // 只有登记过的档案，没有自定义端点
+    expect(run.value).toBe("");
+    fireEvent.change(run, { target: { value: "light" } });
+    await waitFor(() => expect(block().querySelector('[data-field="prefs.model"] [data-source="human"]')).not.toBeNull());
+    const last = JSON.parse(String(r.fetch.calls.filter((c) => String(c.url).endsWith("/v1/drafts")).at(-1)!.body));
+    expect(last.overrides).toEqual({ model: "light" });
+    expect(block().querySelector<HTMLSelectElement>('[data-action="pick-run-profile"]')!.value).toBe("light");
+    const card = container.querySelector("[data-kaiti-card]")!;
+    fireEvent.keyDown(card, { key: "Enter", metaKey: true });
+    const pid = rec("command").out.pid;
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${pid}`));
+    expect((await r.api.status(pid)).problem.prefs).toEqual({ model: "light" });
   });
 
   it("超过单题硬顶：写在字段下面，数字框回到原值", async () => {

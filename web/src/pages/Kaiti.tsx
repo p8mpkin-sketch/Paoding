@@ -68,11 +68,14 @@ function Source({ r, nums }: { r: KaitiRow; nums: Map<string, number> }) {
 
 const SESSION_ROLES = [["bootstrap", "Bootstrap"], ["reason", "Reason"], ["explore", "Explore"], ["verify", "Verify"]] as const;
 
-/** 05 模型（宪章 02 §3.2、Q10）：起草用哪个档案（只列设置页登记过的，改了即重新起草），会话按全局路由（只读）。 */
-function ModelBlock({ v, models, busy, onPick, nums }: {
-  v: KaitiVetted; models: Settings["models"] | null; busy: boolean; onPick: (name: string) => void; nums: Map<string, number>;
+/** 05 模型（宪章 02 §3.2、03 §3.1，Q10、Q12）：起草用哪个档案（改了即重新起草）；执行用哪个档案（缺省按角色路由，
+ * 另选即写进任务的 prefs.model，会话开起时按它解析一次）。两处都只列设置页登记过的档案。 */
+function ModelBlock({ v, models, busy, onPick, onRun, nums }: {
+  v: KaitiVetted; models: Settings["models"] | null; busy: boolean; onPick: (name: string) => void; onRun: (name: string | null) => void; nums: Map<string, number>;
 }) {
   const row = v.derivation.find((r) => r.field === "draft.model");
+  const runRow = v.derivation.find((r) => r.field === "prefs.model");
+  const run = v.input?.prefs?.model ?? "";
   const names = models?.profiles.map((p) => p.name) ?? [];
   const known = names.includes(v.model);
   return (
@@ -93,14 +96,25 @@ function ModelBlock({ v, models, busy, onPick, nums }: {
             <span className="t2 kt-note">只列设置页登记过的档案；改了会重新起草一次</span>
           </dd>
         </div>
-        <div className="kt-row" data-field="session.models">
-          <dt>会话用</dt>
+        <div className="kt-row" data-field="prefs.model">
+          <dt>执行用</dt>
           <dd>
-            <span className="kt-val" data-session-routes>
-              {models ? SESSION_ROLES.map(([k, w]) => `${w} → ${models.routes[k]}`).join(" · ") : "读取中…"}
-            </span>
-            <Mark ch={SOURCE.table.ch} tone={SOURCE.table.tone} label="查设置页的角色路由" />
-            <span className="t2 kt-note">按设置页的角色路由，新会话起生效；按任务另选档案还没有做</span>
+            {names.length > 0 && (
+              <select value={run} aria-label="执行会话用的模型档案" data-action="pick-run-profile" disabled={busy || !v.input}
+                onChange={(e) => onRun(e.target.value || null)}>
+                <option value="">按角色路由（缺省）</option>
+                {names.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            )}
+            {run ? (runRow && <Source r={runRow} nums={nums} />) : (
+              <>
+                <span className="kt-val" data-session-routes>
+                  {models ? SESSION_ROLES.map(([k, w]) => `${w} → ${models.routes[k]}`).join(" · ") : "读取中…"}
+                </span>
+                <Mark ch={SOURCE.table.ch} tone={SOURCE.table.tone} label="查设置页的角色路由" />
+              </>
+            )}
+            <span className="t2 kt-note">另选一个档案，这个任务的每个会话都用它；会话开起时定下，中途改设置不影响已在跑的会话</span>
           </dd>
         </div>
       </dl>
@@ -418,7 +432,8 @@ export function Kaiti() {
                   </div>
                 );
               })}
-              <ModelBlock v={v} models={models} busy={busy !== null} nums={nums} onPick={(n) => void draftIt(n)} />
+              <ModelBlock v={v} models={models} busy={busy !== null} nums={nums} onPick={(n) => void draftIt(n)}
+                onRun={(n) => { const { model: _drop, ...rest } = ov; void revet(n ? { ...rest, model: n } : rest); }} />
               {fieldErr && <p className="error" data-field-error><Plain text={fieldErr} /></p>}
             </section>
 

@@ -303,6 +303,7 @@ class SettingsHub:
             risk_table=tuple(dict(r) for r in self.store.settings["risk"]),
             wall_mode=budget_of(self.store.settings)["wall_mode"],
             life_s=budget_of(self.store.settings)["life_s"],
+            model_profiles=frozenset(p["name"] for p in self.store.settings["models"]["profiles"]),
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]
         for fn in self.listeners:

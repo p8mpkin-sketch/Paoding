@@ -62,6 +62,8 @@ class Config:
     # 花费墙钟，另由 deadline 与题的最长存活 life_s 兜底。开题时把取值抄进事件体，重放不读设置
     wall_mode: str = "elapsed"
     life_s: int = 7 * 86400
+    # 设置层已登记的模型档案名（宪章 03 §3.1）：开题的 prefs.model 只能取其中之一；空即本部署不接受任务级模型偏好
+    model_profiles: frozenset[str] = frozenset()
 
 
 def empty_state() -> State:

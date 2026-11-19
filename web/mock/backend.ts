@@ -298,7 +298,7 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
   const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
-    problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },
+    problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin, ...(p.prefs ? { prefs: p.prefs } : {}) },
     goal: {
       statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check ?? NO_CHECK, levelOf(s, "goal"), p.goal.max_attempts ?? null),
       ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
@@ -520,6 +520,8 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (s.problem) throw new Rejected("schema_error", "题目已存在");
       if (!b.title || !Array.isArray(b.scope) || b.scope.length === 0) throw new Rejected("schema_error", "title、scope 必填");
       if (!(b.budget?.usd_milli > 0) || !(b.budget?.wall_s > 0)) throw new Rejected("schema_error", "预算为正");
+      // 任务级模型偏好（宪章 03 §3.1）：只能取设置页登记过的档案名
+      if (b.prefs && (Object.keys(b.prefs).some((k) => k !== "model") || (b.prefs.model !== undefined && !settings.models.profiles.some((p) => p.name === b.prefs.model)))) throw new Rejected("unknown_ref", `模型档案 ${b.prefs?.model} 未登记`);
       if (b.goal?.accept === "open") {
         // 开放道（open-lane §8）：不登记判据、不启用判官；假后端只收题面，不模拟求解与交付（第二步的结果页再补）
         if ("check" in b.goal || "max_attempts" in b.goal || (b.judges ?? []).length) throw new Rejected("schema_error", "开放道不登记判据、不启用判官");
@@ -680,7 +682,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     caps: { global_usd_milli: 500_000, open_usd_milli: 20_000, open_wall_s: 14_400, practice_usd_milli: 500, practice_wall_s: 1_800 },
     risk: [{ resource: "workspace", pattern: "*", actions: ["read", "write"], risk: "r0" }],
     models: {
-      profiles: [{ name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" }],
+      profiles: [
+        { name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" },
+        { name: "light", endpoint: "", model: "light-1", family: "", tier: "light", key_slot: "default" },
+      ],
       routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
     },
     grants: { runtime: true, auto: { practice: true } },

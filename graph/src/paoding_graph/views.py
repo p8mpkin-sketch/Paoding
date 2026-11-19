@@ -471,6 +471,8 @@ def status(state: State, pid: str) -> View:
             "env": dict(p["env"]),
             "judges": sorted(p["judges"]),
             "origin": {"statement_ref": p["origin"]["statement_ref"], "materials": list(p["origin"]["materials"])},
+            # 任务级偏好（地图 Q12）：没有时不写，旧日志的视图逐字节不变
+            **({"prefs": dict(p["prefs"])} if "prefs" in p else {}),
         },
         "goal": {
             "statement": tag("statement", p["goal"]["statement"]),

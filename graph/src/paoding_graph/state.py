@@ -204,6 +204,7 @@ class Problem(TypedDict):
     deadline: NotRequired[Body]  # external-verdict §5.6：{source: local|external, at?, bound_by?}；at 只绑定一次
     wall_mode: NotRequired[str]  # elapsed | spend，开题时由图服务按设置抄入；缺省 elapsed（旧行为）
     life_s: NotRequired[int]  # wall_mode=spend：题的最长存活（全局设置，开题时抄入）
+    prefs: NotRequired[Body]  # 任务级偏好 {model?}（宪章 03 §3.1、地图 Q12）：不进等级、消费门与画像
     labels: NotRequired[Body]  # v1.5 增量 10：{tags, env?}，env 即通鉴的环境键；不进等级与画像
     recall: NotRequired[Body]  # v1.5 增量 9：召回清单 {items, excluded_by_human, match_digest, mode?, notes?}
     settings: NotRequired[Body]  # 宪章 D5：{version, digest}，开题时的设置快照；不进等级、消费门与画像

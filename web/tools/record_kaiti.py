@@ -27,6 +27,12 @@ OUT = Path(__file__).resolve().parents[1] / "mock" / "kaiti.json"
 SETTINGS = Settings.from_doc(
     {"settings": {"risk": [{"resource": "net", "pattern": "q*:*", "actions": ["connect"], "risk": "r0"}]}}
 )
+# 设置页登记了两个模型档案：确认卡上“执行用”另选 light 时写进 prefs.model（宪章 03 §3.1、地图 Q12）
+PROFILES = [
+    {"name": "default", "endpoint": "", "model": "", "family": "", "tier": "strong", "key_slot": "default"},
+    {"name": "light", "endpoint": "", "model": "light-1", "family": "", "tier": "light", "key_slot": "default"},
+]
+SETTINGS_M = dataclasses.replace(SETTINGS, models={"profiles": PROFILES, "routes": {}})
 # 运行时扩权开着（新装缺省，runtime-grants §3.1）：开题零出站，原文地址只作展示
 SETTINGS_ON = dataclasses.replace(SETTINGS, grants_runtime=True)
 OPEN = "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"  # 没有答案、没有命令：开放道
@@ -83,6 +89,9 @@ def main() -> None:
     for ov in ({"risk": {"0": "r1"}}, {"risk": {"0": "r1"}, "usd_milli": 3000}):
         rec = {"name": "command", "overrides": ov, "out": svc.draft_view({**base, "overrides": ov})}
         out["overrides"].append(rec)  # type: ignore[attr-defined]
+    svc_m = KaitiService(Intake.load(), lambda: SETTINGS_M, placeholder_priors(), heuristic_drafter, "heuristic", CATALOG)
+    pick = {"model": "light"}
+    out["overrides"].append({"name": "command", "overrides": pick, "out": svc_m.draft_view({**base, "overrides": pick})})  # type: ignore[attr-defined]
     ob = out["drafts"]["outbound"]["out"]  # type: ignore[index]
     ack = {"ack_command": True}
     base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"], "strict": True}

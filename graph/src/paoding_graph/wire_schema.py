@@ -203,6 +203,7 @@ define(
     "AcceptRecord",
     obj({"seq": INT, "decision": lit("accept", "reject"), "checks": arr(ref("AcceptCheck"))}, {"reason": STR}),
 )
+define("TaskPrefs", obj({}, {"model": STR}, doc="任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名。"))
 define(
     "SelfCheckInput",
     obj(
@@ -231,6 +232,7 @@ define(
             "env": ref("Env"),
             "judges": arr(STR),
         },
+        {"prefs": ref("TaskPrefs")},
         doc="open_problem 的事件体。没有 profile 字段：画像是派生量，提交时不接受（HMI §3.2 强制点）。"
         "题目 id 在批次外层。",
     ),
@@ -482,7 +484,8 @@ define(
                             "env": ref("Env"),
                             "judges": arr(STR),
                             "origin": ref("Origin"),
-                        }
+                        },
+                        {"prefs": ref("TaskPrefs")},
                     ),
                 ),
                 "goal": obj(
