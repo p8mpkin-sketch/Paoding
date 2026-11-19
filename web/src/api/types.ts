@@ -399,22 +399,3 @@ export type Seen = { seq: number; card_hash: string };
 export type OpResult = { ok: true; id: string | null; seq: number } | { ok: false; code: string; detail?: string; card?: unknown; as_of?: number };
 export type ProposalResponse = { ok: boolean; results: OpResult[]; id?: string };
 export type ErrorBody = { ok: false; code: string; detail?: string };
-
-// ---------- 设置层（宪章 03 §2–§7）：/v1/settings、/v1/keys ----------
-
-export type Caps = {
-  global_usd_milli: number;
-  open_usd_milli: number;
-  open_wall_s: number;
-  practice_usd_milli: number;
-  practice_wall_s: number;
-};
-export type RiskRule = { resource: string; pattern: string; actions: string[]; risk: "r0" | "r1" | "r2" };
-export type ModelProfile = { name: string; endpoint: string; model: string; family: string; tier: "strong" | "mid" | "light"; key_slot: string };
-export type ModelRole = "draft" | "bootstrap" | "reason" | "explore" | "verify";
-export type Settings = { caps: Caps; risk: RiskRule[]; models: { profiles: ModelProfile[]; routes: Record<ModelRole, string> } };
-export type SettingsDoc = { version: number; digest: string; settings: Settings };
-export type SettingsLogEntry = { version: number; from: string | null; to: string; keys: string[]; by: string; ts: number };
-/** 密钥槽：没有任何字段是密钥本身；指纹 = 加盐 sha256 前 8 位 + 末 4 位。 */
-export type KeySlot = { slot: string; set: boolean; fingerprint: string | null; set_at: number | null; source: "page" | "env" | "config" | "fake" | null; env: string };
-export type KeysView = { slots: KeySlot[]; note: string };

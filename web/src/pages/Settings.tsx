@@ -6,7 +6,7 @@
 // 别人先改了就 409，重读再改。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
-import type { KeySlot, KeysView, ModelProfile, RiskRule, Settings, SettingsDoc, SettingsLogEntry } from "../api/types";
+import type { KeySlot, KeysView, ModelProfile, RiskRule, Settings, SettingsDoc, SettingsLogEntry } from "../api/settings-types";
 import { fmtTs, useServices } from "../app/context";
 import { Button, Mark, Mast, SectionHead } from "../kit";
 import {

@@ -1,7 +1,7 @@
 // 设置页（宪章 03 §2、§4、§5、§7；L1 第一期）：三道硬顶次序、密钥只发一次且读不回来、409 重读、只读模式。
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Settings } from "../src/api/types";
+import type { Settings } from "../src/api/settings-types";
 import { capIssues, changedKeys, fromMinInput, fromUsdInput, rulerFraction, settingsIssues } from "../src/model/settings";
 import { SettingsPage } from "../src/pages/Settings";
 import { renderWith, rig } from "./helpers";

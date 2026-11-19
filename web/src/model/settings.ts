@@ -1,6 +1,6 @@
 // 设置页的纯函数（宪章 03 §5）：三道硬顶的次序、刻度尺的对数长度、单位换算、改了哪些键。
 // 服务端在写入时做同样的校验（scripts/settings_hub.py），这里只是让人在点保存之前就看见问题，不是闸门。
-import type { Caps, ModelRole, RiskRule, Settings } from "../api/types";
+import type { Caps, ModelRole, RiskRule, Settings } from "../api/settings-types";
 
 export const ROLES: { role: ModelRole; word: string }[] = [
   { role: "draft", word: "起草" },
