@@ -333,6 +333,8 @@ class Stack:
         # 练习道信封（一句话开题第三期）：内核加载即休眠；练习上限跟着设置层走
         self.settings.listeners.append(self._practice)
         self._practice(self.settings.store.settings)
+        # 起草服务读同一份设置（单题硬顶、风险表），不再读 kaiti.settings 静态文件
+        self.kaiti.use_settings(lambda: self.settings.store.settings)
         self.endpoint = ToolEndpoint()
         # 端点先起：模型容器的启动器要知道它们在本机回环上的端口
         proxy_port = self.proxy.serve()[1]

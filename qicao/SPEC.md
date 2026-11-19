@@ -35,7 +35,7 @@
 - 零确认一律关（第三期信封已进内核但休眠，开关的打开等测试方的精确率读数）：`lane` 只有 `confirm` 与 `refuse`。答案来自原文答案行时回传一次（`secret`），前端只拿它写保密库；答案栏里的不回传。
 - 不持有令牌、不写图服务、不写保密库：前端用人的令牌依次 `PUT /v1/blobs`（三方核对哈希）、`PUT /v1/vault`、`POST /v1/problems`。
 - 起草模型：`kaiti.draft` 取 `heuristic`（演示起草，不调模型；假 CLI 后端的缺省）、`messages` 或 `off`。`messages` 的令牌只从环境变量读（`kaiti.token_env`，缺省 `PD_DRAFT_TOKEN`），配置文件里写密钥即报错。经端点代理的"开题"账户与钥匙环归生命周期地图线程；接上之前请求直接打到 `kaiti.url`（缺省同上游）。
-- 设置快照：`kaiti.settings` 文件；设置存储（`/v1/settings`）上线后组装根换成它，`KaitiService` 收的是取快照的函数。
+- 设置快照：全栈组装读设置存储（`/v1/settings`）的当前快照，与内核的单题硬顶同源；`kaiti.settings` 文件只用于没有设置存储的独立部署。`KaitiService` 收的是取快照的函数。
 
 ## 还没有做的
 

@@ -6,7 +6,7 @@
     url:      起草请求打到的 Anthropic 兼容端点（缺省同 backend 的上游）
     model:    模型名
     token_env: 起草令牌所在的环境变量名（缺省 PD_DRAFT_TOKEN）。密钥只从环境变量读，不进配置文件、不进日志
-    settings: 设置快照文件（YAML/JSON，形状同 GET /v1/settings）；设置存储上线后换成它
+    settings: 设置快照文件（YAML/JSON，形状同 GET /v1/settings）；全栈组装改读设置存储（use_settings）
     priors:   预算先验表（档位 → 默认预算）；缺省占位表
 
 零确认一律关（cz 2026-11-19，#83 第 2 条附条件；第三期"信封落地即休眠"）：起草服务只给确认道。
@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +102,11 @@ class KaitiHub:
             "zero_confirm": False,  # 第三期休眠：开关的打开等测试方的精确率读数
         }
         self.svc = KaitiService(intake, lambda: settings, priors, drafter, profile)
+
+    def use_settings(self, current: Callable[[], dict[str, Any]]) -> None:
+        """换成设置存储（/v1/settings）的当前快照：确认卡上的单题硬顶、风险表与内核读的是同一份。
+        kaiti.settings 静态文件只在没有设置存储的独立部署里用。"""
+        self.svc.settings = lambda: Settings.from_doc(current())
 
     def mount(self, http: GraphHttp) -> None:
         http.mount("POST", r"/v1/drafts/extract", self._wrap(self.svc.extract_view), human=True)

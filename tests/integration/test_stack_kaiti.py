@@ -125,3 +125,13 @@ def test_practice_caps_follow_settings(stack):
     s._practice({**s.settings.store.settings, "caps": caps})
     after = s.graph.cfg.practice
     assert after.usd_milli_max == 300 and after.digest != before.digest and after.version == before.version
+
+
+def test_drafts_read_the_settings_store(stack):
+    """确认卡上的单题硬顶取设置存储的当前快照，与内核 open_cap_* 同源。"""
+    s, url = stack
+    store = s.settings.store
+    store.settings = {**store.settings, "caps": {**store.settings["caps"], "open_usd_milli": 4321}}
+    s.settings.apply()
+    out = call(url, "/v1/drafts", {"text": TEXT}, token=s.human_token)
+    assert out["caps"]["open_usd_milli"] == 4321 == s.graph.cfg.open_cap_usd_milli
