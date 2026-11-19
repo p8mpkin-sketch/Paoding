@@ -238,6 +238,18 @@ def merge_notes(shared: str, worker_files: list[tuple[int, str | None]], rnd: in
     return out, rewrote
 
 
+def bn_width(budget_usd: float, unit_usd: float, cap: int) -> int:
+    """Bn 的宽度（等成本口径 C，cz 2026-11-19 裁定）：W = max(1, ⌊C_full ÷ 单次尝试成本⌋)，不超过 cap。
+
+    单次尝试成本取同一题 baseline 臂的读数（平均每次花费），所以同一题必须先跑 baseline。
+    易题上 C_full 付不起两次完整尝试，Bn 就退化成单线程（Bk 加一份给自己看的笔记），不在第一轮拆成付不起的份数。
+    用毫美元整数算，避免 0.3 / 0.1 这类浮点除法落在 2.9999…。"""
+    if unit_usd <= 0:
+        raise ValueError(f"单次尝试成本要为正：{unit_usd!r}")
+    budget_milli, unit_milli = round(budget_usd * 1000), max(round(unit_usd * 1000), 1)
+    return max(1, min(cap, budget_milli // unit_milli))
+
+
 def run_arm(
     mode: str,
     spec: ProblemSpec,
@@ -247,6 +259,7 @@ def run_arm(
     workers: int = 1,
     rounds: int = 1,
     budget_usd: float | None = None,
+    unit_usd: float | None = None,
     model: str = "",
     real_program: list[str] | None = None,
     upstream_url: str = "",
@@ -265,6 +278,11 @@ def run_arm(
         raise ValueError("真题瘦基线要给沙箱镜像（--image）：CLI 在宿主上连不到题目环境，对照不成立")
     if mode != "baseline" and budget_usd is None and rounds <= 1:
         raise ValueError(f"{mode} 要给等成本预算（--budget-usd，取 full 臂的每题成本）或轮数上限（--rounds）")
+    if mode == "bn" and budget_usd is not None:
+        if unit_usd is not None:
+            workers = bn_width(budget_usd, unit_usd, workers)
+        elif real_program is not None:
+            raise ValueError("真题 bn 要给同一题 baseline 的单次尝试成本（--unit-usd）：宽度按 ⌊预算 ÷ 单次成本⌋ 定")
     notes = mode == "bn"
     t0 = time.monotonic()
     log_dir = out_root / run_dirname(mode, spec.id, run_no, stamp())
@@ -358,6 +376,7 @@ def run_arm(
                 "workers": workers,
                 "rounds_max": rounds,
                 "budget_usd": budget_usd,
+                "unit_usd": unit_usd,
                 "stopped_by": stop,
                 "widths": widths,
                 "over_budget_milli": None if budget_milli is None else max(0, b.spent_milli() - budget_milli),
