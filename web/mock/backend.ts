@@ -493,6 +493,65 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return out;
   }
 
+  // ---- 设置层（宪章 03 §7）：与 scripts/settings_hub.py 同形；摘要用规范化 JSON 的 sha256 ----
+  let settings = {
+    caps: { global_usd_milli: 500_000, open_usd_milli: 20_000, open_wall_s: 14_400, practice_usd_milli: 500, practice_wall_s: 1_800 },
+    risk: [{ resource: "workspace", pattern: "*", actions: ["read", "write"], risk: "r0" }],
+    models: {
+      profiles: [{ name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" }],
+      routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
+    },
+  };
+  let settingsVersion = 1;
+  const settingsLog: { version: number; from: string | null; to: string; keys: string[]; by: string; ts: number }[] = [
+    { version: 1, from: null, to: sha256(canonical(settings)), keys: ["*"], by: "init", ts: 1_763_500_000_000 },
+  ];
+  const keySlots = new Map<string, { fingerprint: string; set_at: number; source: string }>([["default", { fingerprint: "1f2e3d4c…k3y0", set_at: 1_763_500_000_000, source: "env" }]]);
+  const KEY_NOTE = "密钥重启后失效，可用环境变量持久注入";
+  const slotView = (slot: string) => {
+    const k = keySlots.get(slot);
+    return { slot, set: !!k, fingerprint: k?.fingerprint ?? null, set_at: k?.set_at ?? null, source: k?.source ?? null, env: slot === "default" ? "ANTHROPIC_API_KEY" : "" };
+  };
+  const keysView = () => {
+    const slots = new Set([...keySlots.keys(), ...settings.models.profiles.map((p) => p.key_slot)]);
+    return { slots: [...slots].sort().map(slotView), note: KEY_NOTE };
+  };
+  function settingsRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
+    const settingsDoc = () => ({ version: settingsVersion, digest: sha256(canonical(settings)), settings });
+    if (method === "GET" && path === "/v1/settings") return json(200, settingsDoc());
+    if (method === "GET" && path === "/v1/settings/log") return json(200, { items: settingsLog });
+    if (!auth.startsWith("Bearer ") || !auth.slice(7).trim()) return err(401, "forbidden_op", "写操作须带 Authorization: Bearer <令牌>");
+    if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "未知令牌");
+    if (method === "PUT" && path === "/v1/settings") {
+      const b = parse();
+      const cur = sha256(canonical(settings));
+      if (!b || typeof b.base_digest !== "string" || !b.settings) return err(400, "schema_error", "请求体是 {base_digest, settings}");
+      if (b.base_digest !== cur) return json(409, { ok: false, code: "stale_view", detail: "设置在你读过之后被改过：重读再改", current: cur });
+      const c = b.settings.caps;
+      if (c.open_usd_milli > c.global_usd_milli) return err(400, "schema_error", "单任务硬顶超过全局硬顶");
+      if (c.practice_usd_milli > c.open_usd_milli) return err(400, "schema_error", "练习上限超过单任务硬顶");
+      settings = b.settings;
+      settingsVersion += 1;
+      settingsLog.push({ version: settingsVersion, from: cur, to: sha256(canonical(settings)), keys: ["*"], by: "human", ts: 1_763_500_000_000 + settingsVersion * 7_000 });
+      return json(200, settingsDoc());
+    }
+    if (method === "GET" && path === "/v1/keys") return json(200, keysView());
+    if (method === "DELETE" && path === "/v1/keys") { keySlots.clear(); return json(200, keysView()); }
+    const km = path.match(/^\/v1\/keys\/([^/]+)$/);
+    if (km) {
+      const slot = decodeURIComponent(km[1]);
+      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(slot)) return err(400, "schema_error", "槽名取小写字母、数字、- 与 _，至多 32 字符");
+      if (method === "DELETE") { keySlots.delete(slot); return json(200, { ...slotView(slot), note: KEY_NOTE }); }
+      if (method === "PUT") {
+        const key = parse()?.key;
+        if (typeof key !== "string" || !key.trim() || /\s/.test(key.trim())) return err(400, "schema_error", "密钥须为非空、不含空白的串");
+        keySlots.set(slot, { fingerprint: `${sha256(enc.encode(key)).slice(0, 8)}…${key.trim().slice(-4)}`, set_at: 1_763_500_000_000, source: "page" });
+        return json(200, { ...slotView(slot), note: KEY_NOTE });
+      }
+    }
+    return err(405, "schema_error", `${path} 不支持 ${method}`);
+  }
+
   // ---- 路由 ----
   function handle(req: MockRequest): MockResponse {
     const u = new URL(req.url, "http://mock");
@@ -501,6 +560,8 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     const parse = () => { try { return JSON.parse(new TextDecoder().decode(req.body ?? new Uint8Array())); } catch { return null; } };
     const notFound = (d = `没有端点 ${path}`) => err(404, "unknown_ref", d);
     let m: RegExpMatchArray | null;
+
+    if (path === "/v1/settings" || path === "/v1/settings/log" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
 
     if (req.method !== "GET") {
       const auth = req.headers?.authorization ?? "";

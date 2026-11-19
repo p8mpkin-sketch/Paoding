@@ -12,13 +12,14 @@ import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
 
-export type NavKey = "home" | "inbox" | "tasks" | "readings";
+export type NavKey = "home" | "inbox" | "tasks" | "readings" | "settings";
 type NavItem = { key: NavKey; no: string; word: string; to: Route };
 export const NAV: NavItem[] = [
   { key: "home", no: "01", word: "今日", to: { page: "home" } },
   { key: "inbox", no: "02", word: "待办", to: { page: "inbox" } },
   { key: "tasks", no: "03", word: "任务", to: { page: "problems" } },
   { key: "readings", no: "04", word: "读数", to: { page: "readings" } },
+  { key: "settings", no: "05", word: "设置", to: { page: "settings" } },
 ];
 
 /** 路由归哪个导航项、属于第几卷（竖排卷签与状态行用）。 */
@@ -30,6 +31,7 @@ export function navOf(r: Route): { key: NavKey | null; vol: string; crumbs: stri
     case "new": return { key: "tasks", vol: "卷三", crumbs: ["任务", r.from ? "克隆" : "新建"] };
     case "import": return { key: "tasks", vol: "卷三", crumbs: ["任务", "导入任务集"] };
     case "readings": return { key: "readings", vol: "卷四", crumbs: ["读数"] };
+    case "settings": return { key: "settings", vol: "卷五", crumbs: ["设置"] };
     case "problem": return { key: null, vol: "工作区", crumbs: ["任务", r.pid] };
   }
 }
