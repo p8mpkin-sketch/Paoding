@@ -142,7 +142,7 @@ def test_real_backend_defaults_to_the_container_launcher(tmp_path, monkeypatch):
         assert isinstance(launcher, ContainerLauncher) and launcher.image == "example/cli:0"
         assert launcher.mounts == ()  # 真 CLI 的镜像自带 CLI，不挂假 CLI
         assert stack.adapter_cfg.binding.program == ["claude"]
-        assert stack.proxy.cfg.upstream == "https://model.invalid" and stack.proxy.cfg.api_key == key
+        assert stack.proxy.cfg.upstream == "https://model.invalid" and stack.keyring.get("default") == key
         assert stack.upstream is None  # 不起假上游
         # 容器里看到的端点是中继，环境变量里是任务令牌：命令行里没有真实密钥
         from paoding_adapter import backend as be
@@ -163,11 +163,8 @@ def test_real_backend_defaults_to_the_container_launcher(tmp_path, monkeypatch):
         stack.stop()
 
 
-def test_real_backend_refuses_to_start_without_key_or_image(tmp_path, monkeypatch):
-    monkeypatch.delenv("PD_TEST_MODEL_KEY", raising=False)
-    cfg = write_config(tmp_path, {"kind": "real", "image": "example/cli:0", "api_key_env": "PD_TEST_MODEL_KEY"})
-    with pytest.raises(StackError, match="PD_TEST_MODEL_KEY"):
-        Stack(StackConfig.load(tmp_path / "home", cfg, port=0, static_dir=None))
+def test_real_backend_refuses_to_start_without_image(tmp_path, monkeypatch):
+    # 没有密钥不再拒绝启动（宪章 03 §4.2：启动后在设置页或 pd keys set 注入）；没有镜像仍拒绝
     monkeypatch.setenv("PD_TEST_MODEL_KEY", "sk-test-not-a-real-key")
     cfg = write_config(tmp_path, {"kind": "real", "api_key_env": "PD_TEST_MODEL_KEY"})
     with pytest.raises(StackError, match="backend.image"):

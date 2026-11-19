@@ -1,11 +1,13 @@
 // 前端发出的全部 HTTP 请求都从这里与 stream.ts 走（HT-12：只到图服务 API，没有任何模型端点）。
 // 契约是 graph/SPEC.md 的「HTTP 绑定」：读用 GET；写只有 POST /v1/problems、POST …/proposals 与 PUT /v1/blobs，
-// 都带人的令牌，与 pd 是同一条提议通道。
+// 都带人的令牌，与 pd 是同一条提议通道。设置层（宪章 03 §7）另有 PUT /v1/settings 与 /v1/keys 的 PUT/DELETE，
+// 也只认人的令牌；密钥只经 PUT 发出一次，没有任何读端点能把它读回来。
 import type {
   ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
   NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, WorkView,
 } from "./types";
 import { HUMAN_OPS } from "./ops";
+import type { KeySlot, KeysView, Settings, SettingsDoc, SettingsLogEntry } from "./settings-types";
 
 export type ApiConfig = {
   /** 图服务的基址；同源部署时为空串。 */
@@ -33,8 +35,8 @@ const withAsOf = (path: string, asOf?: number, extra: Record<string, string> = {
 };
 
 export function createApi(cfg: ApiConfig) {
-  async function call(method: "GET" | "POST" | "PUT", path: string, body?: BodyInit, contentType?: string): Promise<Response> {
-    const write = method !== "GET";
+  async function call(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: BodyInit, contentType?: string, auth = false): Promise<Response> {
+    const write = method !== "GET" || auth;
     if (write && !cfg.token) throw new ApiError(401, "forbidden_op", "还没有配置人的令牌（页面右上角）");
     const res = await cfg.fetch(cfg.base + path, {
       method,
@@ -49,13 +51,16 @@ export function createApi(cfg: ApiConfig) {
       } catch {
         /* 非 JSON 的错误体 */
       }
-      throw new ApiError(res.status, e.code ?? null, e.detail ?? `HTTP ${res.status}`);
+      const { ok: _ok, code: _c, detail: _d, ...extra } = e as Record<string, unknown>;
+      throw new ApiError(res.status, e.code ?? null, e.detail ?? `HTTP ${res.status}`, Object.keys(extra).length ? extra : undefined);
     }
     return res;
   }
   const get = async <T>(path: string): Promise<T> => (await call("GET", path)).json() as Promise<T>;
   const post = async <T>(path: string, body: unknown): Promise<T> =>
     (await call("POST", path, JSON.stringify(body), "application/json")).json() as Promise<T>;
+
+  const json = (body: unknown) => JSON.stringify(body);
 
   /** 一批提议被内核拒绝仍是 200，逐条结果在 results 里；这里把"整批被拒"变成异常。 */
   function accepted(r: ProposalResponse): Extract<OpResult, { ok: true }>[] {
@@ -107,6 +112,19 @@ export function createApi(cfg: ApiConfig) {
       onlyHuman(ops);
       return accepted(await post<ProposalResponse>("/v1/problems", { id, idem_key: idemKey, ops }));
     },
+    // ---- 设置层 ----
+    settings: () => get<SettingsDoc>("/v1/settings"),
+    settingsLog: () => get<{ items: SettingsLogEntry[] }>("/v1/settings/log"),
+    /** base_digest 不是当前摘要 → 409 stale_view（extra.current 是当前摘要）：重读再改。 */
+    putSettings: async (baseDigest: string, settings: Settings) =>
+      (await call("PUT", "/v1/settings", json({ base_digest: baseDigest, settings }), "application/json")).json() as Promise<SettingsDoc>,
+    keys: async () => (await call("GET", "/v1/keys", undefined, undefined, true)).json() as Promise<KeysView>,
+    /** 密钥只在这一次请求里出现；调用方发完即清空输入框，不在任何存储里留它。 */
+    putKey: async (slot: string, key: string) =>
+      (await call("PUT", `/v1/keys/${enc(slot)}`, json({ key }), "application/json")).json() as Promise<KeySlot & { note: string }>,
+    clearKey: async (slot: string) => (await call("DELETE", `/v1/keys/${enc(slot)}`)).json() as Promise<KeySlot>,
+    clearKeys: async () => (await call("DELETE", "/v1/keys")).json() as Promise<KeysView>,
+
     /** 人的其余操作都走这里。批内只能有人可提交的操作。 */
     propose: async (pid: string, ops: Op[], idemKey: string) => {
       onlyHuman(ops);

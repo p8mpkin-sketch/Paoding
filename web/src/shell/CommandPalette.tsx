@@ -15,6 +15,7 @@ const PAGES: { word: string; to: Route; key?: string }[] = [
   { word: "新建任务", to: { page: "new" }, key: "C" },
   { word: "导入任务集", to: { page: "import" } },
   { word: "读数", to: { page: "readings" } },
+  { word: "设置", to: { page: "settings" } },
 ];
 
 export function CommandPalette({ open, onOpenChange, problems }: Props) {

@@ -77,6 +77,14 @@ class HttpError(Exception):
         self.status, self.code, self.detail = status, code, detail
 
 
+class MountError(Exception):
+    """挂载端点的业务拒绝（如设置的 base_digest 过期 → 409）。extra 并进应答体，不得含密钥。"""
+
+    def __init__(self, status: int, code: str, detail: str = "", **extra: Any) -> None:
+        super().__init__(detail)
+        self.status, self.code, self.detail, self.extra = status, code, detail, extra
+
+
 class Handler(BaseHTTPRequestHandler):
     """一次请求。cors_origin 由来源检查写入：放行的跨源来源，同源或无 Origin 时为 None。"""
 
@@ -176,12 +184,19 @@ class GraphHttp:
             ("POST", R(r"/v1/artifacts"), p(self.w_artifact)),
         ]
 
-    def mount(self, method: str, pattern: str, fn: Callable[[Params, Body | None], Doc]) -> None:
+    def mount(
+        self, method: str, pattern: str, fn: Callable[[Params, Body | None], Doc], *, human: bool = False
+    ) -> None:
         """组装根挂上别的组件的端点（v1.5 起通鉴的 /v1/memory/…）：fn(查询参数, 请求体) → 应答对象。
-        身份、来源检查与错误应答沿用本服务的外壳；fn 抛 BadBody 即 400 schema_error。"""
+        身份、来源检查与错误应答沿用本服务的外壳；fn 抛 BadBody 即 400 schema_error，抛 MountError 即其状态码。
+        human=True：只认人的令牌（设置与密钥端点，宪章 03 §4、§7），别的组件令牌一律 403。"""
+        if method not in ("GET", "POST", "PUT", "DELETE"):
+            raise ValueError(f"挂载端点只支持 GET/POST/PUT/DELETE，不是 {method}")
 
         def route(h: Handler, m: Params, q: Params) -> None:
-            body = self._body(h) if method == "POST" else None
+            if human and self._actor(h).get("kind") != "human":
+                raise HttpError(403, "forbidden_op", "只接受人的令牌")
+            body = self._body(h) if method in ("POST", "PUT") else None
             self._json(h, 200, fn({**q, **m}, body))
 
         self.routes.append((method, re.compile(pattern), route))
@@ -200,6 +215,9 @@ class GraphHttp:
 
             def do_PUT(self) -> None:
                 app.dispatch(self, "PUT")
+
+            def do_DELETE(self) -> None:
+                app.dispatch(self, "DELETE")
 
             def do_OPTIONS(self) -> None:
                 app.dispatch(self, "OPTIONS")
@@ -270,6 +288,8 @@ class GraphHttp:
             raise HttpError(404, "unknown_ref", f"没有端点 {path}")
         except HttpError as e:
             self._json(h, e.status, {"ok": False, "code": e.code, "detail": e.detail})
+        except MountError as e:
+            self._json(h, e.status, {"ok": False, "code": e.code, "detail": e.detail, **e.extra})
         except views.NotFound as e:
             self._json(h, 404, {"ok": False, "code": "unknown_ref", "detail": str(e)})
         except views.NotEnabled as e:
@@ -323,7 +343,7 @@ class GraphHttp:
             h.send_header("Access-Control-Allow-Origin", h.cors_origin)
             h.send_header("Vary", "Origin")
             h.send_header("Access-Control-Allow-Headers", "authorization, content-type, last-event-id, idempotency-key")
-            h.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+            h.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
             h.send_header("Access-Control-Expose-Headers", "X-Blob-Hash, X-Blob-Size")
 
     def _json(self, h: Handler, status: int, obj: Any) -> None:

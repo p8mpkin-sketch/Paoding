@@ -248,3 +248,30 @@ table.bank.profile td.note { grid-column: 1 / -1; color: var(--ink-2); }
 
 /* 空态只一句话（阅读质量轮第 5 条） */
 .trend-empty { margin: 10px 0 0; }
+
+/* ---------- 设置（卷五） ---------- */
+.settings { max-width: 1200px; }
+.settings-sec { margin-top: 30px; }
+.settings-ver { font: 500 var(--fs-xs)/1 var(--mono); color: var(--ink-2); padding: 6px 10px; border: 1px solid var(--rule-2); border-radius: 2px; }
+.settings-note { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; font-size: var(--fs-sm, var(--fs-xs)); color: var(--ink); }
+.key-slots { list-style: none; margin: 0; padding: 0; }
+.key-slot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 12px 0; border-bottom: 1px solid var(--rule); font-size: var(--fs-xs); }
+.key-slot.legacy { box-shadow: inset 3px 0 0 var(--zhu); padding-left: 12px; }
+.key-slot .issues, .key-slot .error { flex-basis: 100%; margin: 4px 0 0; }
+.key-slot input[type="password"] { min-width: 260px; flex: 1; }
+.key-env { flex-basis: 100%; }
+.caps { display: grid; gap: 4px; }
+.cap-row { display: grid; grid-template-columns: minmax(180px, 260px) minmax(120px, 1fr) 120px 140px; gap: 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.cap-name { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); }
+.cap-name .t2 { color: var(--ink-3); }
+.cap-ruler { position: relative; height: 8px; border-bottom: 1px solid var(--rule-3); background: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px 10%); }
+.cap-ruler b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); }
+.cap-in { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-xs); color: var(--ink-2); }
+.num-in { width: 90px; font-variant-numeric: tabular-nums; }
+.num-in.bad { border-color: var(--zhu); }
+.routes { display: flex; flex-wrap: wrap; gap: 12px 22px; margin-top: 16px; }
+.risk-fallback td { color: var(--ink-3); }
+.settings-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.settings-foot .issues { flex-basis: 100%; margin: 0 0 6px; }
+.settings-foot .t2.inv { display: inline; margin: 0 0 0 8px; opacity: .7; font-size: var(--fs-xs); }
+@media (max-width: 760px) { .cap-row { grid-template-columns: 1fr 1fr; } .cap-ruler { grid-column: 1 / -1; } }

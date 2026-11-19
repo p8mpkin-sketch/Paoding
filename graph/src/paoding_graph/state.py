@@ -144,6 +144,7 @@ class Problem(TypedDict):
     profile_overrides: NotRequired[list[ProfileOverride]]
     labels: NotRequired[Body]  # v1.5 增量 10：{tags, env?}，env 即通鉴的环境键；不进等级与画像
     recall: NotRequired[Body]  # v1.5 增量 9：召回清单 {items, excluded_by_human, match_digest, mode?, notes?}
+    settings: NotRequired[Body]  # 宪章 D5：{version, digest}，开题时的设置快照；不进等级、消费门与画像
 
 
 class Producer(TypedDict):

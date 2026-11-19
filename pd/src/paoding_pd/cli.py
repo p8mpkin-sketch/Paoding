@@ -6,17 +6,25 @@
     pd hint add [--node <id>] "<文本>"      pd hint close <hid>
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
     pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
+    pd settings show                        pd settings set <键路径> <值>
+    pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
 
 pid 取 --pid 或环境变量 PD_PROBLEM。数据目录取 --home 或 PD_HOME（g.sqlite 与 blobs/）。
 M0 的骨架以本机进程内方式打开图服务；图服务独立成进程后改走 HTTP/Unix socket 绑定（接口相同，D10）。
+settings 与 keys 走运行中的全栈的 HTTP（--url 或 PD_URL，缺省 http://127.0.0.1:8100）：钥匙环只在端点代理的
+内存里（宪章 03 §4）。人的令牌取 PD_TOKEN，或 --token-file（缺省 <home>/human.token）。
 输出遵守四语域标记、等级词表与判据徽章（render.py）。不存在人填画像三轴的入口：画像只能事后覆盖。
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
+import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import yaml
@@ -199,11 +207,109 @@ def cmd_decide(local: Local, a, w, decision: str, read=input) -> int:
     return 0
 
 
+# ---------- 设置与密钥：经 HTTP 找运行中的全栈 ----------
+
+
+class Remote:
+    def __init__(self, url: str, token: str):
+        self.url, self.token = url.rstrip("/"), token
+
+    def call(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+        data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(self.url + path, data=data, method=method)
+        req.add_header("Authorization", f"Bearer {self.token}")
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+
+def _remote(a) -> Remote:
+    token = os.environ.get("PD_TOKEN", "").strip()
+    if not token:
+        tf = Path(a.token_file) if a.token_file else Path(a.home) / "human.token"
+        token = tf.read_text(encoding="utf-8").strip()
+    return Remote(a.url, token)
+
+
+def _set_path(doc: dict, path: str, value: object) -> None:
+    keys = path.split(".")
+    cur = doc
+    for k in keys[:-1]:
+        if not isinstance(cur, dict) or k not in cur:
+            raise KeyError(path)
+        cur = cur[k]
+    if not isinstance(cur, dict) or keys[-1] not in cur:
+        raise KeyError(path)
+    cur[keys[-1]] = value
+
+
+def cmd_settings(r: Remote, a, w) -> int:
+    code, doc = r.call("GET", "/v1/settings")
+    if code != 200:
+        w(f"[证据] 读设置失败：{code} {doc.get('detail', '')}\n")
+        return 1
+    if a.sub == "show":
+        w(f"[证据] 设置 v{doc['version']} 摘要 {doc['digest'][:12]}\n")
+        w(yaml.safe_dump(doc["settings"], allow_unicode=True, sort_keys=False))
+        return 0
+    settings = doc["settings"]
+    try:
+        _set_path(settings, a.key, yaml.safe_load(a.value))
+    except KeyError:
+        w(f"[人] 没有设置项 {a.key}（用 pd settings show 看键路径）\n")
+        return 2
+    code, out = r.call("PUT", "/v1/settings", {"base_digest": doc["digest"], "settings": settings})
+    if code != 200:
+        w(f"[证据] 被拒：{out.get('code')}：{out.get('detail', '')}\n")
+        return 1
+    w(f"[证据] 已保存：设置 v{out['version']} 摘要 {out['digest'][:12]}\n")
+    return 0
+
+
+def _slot_line(s: dict) -> str:
+    if not s["set"]:
+        return f"{s['slot']}：未设" + (f"（环境变量 {s['env']}）" if s.get("env") else "")
+    return f"{s['slot']}：已设 {s['fingerprint']}，来源 {s['source']}"
+
+
+def cmd_keys(r: Remote, a, w, read_key) -> int:
+    if a.sub == "show":
+        code, out = r.call("GET", "/v1/keys")
+        if code == 200:
+            w("".join(_slot_line(s) + "\n" for s in out["slots"]) + f"[人] {out['note']}\n")
+    elif a.sub == "set":
+        key = read_key()  # 从标准输入读，不进 shell 历史与进程参数
+        code, out = r.call("PUT", f"/v1/keys/{a.slot}", {"key": key})
+        if code == 200:
+            w(_slot_line(out) + f"\n[人] {out['note']}\n")
+    else:
+        if not a.all and not a.slot:
+            w("[人] pd keys clear <槽>，或 --all 全部锁定\n")
+            return 2
+        code, out = r.call("DELETE", "/v1/keys" if a.all else f"/v1/keys/{a.slot}")
+        if code == 200:
+            w("已清除\n")
+    if code != 200:
+        w(f"[证据] 被拒：{out.get('code')}：{out.get('detail', '')}\n")
+        return 1
+    return 0
+
+
+def _read_key() -> str:
+    return getpass.getpass("密钥：") if sys.stdin.isatty() else sys.stdin.readline().strip()
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="pd", description="庖丁：人的通道")
     ap.add_argument("--home", default=os.environ.get("PD_HOME", ".paoding"))
     ap.add_argument("--pid")
     ap.add_argument("--actor", default=os.environ.get("PD_ACTOR", "human"))
+    ap.add_argument("--url", default=os.environ.get("PD_URL", "http://127.0.0.1:8100"))
+    ap.add_argument("--token-file")
     sp = ap.add_subparsers(dest="cmd", required=True)
     pr = sp.add_parser("problem").add_subparsers(dest="sub", required=True)
     po = pr.add_parser("open")
@@ -224,12 +330,29 @@ def parser() -> argparse.ArgumentParser:
         d.add_argument("--yes", action="store_true")
         d.add_argument("--reason", required=(name == "deny"))
     kaiti.add_parser(sp)
+    st = sp.add_parser("settings").add_subparsers(dest="sub", required=True)
+    st.add_parser("show")
+    ss = st.add_parser("set")
+    ss.add_argument("key")
+    ss.add_argument("value")
+    ks = sp.add_parser("keys").add_subparsers(dest="sub", required=True)
+    ks.add_parser("show")
+    ks.add_parser("set").add_argument("slot")
+    kc = ks.add_parser("clear")
+    kc.add_argument("slot", nargs="?")
+    kc.add_argument("--all", action="store_true")
     return ap
 
 
-def main(argv: list[str] | None = None, out=None, read=input, judges: dict | None = None, model=None) -> int:
+def main(
+    argv: list[str] | None = None, out=None, read=input, judges: dict | None = None, model=None, read_key=None
+) -> int:
     a = parser().parse_args(argv)
     w = (out or sys.stdout).write
+    if a.cmd == "settings":
+        return cmd_settings(_remote(a), a, w)
+    if a.cmd == "keys":
+        return cmd_keys(_remote(a), a, w, read_key or _read_key)
     local = Local(Path(a.home), {"kind": "human", "id": a.actor}, judges)
     if a.cmd == "problem":
         return cmd_open(local, a, w)
