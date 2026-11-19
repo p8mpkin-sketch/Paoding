@@ -171,6 +171,16 @@ class GraphHttp:
             ("POST", R(r"/v1/artifacts"), p(self.w_artifact)),
         ]
 
+    def mount(self, method: str, pattern: str, fn: Callable[[Params, Body | None], Doc]) -> None:
+        """组装根挂上别的组件的端点（v1.5 起通鉴的 /v1/memory/…）：fn(查询参数, 请求体) → 应答对象。
+        身份、来源检查与错误应答沿用本服务的外壳；fn 抛 BadBody 即 400 schema_error。"""
+
+        def route(h: Handler, m: Params, q: Params) -> None:
+            body = self._body(h) if method == "POST" else None
+            self._json(h, 200, fn({**q, **m}, body))
+
+        self.routes.append((method, re.compile(pattern), route))
+
     # ---------- 生命周期 ----------
 
     def serve(self) -> str:

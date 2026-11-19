@@ -21,8 +21,20 @@ from pathlib import Path
 import yaml
 
 from paoding_adapter.contract import EndpointProxy, FakeUpstream, PriceTable, ProxyConfig, fake_program
+from paoding_tongjian.contract import MODES as MEMORY_MODES
+from paoding_tongjian.contract import with_recall
 
-from .harness import PRICES, ROOT, MeteringLedger, collect, empty_mcp_config, open_problem, run_cli, wait_terminal
+from .harness import (
+    PRICES,
+    ROOT,
+    MeteringLedger,
+    collect,
+    empty_mcp_config,
+    match_memory,
+    open_problem,
+    run_cli,
+    wait_terminal,
+)
 from .record import Record, log_dir_field, run_dirname, stamp
 from .spec import ProblemSpec, sha256_hex
 
@@ -115,6 +127,10 @@ def run_baseline(
     return rec
 
 
+def _write_meta(log_dir: Path, meta: dict) -> None:
+    (log_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, sort_keys=True, indent=1), encoding="utf-8")
+
+
 def _wait_ready(proc: subprocess.Popen, ready: Path, timeout_s: float) -> str:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -136,14 +152,31 @@ def run_full(
     model: str = "",
     boot_timeout_s: float = 60,
     timeout_s: float = 300,
+    memory: str = "off",
+    drop: tuple[str, ...] = (),
+    home: Path | None = None,
 ) -> Record:
-    """full 模式（全栈流程）。config 是写给 scripts/run.py 的栈配置（backend/executor/…）。"""
+    """full 模式（全栈流程）。config 是写给 scripts/run.py 的栈配置（backend/executor/…）。
+
+    memory（v1.5 能力一）：off | recall | noverify（消融 recall_noverify）。开题前向通鉴要匹配结果，按开关
+    把召回清单写进开题批次；drop 是人去掉的条目。home 给出时复用这个数据目录（复做题组：A 先跑、B 后跑，
+    共用一份通鉴）。开关取值写进 meta.json 的 switches。"""
+    if memory not in MEMORY_MODES:
+        raise ValueError(f"memory 取 {MEMORY_MODES} 之一，不是 {memory!r}")
     t0 = time.monotonic()
     log_dir = out_root / run_dirname("full", spec.id, run_no, stamp())
-    home = log_dir / "home"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    home = home or log_dir / "home"
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.yaml").write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
     ready = home / "ready"
+    ready.unlink(missing_ok=True)  # 复用的数据目录里有上一次的就绪文件
+    switches = {
+        "memory": memory,
+        "recall_noverify": memory == "noverify",
+        "case_seal": bool((config.get("memory") or {}).get("case_seal", True)),
+    }
+    recall_info: dict = {}
 
     argv = [
         sys.executable,
@@ -164,7 +197,12 @@ def run_full(
     try:
         url = _wait_ready(proc, ready, boot_timeout_s)
         human_token = (home / "human.token").read_text(encoding="utf-8").strip()
-        opened = open_problem(url, human_token, spec.id, spec.open_ops(), spec.statement_bytes())
+        ops = spec.open_ops()
+        if memory != "off":
+            m = match_memory(url, ops[-1]["body"])
+            ops = with_recall(ops, m, memory, drop)
+            recall_info = {"match_digest": m["digest"], "facts": len(m["facts"]), "dropped": sorted(drop)}
+        opened = open_problem(url, human_token, spec.id, ops, spec.statement_bytes())
         if not opened.get("ok"):
             (log_dir / "open-rejected.json").write_text(json.dumps(opened, ensure_ascii=False, indent=2))
         else:
@@ -196,4 +234,5 @@ def run_full(
         log_dir=log_dir_field(out_root, log_dir.name),
     )
     rec.write(log_dir)
+    _write_meta(log_dir, {"switches": switches, **({"recall": recall_info} if recall_info else {})})
     return rec

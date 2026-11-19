@@ -142,6 +142,8 @@ class Problem(TypedDict):
     mark_seqs: NotRequired[list[int]]
     derived_profile: NotRequired[Profile]
     profile_overrides: NotRequired[list[ProfileOverride]]
+    labels: NotRequired[Body]  # v1.5 增量 10：{tags, env?}，env 即通鉴的环境键；不进等级与画像
+    recall: NotRequired[Body]  # v1.5 增量 9：召回清单 {items, excluded_by_human, match_digest, mode?, notes?}
 
 
 class Producer(TypedDict):
@@ -243,7 +245,7 @@ Support = Verdict  # M0 的支持记录只有判官裁决一种
 class Lease(TypedDict):
     id: str
     problem_id: str
-    kind: str  # bootstrap | reason | explore | judge
+    kind: str  # bootstrap | reason | explore | judge | recall（v1.5）
     holder: str
     reserve: Amount
     ttl_s: int
