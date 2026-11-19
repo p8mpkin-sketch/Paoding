@@ -128,3 +128,11 @@ def test_deepseek_prices():
     u = {"input_tokens": 1_000_000, "output_tokens": 1_000_000, "cache_read_input_tokens": 1_000_000}
     assert pt.usd_milli("deepseek-chat", u) == 270 + 1100 + 70
     assert pt.usd_milli("deepseek-reasoner", u) == 550 + 2190 + 140
+
+
+def test_deepseek_flash_is_priced_like_chat_until_official():
+    """deepseek-flash 2026-11-19 经网关接入，官方价未出：暂按 deepseek-chat 档，版本号标明是暂定价。"""
+    pt = PriceTable.load(PRICES)
+    assert "deepseek-flash@2026-11-19" in pt.version
+    u = {"input_tokens": 1_000_000, "output_tokens": 1_000_000, "cache_read_input_tokens": 1_000_000}
+    assert pt.usd_milli("deepseek-flash", u) == pt.usd_milli("deepseek-chat", u)
