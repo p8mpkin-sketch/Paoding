@@ -50,7 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     # bk、bn：瘦基线的等成本重试与共享笔记两臂
     ap.add_argument("--budget-usd", type=float, help="bk/bn 的等成本预算（美元）：取 full 臂在这道题上的每题成本")
     ap.add_argument("--rounds", type=int, default=0, help="bk/bn 的轮数上限；缺省 bk 20、bn 10，先到预算先停")
-    ap.add_argument("--workers", type=int, default=3, help="bn 每轮并行的 Worker 数（缺省 3）")
+    ap.add_argument("--workers", type=int, default=3, help="bn 每轮并行 Worker 数的上限（缺省 3）")
+    ap.add_argument(
+        "--unit-usd",
+        type=float,
+        help="bn 的单次尝试成本（美元），取同题 baseline 的平均花费；宽度 = max(1, ⌊预算 ÷ 它⌋)，不超过 --workers",
+    )
     # collect：把一批运行的 record.json 与 meta.json 收进仓库
     ap.add_argument("--into", type=Path, help="collect 的目标目录，如 docs/m1/readings/<批次>/records")
     # full 栈配置
@@ -84,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         if a.mode == "bk":
             arm = {"workers": 1, "rounds": a.rounds or 20, "budget_usd": a.budget_usd}
         elif a.mode == "bn":
-            arm = {"workers": a.workers, "rounds": a.rounds or 10, "budget_usd": a.budget_usd}
+            arm = {"workers": a.workers, "rounds": a.rounds or 10, "budget_usd": a.budget_usd, "unit_usd": a.unit_usd}
         if a.mode != "baseline" and a.budget_usd is None and not a.rounds:
             print(f"{a.mode} 要等成本预算：--budget-usd <full 臂的每题成本>（或显式给 --rounds）", file=sys.stderr)
             return 2

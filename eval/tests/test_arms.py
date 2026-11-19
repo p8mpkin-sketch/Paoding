@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from paoding_eval.__main__ import main as cli_main
-from paoding_eval.arms import NOTES, merge_notes, round_width, run_arm
+from paoding_eval.arms import NOTES, bn_width, merge_notes, round_width, run_arm
 from paoding_eval.record import Record
 from paoding_eval.spec import DRYRUN
 
@@ -72,6 +72,40 @@ def test_bn_narrows_round_when_budget_cannot_cover_workers(tmp_path: Path) -> No
     m = meta(tmp_path, rec)
     assert m["arm"]["widths"] == [3, 2] and rec.cost_usd == pytest.approx(0.025)
     assert m["arm"]["over_budget_milli"] == 0
+
+
+def test_bn_width_rule_c() -> None:
+    """等成本口径 C：W = max(1, ⌊C_full ÷ 单次尝试成本⌋)，不超过 --workers。"""
+    assert bn_width(0.016, 0.011, 3) == 1  # q1 的量级：付不起两次完整尝试，退化成单线程
+    assert bn_width(0.3, 0.1, 5) == 3  # 浮点下 0.3 / 0.1 = 2.9999…，按毫美元整数算才对
+    assert bn_width(0.5, 0.011, 3) == 3  # 不超过上限
+    assert bn_width(0.005, 0.011, 3) == 1  # 一次都付不起也开 1 个，由代理的硬顶兜住
+    with pytest.raises(ValueError):
+        bn_width(0.016, 0, 3)
+
+
+def test_bn_width_from_baseline_unit_cost(tmp_path: Path) -> None:
+    """预算 0.016、单次 0.011：宽度 1，逐轮单线程跑到预算；与不给单次成本时第一轮拆成 3 份对照。"""
+    rec = run_arm(
+        "bn",
+        DRYRUN,
+        1,
+        out_root=tmp_path / "runs",
+        workers=3,
+        rounds=5,
+        budget_usd=0.016,
+        unit_usd=0.011,
+        fake_steps=WRONG,
+    )
+    m = meta(tmp_path, rec)
+    assert m["arm"]["workers"] == 1 and m["arm"]["unit_usd"] == 0.011
+    assert m["arm"]["widths"] == [1, 1, 1] and rec.cost_usd == pytest.approx(0.015)
+
+
+def test_real_bn_needs_baseline_unit_cost(tmp_path: Path) -> None:
+    """真题 bn 有预算就要单次成本：同一题必须先跑 baseline。"""
+    with pytest.raises(ValueError, match="--unit-usd"):
+        run_arm("bn", DRYRUN, 1, out_root=tmp_path, budget_usd=0.016, real_program=["claude"], image="img")
 
 
 def test_bk_needs_budget_or_rounds(tmp_path: Path) -> None:
