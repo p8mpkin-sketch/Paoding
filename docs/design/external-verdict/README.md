@@ -2,7 +2,7 @@
 
 > 状态：设计稿，不含实现代码。§10 的九条待人裁决。复现用的最小外部平台模拟在 [`tests/integration/test_external_verdict_repro.py`](../../../tests/integration/test_external_verdict_repro.py)，那是本稿全部"证据"条目的出处。
 >
-> 上位约束：[规格 v1.5](../base-layer-spec-v1.md)（五条红线、八条不变量、3.1.2 Problem、3.3 判官、3.5 预算）、[一句话开题](../kaiti/README.md)（#83、#89：三层、判据形态、练习道信封）、[授权时机重排](../runtime-grants/README.md)（#91，已裁决；第一步实现 PR #93 在途）、[工作台宪章](../task-lifecycle/README.md)（#84、#90：D3 `accept: human` 与验收清单，已裁决未实现，L2）、设置层与钥匙环（#87）。
+> 上位约束：[规格 v1.5](../base-layer-spec-v1.md)（五条红线、八条不变量、3.1.2 Problem、3.3 判官、3.5 预算）、[一句话开题](../kaiti/README.md)（#83、#89：三层、判据形态、练习道信封）、[授权时机重排](../runtime-grants/README.md)（#91，已裁决；第一步实现 PR #93 已合入）、[工作台宪章](../task-lifecycle/README.md)（#84、#90：D3 `accept: human` 与验收清单，已裁决未实现，L2）、设置层与钥匙环（#87）。
 >
 > 硬规则：设计与复现都没有读取任何本地题库或校准目录。平台模拟里的任务、时限、口令全是现场生成的假数据。
 
@@ -116,7 +116,7 @@ R1、R3 是开题入口的问题，R2、R6、R7 是判官与内核的问题，R4
                        定值（今天）                      定源（新增或已裁决）
   判定权  goal.check   exact_match{sealed} | replay{spec}  ├ 外部：外部裁决连接器判官（本稿 §5.1–5.4）
                                                            └ 人：accept=human + acceptance[]（D3，已裁决，L2）
-  资源    scope        开题时的规则                        运行时申请 → grant_scope（#91，已裁决，#93 在途）
+  资源    scope        开题时的规则                        运行时申请 → grant_scope（#91，已裁决，#93 已合入）
                                                            └ 连接器把运行时分到的地址登记成"资源公告"（§5.5，只是接口）
   时限    deadline     （没有这一项，混在 budget.wall_s 里） deadline{source: local|external}，运行时绑定一次（§5.6）
   花费    budget       usd_milli、wall_s（花费轨）          不变；单题硬顶不变
@@ -281,7 +281,7 @@ Problem.deadline?: { source: "local"|"external",
 
 ## 7. 与既有机制的边界
 
-### 7.1 #91 运行时扩权（第一步实现在 PR #93）
+### 7.1 #91 运行时扩权（第一步实现 PR #93 已合入）
 
 | 本稿管 | #91 管 |
 | --- | --- |
