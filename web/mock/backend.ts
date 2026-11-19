@@ -9,7 +9,7 @@
 // 与 seen.card_hash 的 stale_view 校验。它们让对应的界面有数据可测。
 import { createHash } from "node:crypto";
 import type {
-  ApprovalDisplay, Authority, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
+  AcceptanceItem, AcceptCheck, AcceptRecord, ApprovalDisplay, Authority, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
   ExecRecord, ExtensionFields, FactNode, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, LeaseRow, Level,
   OpResult, Predicate, ProblemInput, ProblemItem, Profile, ProposalResponse, RegisterName, Risk, ScopeRule, StatusView,
   Tagged, Terminal, WorkItem,
@@ -32,6 +32,7 @@ export const JUDGES: Record<string, Omit<JudgeEntry, "judge_id">> = {
   exact_match: { version: "1", grade: "decisive", kind: "builtin", max_cost: 0 },
   window_assert: { version: "2", grade: "consistent", kind: "deferred", max_cost: 0.2 },
   ext_receipt: { version: "1", grade: "decisive", kind: "deferred", max_cost: 0 }, // 外部判定（假平台 plat-a），见 mock/kaiti.ts
+  structure_check: { version: "1", grade: "advisory", kind: "builtin", max_cost: 0 }, // 人工验收道：只给读数
 };
 const EXTERNAL_RESOURCES = ["telemetry"];
 const RISK_RANK: Record<Risk, number> = { r0: 0, r1: 1, r2: 2 };
@@ -80,12 +81,14 @@ type State = {
   costs: { kind: string; usd_milli: number; tokens: number; wall_s: number }[];
   capAdd: number; marks: { pct: number; seq: number }[]; extendedSeq: number;
   scopeReqs: Map<string, ScopeReq>;
+  acceptLog: AcceptRecord[]; accepted: boolean;
 };
 
 function project(events: Event[], pid: string, asOf: number): State {
   const s: State = {
     seq: asOf, now: 0, overrides: [], artifacts: new Map(), facts: new Map(), intents: new Map(), hints: new Map(), leases: new Map(),
     requests: new Map(), verdicts: [], decisions: new Map(), costs: [], capAdd: 0, marks: [], extendedSeq: 0, scopeReqs: new Map(),
+    acceptLog: [], accepted: false,
   };
   for (const ev of events) {
     if (ev.seq > asOf) break;
@@ -143,6 +146,10 @@ function project(events: Event[], pid: string, asOf: number): State {
           s.problem = { ...s.problem, scope, profile: b.derived, derived_profile: b.derived };
         }
         break;
+      case "accept":
+        s.acceptLog.push({ seq: ev.seq, decision: b.decision, checks: b.checks, ...(b.reason ? { reason: b.reason } : {}) });
+        if (b.decision === "accept") s.accepted = true;
+        break;
       case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
     }
   }
@@ -150,7 +157,8 @@ function project(events: Event[], pid: string, asOf: number): State {
 }
 
 function levelOf(s: State, target: string): Level {
-  const vs = s.verdicts.filter((v) => v.target === target && v.result !== "inconclusive");
+  // advisory 判官（如结构检查）只给读数，不让对象到 E3（与图服务的等级函数相同）
+  const vs = s.verdicts.filter((v) => v.target === target && v.result !== "inconclusive" && JUDGES[v.judge]?.grade !== "advisory");
   if (target === "goal" || s.intents.has(target)) return vs.some((v) => v.result === "pass") ? "E3" : "E0";
   const last = vs[vs.length - 1];
   return !last ? "E0" : last.result === "pass" ? "E3" : "X";
@@ -222,6 +230,15 @@ function extensionPending(s: State): boolean {
   return !s.verdicts.some((v) => v.result === "pass" && v.seq > (m50?.seq ?? 0));
 }
 
+/** 人工验收的题：最近一条 Goal 裁决为 pass、且晚于上一次验收记录时，返回它的 seq（与图服务 work.acceptance_ready 同规则）。 */
+function acceptanceReady(s: State): number | null {
+  const p = s.problem;
+  if (!p || p.goal.accept !== "human" || closed(s) || s.accepted) return null;
+  const v = s.verdicts.filter((x) => x.target === "goal").at(-1);
+  const last = Math.max(0, ...s.acceptLog.map((a) => a.seq));
+  return v && v.result === "pass" && v.seq > last ? v.seq : null;
+}
+
 function work(s: State, pid: string): WorkItem[] {
   if (!s.problem || closed(s)) return [];
   const items: WorkItem[] = [];
@@ -231,6 +248,7 @@ function work(s: State, pid: string): WorkItem[] {
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "needs_human") items.push({ kind: "human", target: i.id, why: "needs_human" });
   if (extensionPending(s)) items.push({ kind: "human", target: pid, why: "extension" });
   for (const r of bySeq(s.scopeReqs)) if (r.status === "pending" && !r.auto && !r.intent) items.push({ kind: "human", target: r.id, why: "scope_request" });
+  if (acceptanceReady(s) !== null) items.push({ kind: "human", target: pid, why: "acceptance" });
   return items;
 }
 
@@ -264,7 +282,11 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
     problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },
-    goal: { statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check, levelOf(s, "goal"), p.goal.max_attempts) },
+    goal: {
+      statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check, levelOf(s, "goal"), p.goal.max_attempts),
+      ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
+      ...(p.goal.acceptance ? { acceptance: p.goal.acceptance as AcceptanceItem[], acceptance_ready: acceptanceReady(s), accept_log: s.acceptLog } : {}),
+    },
     facts: bySeq(s.facts).map((f) => factNode(s, f)), intents: bySeq(s.intents).map((i) => intentNode(s, i)), hints: bySeq(s.hints).map(hintNode),
     leases, requests: bySeq(s.requests).map((r) => ({ id: r.id, seq: r.seq, target: r.target, judge_id: r.judge_id, candidate: r.candidate ?? null, verdict_seq: r.verdict_seq ?? null })),
     review: false, closeout: [],
@@ -357,7 +379,12 @@ function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind
     fields = f; display = disp;
   } else if (kind === "closeout") {
     if (id !== pid) return "not_found";
-    fields = { items: [], goal_level: levelOf(s, "goal"), closed: closed(s), terminal: terminalOf(s) };
+    const ready = acceptanceReady(s);
+    const v = ready === null ? null : s.verdicts.find((x) => x.seq === ready)!;
+    fields = {
+      items: [], goal_level: levelOf(s, "goal"), closed: closed(s), terminal: terminalOf(s),
+      ...(s.problem!.goal.acceptance ? { acceptance: s.problem!.goal.acceptance, deliverable: v ? { verdict_seq: v.seq, candidate: v.candidate ?? null } : null } : {}),
+    };
     display = { steps: ["四顾", "满志", "藏刀"], terminal_if_closed_now: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", terminal_badge: badge(s.problem!.goal.check.judge_id) };
   } else if (kind === "extension") {
     if (id !== pid) return "not_found";
@@ -477,7 +504,12 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (!b.title || !Array.isArray(b.scope) || b.scope.length === 0) throw new Rejected("schema_error", "title、scope 必填");
       if (!(b.budget?.usd_milli > 0) || !(b.budget?.wall_s > 0)) throw new Rejected("schema_error", "预算为正");
       if (!JUDGES[b.goal?.check?.judge_id] || (b.judges ?? []).some((j: string) => !JUDGES[j])) throw new Rejected("unknown_ref", "判官未注册");
-      if (b.goal.accept !== "judge") throw new Rejected("schema_error", "M0 只实现 accept=judge");
+      if (b.goal.accept !== "judge" && b.goal.accept !== "human") throw new Rejected("schema_error", "accept 取 judge 或 human");
+      if ((b.goal.accept === "human") !== Array.isArray(b.goal.acceptance) || (b.goal.acceptance && b.goal.acceptance.length === 0)) throw new Rejected("schema_error", "accept=human 必须带非空的验收清单；判定器判定的不带");
+      if (b.goal.acceptance) {
+        for (const a of b.goal.acceptance) if ("id" in a || !["span", "human"].includes(a.src) || !a.text || a.text.length > 200) throw new Rejected("schema_error", "验收项须为 {text ≤200, src: span|human, needs?}");
+        b = { ...b, goal: { ...b.goal, acceptance: b.goal.acceptance.map((a: object, k: number) => ({ ...a, id: `a${k + 1}` })) } };
+      }
       for (const ref of [b.origin?.statement_ref, ...(b.origin?.materials ?? [])]) if (!pendingArts.has(ref) && !s.artifacts.has(ref)) throw new Rejected("unknown_ref", `材料 ${ref}`);
       return { ...b, profile: deriveProfile(b.scope, b.goal.check.judge_id) };
     }
@@ -543,6 +575,28 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         return { rule: k, reason: String(b.reason).trim(), derived: deriveProfile(rest, s.problem.goal.check.judge_id) };
       }
       case "budget_add": if (!(Number.isInteger(b.usd_milli) && b.usd_milli > 0)) throw new Rejected("schema_error", "金额为正"); return { usd_milli: b.usd_milli };
+      case "accept": {
+        // 与 graph/reducer/close.py 的 _v_accept 同规则（简化：只看本假服务能产生的情形）
+        if (s.problem.goal.accept !== "human") throw new Rejected("forbidden_op", "只有人工验收的任务有验收");
+        if (b.decision !== "accept" && b.decision !== "reject") throw new Rejected("schema_error", "decision 取 accept 或 reject");
+        const c = card(s, pid, "closeout", pid);
+        if (c === "not_found" || b.seen?.card_hash !== c.card_hash) throw new Rejected("stale_view", "卡片已变化", c === "not_found" ? undefined : c);
+        if (acceptanceReady(s) === null) throw new Rejected("schema_error", "还没有待验收的交付物");
+        const items = s.problem.goal.acceptance as AcceptanceItem[];
+        const checks = (b.checks ?? []) as AcceptCheck[];
+        if (checks.length !== items.length || items.some((a) => !checks.some((x) => x.id === a.id))) throw new Rejected("schema_error", "验收清单里每一条都要判");
+        for (const x of checks) {
+          const need = items.find((a) => a.id === x.id)!.needs;
+          if (x.ref !== undefined) { const a = s.artifacts.get(x.ref); if (!a) throw new Rejected("unknown_ref", `验收项 ${x.id} 的依据 ${x.ref} 不是本题的产物`); if (a.class !== "exec" && a.class !== "input") throw new Rejected("inadmissible_class", "验收依据只接受 exec 类或 input 类"); }
+          if (x.verdict === "pass" && need === "artifact" && !x.ref) throw new Rejected("missing_evidence", `验收项 ${x.id} 要附交付物`);
+          if (x.verdict === "pass" && need === "note" && !x.note?.trim()) throw new Rejected("missing_evidence", `验收项 ${x.id} 要附说明`);
+        }
+        const failed = checks.filter((x) => x.verdict === "fail").map((x) => x.id);
+        if (b.decision === "accept" && failed.length) throw new Rejected("schema_error", `有不通过的条目（${failed.join("、")}）：只能拒收`);
+        const reason = String(b.reason ?? "").trim();
+        if (b.decision === "reject" && !reason) throw new Rejected("schema_error", "拒收须写理由");
+        return { decision: b.decision, checks, seen: b.seen, card_hash: b.seen.card_hash, ...(reason ? { reason } : {}) };
+      }
       default: throw new Rejected("schema_error", `未知操作 ${op}`);
     }
   }
@@ -581,6 +635,8 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
           return { ok: true, id: prefix ? `${prefix}_${ev.seq}` : null, seq: ev.seq };
         }),
       };
+      // 图服务的后续：全部通过的验收之后自动关题，终态 accepted（work.followups）
+      if (staged.some((o) => o.op === "accept" && o.body.decision === "accept")) append(pid, { kind: "graph", id: "graph" }, "close_problem", { terminal: "accepted", card_hash: null, by: "accept" });
     } catch (e) {
       if (!(e instanceof Rejected)) throw e;
       out = { ok: false, results: results.filter((r) => !r.ok) };

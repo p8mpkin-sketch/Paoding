@@ -3,10 +3,10 @@ import type { TodoItem } from "../model/viewmodel";
 
 export const WHY: Record<string, string> = {
   needs_human: "审批", extension: "续期门", dispute: "争议待裁决", closeout: "验收与四顾", stalled: "停滞：等待指导或人工关闭",
-  scope_request: "申请访问",
+  scope_request: "申请访问", acceptance: "人工验收",
 };
 /** F1 实现了卡片的待办类别；其余只列出，处理走 pd。 */
-export const HAS_CARD = new Set(["needs_human", "extension", "scope_request"]);
+export const HAS_CARD = new Set(["needs_human", "extension", "scope_request", "acceptance"]);
 
 export const todoKey = (t: TodoItem) => `${t.why}:${t.target}`;
 

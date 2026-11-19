@@ -1,7 +1,7 @@
 // 人的操作的事件体构造（HMI 设计 §11.3；事件体的字段以图服务的 reducer 为准）。
 // 网页与 pd 发出的事件体逐字段相同（HT-17）：两端都只是把这些字段交给同一个 validate。
 // 写操作集合是规格操作表 human 一行的子集（HT-12）。
-import type { HumanOpKind, Op, Profile, Seen } from "./types";
+import type { AcceptCheck, HumanOpKind, Op, Profile, Seen } from "./types";
 
 export const HUMAN_OPS: ReadonlySet<HumanOpKind> = new Set<HumanOpKind>([
   "open_problem", "register_artifact", "hint", "approve", "profile_override", "abandon_intent", "close_problem",
@@ -29,4 +29,7 @@ export const ops = {
     ({ op: "grant_scope", body: { request, decision: "approve", seen, ...(risk ? { risk } : {}) } }),
   denyScope: (request: string, reason: string, seen: Seen): Op => ({ op: "grant_scope", body: { request, decision: "deny", reason, seen } }),
   revokeScope: (rule: number, reason: string): Op => ({ op: "revoke_scope", body: { rule, reason } }),
+  // —— 人工验收（宪章 D3、02 §3.3）：与 pd accept / pd reject 同一组字段；seen 是收尾卡 ——
+  accept: (checks: AcceptCheck[], seen: Seen): Op => ({ op: "accept", body: { decision: "accept", checks, seen } }),
+  rejectDelivery: (checks: AcceptCheck[], reason: string, seen: Seen): Op => ({ op: "accept", body: { decision: "reject", checks, seen, reason } }),
 } as const;

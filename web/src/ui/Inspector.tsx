@@ -103,6 +103,12 @@ function GoalView({ vm }: { vm: ViewModel }) {
       </header>
       <CriterionCard p={vm.goal.predicate} seq={vm.seq} />
       <section><h4>目标陈述</h4><Text t={vm.goal.statement} meta={{ note: "新建任务时写下" }} /></section>
+      {vm.goal.acceptance.length > 0 && (
+        <section data-acceptance-list>
+          <h4>验收清单<span className="t2">（创建时登记，之后不能改；终态最多为人工验收）</span></h4>
+          <ol>{vm.goal.acceptance.map((x) => <li key={x.id}><span className="k-mono">{x.id}</span> {x.text} <span className="t2">（{x.src === "span" ? "原文" : "人写"}{x.needs === "artifact" ? "；要附交付物" : x.needs === "note" ? "；要附说明" : ""}）</span></li>)}</ol>
+        </section>
+      )}
     </div>
   );
 }

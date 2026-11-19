@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { newIdemKey } from "../api/client";
 import type { ProfilePreview, Risk, VaultRef } from "../api/types";
-import type { KaitiExtract, KaitiOverrides, KaitiRow, KaitiVetted } from "../api/kaiti";
+import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiRow, KaitiVetted } from "../api/kaiti";
 import type { Settings } from "../api/settings-types";
 import { useServices } from "../app/context";
 import { saveDraft } from "../app/draft";
@@ -108,6 +108,42 @@ function ModelBlock({ v, models, busy, onPick, nums }: {
   );
 }
 
+/** 拒绝页第 02 条路（宪章 D3、02 §3.3）：验收清单只许原文里的句子或你自己写的，模型不起草条目。 */
+function HumanWay({ v, busy, onGo }: { v: KaitiVetted; busy: boolean; onGo: (items: KaitiAcceptance[]) => void }) {
+  const sents = v.spans.filter((x) => x.kind === "sentence");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [lines, setLines] = useState<{ text: string; artifact: boolean }[]>([{ text: "", artifact: false }]);
+  const items: KaitiAcceptance[] = [
+    ...sents.filter((x) => picked.includes(x.id)).map((x) => ({ span: x.id })),
+    ...lines.filter((l) => l.text.trim()).map((l) => ({ text: l.text.trim(), ...(l.artifact ? { needs: "artifact" as const } : {}) })),
+  ];
+  const edit = (k: number, patch: Partial<{ text: string; artifact: boolean }>) => setLines((xs) => xs.map((l, j) => (j === k ? { ...l, ...patch } : l)));
+  return (
+    <div className="kt-human" data-human-way>
+      {sents.length > 0 && <>
+        <div className="sheet-sub">从原文里选<span className="t2">逐字取原句，出处记“摘”</span></div>
+        <ul className="kt-acc">
+          {sents.map((x) => (
+            <li key={x.id}><label><input type="checkbox" data-acc-span={x.id} checked={picked.includes(x.id)} disabled={busy}
+              onChange={(e) => setPicked((p) => (e.target.checked ? [...p, x.id] : p.filter((y) => y !== x.id)))} /> <Plain text={x.text} /></label></li>
+          ))}
+        </ul>
+      </>}
+      <div className="sheet-sub">自己写<span className="t2">一条一句、能被你判断的陈述，出处记“人”</span></div>
+      <ul className="kt-acc">
+        {lines.map((l, k) => (
+          <li key={k}>
+            <input value={l.text} maxLength={200} placeholder="例如：对比覆盖至少三个框架" data-acc-text={k} disabled={busy} onChange={(e) => edit(k, { text: e.target.value })} />
+            <label className="t2"><input type="checkbox" checked={l.artifact} data-acc-needs={k} disabled={busy} onChange={(e) => edit(k, { artifact: e.target.checked })} /> 验收时要附交付物</label>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className={btnClass("bare", "sm")} data-action="acc-add" disabled={busy || lines.length >= 32} onClick={() => setLines((xs) => [...xs, { text: "", artifact: false }])}>再加一条</button>{" "}
+      <button type="button" className={btnClass("line", "sm")} data-action="refuse-human" disabled={busy || items.length === 0} onClick={() => onGo(items)}>按这份清单起草</button>
+    </div>
+  );
+}
+
 export function Kaiti() {
   const { api, cfg } = useServices();
   const writable = cfg.token !== null;
@@ -116,6 +152,7 @@ export function Kaiti() {
   const [ext, setExt] = useState<KaitiExtract | null>(null);
   const [v, setV] = useState<KaitiVetted | null>(null);
   const [ov, setOv] = useState<KaitiOverrides>({});
+  const [acc, setAcc] = useState<KaitiAcceptance[] | null>(null);
   const [busy, setBusy] = useState<"draft" | "revet" | "open" | "advanced" | null>(null);
   const [err, setErr] = useState<Error | null>(null);
   const [fieldErr, setFieldErr] = useState<string | null>(null);
@@ -167,7 +204,7 @@ export function Kaiti() {
     setBusy("draft"); setErr(null); setFieldErr(null);
     try {
       const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}) });
-      setV(out); setOv({}); setProf(profile);
+      setV(out); setOv({}); setProf(profile); setAcc(null);
     } catch (e) {
       setErr(e as Error); setV(null);
     } finally {
@@ -179,11 +216,25 @@ export function Kaiti() {
     if (!v?.draft) return;
     setBusy("revet"); setFieldErr(null);
     try {
-      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: v.draft, model: v.model, ...(prof ? { profile: prof } : {}), nonce: v.nonce, overrides: next });
+      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: v.draft, model: v.model, ...(prof ? { profile: prof } : {}), nonce: v.nonce, overrides: next, ...(acc ? { acceptance: acc } : {}) });
       setV(out); setOv(next);
     } catch (e) {
       setFieldErr(rejectText(e as Error) ?? (e as Error).message);
       setV({ ...v }); // 数字框回到上一份校验结果
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** 拒绝页第 02 条路：带着人给的验收清单重新校验（交回草案，不再调模型），任务改为人工验收。 */
+  async function humanRoute(items: KaitiAcceptance[]) {
+    if (!v?.draft || busy) return;
+    setBusy("revet"); setErr(null);
+    try {
+      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: v.draft, model: v.model, ...(prof ? { profile: prof } : {}), nonce: v.nonce, acceptance: items });
+      setV(out); setOv({}); setAcc(items);
+    } catch (e) {
+      setErr(e as Error);
     } finally {
       setBusy(null);
     }
@@ -312,7 +363,7 @@ export function Kaiti() {
                 const rows = v.derivation.filter((r) => groupOf(r.field) === g);
                 return (
                   <div key={g} className="kt-group" data-group={g}>
-                    <div className="kt-group-h">{g}</div>
+                    <div className="kt-group-h">{g}{g === "判据" && v.input!.goal.accept === "human" && <span className="t2" data-human-accept> · 终态最多为人工验收（已验收），不写“已证明”</span>}</div>
                     <dl className="kt-rows">
                       {rows.map((r, i) => {
                         const risk = r.field.match(/^scope\[(\d+)\]\.risk$/);
@@ -416,11 +467,12 @@ export function Kaiti() {
               <p className="t2">在上面补一行“答案：…”，或一段检查命令（用反引号括起来，例如 `make test`），再回车。</p>
               <button type="button" className={btnClass("line", "sm")} onClick={() => box.current?.focus()}>回到输入框</button>
             </li>
-            <li data-way="human" aria-disabled="true">
+            <li data-way="human">
               <span className="kt-way-no">02</span>
               <b>人工验收</b>
-              <p className="t2">由你按验收清单逐条验收，终态最多“已验收”，不写“已证明”。内核还只接受判定器判定，放开之前不能选。</p>
-              <button type="button" className={btnClass("line", "sm")} disabled>暂不可用</button>
+              <p className="t2">先写下怎样算做完：交付后由你按这份清单逐条判，终态最多“已验收”，不写“已证明”。清单创建后不能改；交付物只做结构检查，结果只是读数。</p>
+              {v.draft ? <HumanWay v={v} busy={busy !== null} onGo={(items) => void humanRoute(items)} />
+                : <p className="t2">起草没有结果，这条路走不了：先补一句目标再回车。</p>}
             </li>
             <li data-way="advanced">
               <span className="kt-way-no">03</span>

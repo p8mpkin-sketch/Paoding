@@ -12,7 +12,7 @@ import { Link, useProblems } from "./Problems";
 export const INBOX_POLL_MS = 8000;
 
 /** 待办类别的单字印。 */
-const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", stalled: "停", scope_request: "权" };
+const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", acceptance: "验", stalled: "停", scope_request: "权" };
 
 type Group = { p: ProblemItem; items: HumanWorkItem[] | null; error: string | null };
 
