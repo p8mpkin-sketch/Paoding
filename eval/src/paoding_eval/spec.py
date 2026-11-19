@@ -30,6 +30,9 @@ def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
 
+DELIVERY = "交付：取得答案后，把答案原样写进当前工作目录下的 answer.txt（文件里只有答案本身）。"
+
+
 @dataclass
 class ProblemSpec:
     id: str
@@ -48,7 +51,9 @@ class ProblemSpec:
 
     @property
     def goal_prompt(self) -> str:
-        return self.prompt or self.statement
+        """baseline 的用户提示：题面（或清单里给的 prompt），加上交付方式。
+        baseline 的判定读工作目录下的 answer.txt，所以交付方式必须写进提示；full 里同一件事由 claim_done 承担。"""
+        return (self.prompt or self.statement).rstrip() + "\n\n" + DELIVERY
 
     def expect(self) -> dict:
         """exact_match 判据：答案的 sha256。答案本身不出现在判据里。"""

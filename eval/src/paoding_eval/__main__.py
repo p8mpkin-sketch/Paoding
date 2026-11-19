@@ -25,13 +25,14 @@ from pathlib import Path
 
 import yaml
 
+from .readings import collect_records, run_meta
 from .runner import run_baseline, run_full
 from .spec import DRYRUN, load
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="paoding_eval", description="庖丁评测台：baseline 与 full 两种模式")
-    ap.add_argument("mode", choices=("baseline", "full"))
+    ap.add_argument("mode", choices=("baseline", "full", "collect"))
     ap.add_argument("--problem", type=Path, help="题目清单（YAML）；缺省用内建干跑题")
     ap.add_argument("--dryrun", action="store_true", help="内建干跑题（假后端）")
     ap.add_argument("--run", type=int, default=1, help="同一配置的第几次（从 1 起）")
@@ -42,13 +43,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--upstream", default="", help="baseline 的真模型端点")
     ap.add_argument("--api-key-env", default="", help="baseline 的真密钥所在的环境变量名")
     ap.add_argument("--model", default="", help="模型名（价目表里的名字）")
+    ap.add_argument("--image", default="", help="baseline 的沙箱镜像（装有 CLI）；真题运行必填，干跑可选")
+    ap.add_argument("--transport", default="", choices=("", "unix", "tcp"), help="中继到代理的通路；缺省按平台")
+    # collect：把一批运行的 record.json 与 meta.json 收进仓库
+    ap.add_argument("--into", type=Path, help="collect 的目标目录，如 docs/m1/readings/<批次>/records")
     # full 栈配置
     ap.add_argument("--config", type=Path, help="full 模式的栈配置（YAML）")
     ap.add_argument("--port", type=int, default=0, help="full 模式的图服务端口；0 取临时端口")
     a = ap.parse_args(argv)
 
+    if a.mode == "collect":
+        if not a.into:
+            print("collect 要目标目录：--into <目录>", file=sys.stderr)
+            return 2
+        rows = collect_records(a.out, a.into)
+        print(json.dumps({"collected": len(rows), "into": str(a.into)}, ensure_ascii=False))
+        return 0 if rows else 1
+
     spec = DRYRUN if (a.dryrun or a.problem is None) else load(a.problem)
     a.out.mkdir(parents=True, exist_ok=True)
+    meta = run_meta(spec)
 
     if a.mode == "baseline":
         if a.program:
@@ -67,15 +81,29 @@ def main(argv: list[str] | None = None) -> int:
                 upstream_url=a.upstream,
                 api_key=key,
                 timeout_s=a.timeout,
+                image=a.image,
+                transport=a.transport,
+                meta=meta,
             )
         else:
-            rec = run_baseline(spec, a.run, out_root=a.out, model=a.model, timeout_s=a.timeout)
+            rec = run_baseline(
+                spec,
+                a.run,
+                out_root=a.out,
+                model=a.model,
+                timeout_s=a.timeout,
+                image=a.image,
+                transport=a.transport,
+                meta=meta,
+            )
     else:
         if not a.config:
             print("full 模式要栈配置：--config <YAML>", file=sys.stderr)
             return 2
         config = yaml.safe_load(a.config.read_text(encoding="utf-8")) or {}
-        rec = run_full(spec, a.run, out_root=a.out, config=config, port=a.port, model=a.model, timeout_s=a.timeout)
+        rec = run_full(
+            spec, a.run, out_root=a.out, config=config, port=a.port, model=a.model, timeout_s=a.timeout, meta=meta
+        )
 
     print(json.dumps(rec.as_dict(), ensure_ascii=False))
     return 0 if rec.terminal == "solved" else 1
