@@ -22,6 +22,7 @@ defaults:
   env: {base: basic, baseline_ref: basic@1}
   answer_judge: exact_match
   command_judge: replay
+  human_judge: structure_check   # 人工验收道的 Goal 判官：只看交付物形状（advisory）
   command_expect: {exit_code: 0}
   tier: medium              # 起草模型没有给档位、也没有确定性档位时
   fallback_budget: {usd_milli: 2000, wall_s: 1800}   # 先验数据源查不到时（占位）

@@ -1,12 +1,13 @@
 """起草服务（设计 §6 service.py、§7）：网页 /new 的后端。不持有令牌，不写图服务，不写保密库。
 
     POST /v1/drafts/extract {text}                                  → 前置抽取（确定性，不调模型）
-    POST /v1/drafts {text, answer?, profile?, draft?, model?, nonce?, overrides?} → 校验结果 + 待提交的批次
+    POST /v1/drafts {text, answer?, profile?, draft?, model?, nonce?, overrides?, acceptance?} → 校验结果 + 待提交的批次
 
 开题仍由前端用人的令牌提交（禁令三）：先 PUT /v1/blobs 存题面等材料（本机核对哈希），有答案时 PUT /v1/vault
 换回 VaultRef 替换批次里的 "$answer"，最后 POST /v1/problems。这里只算，不落任何东西。
 
 - profile：这次起草用哪个已登记的模型档案（确认卡的“起草用”）；缺省取设置里角色路由的“起草”。
+- acceptance：拒绝页选“人工验收”后人给的清单（每项原文区间或人写的陈述），任务改为 accept=human。
 - 交回 draft 即不调模型：确认卡改风险或预算（overrides）后重新校验走这条路，模型只在第一次回车时调一次。
 - 零确认在第二期一律关（cz 2026-11-19 裁决 #83 第 2 条附条件；内核信封随第三期）：lane 只有 confirm 与 refuse，
   练习道候选照样标 eligible，卡上写"零确认未放行"。
@@ -156,6 +157,12 @@ class KaitiService:
                 d = parse_draft(doc, ext, model)
             except DraftError as e:
                 err = str(e)
+        acc = body.get("acceptance")
+        if acc is not None and (
+            not isinstance(acc, list)
+            or not all(isinstance(a, dict) and set(a) <= {"span", "text", "needs"} for a in acc)
+        ):
+            raise BadRequest("acceptance 须是 [{span} | {text}, needs?] 的列表")
         v = vet(
             ext,
             answer,
@@ -167,6 +174,7 @@ class KaitiService:
             nonce=nonce,
             draft_error=err,
             catalog=self.catalog,
+            acceptance=acc or None,
         )
         ov = body.get("overrides")
         if ov:

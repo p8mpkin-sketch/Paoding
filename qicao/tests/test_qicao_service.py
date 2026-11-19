@@ -159,3 +159,31 @@ def test_bad_model_output_and_tampered_draft_refuse():
     bad = {**first["draft"], "entries": [{"span": "nope", "role": "entry"}]}
     out = svc().draft_view({"text": T1, "draft": bad})
     assert out["lane"] == "refuse"
+
+
+def test_refuse_way_02_human_acceptance():
+    """拒绝页第 02 条路（宪章 D3、02 §3.3）：人给验收清单（原文区间或自己写），任务改为人工验收。"""
+    s = svc()
+    refused = s.draft_view({"text": T3})
+    assert refused["lane"] == "refuse" and "human" in refused["ways"]
+    sent = next(x for x in refused["spans"] if x["kind"] == "sentence")
+    body = {"text": T3, "draft": refused["draft"], "nonce": refused["nonce"]}
+    out = s.draft_view({**body, "acceptance": [{"span": sent["id"]}, {"text": "附上对比表", "needs": "artifact"}]})
+    assert out["lane"] == "confirm" and not out["eligible"]
+    goal = out["input"]["goal"]
+    assert goal["accept"] == "human" and goal["check"] == {"judge_id": "structure_check"}
+    assert goal["acceptance"] == [
+        {"text": sent["text"].strip(), "src": "span"},
+        {"text": "附上对比表", "src": "human", "needs": "artifact"},
+    ]
+    rows = {r["field"]: r for r in out["derivation"]}
+    assert rows["goal.acceptance[0]"]["source"] == "span" and rows["goal.acceptance[1]"]["source"] == "human"
+    assert any(n["code"] == "human_acceptance" for n in out["notes"])
+    assert out["ops"][-1]["body"]["goal"]["acceptance"] == goal["acceptance"]
+    bad = s.draft_view({**body, "acceptance": [{"span": "nope"}]})
+    assert bad["lane"] == "refuse" and any(n["code"] == "acceptance_bad" for n in bad["notes"])
+    with pytest.raises(BadRequest):
+        s.draft_view({**body, "acceptance": [{"text": "x", "src": "model"}]})  # 不收出处字段：模型起草的不进
+    judged = s.draft_view({"text": T2, "acceptance": [{"text": "x"}]})
+    assert judged["input"]["goal"]["accept"] == "judge"
+    assert any(n["code"] == "acceptance_ignored" for n in judged["notes"])

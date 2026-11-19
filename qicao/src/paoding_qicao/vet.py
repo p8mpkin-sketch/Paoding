@@ -91,7 +91,10 @@ def vet(
     nonce: str = "",
     draft_error: str = "",
     catalog: Catalog | None = None,
+    acceptance: list[Mapping[str, Any]] | None = None,
 ) -> Vetted:
+    """acceptance：人在拒绝页选了“人工验收”（降级路 02，宪章 D3、02 §3.3）后给的验收清单，
+    每项 {span: 区间 id} 或 {text: 人写的陈述}，可带 needs。模型不写条目：草案里没有这一栏。"""
     notes: list[Note] = []
     der: list[dict[str, Any]] = []
     dfl = intake.defaults
@@ -125,6 +128,7 @@ def vet(
     cat = catalog or defaults_catalog(dfl)
     judges: list[str]
     check: dict[str, Any]
+    accept, items = "judge", []
     spec: str | None = None
     needs_ack: str | None = None
     external: dict[str, Any] | None = None
@@ -205,11 +209,23 @@ def vet(
                 "goal.check",
                 f"这条命令有外发的形状（{'、'.join(outw)}）：勾选“我确认这条命令只检查、不提交”之后才能创建",
             )
+    elif acceptance:
+        jid = str(cat.judge("human") or dfl.get("human_judge", "structure_check"))
+        judges, check = [jid], {"judge_id": jid}
+        accept, items = "human", _acceptance(ext, acceptance, der, note)
+        der.append(_src("goal.check", f"{jid} · 只看交付物的形状，只给读数", "table", note="人工验收：由你逐条判"))
+        note(
+            "human_acceptance",
+            "goal.check",
+            "人工验收：交付后由你按清单逐条判，终态最多为“已验收”，不写“已证明”；清单创建后不能改",
+        )
     else:
         if d.check_form == "answer":
             note("answer_missing", "goal.check", "起草认为有标准答案，但答案栏与原文里都没有答案行", "refuse")
         note("no_criterion", "goal.check", "没有标准答案，也没有能跑的检查命令：现有判定方式判不了它", "refuse")
         judges, check = [], {}
+    if acceptance and accept == "judge":
+        note("acceptance_ignored", "goal.check", "已有可判定的终点，验收清单没有用上：按判定器判定")
     der.append(_src("goal.max_attempts", max_attempts, "table"))
 
     # ---------- 授权 ----------
@@ -315,7 +331,13 @@ def vet(
         problem = {
             "title": d.title,
             "origin": {"statement_ref": "$statement", "materials": ["$references"] if refs else []},
-            "goal": {"statement": goal_text, "check": check, "max_attempts": max_attempts, "accept": "judge"},
+            "goal": {
+                "statement": goal_text,
+                "check": check,
+                "max_attempts": max_attempts,
+                "accept": accept,
+                **({"acceptance": items} if items else {}),
+            },
             "scope": scope,
             "budget": {"usd_milli": usd, "wall_s": wall, "verify_share": vs, "bootstrap_share": bs},
             "env": dict(dfl["env"]),
@@ -361,6 +383,39 @@ def vet(
     if v.lane != "refuse":
         v.external, v.needs_ack = external, needs_ack
     return v
+
+
+ACCEPTANCE_MAX, ACCEPTANCE_TEXT_MAX = 32, 200  # 与内核 goal.acceptance 的上限相同
+
+
+def _acceptance(
+    ext: Extraction, given: list[Mapping[str, Any]], der: list[dict[str, Any]], note: Any
+) -> list[dict[str, Any]]:
+    """把人给的清单变成 goal.acceptance 的提交形态：区间取原文（出处“摘”），其余是人写的（出处“人”）。
+    不合格的条目让这张卡落到拒绝道，不替人改写。"""
+    out: list[dict[str, Any]] = []
+    if len(given) > ACCEPTANCE_MAX:
+        note("acceptance_bad", "goal.acceptance", f"验收清单至多 {ACCEPTANCE_MAX} 条", "refuse")
+        return out
+    for k, a in enumerate(given):
+        sid, text = a.get("span"), a.get("text")
+        sp = ext.span(sid) if isinstance(sid, str) else None
+        if sp is not None:
+            body, src, spans = sp.text.strip(), "span", [sp.id]
+        elif sid is None and isinstance(text, str):
+            body, src, spans = text.strip(), "human", None
+        else:
+            note("acceptance_bad", "goal.acceptance", f"第 {k + 1} 条不是原文区间，也不是你写的陈述", "refuse")
+            continue
+        if not body or len(body) > ACCEPTANCE_TEXT_MAX:
+            note("acceptance_bad", "goal.acceptance", f"第 {k + 1} 条须为 1 到 {ACCEPTANCE_TEXT_MAX} 字", "refuse")
+            continue
+        item = {"text": body, "src": src}
+        if a.get("needs") in ("artifact", "note"):
+            item["needs"] = a["needs"]
+        out.append(item)
+        der.append(_src(f"goal.acceptance[{len(out) - 1}]", body, "span" if spans else "human", spans))
+    return out
 
 
 def _outbound(spec: str, ext: Extraction, words: Mapping[str, Any]) -> list[str]:
