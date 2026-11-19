@@ -232,3 +232,36 @@ def approval_card(state: dict, pid: str, iid: str) -> str:
     seen = seen_card(state, pid, "approval", iid)
     o.add("structure", f"card_hash {seen['card_hash'][:12]} · 所见 seq {seen['seq']}")
     return o.text()
+
+
+def scope_card(state: dict, pid: str, rid: str) -> str:
+    """扩权卡（runtime-grants §7.1）的文本形态：新增规则与现有范围并排；末行是 card_hash，与网页卡相同。"""
+    x = state["scope_requests"][rid]
+    o = Out()
+    via = (
+        "随 Intent " + x["intent"] + " 的审批"
+        if x.get("intent")
+        else ("练习道白名单自动批准" if x["auto"] else "等人批")
+    )
+    o.add(
+        "status",
+        f"扩权申请 {rid}：{x['status']}；{via}；申请方 {x['by']}"
+        + (f"（会话 {x['session']}）" if x["session"] else ""),
+    )
+    for r in x["rules"]:
+        o.add(
+            "structure",
+            f"新增 {r['resource']} {r['pattern']} {','.join(r['actions'])} 风险 {r['risk']}（查风险表，未命中按 r2）",
+        )
+    for r in state["problems"][pid]["scope"]:
+        if "revoked" not in r:
+            o.add("structure", f"现有 {r['resource']} {r['pattern']} {','.join(r['actions'])} {r['risk']}")
+    if x["why"]:
+        o.add("summary", f"理由：{x['why']}")
+    for b in x.get("blockers") or []:
+        o.add("structure", f"没有自动批准：{b}")
+    if x.get("reason"):
+        o.add("human_reason", f"拒绝理由：{x['reason']}")
+    seen = seen_card(state, pid, "scope", rid)
+    o.add("structure", f"card_hash {seen['card_hash'][:12]} · 所见 seq {seen['seq']}")
+    return o.text()

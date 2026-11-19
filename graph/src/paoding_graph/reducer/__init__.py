@@ -12,7 +12,7 @@ JCSError）转成 schema_error。校验函数里其余的异常是内核自己�
 
 按事件族分成子模块，每个子模块里校验（`_v_*`）与应用（`_a_*`）分开写：
 `problem`（开题、登记、画像覆盖）、`fact`（论断）、`intent`（Intent、审批、Hint）、`judge`（判官请求与裁决）、
-`lease`（租约四操作与用量）、`close`（关题与预算标记）；共用的结果类型、配置与解析在 `common`。
+`lease`（租约四操作与用量）、`close`（关题与预算标记）、`grants`（运行时扩权）；共用的结果类型、配置与解析在 `common`。
 本模块只做分派：谁能提交什么、题目与令牌的前置检查、异常到 schema_error 的转换。
 IO 前置条件不在这里：Blob 是否存在、哈希是否相符由服务层在调用 validate 之前检查。
 """
@@ -25,7 +25,7 @@ from .. import work as wk  # noqa: F401  —— 测试经 reducer.wk 替换内�
 from ..jcs import JCSError, canonicalize
 from ..parse import BadBody, Obj
 from ..state import Actor, Body, Event, State
-from . import close, fact, intent, judge, lease, problem, recall
+from . import close, fact, grants, intent, judge, lease, problem, recall
 from .common import Applier, Config, Ok, Reject, TimedValidator, Validator, empty_state
 from .fact import content_key
 
@@ -75,6 +75,12 @@ def _who(actor: Actor, kind: str) -> bool:
         return k in ("graph", "watchdog", "human")
     if kind == "budget_mark":
         return k == "graph"
+    if kind == "request_scope":  # 申请不是授权；图服务只替带 needs_scope 的 Intent 申请（另查）
+        return (k == "adapter" and role in grants.REQUEST_ROLES) or k in ("human", "graph")
+    if kind == "grant_scope":  # 人；或图服务按确定性判定（另查，判定在 validate 里重算）
+        return k in ("human", "graph")
+    if kind == "revoke_scope":
+        return k == "human"
     return False
 
 
@@ -96,6 +102,9 @@ KINDS = (
     "close_problem",
     "budget_mark",
     "profile_override",
+    "request_scope",
+    "grant_scope",
+    "revoke_scope",
 )
 AFTER_CLOSE = ("cost", "release")  # 关题后在途任务仍可交回用量与释放租约
 
@@ -132,6 +141,9 @@ _VALIDATORS: dict[str, Validator] = {
     "cost": lease._v_cost,
     "close_problem": close._v_close_problem,
     "budget_mark": close._v_budget_mark,
+    "request_scope": grants._v_request_scope,
+    "grant_scope": grants._v_grant_scope,
+    "revoke_scope": grants._v_revoke_scope,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -152,6 +164,9 @@ _APPLIERS: dict[str, Applier] = {
     "cost": lease._a_cost,
     "close_problem": close._a_close_problem,
     "budget_mark": close._a_budget_mark,
+    "request_scope": grants._a_request_scope,
+    "grant_scope": grants._a_grant_scope,
+    "revoke_scope": grants._a_revoke_scope,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 
@@ -210,9 +225,14 @@ def apply(state: State, ev: Event) -> State:
 
 def result_id(ev: Event) -> str | None:
     """一条事件给提议方的返回 id。"""
-    prefix = {"register_artifact": "a", "add_fact": "f", "add_intent": "i", "request_judge": "j", "lease": "l"}.get(
-        ev["kind"]
-    )
+    prefix = {
+        "register_artifact": "a",
+        "add_fact": "f",
+        "add_intent": "i",
+        "request_judge": "j",
+        "lease": "l",
+        "request_scope": "r",
+    }.get(ev["kind"])
     if ev["kind"] == "hint" and "close" not in ev["body"]:
         prefix = "h"
     if ev["kind"] == "add_fact" and ev["body"].get("merge_into"):

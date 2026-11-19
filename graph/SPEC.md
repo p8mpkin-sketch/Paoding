@@ -111,6 +111,13 @@
 - 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`、`rule`、`extend` 三个操作内核还没有，见异议报告 `docs/m0/dissent-p0-5-seen-binding.md`。
 - 目标陈述（`goal.statement`）的语域取“人”（开题人写下的文字）；规格的四语域表没有列这一项，见异议报告 004。
 - 一句话开题（设计 `docs/design/kaiti/` §4.4，内核增量 13、15）：`origin` 可带 `draft {record, lane: practice|confirm}`，`record` 是本题的 input 类出处账；其它字段、其它道别是 `schema_error`。`lane = practice` 时逐条对练习道信封（`practice.py` 的 `violations`：资源与风险 ≤ `max_risk`、net 地址匹配白名单、Goal 判官在信封内且有 `sealed`、金额与时长 ≤ 练习上限、`max_attempts` ≤ 上限），任一条不满足整单 `forbidden_op`；`Config.practice` 为空（没加载信封）时练习道一律 `forbidden_op`。通过时图服务把信封的 `{version, digest}`（`sha256(JCS(信封全文))`）抄进 `draft.policy`，提交体带 `policy` 是 `schema_error`；重放只读事件体。`lane = confirm` 与不带 `draft` 的开题不受信封限制。信封由组装根从 `qicao` 的 `practice.yaml` 与设置层 `caps.practice_*` 合成，设置变更时整体替换 `Config`。
+- 运行时扩权（设计 `docs/design/runtime-grants/`，§12 第一步）：三个操作 `request_scope`、`grant_scope`、`revoke_scope`。
+  - `request_scope {rules: [{resource, pattern, actions}], why, intent?}`：任务会话（bootstrap、reason、explore）或人提交，返回 `r_<seq>`；设置 `grants.runtime = off`（缺省）时返回 `not_enabled`。规则的形状按 `resources.RESOURCE_REQUESTABLE`（`net` 只取 `host:port` 与 `connect`，与执行层插件一致）；风险在写入时查风险表（设置层 `risk`），未命中按 r2，提交体带风险是 `schema_error`。已在范围内、已在申请中是 `schema_error`；本题被人拒过的同一规则是 `forbidden_op`；每会话 `scope_request_quota`（缺省 4）。事件体带 `auto`（练习道白名单判定）与不能自动批准的 `blockers`，自动时带信封戳，另带设置戳。
+  - 练习道白名单（`grants.auto_blockers`）：题目开在练习道且带信封戳、当前信封摘要等于开题时的、规则落在信封 `allow` 内（`practice.rule_violations`，与开题检查同一套）、题目预算在练习上限内、设置 `grants.auto.practice` 开。
+  - `grant_scope`：人带 `seen {seq, card_hash}`（扩权卡 `scope`，`cards.card_object`），批或拒，拒须写理由，`risk` 只可上调；图服务（actor `graph`）只带 `{request, via: auto | approval}`，决定由 validate 当场重算：`auto` 重算白名单判定，`approval` 读所随 Intent 的审批结果。批准把规则追加进 `Problem.scope`（带 `granted {seq, by, request}`），事件体带重算后的画像推出值 `derived`，apply 在其上盖人工覆盖过的轴。
+  - `revoke_scope {rule, reason}`：只有人；规则带上 `revoked: seq` 留在原位（`touches` 按下标引用），至少留一条有效规则；`compile_spec`、`work.holds`、Intent 的风险上限都跳过已撤销的规则。撤销是收窄，不绑定卡片。
+  - `needs_scope` 接上扩权（修规格 3.6.2 `approve --scope-amend` 一直没有落地的缺陷）：带 `needs_scope` 的 Intent 由图服务追加一条随它的申请；人在审批卡上批或拒这个 Intent 之后，图服务按审批结果批或拒这条申请。人在审批卡上看到的是 Intent 申报的风险：风险表未命中时以它为准，命中时取两者较高者。回归测试 `tests/integration/test_stack_scope_grants.py` 是第一步的验收门。
+  - 图服务自己追加的事件按轮重算（`service.FOLLOWUP_ROUNDS`），申请与自动批准可以在同一批里接连发生。状态里的 `scope_requests` 在第一条申请时才出现，旧日志的状态哈希不变。`/work` 的 human 项多一种 `why: scope_request`（不自动批、也不随 Intent 的申请）。
 - 四顾清单：r0 且 `accept=judge` 的题恒为空（M0 形态）；r1/r2 题先给一条占位项，阻止自动关题，完整清单随 M4。
 
 ## 进度

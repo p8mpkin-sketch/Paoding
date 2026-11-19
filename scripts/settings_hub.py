@@ -53,6 +53,8 @@ def defaults(*, endpoint: str = "", model: str = "", global_cap_usd_milli: int =
             "practice_wall_s": 1_800,
         },
         "risk": [],
+        # 运行时扩权（docs/design/runtime-grants/ §10.3）：缺省关；练习道白名单就是信封的 allow.net_patterns
+        "grants": {"runtime": False, "auto": {"practice": True}},
         "models": {
             "profiles": [
                 {
@@ -95,8 +97,9 @@ def _no_secrets(obj: object, where: str = "settings") -> None:
 
 
 def validate(raw: object) -> dict[str, Any]:
-    if not isinstance(raw, dict) or set(raw) != {"caps", "risk", "models"}:
-        raise BadBody("settings 是 {caps, risk, models} 三项")
+    # grants 节可缺：这一节加进来之前写下的快照照旧有效、摘要不变，缺省即"运行时扩权关"
+    if not isinstance(raw, dict) or not {"caps", "risk", "models"} <= set(raw) <= {"caps", "risk", "models", "grants"}:
+        raise BadBody("settings 是 {caps, risk, models} 三项，可选 grants")
     _no_secrets(raw)
     caps = raw["caps"]
     if not isinstance(caps, dict) or set(caps) != set(CAP_KEYS):
@@ -150,7 +153,25 @@ def validate(raw: object) -> dict[str, Any]:
     for role in ROLES:
         if routes[role] not in names:
             raise BadBody(f"models.routes.{role}={routes[role]!r} 不是已登记的档案")
-    return {"caps": c, "risk": rules, "models": {"profiles": profiles, "routes": {r: routes[r] for r in ROLES}}}
+    out = {"caps": c, "risk": rules, "models": {"profiles": profiles, "routes": {r: routes[r] for r in ROLES}}}
+    if "grants" in raw:
+        g = raw["grants"]
+        if (
+            not isinstance(g, dict)
+            or set(g) != {"runtime", "auto"}
+            or not isinstance(g["runtime"], bool)
+            or not isinstance(g["auto"], dict)
+            or set(g["auto"]) != {"practice"}
+            or not isinstance(g["auto"]["practice"], bool)
+        ):
+            raise BadBody("grants 是 {runtime: bool, auto: {practice: bool}}")
+        out["grants"] = {"runtime": g["runtime"], "auto": {"practice": g["auto"]["practice"]}}
+    return out
+
+
+def grants_of(settings: dict[str, Any]) -> dict[str, Any]:
+    """设置里的 grants 节；缺省（旧快照）即运行时扩权关、练习道自动批准开。"""
+    return settings.get("grants") or {"runtime": False, "auto": {"practice": True}}
 
 
 def _changed(old: dict[str, Any], new: dict[str, Any], prefix: str = "") -> list[str]:
@@ -252,6 +273,9 @@ class SettingsHub:
             open_cap_usd_milli=caps["open_usd_milli"],
             open_cap_wall_s=caps["open_wall_s"],
             settings=(self.store.version, self.store.digest),
+            grants_runtime=grants_of(self.store.settings)["runtime"],
+            grants_auto_practice=grants_of(self.store.settings)["auto"]["practice"],
+            risk_table=tuple(dict(r) for r in self.store.settings["risk"]),
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]
         for fn in self.listeners:
