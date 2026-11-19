@@ -371,6 +371,7 @@ class Stack:
             binding=binding,
             bases=dict(cfg.bases),
             env_for=env_for,
+            grants_runtime=lambda: self.graph.cfg.grants_runtime,  # 设置层 grants.runtime（运行时扩权）
         )
         self.runner = SessionRunner(
             self.adapter_cfg,

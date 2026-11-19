@@ -1,4 +1,5 @@
-"""三个代理工具（§3.4.2）：exec 转执行层，submit 转图服务，show 读图服务。Worker 对外的全部通道。
+"""代理工具（§3.4.2）：exec 转执行层，submit 转图服务，show 读图服务；运行时扩权开着时另有 request_access
+（docs/design/runtime-grants/ §6）转图服务的 request_scope。Worker 对外的全部通道。
 
 一个 ToolHost 对应一个会话（= 一个任务 = 一个租约）。它持有该会话的令牌，模型看不见令牌，
 只看见工具。这里不做规划、不做重试策略、不解释领域内容（3.4.6）。
@@ -21,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -66,9 +67,18 @@ def _err(code: str, detail: str) -> dict[str, Any]:
 
 class ToolHost:
     def __init__(
-        self, s: Session, graph: GraphPort, reader: GraphReader, blobs: BlobPort, executor: ExecPort | None = None
+        self,
+        s: Session,
+        graph: GraphPort,
+        reader: GraphReader,
+        blobs: BlobPort,
+        executor: ExecPort | None = None,
+        access: Callable[[], Any] | None = None,
     ):
+        """access：把本会话在跑的沙箱对齐到当前授权范围（会话运行器的 reconcile），request_access 批下来时调用。"""
         self.s, self.graph, self.reader, self.blobs, self.executor = s, graph, reader, blobs, executor
+        self.access = access
+        self._asked: dict[str, str] = {}  # 本会话提过的扩权申请 → 上次告诉模型的状态
         self._n = 0
         self._nonce = secrets.token_hex(4)  # 幂等键带宿主实例号：同一租约换了宿主也不会撞上旧结果
         self._rejects: dict[str, tuple[int, dict[str, Any]]] = {}
@@ -95,6 +105,7 @@ class ToolHost:
         cmd = a.string("cmd")
         if not cmd:
             raise BadBody("cmd 须为非空字符串")
+        news = self._access_news()  # 先对齐：刚批下来的地址这条命令就能用
         r = self.executor.exec(
             self.s.sandbox_id,
             cmd,
@@ -103,7 +114,100 @@ class ToolHost:
             timeout_s=a.integer("timeout_s", 60),
             cwd=a.text("cwd", "/workspace"),
         )
-        return {"artifact": r.artifact, "exit_code": r.exit_code, "output": r.output, "truncated": r.truncated}
+        out: dict[str, Any] = {
+            "artifact": r.artifact,
+            "exit_code": r.exit_code,
+            "output": r.output,
+            "truncated": r.truncated,
+        }
+        if news:
+            out["access"] = news
+        return out
+
+    # ---------- request_access（运行时扩权，docs/design/runtime-grants/ §6） ----------
+
+    def _request_access(self, a: Obj) -> dict[str, Any]:
+        """申请访问一个 host:port。申请不是授权：图服务查风险表定风险，练习道白名单内的当场自动批，
+        其余进人的待办。批下来的规则由会话运行器热加进在跑的沙箱，返回时闸门已就绪。"""
+        extra = a.keys() - {"target", "why"}
+        if extra:  # 风险、动作都不由申请方给：风险查表，动作只有 connect
+            raise BadBody(f"request_access 只收 target 与 why，多了 {sorted(extra)}")
+        target, why = a.string("target").strip(), a.text("why").strip()
+        if not why:
+            raise BadBody("why 须写明为什么需要这个地址")
+        rule = {"resource": "net", "pattern": target, "actions": ["connect"]}
+        st = self.reader.state
+        if any(_same(r, rule) for r in st["problems"][self.s.pid]["scope"] if "revoked" not in r):
+            return self._granted(None, target)
+        out = self.graph.submit(
+            self.s.token,
+            self.s.pid,
+            f"access:{self.s.lease_id}:{self._nonce}:{self._n}",
+            [{"op": "request_scope", "body": {"rules": [rule], "why": why}}],
+        )
+        r = out["results"][0]
+        if not r.get("ok"):
+            if r.get("code") == "forbidden_op":
+                return {"status": "denied", "target": target, "detail": r.get("detail", "")}
+            return _err(r.get("code", "schema_error"), r.get("detail", ""))
+        rid = r["id"]
+        req = self.reader.state.get("scope_requests", {})[rid]
+        if req["status"] == "granted":  # 练习道白名单：同一批里已自动批准
+            return self._granted(rid, target)
+        self._asked[rid] = req["status"]
+        return {
+            "status": "pending",
+            "request": rid,
+            "target": target,
+            "detail": "已进人的待办。可以先做不需要这个地址的事；批下来后 exec 的返回里会带 access 告诉你。",
+        }
+
+    def _granted(self, rid: str | None, target: str) -> dict[str, Any]:
+        if rid:
+            self._asked[rid] = "granted"
+        ready = self.access() if self.access else None
+        rule = next(
+            r
+            for r in reversed(self.reader.state["problems"][self.s.pid]["scope"])
+            if r["pattern"] == target and "revoked" not in r
+        )
+        out: dict[str, Any] = {"status": "granted", "target": target, "risk": rule["risk"]}
+        if rid:
+            out["request"] = rid
+        if not self.s.sandbox_id:
+            out["detail"] = "已批准；本会话没有执行容器，之后的任务起沙箱时带上它"
+        elif not self._compiled(target):
+            out["detail"] = "已批准，但它的风险高于本任务的风险上限，本任务的沙箱里不开"
+        elif ready is None:
+            out["detail"] = "已批准；本执行器不支持热加，下一个任务起沙箱时生效"
+        return out
+
+    def _compiled(self, target: str) -> bool:
+        lease = self.reader.state["leases"].get(self.s.lease_id)
+        iid = lease.get("target") if lease else None
+        ceiling = self.reader.state["intents"][iid]["risk"] if iid and iid in self.reader.state["intents"] else "r0"
+        rank = {"r0": 0, "r1": 1, "r2": 2}
+        return any(
+            r["pattern"] == target and "revoked" not in r and rank[r["risk"]] <= rank[ceiling]
+            for r in self.reader.state["problems"][self.s.pid]["scope"]
+        )
+
+    def _access_news(self) -> list[dict[str, Any]]:
+        """本会话提过的申请里，状态有变化的（人批了或拒了）。"""
+        reqs = self.reader.state.get("scope_requests", {})
+        news = []
+        for rid, told in list(self._asked.items()):
+            x = reqs.get(rid)
+            if x is None or x["status"] == told:
+                continue
+            self._asked[rid] = x["status"]
+            item: dict[str, Any] = {"request": rid, "status": x["status"], "target": x["rules"][0]["pattern"]}
+            if x.get("reason"):
+                item["reason"] = x["reason"]
+            news.append(item)
+        if any(n["status"] == "granted" for n in news) and self.access:
+            self.access()
+        return news
 
     # ---------- submit ----------
 
@@ -360,7 +464,7 @@ class ToolHost:
             items = [x for x in items if x["level"] not in ("E3", "X")]
         return {"list": lst, "items": items}
 
-    _TOOLS = {"exec": _exec, "submit": _submit, "show": _show}
+    _TOOLS = {"exec": _exec, "submit": _submit, "show": _show, "request_access": _request_access}
 
 
 def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -412,7 +516,25 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
             },
         },
     }
-    return [{"name": n, **s[n]} for n in ("exec", "submit", "show") if n in tools]
+    s["request_access"] = {
+        "description": "需要访问授权范围之外的外部地址时用它申请，写明为什么需要。"
+        "返回 granted（已开通，可以直接连）、pending（等人批，先做别的；批下来后 exec 的返回里会带 access）"
+        "或 denied（人拒了，本任务里不能再申请这个地址）。连不上一个地址时先申请，不要猜别的地址或换端口重试。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target", "why"],
+            "additionalProperties": False,
+            "properties": {
+                "target": {"type": "string", "description": "host:port，端口必须写明"},
+                "why": {"type": "string"},
+            },
+        },
+    }
+    return [{"name": n, **s[n]} for n in ("exec", "submit", "show", "request_access") if n in tools]
+
+
+def _same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    return (a["resource"], a["pattern"], sorted(a["actions"])) == (b["resource"], b["pattern"], sorted(b["actions"]))
 
 
 def as_text(obj: Any) -> str:

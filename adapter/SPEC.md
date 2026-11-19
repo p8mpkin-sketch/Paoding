@@ -45,6 +45,14 @@
 
 集成测试 `tests/test_integration.py`（需要 Docker）：假 CLI 经端点代理与工具端点，落到真的执行层与真的图服务。`tests/test_container.py`（需要 Docker）：假 CLI 跑在模型容器里，验容器内到得了工具端点与端点代理、到不了外网、宿主、题目容器。
 
+### 运行时扩权（`docs/design/runtime-grants/` §6，2026-11-19）
+
+- `AdapterConfig.grants_runtime`（组装根给出读设置层 `grants.runtime` 的函数）为真时，会话多一个工具 `request_access {target: "host:port", why}`，系统提示在工具清单后补一段（`package.ACCESS_NOTE`）。入参只收这两个键，风险与动作不由申请方给。
+- 工具转图服务的 `request_scope`（net、`connect`）。返回 `granted`（练习道白名单当场批下，或已在范围内；返回时闸门已对齐）、`pending`（进人的待办）、`denied`（人在本题拒过）。批下来但风险高于本任务上限、本会话没有执行容器、执行器不支持热对齐时，`granted` 附 `detail` 说明本沙箱里不开。
+- 人批或拒之后，下一次 `exec` 的返回带 `access: [{request, status, target, reason?}]`，每个变化只报一次；`exec` 在运行命令之前先对齐，刚批下的地址这条命令就能用。
+- 会话运行器 `SessionRunner.reconcile(lease_id)` 按当前 `Problem.scope` 重编授权交给执行器的 `reconcile`；会话循环看范围指纹（规则条数、已撤销下标），人批或撤销的那一刻就对齐，不等下一次工具调用。`AdapterConfig.grants_hot = False` 退回租约边界（设计 §12.2）。
+- 测试：`tests/test_request_access.py`（真图服务、假执行层）、`tests/test_access_live.py`（Docker：练习道自动批下后紧接着的 `exec` 连得上；人在会话中途批准，闸门在下一次 `exec` 之前热加，执行容器不重建；撤销后下一次连接失败）。
+
 ### 模型容器（审计 P0-2）
 
 真实后端（`backend.kind == "real"`）的 CLI 缺省在模型容器里起；假 CLI 也可以走同一条路径（配置 `"launcher": "container"`），集成测试就是这么跑的。`local_launcher`（宿主子进程）只留给假 CLI 的测试台与空配置。
