@@ -5,7 +5,7 @@
     pd profile <pid> [--override <轴>=<值> --reason "<文本>"]
     pd hint add [--node <id>] "<文本>"      pd hint close <hid>
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
-    pd accept [--ref 项=产物] [--note 项=文本] [--yes]       人工验收：清单逐条判过（设计 02 §3.3）
+    pd accept --confirm 四顾项[,…] [--ref 项=产物] [--note 项=文本] [--yes]   人工验收：清单逐条判过，四顾逐条确认
     pd reject --fail 项[,项…] --reason "<文本>" [--ref …] [--note …] [--yes]   拒收：列出不过的项，其余算过
     pd scope list    pd scope grant <申请> [--risk r1,…] [--yes]    pd scope deny <申请> --reason "<文本>"
     pd scope revoke <规则下标> --reason "<文本>"     运行时扩权（docs/design/runtime-grants/）
@@ -310,6 +310,8 @@ def cmd_accept(local: Local, a, w, decision: str, read=input) -> int:
         for i in items
     ]
     body: dict = {"decision": decision, "checks": checks, "seen": seen_card(st, pid, "closeout", pid)}
+    if decision == "accept":  # 四顾清单逐条确认（地图 Q21）：没列在 --confirm 里的项由内核指出
+        body["closeout"] = [x.strip() for x in (a.confirm or "").split(",") if x.strip()]
     if a.reason:
         body["reason"] = a.reason
         w(f"[人] 理由：{a.reason}\n")
@@ -473,8 +475,10 @@ def parser() -> argparse.ArgumentParser:
         x.add_argument("--yes", action="store_true")
         if name == "reject":
             x.add_argument("--fail", required=True, help="不过的项，逗号分隔")
+            x.set_defaults(confirm=None)
         else:
             x.set_defaults(fail=None)
+            x.add_argument("--confirm", help="已逐条确认的四顾项，逗号分隔（见打印出的“四顾”行）")
     sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
     sc.add_parser("list")
     for name in ("grant", "deny", "revoke"):

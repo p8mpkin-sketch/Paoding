@@ -379,7 +379,20 @@ def closeout_items(state: State, pid: str) -> list[dict[str, Any]]:
     p = state["problems"][pid]
     if p["profile"]["reversibility"] == "r0" and p["goal"]["accept"] == "judge":
         return []
-    return [{"item": "closeout_review", "reason": p["profile"]["reversibility"]}]
+    items: list[dict[str, Any]] = [{"item": "closeout_review", "reason": p["profile"]["reversibility"]}]
+    if p["goal"]["accept"] == "human":
+        # 人工验收的题（宪章 D3、地图 Q21）：影响面逐项列出，验收通过之前人要逐条确认（accept 的 closeout 字段）
+        granted = [
+            {k: r[k] for k in ("resource", "pattern", "actions", "risk")}
+            for r in p["scope"]
+            if "granted" in r and "revoked" not in r
+        ]
+        if granted:
+            items.append({"item": "scope_granted", "rules": granted})
+        live = sorted(l["id"] for l in active_leases(state, pid) if l["kind"] != "judge")
+        if live:
+            items.append({"item": "leases_active", "leases": live})
+    return items
 
 
 def followups(state: State, pid: str) -> list[tuple[str, dict[str, Any]]]:

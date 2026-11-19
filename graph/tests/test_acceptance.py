@@ -54,10 +54,12 @@ def checks(k, pid="p1", fail=()):
 
 
 def accept(k, pid="p1", decision="accept", fail=(), seen=None, **extra):
+    four = [i["item"] for i in wk.closeout_items(k.state, pid)]  # 默认逐条确认四顾清单（Q21）
     body = {
         "decision": decision,
         "checks": checks(k, pid, fail),
         "seen": seen or seen_card(k.state, pid, "closeout", pid),
+        **({"closeout": four} if decision == "accept" else {}),
         **extra,
     }
     return k.submit(HUMAN, pid, "accept", body)
@@ -178,3 +180,49 @@ def test_external_judge_rejects_human_accept():
     from paoding_graph.reducer import problem
 
     assert problem.authority_of({"authority": "external"}, "human") == "human"
+
+
+def test_closeout_items_must_each_be_confirmed_before_accepting():
+    """关题三步不可跳（地图 Q21、AC9.2）：四顾清单每一项都要逐条确认，缺哪一项就指出哪一项。"""
+    from paoding_graph.parse import Obj
+    from paoding_graph.reducer import Config
+    from paoding_graph.reducer.close import _v_accept
+
+    k = Kernel()
+    open_human(k)
+    deliver(k)
+    assert [i["item"] for i in wk.closeout_items(k.state, "p1")] == ["closeout_review"]
+    body = {
+        "decision": "accept",
+        "checks": checks(k),
+        "seen": seen_card(k.state, "p1", "closeout", "p1"),
+        "closeout": [],
+    }
+    r = _v_accept(k.state, HUMAN, "p1", Obj(body), Config())
+    assert r.code == "schema_error" and "closeout_review" in r.detail
+    assert accept(k, closeout=["closeout_review", "nope"]) == "schema_error"
+    assert accept(k, decision="reject", reason="没写完") == "ok"  # 拒收不需要四顾
+    deliver(k)
+    assert accept(k) == "ok"
+    ev = [e for e in k.events if e["kind"] == "accept"][-1]
+    assert ev["body"]["closeout"] == ["closeout_review"]
+
+
+def test_runtime_grants_and_live_sessions_join_the_closeout_list():
+    k = Kernel()
+    open_human(k)
+    p = k.state["problems"]["p1"]
+    rule = {
+        "resource": "net",
+        "pattern": "q1:80",
+        "actions": ["connect"],
+        "risk": "r1",
+        "granted": {"seq": 9, "by": "cz", "request": "s_9"},
+    }
+    k.state["problems"]["p1"] = {**p, "scope": [*p["scope"], rule]}
+    items = {i["item"]: i for i in wk.closeout_items(k.state, "p1")}
+    assert items["scope_granted"]["rules"] == [
+        {"resource": "net", "pattern": "q1:80", "actions": ["connect"], "risk": "r1"}
+    ]
+    k.state["problems"]["p1"]["scope"][-1] = {**rule, "revoked": 12}
+    assert "scope_granted" not in {i["item"] for i in wk.closeout_items(k.state, "p1")}

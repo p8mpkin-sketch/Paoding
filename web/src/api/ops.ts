@@ -30,6 +30,7 @@ export const ops = {
   denyScope: (request: string, reason: string, seen: Seen): Op => ({ op: "grant_scope", body: { request, decision: "deny", reason, seen } }),
   revokeScope: (rule: number, reason: string): Op => ({ op: "revoke_scope", body: { rule, reason } }),
   // —— 人工验收（宪章 D3、02 §3.3）：与 pd accept / pd reject 同一组字段；seen 是收尾卡 ——
-  accept: (checks: AcceptCheck[], seen: Seen): Op => ({ op: "accept", body: { decision: "accept", checks, seen } }),
+  /** closeout：已逐条确认的四顾项（地图 Q21）。 */
+  accept: (checks: AcceptCheck[], seen: Seen, closeout: string[]): Op => ({ op: "accept", body: { decision: "accept", checks, seen, closeout } }),
   rejectDelivery: (checks: AcceptCheck[], reason: string, seen: Seen): Op => ({ op: "accept", body: { decision: "reject", checks, seen, reason } }),
 } as const;

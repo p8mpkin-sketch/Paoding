@@ -129,6 +129,13 @@ def acceptance_ready(state: State, pid: str) -> int | None:
     return _ready(state, pid)
 
 
+def closeout_items(state: State, pid: str) -> list[Body]:
+    """四顾清单（3.1.8，地图 Q21）：人工验收通过之前要逐条确认的影响面。"""
+    from .work import closeout_items as _items
+
+    return _items(state, pid)
+
+
 def seen_card(state: State, pid: str, kind: str, target: str) -> Body:
     """人的决策操作要带的 seen {seq, card_hash}：取自调用方展示给人的那份状态快照（§3.1.9）。"""
     from .cards import seen

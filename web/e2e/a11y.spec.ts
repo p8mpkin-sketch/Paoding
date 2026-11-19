@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const TOKEN = "mock-human-token";
-const PAGES = ["/", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/settings", "/p/demo-1", "/p/demo-4"];
+const PAGES = ["/", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
 const THEMES = ["light", "dark", "contrast"];
 
 test.beforeEach(async ({ page, request }) => {
@@ -61,5 +61,34 @@ for (const theme of THEMES) {
     await page.locator('[data-action="open-inject"]').click();
     await expect(page.locator('[data-card="hint-inject"]')).toBeVisible();
     await scan("指导");
+  });
+}
+
+// L2：读数页“按判定来源分列”表、人工验收卡（demo-5，逐条判到一半）、关闭任务的结果页（demo-3）
+for (const theme of THEMES) {
+  test(`axe：判定来源分列、人工验收卡与结果页（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    const scan = async (what: string, include?: string) => {
+      await page.waitForTimeout(200);
+      const b = new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+      const r = await (include ? b.include(include) : b).analyze();
+      expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+    };
+    await page.goto("/readings");
+    await expect(page.locator('[data-by-authority] [data-authority="human"]')).toBeVisible();
+    await scan("判定来源表", "[data-by-authority]");
+    await page.goto("/p/demo-5");
+    await expect(page.locator("[data-conn-label]")).toHaveText("实时");
+    await page.locator('[data-todo-item="acceptance:demo-5"] button').click();
+    await expect(page.locator('[data-card="acceptance"] [data-accept-item]')).toHaveCount(3);
+    await expect(page.locator('[data-card="acceptance"] [data-four]')).not.toHaveCount(0);
+    await scan("验收卡（未判）");
+    await page.locator('[data-accept-item="a1"] [data-verdict="pass"]').check();
+    await page.locator('[data-accept-item="a2"] [data-verdict="fail"]').check();
+    await expect(page.locator('[data-field="reject-reason"]')).toBeVisible();
+    await scan("验收卡（拒收）");
+    await page.goto("/p/demo-3");
+    await expect(page.locator("[data-result]")).toBeVisible();
+    await scan("结果页", "[data-result]");
   });
 }

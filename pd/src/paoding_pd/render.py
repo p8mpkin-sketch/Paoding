@@ -11,7 +11,15 @@
 
 from __future__ import annotations
 
-from paoding_graph.contract import LEVEL_WORDS, REGISTER, acceptance_ready, intent_status, node_levels, seen_card
+from paoding_graph.contract import (
+    LEVEL_WORDS,
+    REGISTER,
+    acceptance_ready,
+    closeout_items,
+    intent_status,
+    node_levels,
+    seen_card,
+)
 
 # 出处类别 → 语域的表与等级词表在图服务一侧（views.py）：pd 的文本与网页的卡片读同一张表（一卡多端）。
 
@@ -58,6 +66,16 @@ def level_phrase(state: dict, pid: str, target: str, level: str | None) -> str:
     return f"{level} {word}"
 
 
+def closeout_word(c: dict) -> str:
+    """四顾清单一项的说法（地图 Q21）。项名由图服务给出，这里只翻成人话，不推断。"""
+    if c["item"] == "scope_granted":
+        rules = "、".join(f"{r['resource']} {r['pattern']} {r['risk']}" for r in c["rules"])
+        return f"执行中扩过的权限仍然有效：{rules}；确认保留或已另行撤销"
+    if c["item"] == "leases_active":
+        return f"还有在途会话 {'、'.join(c['leases'])}；确认它们的产出不影响验收"
+    return f"交付物以外没有留下影响（容器、文件、外部状态；可逆性 {c.get('reason', '?')}）"
+
+
 AUTHORITY_WORDS = {"local": "本地判定", "external": "外部判定", "human": "人工验收"}
 
 
@@ -76,6 +94,8 @@ def acceptance(o: Out, state: dict, pid: str) -> None:
         o.add("structure", f"验收项 {a['id']}（{'原文' if a['src'] == 'span' else '人写'}{need}）")
         o.add("statement", f"{a['id']}：{a['text']}")
     d = seen_card(state, pid, "closeout", pid)
+    for c in closeout_items(state, pid):
+        o.add("structure", f"四顾 {c['item']}：{closeout_word(c)}（验收通过前逐条确认：--confirm {c['item']}）")
     seq = acceptance_ready(state, pid)
     if seq is None:
         o.add("status", "验收：没有待验收的交付物")

@@ -23,7 +23,7 @@ export function ResultReport({ vm }: { vm: ViewModel }) {
     <section className="ws-sec result" data-result>
       <h2 className="ws-h">结果</h2>
       <p data-result-head><b>终态 {terminalWord(vm.terminal)}</b>；根结论等级上限 {lv ? `${lv} ${vm.goal.levelWord}` : "无等级"}</p>
-      <p className="t2" data-result-authority>判定来源：{AUTHORITY_WORD[vm.goal.authority]}{vm.terminal === "accepted" ? "。人工验收不提升等级，不写“已证明”，也不计入 solved。" : ""}</p>
+      <p className="t2" data-result-authority>判定来源：{AUTHORITY_WORD[vm.goal.authority]}{vm.terminal === "accepted" ? "。人工验收不提升等级，也不计入 solved。" : ""}</p>
       {vm.goal.acceptLog.length > 0 && (
         <ul className="rows" data-result-accept>
           {vm.goal.acceptLog.map((e) => (

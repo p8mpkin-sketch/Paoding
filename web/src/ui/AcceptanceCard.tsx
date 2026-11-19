@@ -12,10 +12,20 @@ import { rejectText, useProposal } from "./useProposal";
 
 /** 收尾卡里人工验收那一部分的字段（cards.py 的 closeout，accept=human 时才有）。 */
 export type CloseoutAcceptance = {
-  items: unknown[];
+  /** 四顾清单（地图 Q21）：验收通过之前逐条确认。项名由图服务给出。 */
+  items: CloseoutItem[];
   acceptance?: AcceptanceItem[];
   deliverable?: { verdict_seq: number; candidate: string | null } | null;
 };
+
+export type CloseoutItem = { item: string; reason?: string; rules?: { resource: string; pattern: string; risk: string }[]; leases?: string[] };
+
+/** 四顾一项的说法，与 pd 的 closeout_word 同一组措辞。 */
+export function closeoutWord(c: CloseoutItem): string {
+  if (c.item === "scope_granted") return `执行中扩过的权限仍然有效：${(c.rules ?? []).map((r) => `${r.resource} ${r.pattern} ${r.risk}`).join("、")}；确认保留或已另行撤销`;
+  if (c.item === "leases_active") return `还有在途会话 ${(c.leases ?? []).join("、")}；确认它们的产出不影响验收`;
+  return `交付物以外没有留下影响（容器、文件、外部状态；可逆性 ${c.reason ?? "?"}）`;
+}
 
 type Row = { verdict: "pass" | "fail" | null; ref: string; note: string };
 const NEED: Record<string, string> = { artifact: "要附交付物（exec 或 input 类产物编号）", note: "要附说明" };
@@ -40,6 +50,7 @@ export function AcceptanceCard({ pid, head, canWrite, log = [] }: { pid: string;
   const [err, setErr] = useState<Error | null>(null);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [reason, setReason] = useState("");
+  const [four, setFour] = useState<string[]>([]);
   const { busy, error, done, run } = useProposal(pid);
 
   useEffect(() => {
@@ -57,13 +68,17 @@ export function AcceptanceCard({ pid, head, canWrite, log = [] }: { pid: string;
   const blank: Row = { verdict: null, ref: "", note: "" };
   const set = (id: string, patch: Partial<Row>) => setRows((x) => ({ ...x, [id]: { ...(x[id] ?? blank), ...patch } }));
   const checks = buildChecks(items, rows);
-  const failed = typeof checks === "string" ? [] : checks.filter((c) => c.verdict === "fail").map((c) => c.id);
-  const ready = typeof checks !== "string" && (failed.length === 0 || reason.trim() !== "");
+  // 一点“不过”就切到拒收：理由框立刻出现，不等其余条目判完
+  const failed = items.filter((a) => rows[a.id]?.verdict === "fail").map((a) => a.id);
+  const closeout = card.card.fields.items ?? [];
+  const unconfirmed = closeout.filter((c) => !four.includes(c.item)).map((c) => c.item);
+  // 关题三步不可跳（AC9.2）：四顾有未确认项时“验收通过”不可用，并指出是哪一项；拒收不需要四顾
+  const ready = typeof checks !== "string" && (failed.length === 0 ? unconfirmed.length === 0 : reason.trim() !== "");
 
   return (
     <article className="card acceptance" data-card="acceptance" data-card-hash={card.card_hash}>
       <header><h3>人工验收</h3><span className="muted">card_hash <code>{shortHash(card.card_hash)}</code></span></header>
-      <p>按创建任务时登记的清单逐条判。终态最多为“已验收”（accepted），不写“已证明”，也不计入判定通过的数。</p>
+      <p>按创建任务时登记的清单逐条判。终态最多为“已验收”（accepted），不提升等级，也不计入判定通过的数。</p>
       {deliv ? (
         <p data-deliverable>待验收的交付物：<code>{deliv.candidate ?? "无"}</code>，结构检查在 seq {deliv.verdict_seq} 给出通过的读数（只是读数，不替你判）。</p>
       ) : <p className="muted" data-deliverable>还没有待验收的交付物：要等结构检查通过（拒收之后要等新的交付物）。</p>}
@@ -92,16 +107,28 @@ export function AcceptanceCard({ pid, head, canWrite, log = [] }: { pid: string;
           ))}</ul>
         </section>
       )}
+      {closeout.length > 0 && (
+        <section data-closeout>
+          <h4>四顾<span className="t2">（验收通过之前逐条确认）</span></h4>
+          <ul className="accept-four">
+            {closeout.map((c) => (
+              <li key={c.item}><label><input type="checkbox" data-four={c.item} checked={four.includes(c.item)} disabled={!canWrite || busy || !!done}
+                onChange={(e) => setFour((x) => (e.target.checked ? [...x, c.item] : x.filter((y) => y !== c.item)))} /> <span className="k-mono">{c.item}</span> {closeoutWord(c)}</label></li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="decision">
         {done ? <p>已提交，事件 seq {done.map((d) => d.seq).join("、")}。</p> : (
           <fieldset disabled={!canWrite || busy || !deliv}>
             {failed.length > 0 && <input placeholder="拒收的理由（必填）" maxLength={2000} data-field="reject-reason" value={reason} onChange={(e) => setReason(e.target.value)} />}
             {failed.length === 0 ? (
-              <button type="button" className={btnClass("zhu")} data-action="accept-submit" disabled={!ready} onClick={() => typeof checks !== "string" && run([ops.accept(checks, seen)], "验收")}>验收通过</button>
+              <button type="button" className={btnClass("zhu")} data-action="accept-submit" disabled={!ready} onClick={() => typeof checks !== "string" && run([ops.accept(checks, seen, four.filter((x) => closeout.some((c) => c.item === x)))], "验收")}>验收通过</button>
             ) : (
               <button type="button" className={btnClass("line")} data-action="reject-submit" disabled={!ready} onClick={() => typeof checks !== "string" && run([ops.rejectDelivery(checks, reason.trim(), seen)], "拒收")}>拒收（{failed.join("、")} 不过）</button>
             )}
             {typeof checks === "string" && <span className="t2" data-missing> {checks}</span>}
+            {typeof checks !== "string" && failed.length === 0 && unconfirmed.length > 0 && <span className="t2" data-missing> 四顾还没确认：{unconfirmed.join("、")}</span>}
             {!canWrite && <p className="muted">现在不能决定：人的决定只能针对链头，且连接必须是实时的。</p>}
             {rejectText(error) && <p className="error" data-reject>{rejectText(error)}</p>}
           </fieldset>

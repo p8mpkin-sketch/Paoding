@@ -51,11 +51,16 @@ describe("人工验收卡", () => {
     expect(go.disabled).toBe(true);
     expect(c.querySelector("[data-missing]")?.textContent).toContain("a2 要附交付物");
     fireEvent.change(c.querySelector('[data-ref="a2"]')!, { target: { value: run } });
+    // 关题三步不可跳（Q21、AC9.2）：四顾没确认时不可用，并指出是哪一项
+    expect(go.disabled).toBe(true);
+    expect(c.querySelector("[data-missing]")?.textContent).toContain("四顾还没确认：closeout_review");
+    fireEvent.click(c.querySelector('[data-four="closeout_review"]')!);
     expect(go.disabled).toBe(false);
     fireEvent.click(go);
     await waitFor(() => expect(c.textContent).toContain("已提交"));
     const st = await r.api.status(pid);
     expect(st.problem.closed && st.problem.terminal).toBe("accepted");
+    expect(r.mock.eventsOf(pid).find((e) => e.kind === "accept")?.body).toMatchObject({ closeout: ["closeout_review"] });
     expect(st.goal.accept_log?.[0]).toMatchObject({ decision: "accept", checks: [{ id: "a1", verdict: "pass" }, { id: "a2", verdict: "pass", ref: run }] });
     const t = (await r.api.problems()).totals;
     expect(t.by_authority.human).toMatchObject({ accepted: 1, solved: 0 });
