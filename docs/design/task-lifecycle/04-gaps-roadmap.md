@@ -26,7 +26,7 @@
 | Q15 | S6 | 按租约花费（C1）与花费序列（C2） | ◐ | 已有 `/budget` 总量与按角色分项 | 工作台设计 C1、C2 | L3 |
 | Q16 | S7 | 结构检查类 advisory 判官（交付物存在、格式合法） | ● | —（L2：内建 `structure_check`，`expect {format, min_bytes}`，只给读数、Goal 停在 E0，→ K35） | 本图 02 §3.3 | L2 |
 | Q17 | S7 | 召回复核的墙钟上限 60 秒 | ◐ | 只有至多 8 条的条数限界 | 2026-11-19 cz 记的 follow-up | L0 |
-| Q18 | S8 | 续期门 | ◐ | 前端对话框已有；图服务返回 `not_enabled`（M1） | 规格 3.5.2 | L3（随 M1） |
+| Q18 | S8 | 续期门 | ● | —（L3：图服务续期卡、`extend` 与 `budget_add`（都绑定所见），越过 80% 而 50% 以来没有带判据的对象新到 E3 时停新的 explore、进待办；设置层 `budget.extension` 新装缺省 gate；`pd extend`、`pd budget add`；网页续期对话框接真卡，→ K39） | 规格 3.5.2 | L3 |
 | Q19 | S8 | 扩权卡：开题授权 vs 申请的那一条、风险（只许上调）、批 / 拒（拒须写理由）/ 撤销；待办与工作区横幅 | ● | —（#99：扩权卡差异视图、只可上调风险、拒绝须理由、`card_hash` 绑定，待办、收件箱与工作区横幅，时间轴扩权节点，→ K30） | 运行时扩权 #91 §7 | L1（随运行时扩权提前，原 L3） |
 | Q20 | S8 | 人主动终止会话 `terminate_lease`（C14） | ○ | 全部；异议 web-workbench 第 5 条待裁决 | 工作台设计 C14 | L3（待裁决） |
 | Q21 | S9 | 关题三步的交互界面 | ● | —（L2 第二批：人工验收的题，四顾清单列出运行时扩过的权限与在途会话；`accept` 带 `closeout` 逐条确认，缺项点名拒绝；验收卡上四顾逐条勾选，没勾完“验收通过”不可用并指出是哪一项；`pd accept --confirm`，→ K38） | 本图 02 §3.3 | L2 |
@@ -39,7 +39,7 @@
 | Q29 | S6、S8 | 运行时扩权：`request_scope`、`grant_scope`、`revoke_scope` 与 `state.scope_requests`；练习道白名单确定性自动批准（`actor = graph`，`validate` 重算判定）；闸门热加热撤；Adapter 的 `request_access` 工具；`needs_scope` 批准后编进容器（修 `compile_spec` 只读 `Problem.scope` 的缺陷）；设置 `grants` 一节 | ◐ | 内核三操作与练习道自动批准（#93）、`request_access` 工具与热加热撤闸门及隔离测试（#97）、网页扩权卡（#99）已合入；第四步“一句话开题切到零出站”在 #101 待验 | 运行时扩权 #91（cz 2026-11-19 裁决） | L1 |
 | Q27 | 横切 | 工作区与任务库的“站位条”：这件任务现在在第几站、等谁 | ● | —（L1 收口：`model/stations.ts` 纯函数 + 工作区十二格、任务库“站位”一列，→ K31） | 本图 06 | L1 |
 
-状态合计（2026-11-19 L2 收口后）：● 18 项（Q1、Q2、Q3、Q5、Q6、Q7、Q8、Q9、Q10、Q11、Q13、Q16、Q19、Q21、Q22、Q23、Q27、Q28，已记为 K21–K38），◐ 8 项（Q4、Q12、Q15、Q17、Q18、Q25、Q26、Q29），○ 3 项（Q14、Q20、Q24）。L2 全部完整。
+状态合计（2026-11-19 L3 续期门之后）：● 19 项（Q1、Q2、Q3、Q5、Q6、Q7、Q8、Q9、Q10、Q11、Q13、Q16、Q18、Q19、Q21、Q22、Q23、Q27、Q28，已记为 K21–K39），◐ 7 项（Q4、Q12、Q15、Q17、Q25、Q26、Q29），○ 3 项（Q14、Q20、Q24）。L2 全部完整。
 初版：○ 16 项、◐ 12 项。
 
 ## 2. 已完整的位置（K）
@@ -84,6 +84,7 @@
 | K36 | S10 | 结果页（原 Q22） | `ui/ResultReport.tsx`、`pd/render.py` 的 `report` |
 | K38 | S9 | 四顾逐条确认，关题三步不可跳（原 Q21） | `work.closeout_items`、`reducer/close.py` 的 `_v_accept`、`ui/AcceptanceCard.tsx` |
 | K37 | S10 | 逐条验收与 `accept` 校验，读数按判定来源分列（原 Q23） | `graph/reducer/close.py` 的 `_v_accept`、`ui/AcceptanceCard.tsx`、`views.py` 的 `by_authority` |
+| K39 | S8 | 续期门：续期卡、`extend` 与 `budget_add`（原 Q18） | `work.extension_pending`、`cards.py` 的续期卡、`reducer/close.py` 的 `_v_extend`、`ui/ExtensionDialog.tsx` |
 
 ## 3. 分期路线
 
@@ -116,7 +117,7 @@ L1 内部按依赖拆成四个 PR，顺序与 kaiti 迁移表的一、二期对�
 
 | 端 | 位置数 | ● 完整 | ◐ 部分 | ○ 无 |
 | --- | --- | --- | --- | --- |
-| 前端（`web/`） | 29 | 25：K1–K5、K14–K18、K20、K22、K23、K25、K28–K34、K36–K38、Q18 的续期对话框 | 2：Q15、Q26 | 2：Q4、Q20 |
-| 后端（内核、组件、组装根、`pd`） | 34 | 23：K3、K5–K15、K19、K21–K24、K26、K27、K32、K34、K35、K37 | 7：Q4、Q12、Q15、Q17、Q25、Q26、Q29 | 4：Q14、Q18、Q20、Q24 |
+| 前端（`web/`） | 29 | 25：K1–K5、K14–K18、K20、K22、K23、K25、K28–K34、K36–K39 | 2：Q15、Q26 | 2：Q4、Q20 |
+| 后端（内核、组件、组装根、`pd`） | 34 | 24：K3、K5–K15、K19、K21–K24、K26、K27、K32、K34、K35、K37、K39 | 7：Q4、Q12、Q15、Q17、Q25、Q26、Q29 | 3：Q14、Q20、Q24 |
 
 L1 收口（2026-11-19）：Q6、Q11、Q27、Q28 完整，Q10 的 L1 部分（模型一块）完整、剩 L2 的验收清单块；Q19 由 #99 完整；Q29 只剩第四步（#101 待验）。L1 之外：Q4 归 L1b，Q12 的 `prefs.model` 与 Q14 归 L3。

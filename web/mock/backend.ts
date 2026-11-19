@@ -5,8 +5,8 @@
 // 它不是内核的副本：等级只按"最近一次裁决"粗算，没有迟滞。前端源码（src/）不得 import 本目录，
 // 见 tests/boundaries.test.ts：前端不内嵌 reducer（H3）。
 //
-// 比真图服务（M0）多出来的东西只有两样，都是 M1 才落地的：续期门（extension 卡、extend、budget_add）
-// 与 seen.card_hash 的 stale_view 校验。它们让对应的界面有数据可测。
+// 续期门（extension 卡、extend、budget_add）与图服务同规则的简化版：每道演示题都按 extension=gate 开题，
+// 进展只看 50% 标记以来 Goal 以外的通过裁决（真图服务另要求观察带对照）。
 import { createHash } from "node:crypto";
 import type {
   AcceptanceItem, AcceptCheck, AcceptRecord, ApprovalDisplay, Authority, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
@@ -116,7 +116,7 @@ function project(events: Event[], pid: string, asOf: number): State {
       case "approve": s.decisions.set(b.intent, { decision: b.decision, by: ev.actor.id, seq: ev.seq, reason: b.reason ?? "" }); break;
       case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
       case "budget_mark": s.marks.push({ pct: b.mark, seq: ev.seq }); break;
-      case "budget_add": s.capAdd += b.usd_milli; break;
+      case "budget_add": s.capAdd += b.usd_milli; s.extendedSeq = ev.seq; break;
       case "extend": s.extendedSeq = ev.seq; break;
       case "profile_override": {
         s.overrides.push({ axis: b.axis, value: b.value, derived: b.derived ?? null, by: ev.actor.id, seq: ev.seq, reason: tag("human_reason", b.reason) });
@@ -225,9 +225,14 @@ const closed = (s: State) => s.problem?.closed_seq !== undefined;
 
 function extensionPending(s: State): boolean {
   const m80 = s.marks.find((m) => m.pct === 80);
-  const m50 = s.marks.find((m) => m.pct === 50);
   if (!m80 || closed(s) || s.extendedSeq > m80.seq) return false;
-  return !s.verdicts.some((v) => v.result === "pass" && v.seq > (m50?.seq ?? 0));
+  return progressSince50(s).length === 0;
+}
+
+/** 50% 标记以来新到 E3 的带判据对象（简化：Goal 以外的通过裁决）。 */
+function progressSince50(s: State): string[] {
+  const m50 = s.marks.find((m) => m.pct === 50)?.seq ?? 0;
+  return [...new Set(s.verdicts.filter((v) => v.result === "pass" && v.seq > m50 && v.target !== "goal").map((v) => v.target))];
 }
 
 /** 四顾清单（图服务 work.closeout_items 同规则）：r0 判定器判定的题为空；人工验收的题另列运行时扩过的权限与在途会话。 */
@@ -402,8 +407,7 @@ function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind
     display = { steps: ["四顾", "满志", "藏刀"], terminal_if_closed_now: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", terminal_badge: badge(s.problem!.goal.check.judge_id) };
   } else if (kind === "extension") {
     if (id !== pid) return "not_found";
-    const m50 = s.marks.find((m) => m.pct === 50)?.seq ?? 0;
-    const f: ExtensionFields = { progress_since_50: s.verdicts.filter((v) => v.result === "pass" && v.seq > m50).map((v) => v.target), spent_usd_milli: s.costs.reduce((a, c) => a + c.usd_milli, 0), cap_usd_milli: s.problem!.budget.usd_milli + s.capAdd };
+    const f: ExtensionFields = { progress_since_50: progressSince50(s), spent_usd_milli: s.costs.reduce((a, c) => a + c.usd_milli, 0), cap_usd_milli: s.problem!.budget.usd_milli + s.capAdd, pending: extensionPending(s) };
     fields = f; display = {};
   } else if (kind === "scope") {
     const r = s.scopeReqs.get(id);
@@ -503,7 +507,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
 
   // ---- 写 ----
   const HUMAN: Event["actor"] = { kind: "human", id: "local" };
-  const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension", grant_scope: "scope" };
+  const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension", budget_add: "extension", grant_scope: "scope" };
 
   /** 校验一条人的操作，返回规范化的事件体。 */
   function validate(pid: string, op: string, b: any, pendingArts: Set<string>): Record<string, unknown> {
@@ -560,7 +564,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       case "close_problem":
         if ("terminal" in b) throw new Rejected("schema_error", "terminal 是派生量，由图服务按三值算出");
         return { terminal: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}) };
-      case "extend": if (!extensionPending(s)) throw new Rejected("schema_error", "续期门未触发"); return {};
+      case "extend":
+        if (!b.seen) throw new Rejected("schema_error", "决策操作须带 seen {seq, card_hash}");
+        if (!extensionPending(s)) throw new Rejected("schema_error", "续期门没有关着");
+        return { seen: b.seen };
       case "grant_scope": {
         const r = s.scopeReqs.get(b.request);
         if (!r) throw new Rejected("unknown_ref", `扩权申请 ${b.request} 不存在`);
@@ -588,7 +595,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if (rest.length === 0) throw new Rejected("schema_error", "授权范围至少留一条规则");
         return { rule: k, reason: String(b.reason).trim(), derived: deriveProfile(rest, s.problem.goal.check.judge_id) };
       }
-      case "budget_add": if (!(Number.isInteger(b.usd_milli) && b.usd_milli > 0)) throw new Rejected("schema_error", "金额为正"); return { usd_milli: b.usd_milli };
+      case "budget_add":
+        if (!(Number.isInteger(b.usd_milli) && b.usd_milli > 0)) throw new Rejected("schema_error", "金额为正");
+        if (extensionPending(s) && !b.seen) throw new Rejected("schema_error", "续期门关着：追加预算须带所见的续期卡");
+        return { usd_milli: b.usd_milli, cap_usd_milli: s.problem.budget.usd_milli + s.capAdd + b.usd_milli, ...(b.seen ? { seen: b.seen } : {}) };
       case "accept": {
         // 与 graph/reducer/close.py 的 _v_accept 同规则（简化：只看本假服务能产生的情形）
         if (s.problem.goal.accept !== "human") throw new Rejected("forbidden_op", "只有人工验收的任务有验收");
@@ -674,6 +684,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
     },
     grants: { runtime: true, auto: { practice: true } },
+    budget: { wall_mode: "elapsed", life_s: 7 * 86400, extension: "gate" },
   };
   let settingsVersion = 1;
   const settingsLog: { version: number; from: string | null; to: string; keys: string[]; by: string; ts: number }[] = [

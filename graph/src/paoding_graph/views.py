@@ -649,8 +649,19 @@ def card(state: State, pid: str, kind: str, target: str, cfg: Config | None = No
                 "reason": tag("human_reason", x.get("reason", "")),
             },
         }
+    elif kind == "extension":
+        if target != pid:
+            raise NotFound("续期卡的 id 就是题目 id")
+        if p.get("extension") != "gate":
+            raise NotEnabled("这道题开在 extension=always 之下（消融臂或旧题），没有续期门")
+        obj = cards.card_object(state, pid, kind, target, ctx["ref"])
+        display = {
+            "marks": {str(m): wk.mark_seq(state, pid, m) for m in wk.MARKS},
+            "extended_seqs": list(p.get("extended_seqs", [])),
+            "definition": "自 50% 标记以来，有带判据的对象新到 E3：带判据的 Intent 达成，或带对照的观察到 E3",
+        }
     else:
-        raise NotEnabled(f"{kind} 卡随 M1 落地（续期门、争议裁决）")
+        raise NotEnabled(f"{kind} 卡随 M1 落地（争议裁决）")
     if obj is None:
         raise NotFound(f"没有 {kind} 卡 {target}")
     return {"card": obj, "card_hash": cards.card_hash(obj), "display": display}

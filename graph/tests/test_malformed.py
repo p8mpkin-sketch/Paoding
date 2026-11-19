@@ -17,6 +17,7 @@ import random
 import pytest
 from conftest import ADAPTER, CFG, EXECUTOR, HUMAN, JUDGE, Kernel, explore, reason
 
+from paoding_graph import work as wk
 from paoding_graph.cards import seen as seen_card
 from paoding_graph.parse import BadBody, Obj
 from paoding_graph.reducer import KINDS, Ok, Reject, apply, empty_state, validate
@@ -110,6 +111,17 @@ def world():
     cand4 = k.art("p4", "authored", b"deliverable")
     assert k.verdict("p4", "goal", "pass", judge="advice", candidate=cand4) == "ok"
     run4 = k.art("p4", "exec", b"run output")
+    # 续期门关着的题（规格 3.5.2）：extend 与 budget_add 的合法样本
+    k.cfg = dataclasses.replace(k.cfg, extension="gate")
+    st5 = k.art("p5", "input", b"statement p5")
+    assert k.submit(HUMAN, "p5", "open_problem", {**open3, "origin": {"statement_ref": st5, "materials": []}}) == "ok"
+    k.cfg = dataclasses.replace(k.cfg, extension="always")
+    boot5 = k.submit(SINAN, "p5", "lease", {"kind": "bootstrap", "holder": "sn1", "reserve": R, "ttl_s": 600})
+    use = {"task_id": boot5, "source": "proxy", "usd_milli": 4100, "wall_s": 1, "price_table": "t"}
+    assert k.submit({**ADAPTER, "session": boot5}, "p5", "cost", use) == "ok"
+    for kind, body in wk.followups(k.state, "p5"):
+        assert k.submit({"kind": "graph", "id": "graph"}, "p5", kind, body) == "ok"
+    assert k.submit(SINAN, "p5", "release", {"lease": boot5, "outcome": "nothing"}) == "ok"
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -284,6 +296,8 @@ def world():
         ),
         (HUMAN, "p1", "revoke_scope", {"rule": 1, "reason": "用不到了"}),
         (JUDGE, "p3", "bind_deadline", {"at": 10**13, "evidence": a_judge3}),
+        (HUMAN, "p5", "extend", {"seen": seen_card(k.state, "p5", "extension", "p5")}),
+        (HUMAN, "p5", "budget_add", {"usd_milli": 1000, "seen": seen_card(k.state, "p5", "extension", "p5")}),
     ]
     return k, cases
 

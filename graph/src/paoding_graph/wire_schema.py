@@ -493,7 +493,8 @@ define(
     "HumanWorkItem",
     obj(
         {"kind": lit("human"), "target": STR, "why": STR},
-        doc="why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；M1 起还有续期门等。",
+        doc="why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）、scope_request（扩权申请）、"
+        "acceptance（人工验收）、extension（续期门关着，target 为题目 id）。",
     ),
 )
 define(
@@ -706,8 +707,9 @@ define(
 define(
     "ExtensionFields",
     obj(
-        {"progress_since_50": arr(STR), "spent_usd_milli": INT, "cap_usd_milli": INT},
-        doc="续期卡随 M1 落地（真图服务现在返回 not_enabled）；字段形状是 F1 的暂行约定。",
+        {"progress_since_50": arr(STR), "spent_usd_milli": INT, "cap_usd_milli": INT, "pending": BOOL},
+        doc="续期卡（规格 3.5.2）：只在开在 extension=gate 之下、且越过 80% 标记的题上有；extension=always 的题返回"
+        " not_enabled。progress_since_50 是 50% 标记以来新到 E3 的带判据对象，pending 为门是否关着。",
     ),
 )
 define(
@@ -851,7 +853,7 @@ define(
             "grant_scope",
             "revoke_scope",
         ),
-        "description": "add_intent 之后的几种随后续里程碑启用（规格 3.1.9）；M0 的图服务以 schema_error 拒绝。",
+        "description": "pause、resume、rule 随后续里程碑启用（规格 3.1.9），图服务以 schema_error 拒绝。",
     },
 )
 define("Op", obj({"op": ref("HumanOpKind"), "body": OBJ}))

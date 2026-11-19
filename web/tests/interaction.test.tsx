@@ -235,8 +235,16 @@ describe("HT-7 审批卡", () => {
     await waitFor(() => expect(container.querySelector('[data-card="extension"]')).not.toBeNull());
     expect([...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].filter((x) => x.checked)).toHaveLength(0);
     expect(container.querySelector<HTMLButtonElement>('[data-action="extension-submit"]')!.disabled).toBe(true);
+    // 门关着时“放行”可选；提交带所见的续期卡，之后卡上写门已开
+    expect(container.querySelector("[data-extension-pending]")).not.toBeNull();
+    fireEvent.click(container.querySelector('input[name="ext"]')!);
+    fireEvent.click(container.querySelector('[data-action="extension-submit"]')!);
+    await waitFor(() => expect(container.textContent).toContain("已提交"));
+    const ev = r.mock.eventsOf("demo-2").filter((e) => e.kind === "extend").at(-1)!;
+    expect((ev.body as { seen: { card_hash: string } }).seen.card_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect((await r.api.work("demo-2")).items.some((x) => x.kind === "human" && x.why === "extension")).toBe(false);
     cleanup();
-    const off: typeof fetch = async () => new Response(JSON.stringify({ ok: false, code: "not_enabled", detail: "extension 卡随 M1 落地" }), { status: 404 });
+    const off: typeof fetch = async () => new Response(JSON.stringify({ ok: false, code: "not_enabled", detail: "这道题开在 extension=always 之下" }), { status: 404 });
     const { createApi } = await import("../src/api/client");
     const cfg = { ...r.cfg, fetch: off };
     const v = renderWith({ ...r, cfg, api: createApi(cfg) }, <ExtensionDialog pid="demo-2" head={1} canWrite />);

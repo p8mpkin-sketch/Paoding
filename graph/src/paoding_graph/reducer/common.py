@@ -62,6 +62,9 @@ class Config:
     # 花费墙钟，另由 deadline 与题的最长存活 life_s 兜底。开题时把取值抄进事件体，重放不读设置
     wall_mode: str = "elapsed"
     life_s: int = 7 * 86400
+    # 续期门（§3.5.2，T-1）：gate 时开题把它抄进事件体，越过 80% 而 50% 以来没有进展就停新的 explore 等人放行；
+    # always 即消融臂（不设门），也是旧题与未接设置层的缺省。重放只读事件体
+    extension: str = "always"
 
 
 def empty_state() -> State:

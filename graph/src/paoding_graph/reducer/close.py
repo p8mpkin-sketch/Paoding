@@ -1,4 +1,4 @@
-"""关题族：close_problem（终态三值由图服务算出）与 budget_mark。"""
+"""关题族：close_problem（终态三值由图服务算出）、budget_mark、人工验收 accept，以及续期门的 extend 与 budget_add。"""
 
 from __future__ import annotations
 
@@ -141,6 +141,40 @@ def _v_budget_mark(state: State, actor: Actor, pid: str, body: Obj, cfg: Config)
     return Ok({"mark": body.integer("mark"), "axis": body.text("axis")})
 
 
+def _v_extend(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
+    """放行续期门（§3.5.2 的 pd extend）：门关着时才接受，绑定所见的续期卡。body = {seen}"""
+    if not body.keys() <= {"seen"}:
+        return Reject("schema_error", "extend 只有 seen 一个字段")
+    seen = _seen(state, pid, "extension", pid, body)
+    if isinstance(seen, Reject):
+        return seen
+    if not wk.extension_pending(state, pid):
+        return Reject("schema_error", "续期门没有关着：没有越过 80% 标记、50% 以来已有进展，或已经放行")
+    return Ok({"seen": seen})
+
+
+def _v_budget_add(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
+    """追加题预算（HMI §3.10 的第二个选项）。body = {usd_milli, seen?}：续期门关着时追加须带所见的续期卡，
+    并同时放行；单题硬顶（设置层 open_cap_usd_milli）照样管追加后的上限。"""
+    if not body.keys() <= {"usd_milli", "seen"}:
+        return Reject("schema_error", "budget_add 的字段为 usd_milli，可选 seen")
+    add = body.integer("usd_milli")
+    if add <= 0:
+        return Reject("schema_error", "追加的金额须为正")
+    p = state["problems"][pid]
+    cap = p["budget"]["usd_milli"] + add
+    if cfg.open_cap_usd_milli is not None and cap > cfg.open_cap_usd_milli:
+        return Reject("over_budget", f"追加后的上限 {cap} 超过单题硬顶 {cfg.open_cap_usd_milli}（设置层）")
+    gated = wk.extension_pending(state, pid)
+    seen: Body | None = None
+    if gated or "seen" in body:
+        checked = _seen(state, pid, "extension", pid, body)
+        if isinstance(checked, Reject):
+            return checked
+        seen = checked
+    return Ok({"usd_milli": add, "cap_usd_milli": cap, **({"seen": seen} if seen else {})})
+
+
 # ---------- 应用 ----------
 
 
@@ -160,3 +194,21 @@ def _a_budget_mark(s: State, ev: Event) -> None:
         "mark_seqs": p.get("mark_seqs", []) + [ev["seq"]],
     }
     s["problems"] = {**s["problems"], pid: marked}
+
+
+def _a_extend(s: State, ev: Event) -> None:
+    pid = ev["problem_id"]
+    p = s["problems"][pid]
+    nxt: Problem = {**p, "extended_seqs": [*p.get("extended_seqs", []), ev["seq"]]}
+    s["problems"] = {**s["problems"], pid: nxt}
+
+
+def _a_budget_add(s: State, ev: Event) -> None:
+    pid = ev["problem_id"]
+    p = s["problems"][pid]
+    nxt: Problem = {
+        **p,
+        "budget": {**p["budget"], "usd_milli": ev["body"]["cap_usd_milli"]},
+        "extended_seqs": [*p.get("extended_seqs", []), ev["seq"]],
+    }
+    s["problems"] = {**s["problems"], pid: nxt}

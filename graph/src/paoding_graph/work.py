@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping
 from typing import Any, TypedDict, cast
 
@@ -236,6 +237,44 @@ def in_review(state: State, pid: str) -> bool:
     return not any(l["kind"] == "reason" and not l["active"] and l["ended_seq"] > last for l in leases_of(state, pid))
 
 
+# ---------- 续期门（§3.5.2，T-1，M1 起） ----------
+
+EXTENSION_MODES = ("always", "gate")  # always 即消融臂：不设门；gate 由开题时抄进事件体（problem.extension）
+
+
+def mark_seq(state: State, pid: str, mark: int) -> int | None:
+    p = state["problems"][pid]
+    marks, seqs = p.get("marks", []), p.get("mark_seqs", [])
+    return seqs[marks.index(mark)] if mark in marks else None
+
+
+def progress_since(state: State, pid: str, seq: int) -> list[str]:
+    """自 seq 以来的进展（§3.5.2）：带判据的对象新到 E3，即带判据的 Intent 达成，或带对照的观察到 E3。
+    "新到"按裁决序列判：只用 seq 及以前的裁决重算一次等级，那时还不算进展、现在算的才是。
+    进展的判别用参考模型的 counts_as_progress，恒真的谓词过不了对照，不能当作进展。"""
+    st, res = lv.compute(state, pid)
+    before = dataclasses.replace(st, verdicts=[v for v in st.verdicts if v.seq <= seq])
+    res0 = rm.compute(before)
+    out = [
+        t
+        for t in sorted([*st.facts, *st.intents], key=lambda x: int(x.split("_")[1]))
+        if rm.counts_as_progress(st, res, t) and not rm.counts_as_progress(before, res0, t)
+    ]
+    return out
+
+
+def extension_pending(state: State, pid: str) -> bool:
+    """续期门关着：本题开在 gate 模式、越过了 80% 标记、50% 标记以来没有进展，且 80% 之后人还没有放行
+    （extend）或追加预算（budget_add）。关着时 /work 不给新的 explore，题目进入 human 项；Goal 的判定不受此限。"""
+    p = state["problems"][pid]
+    if p.get("extension") != "gate" or p.get("closed"):
+        return False
+    m80 = mark_seq(state, pid, 80)
+    if m80 is None or any(x > m80 for x in p.get("extended_seqs", [])):
+        return False
+    return not progress_since(state, pid, mark_seq(state, pid, 50) or 0)
+
+
 # ---------- /work（§3.1.2） ----------
 
 
@@ -312,7 +351,8 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
         if reason_due:
             items.append({"kind": "reason", **({"reflect": True} if review else {})})
     statuses = {iid: intent_status(state, pid, iid, cache) for iid in st.intents}
-    if not review:
+    gated = extension_pending(state, pid)
+    if not review and not gated:
         for iid, s in statuses.items():
             if s == "open" and resource_conflict(state, pid, iid) is None:
                 items.append({"kind": "explore", "target": iid})
@@ -343,7 +383,9 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
     ready = acceptance_ready(state, pid) is not None
     if ready:
         items.append({"kind": "human", "target": pid, "why": "acceptance"})
-    if stalled and not ready:
+    if gated:
+        items.append({"kind": "human", "target": pid, "why": "extension"})
+    if stalled and not ready and not gated:
         items.append({"kind": "human", "target": pid, "why": "stalled"})
     return items
 

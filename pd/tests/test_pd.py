@@ -492,3 +492,47 @@ def test_accept_refused_on_judge_tasks(home):
     assert code == 1 and "不由人验收" in out
     code, out = pd(home, "status", "p1")
     assert "[证据] 判定来源 本地判定" in out
+
+
+def _past_80(home, monkeypatch):
+    """开在 extension=gate 之下的题，一次花过 80%（Bootstrap 的用量），50% 以来没有进展：续期门关着。"""
+    import dataclasses
+
+    from paoding_pd import cli
+
+    real = cli.Config
+    monkeypatch.setattr(cli, "Config", lambda **kw: dataclasses.replace(real(**kw), extension="gate"))
+    pd(home, "problem", "open", str(home / "p.yaml"))
+    g = Local(home / "data", {"kind": "human", "id": "cz"}).graph
+    g.tokens.issue({"kind": "sinan", "id": "sn1"}, "s")
+    body = {"kind": "bootstrap", "holder": "sn1", "reserve": {"usd_milli": 100, "wall_s": 60}, "ttl_s": 600}
+    lid = g.submit("s", "p1", "lb", [{"op": "lease", "body": body}])["results"][0]["id"]
+    tok = g.tokens.issue({"kind": "adapter", "id": "ad1", "session": lid, "role": "bootstrap"})
+    use = {"task_id": lid, "source": "proxy", "usd_milli": 4100, "tokens_in": 1, "tokens_out": 1, "price_table": "t"}
+    assert g.submit(tok, "p1", "c1", [{"op": "cost", "body": use}])["ok"]
+    assert g.submit("s", "p1", "r1", [{"op": "release", "body": {"lease": lid, "outcome": "nothing"}}])["ok"]
+
+
+def test_extend_releases_the_gate(home, monkeypatch):
+    _past_80(home, monkeypatch)
+    code, out = pd(home, "status", "p1")
+    assert code == 0 and well_formed(out)
+    assert "续期门关着" in out and "pd extend" in out and "续期卡 card_hash" in out
+    code, out = pd(home, "--pid", "p1", "extend", read=lambda _: "no")
+    assert code == 1 and "未提交" in out
+    code, out = pd(home, "--pid", "p1", "extend", "--yes")
+    assert code == 0 and "已放行续期门" in out, out
+    code, out = pd(home, "status", "p1")
+    assert "续期门开着" in out
+    code, out = pd(home, "--pid", "p1", "extend", "--yes")
+    assert code == 1 and "没有关着" in out
+
+
+def test_budget_add_raises_the_cap(home, monkeypatch):
+    _past_80(home, monkeypatch)
+    code, out = pd(home, "--pid", "p1", "budget", "add", "-1", "--yes")
+    assert code == 2 and "须为正" in out
+    code, out = pd(home, "--pid", "p1", "budget", "add", "2.5", "--yes")
+    assert code == 0 and "上限 7500 毫美元" in out, out
+    code, out = pd(home, "status", "p1")
+    assert "续期门开着" in out and "顶 7500" in out

@@ -22,7 +22,8 @@ export const ops = {
   closeProblem: (reason: string): Op => ({ op: "close_problem", body: { reason } }),
   // —— M1 ——
   extend: (seen: Seen): Op => ({ op: "extend", body: { seen } }),
-  budgetAdd: (usd_milli: number): Op => ({ op: "budget_add", body: { usd_milli } }),
+  /** 追加题预算；续期门关着时须带所见的续期卡，同时放行（规格 3.5.2）。 */
+  budgetAdd: (usd_milli: number, seen?: Seen): Op => ({ op: "budget_add", body: { usd_milli, ...(seen ? { seen } : {}) } }),
   // —— 运行时扩权（runtime-grants §7）：与 pd scope 同一组字段 ——
   /** risk 只在人要上调时给，与申请的规则一一对应。 */
   grantScope: (request: string, seen: Seen, risk?: string[]): Op =>

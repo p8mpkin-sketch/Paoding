@@ -56,6 +56,8 @@ def defaults(*, endpoint: str = "", model: str = "", global_cap_usd_milli: int =
         # 运行时扩权（docs/design/runtime-grants/ §12 第四步起缺省开）：一句话开题零出站，执行时按需申请；
         # 练习道白名单就是信封的 allow.net_patterns。旧快照没有这一节时仍按关（grants_of），切换要写一版设置
         "grants": {"runtime": True, "auto": {"practice": True}},
+        # 续期门（规格 3.5.2，地图 Q18）：新装缺省开（gate）；always 即消融臂
+        "budget": {"wall_mode": "elapsed", "life_s": 7 * 86400, "extension": "gate"},
         "models": {
             "profiles": [
                 {
@@ -170,20 +172,33 @@ def validate(raw: object) -> dict[str, Any]:
         out["grants"] = {"runtime": g["runtime"], "auto": {"practice": g["auto"]["practice"]}}
     if "budget" in raw:
         # 时限与花费分开的开关（docs/design/external-verdict/ §5.6）：缺省 elapsed 即旧行为
+        # 续期门开关（规格 3.5.2）：extension 可缺（旧快照），缺时按 always；新装的缺省设置写 gate
         bd = raw["budget"]
-        if not isinstance(bd, dict) or set(bd) != {"wall_mode", "life_s"} or bd["wall_mode"] not in WALL_MODES:
-            raise BadBody(f"budget 是 {{wall_mode: {'|'.join(WALL_MODES)}, life_s: 正整数}}")
-        out["budget"] = {"wall_mode": bd["wall_mode"], "life_s": _pos_int(bd["life_s"], "budget.life_s")}
+        if (
+            not isinstance(bd, dict)
+            or not {"wall_mode", "life_s"} <= set(bd) <= {"wall_mode", "life_s", "extension"}
+            or bd["wall_mode"] not in WALL_MODES
+            or bd.get("extension", "always") not in EXTENSION_MODES
+        ):
+            modes, ext = "|".join(WALL_MODES), "|".join(EXTENSION_MODES)
+            raise BadBody(f"budget 是 {{wall_mode: {modes}, life_s: 正整数, extension?: {ext}}}")
+        out["budget"] = {
+            "wall_mode": bd["wall_mode"],
+            "life_s": _pos_int(bd["life_s"], "budget.life_s"),
+            **({"extension": bd["extension"]} if "extension" in bd else {}),
+        }
     return out
 
 
 WALL_MODES = ("elapsed", "spend")
+EXTENSION_MODES = ("always", "gate")
 DEFAULT_BUDGET = {"wall_mode": "elapsed", "life_s": 7 * 86400}
 
 
 def budget_of(settings: dict[str, Any]) -> dict[str, Any]:
-    """设置里的 budget 节；缺省（旧快照）即 wall_mode=elapsed，哮天犬照旧按开题墙钟关题。"""
-    return settings.get("budget") or dict(DEFAULT_BUDGET)
+    """设置里的 budget 节；缺省（旧快照）即 wall_mode=elapsed，哮天犬照旧按开题墙钟关题。
+    续期门：旧快照没有 extension 时按 always（不设门），与 grants 同法，切换要写一版设置，不靠缺省悄悄变。"""
+    return {**DEFAULT_BUDGET, "extension": "always", **(settings.get("budget") or {})}
 
 
 def grants_of(settings: dict[str, Any]) -> dict[str, Any]:
@@ -295,6 +310,7 @@ class SettingsHub:
             risk_table=tuple(dict(r) for r in self.store.settings["risk"]),
             wall_mode=budget_of(self.store.settings)["wall_mode"],
             life_s=budget_of(self.store.settings)["life_s"],
+            extension=budget_of(self.store.settings)["extension"],
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]
         for fn in self.listeners:

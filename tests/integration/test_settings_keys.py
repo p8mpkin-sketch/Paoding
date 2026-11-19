@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "e2e"))
 
 import oplog  # noqa: E402
 from drive import open_problem  # noqa: E402
-from settings_hub import KEY_NOTE, BadBody, defaults, digest_of, grants_of  # noqa: E402
+from settings_hub import KEY_NOTE, BadBody, budget_of, defaults, digest_of, grants_of  # noqa: E402
 from settings_hub import validate as validate_settings  # noqa: E402
 from stack import Stack, StackConfig  # noqa: E402
 
@@ -312,3 +312,16 @@ def test_grants_section_is_optional_and_checked():
     for bad in ({"runtime": "yes", "auto": {"practice": True}}, {"runtime": True}, {"runtime": True, "auto": {}}):
         with pytest.raises(BadBody):
             validate_settings({**d, "grants": bad})
+
+
+def test_extension_switch_is_optional_and_checked():
+    """续期门开关（规格 3.5.2，地图 Q18）：新装缺省 gate；旧快照的 budget 节没有 extension 时照旧有效、摘要不变，
+    并按 always（不设门）；取值只认 gate 与 always。"""
+    d = defaults()
+    assert d["budget"]["extension"] == "gate" and budget_of(d)["extension"] == "gate"
+    old = {**d, "budget": {"wall_mode": "elapsed", "life_s": 7 * 86400}}
+    assert validate_settings(old) == old and digest_of(validate_settings(old)) == digest_of(old)
+    assert budget_of(old)["extension"] == "always"
+    assert budget_of({k: v for k, v in d.items() if k != "budget"})["extension"] == "always"
+    with pytest.raises(BadBody):
+        validate_settings({**d, "budget": {**d["budget"], "extension": "sometimes"}})

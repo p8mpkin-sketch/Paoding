@@ -89,8 +89,8 @@
 
 - **责任方**：人。地图上唯一可以在执行中途出现的人的站，所有入口都来自 `/work` 的 human 项。
 - **五种介入**：r2 审批（每次租约一批）、扩权申请（运行时 `request_scope`，以及 Intent 的 `needs_scope`）、Hint（指导）、续期门（越过 80% 且 50% 以来无进展）、停滞处理。练习道白名单内的扩权由图服务确定性自动批准，不进人的待办。
-- **现有组件**：`web/src/pages/Inbox.tsx`（待办）、`ui/ApprovalCard.tsx`（审批卡，带 `seen.card_hash`）、`ui/Hints.tsx`、`ui/ExtensionDialog.tsx`（续期门对话，服务端返回 `not_enabled`）、`pd approve|deny|hint`。
-- **缺口**：Q18 续期门 ◐（前端有对话框，内核 M1 才有卡）；Q19 扩权卡（开题授权 vs 申请的那一条、风险、批 / 拒 / 撤销）●（K30，#99）；Q20 人主动终止会话（C14）○。
+- **现有组件**：`web/src/pages/Inbox.tsx`（待办）、`ui/ApprovalCard.tsx`（审批卡，带 `seen.card_hash`）、`ui/Hints.tsx`、`ui/ExtensionDialog.tsx`（续期门对话，读图服务的续期卡）、`pd approve|deny|hint|extend|budget add`。
+- **缺口**：Q18 续期门 ●（K39：续期卡、`extend` 与 `budget_add`，门关着时停新的 explore）；Q19 扩权卡（开题授权 vs 申请的那一条、风险、批 / 拒 / 撤销）●（K30，#99）；Q20 人主动终止会话（C14）○。
 - **验收**：AC8.1–AC8.4。
 
 ### S9 关题
