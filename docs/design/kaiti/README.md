@@ -139,7 +139,7 @@ vet(raw, answer_field?, draft, catalogs, policy, priors, caps) → Vetted      /
 不开题，`lane = refuse`，界面给三条路（交互稿 `kt-refuse`）：
 
 1. **补一个可判定的终点**：在输入框里补一行答案或一段检查命令，重新起草。界面给出模板目录里该类任务的示例写法。
-2. **人工验收**：`goal.accept = human`，Goal 判官取建议性的结构检查（规格 3.3.4 的"无判官领域的最小判官"），终态最多 `accepted`，任何地方不显示"已证明"。内核今天只实现 `accept = judge`（`_v_open_problem` 拒绝其它值），所以这条路要等内核放开 `accept = human`，列为 §9 第 6 条。在那之前这一项灰显，写明原因。
+2. **人工验收**：`goal.accept = human`，Goal 判官取建议性的结构检查（规格 3.3.4 的"无判官领域的最小判官"），终态最多 `accepted`，任何地方不显示"已证明"。验收标准随开题登记为不可改的验收清单 `goal.acceptance[]`（条目只许原文区间或人写，模型不起草），`accept` 事件逐条勾选；清单的定义见[任务生命周期地图](../task-lifecycle/)（PR #84）。内核今天只实现 `accept = judge`（`_v_open_problem` 拒绝其它值），所以这条路要等内核放开 `accept = human`，列为 §9 第 6 条。在那之前这一项灰显，写明原因。
 3. **进高级模式**：带着草案进四步向导第二步，人自己从判官目录里选、挂规格。
 
 不做的事：不把任务"降级"成模型自评；不把"模型说完成了"当作 `accepted`；不在人看不见的地方换判官。
@@ -278,7 +278,7 @@ tiers:
 | 13 | `Problem.origin.draft?: { record: ArtifactId, lane: "practice"\|"confirm", policy?: { version: number, digest: string } }` | 3.1.2 | 出处账的引用与道别；`policy` 只在练习道，由图服务从已加载的信封抄入 |
 | 14 | `open_problem` 的单题硬顶 | 3.1.2 关键校验、3.5.2 | `budget.usd_milli ≤ open_cap_usd_milli` 且 `wall_s ≤ open_cap_wall_s`，否则 `over_budget` |
 | 15 | 练习道信封校验 | 3.1.2 关键校验 | §4.4；不满足返回 `forbidden_op` |
-| 16 | `goal.accept = human`（可选，§9 第 6 条） | 3.1.2 | 放开后才有"人工验收"降级路；终态规则（3.1.2）本来就有 accepted |
+| 16 | `goal.accept = human` 与验收清单 `goal.acceptance[]`（可选，§9 第 6 条） | 3.1.2 | 放开后才有"人工验收"降级路；清单随开题登记、之后不可改（I4），`accept` 事件逐条勾选；终态规则（3.1.2）本来就有 accepted |
 
 HTTP 层（不是内核）：`PUT /v1/vault`，人的令牌，只写，返回 `VaultRef`；同一份内容重复写返回同一个键。保密库目录只有判官运行器可读这一条不变。
 
