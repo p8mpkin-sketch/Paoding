@@ -50,6 +50,8 @@ export function segments(text: string, spans: KaitiSpan[], nums: Map<string, num
 
 /** 字段名 → 人话。scope[i].* 按规则编号。 */
 export function fieldWord(field: string): string {
+  const a = field.match(/^goal\.acceptance\[(\d+)\]$/);
+  if (a) return `验收 ${Number(a[1]) + 1}`;
   const m = field.match(/^scope\[(\d+)\](?:\.(pattern|risk))?$/);
   if (m) return m[2] === "risk" ? `规则 ${Number(m[1]) + 1} 风险` : m[2] === "pattern" ? `规则 ${Number(m[1]) + 1} 地址` : "授权";
   return ({
@@ -66,7 +68,7 @@ export type Group = (typeof GROUPS)[number];
 export function groupOf(field: string): Group | null {
   if (field.startsWith("scope")) return "授权";
   if (field.startsWith("budget") || field === "deadline") return "预算";
-  if (field.startsWith("goal.check") || field.startsWith("goal.binding") || field === "goal.max_attempts") return "判据";
+  if (field.startsWith("goal.check") || field.startsWith("goal.binding") || field.startsWith("goal.acceptance") || field === "goal.max_attempts") return "判据";
   if (field === "draft.model") return null;
   return "目标与题面";
 }

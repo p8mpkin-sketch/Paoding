@@ -5,6 +5,8 @@ import RECORDED from "./kaiti.json" with { type: "json" };
 
 type Rec = {
   extract: Record<string, { text: string; out: KaitiExtract }>; drafts: Record<string, { text: string; out: KaitiVetted }>; overrides: { name: string; overrides: unknown; out: KaitiVetted }[];
+  /** 拒绝页第 02 条路：人给验收清单之后的确认卡。 */
+  acceptance: { name: string; acceptance: unknown; out: KaitiVetted }[];
   /** 从平台导入：一个假平台 plat-a，清单一题，领题回来的确认卡（qicao 的 import_view 录下）。 */
   platforms: PlatformEntry[]; tasks: PlatformTask[]; imports: Record<string, KaitiVetted>;
 };
@@ -19,7 +21,7 @@ export function kaitiExtract(text: string): KaitiExtract {
   return byText(KAITI.extract, text)?.[1].out ?? { text, spans: [], answers: 0 };
 }
 
-export function kaitiDraft(body: { text: string; draft?: unknown; overrides?: unknown }): KaitiVetted | Error {
+export function kaitiDraft(body: { text: string; draft?: unknown; overrides?: unknown; acceptance?: unknown }): KaitiVetted | Error {
   const hit = byText(KAITI.drafts, body.text);
   if (!hit) {
     const refuse = KAITI.drafts.refuse.out;
@@ -29,6 +31,10 @@ export function kaitiDraft(body: { text: string; draft?: unknown; overrides?: un
     };
   }
   const [name, rec] = hit;
+  if (Array.isArray(body.acceptance) && body.acceptance.length) {
+    const a = KAITI.acceptance.find((x) => x.name === name && sorted(x.acceptance) === sorted(body.acceptance));
+    return a ? a.out : new Error("假服务只认录下的那一份验收清单");
+  }
   const ov = body.overrides && Object.keys(body.overrides as object).length ? body.overrides : null;
   if (!ov) return rec.out;
   const o = KAITI.overrides.find((x) => x.name === name && sorted(x.overrides) === sorted(ov));

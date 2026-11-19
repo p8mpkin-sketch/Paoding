@@ -12,6 +12,8 @@ export type KaitiRow = { field: string; value: unknown; source: KaitiSource; spa
 export type KaitiNote = { code: string; field: string; text: string; lane: "confirm" | "refuse" };
 export type KaitiBlob = { name: string; media_type: string; text: string; hash: string; size: number };
 export type KaitiOverrides = { risk?: Record<string, Risk>; usd_milli?: number; wall_s?: number; ack_command?: boolean };
+/** 拒绝页第 02 条路（人工验收）：人给的验收清单，每项是原文区间或人写的陈述；模型不写条目。 */
+export type KaitiAcceptance = ({ span: string } | { text: string }) & { needs?: "artifact" | "note" };
 /** 外部判定（external-verdict §5.8）：判定权在已登记的平台；批次由“从平台导入”领题时生成。 */
 export type KaitiExternal = { connector: string; judge_id: string; task: string };
 /** 拒绝页的降级路：补判定终点、人工验收、高级模式、去设置页登记这个平台。 */

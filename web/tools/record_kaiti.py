@@ -81,6 +81,12 @@ def main() -> None:
     ack = {"ack_command": True}
     base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"]}
     out["overrides"].append({"name": "outbound", "overrides": ack, "out": svc.draft_view({**base, "overrides": ack})})  # type: ignore[attr-defined]
+    # 拒绝页第 02 条路（人工验收）：第一句原文作一条，人另写一条要附交付物的
+    rf = out["drafts"]["refuse"]["out"]  # type: ignore[index]
+    sent = next(x["id"] for x in rf["spans"] if x["kind"] == "sentence")
+    base = {"text": CASES["refuse"], "draft": rf["draft"], "nonce": rf["nonce"], "model": rf["model"]}
+    acc = [{"span": sent}, {"text": "附上对比表", "needs": "artifact"}]
+    out["acceptance"] = [{"name": "refuse", "acceptance": acc, "out": svc.draft_view({**base, "acceptance": acc})}]
     notice = json.dumps(NOTICE, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     out["imports"] = {  # 领题时刻固定，录下来的批次逐字可比
         "T-17": svc.import_view(

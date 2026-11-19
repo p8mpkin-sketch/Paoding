@@ -4,7 +4,7 @@
  "body": {
   "as_of": 36,
   "head": 36,
-  "view_hash": "ca525975b91300260e61f9873763480871b6352fe86c8c6cc6fdb5d5c1a6e6e3",
+  "view_hash": "bcd3911f559bc8fb8ca10dc9c46f180324691243921660c88831c41a3eea9b3b",
   "items": [
    {
     "id": "p1",
@@ -22,6 +22,7 @@
      "kind": "builtin",
      "label": "exact_match@1"
     },
+    "authority": "local",
     "profile": {
      "info": "complete",
      "judge": "hard",
@@ -57,6 +58,7 @@
      "kind": "builtin",
      "label": "exact_match@1"
     },
+    "authority": "local",
     "profile": {
      "info": "complete",
      "judge": "hard",
@@ -81,7 +83,30 @@
    "problems": 2,
    "solved": 1,
    "spent_usd_milli": 100,
-   "cost_per_solve_usd_milli": 100
+   "cost_per_solve_usd_milli": 100,
+   "by_authority": {
+    "local": {
+     "problems": 2,
+     "solved": 1,
+     "accepted": 0,
+     "unsolved": 0,
+     "open": 1
+    },
+    "external": {
+     "problems": 0,
+     "solved": 0,
+     "accepted": 0,
+     "unsolved": 0,
+     "open": 0
+    },
+    "human": {
+     "problems": 0,
+     "solved": 0,
+     "accepted": 0,
+     "unsolved": 0,
+     "open": 0
+    }
+   }
   }
  }
 }

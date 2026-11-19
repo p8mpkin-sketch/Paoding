@@ -2591,6 +2591,289 @@
    "max_submissions": 3
   }
  ],
+ "acceptance": [
+  {
+   "name": "refuse",
+   "acceptance": [
+    {
+     "span": "s1"
+    },
+    {
+     "text": "附上对比表",
+     "needs": "artifact"
+    }
+   ],
+   "out": {
+    "lane": "confirm",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_acceptance",
+      "field": "goal.check",
+      "text": "人工验收：交付后由你按清单逐条判，终态最多为“已验收”，不写“已证明”；清单创建后不能改",
+      "lane": "confirm"
+     },
+     {
+      "code": "no_answer",
+      "field": "goal.check",
+      "text": "没有标准答案：不能零确认",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我调研一下主流的智能体框架，写一份对比。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我调研一下主流的智能体框架，写一份对比",
+      "source": "model"
+     },
+     {
+      "field": "goal.acceptance[0]",
+      "value": "帮我调研一下主流的智能体框架，写一份对比。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "goal.acceptance[1]",
+      "value": "附上对比表",
+      "source": "human"
+     },
+     {
+      "field": "goal.check",
+      "value": "structure_check · 只看交付物的形状，只给读数",
+      "source": "table",
+      "note": "人工验收：由你逐条判"
+     },
+     {
+      "field": "goal.max_attempts",
+      "value": 5,
+      "source": "table"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "原文里没有入口"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我调研一下主流的智能体框架，写一份对比",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我调研一下主流的智能体框架，写一份对比。",
+      "check": {
+       "judge_id": "structure_check"
+      },
+      "max_attempts": 5,
+      "accept": "human",
+      "acceptance": [
+       {
+        "text": "帮我调研一下主流的智能体框架，写一份对比。",
+        "src": "span"
+       },
+       {
+        "text": "附上对比表",
+        "src": "human",
+        "needs": "artifact"
+       }
+      ]
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [
+      "structure_check"
+     ]
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-cdbd3b8377c2",
+    "nonce": "fixture-refuse",
+    "text": "帮我调研一下主流的智能体框架，写一份对比。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 21,
+      "text": "帮我调研一下主流的智能体框架，写一份对比。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我调研一下主流的智能体框架，写一份对比",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我调研一下主流的智能体框架，写一份对比。",
+      "hash": "1da1e1264872139043138ff2adf33158f88ad1319c76d1031a731de568e05440",
+      "size": 63
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我调研一下主流的智能体框架，写一份对比。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我调研一下主流的智能体框架，写一份对比\"},{\"field\":\"goal.acceptance[0]\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我调研一下主流的智能体框架，写一份对比。\"},{\"field\":\"goal.acceptance[1]\",\"source\":\"human\",\"value\":\"附上对比表\"},{\"field\":\"goal.check\",\"note\":\"人工验收：由你逐条判\",\"source\":\"table\",\"value\":\"structure_check · 只看交付物的形状，只给读数\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0]\",\"note\":\"原文里没有入口\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"human\",\"acceptance\":[{\"src\":\"span\",\"text\":\"帮我调研一下主流的智能体框架，写一份对比。\"},{\"needs\":\"artifact\",\"src\":\"human\",\"text\":\"附上对比表\"}],\"check\":{\"judge_id\":\"structure_check\"},\"max_attempts\":5,\"statement\":\"帮我调研一下主流的智能体框架，写一份对比。\"},\"judges\":[\"structure_check\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我调研一下主流的智能体框架，写一份对比\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_acceptance\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"人工验收：交付后由你按清单逐条判，终态最多为“已验收”，不写“已证明”；清单创建后不能改\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"}],\"pid\":\"kt-cdbd3b8377c2\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "323c31b3ba0ac21e250968512ccb89a6b2679ca4546d9200965ddb34a4389de4",
+      "size": 2362
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "1da1e1264872139043138ff2adf33158f88ad1319c76d1031a731de568e05440",
+       "size": 63,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "323c31b3ba0ac21e250968512ccb89a6b2679ca4546d9200965ddb34a4389de4",
+       "size": 2362,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我调研一下主流的智能体框架，写一份对比",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "confirm"
+        }
+       },
+       "goal": {
+        "statement": "帮我调研一下主流的智能体框架，写一份对比。",
+        "check": {
+         "judge_id": "structure_check"
+        },
+        "max_attempts": 5,
+        "accept": "human",
+        "acceptance": [
+         {
+          "text": "帮我调研一下主流的智能体框架，写一份对比。",
+          "src": "span"
+         },
+         {
+          "text": "附上对比表",
+          "src": "human",
+          "needs": "artifact"
+         }
+        ]
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [
+        "structure_check"
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ],
  "imports": {
   "T-17": {
    "lane": "confirm",

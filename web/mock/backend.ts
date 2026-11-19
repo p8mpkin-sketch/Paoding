@@ -9,7 +9,7 @@
 // 与 seen.card_hash 的 stale_view 校验。它们让对应的界面有数据可测。
 import { createHash } from "node:crypto";
 import type {
-  ApprovalDisplay, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
+  ApprovalDisplay, Authority, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
   ExecRecord, ExtensionFields, FactNode, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, LeaseRow, Level,
   OpResult, Predicate, ProblemInput, ProblemItem, Profile, ProposalResponse, RegisterName, Risk, ScopeRule, StatusView,
   Tagged, Terminal, WorkItem,
@@ -238,9 +238,16 @@ function terminalOf(s: State): Terminal | null {
   return closed(s) ? s.problem!.terminal ?? "unsolved" : null;
 }
 
+/** 判定来源（external-verdict §5.7）：与图服务同一规则，开题时派生。 */
+const EXTERNAL_JUDGES = new Set(["ext_receipt"]);
+function authorityOf(goal: { accept: string; check: { judge_id: string } }): Authority {
+  return goal.accept === "human" ? "human" : EXTERNAL_JUDGES.has(goal.check.judge_id) ? "external" : "local";
+}
+
 function head(s: State, pid: string): ProblemItem {
   const p = s.problem!;
   return {
+    authority: authorityOf(p.goal),
     id: pid, title: tag("title", p.title), closed: closed(s), terminal: terminalOf(s), terminal_badge: badge(p.goal.check.judge_id), profile: p.profile,
     opened_seq: p.opened_seq, opened_ts: p.opened_ts, closed_seq: p.closed_seq ?? null,
     spent_usd_milli: s.costs.reduce((a, c) => a + c.usd_milli, 0), cap_usd_milli: p.budget.usd_milli + s.capAdd,
@@ -253,7 +260,7 @@ function head(s: State, pid: string): ProblemItem {
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
-  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, ...h } = head(s, pid);
+  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
     problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },
@@ -753,9 +760,16 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
 
     if (path === "/v1/problems") {
       const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid));
-      const solved = items.filter((i) => i.terminal === "solved").length;
+      // solved 与每解成本只数本地判定；外部判定与人工验收各自一行（external-verdict §5.7）
+      const tally = (a: Authority) => {
+        const xs = items.filter((i) => i.authority === a);
+        const n = (t: Terminal) => xs.filter((i) => i.closed && i.terminal === t).length;
+        return { problems: xs.length, solved: n("solved"), accepted: n("accepted"), unsolved: n("unsolved"), open: xs.filter((i) => !i.closed).length };
+      };
+      const by_authority = { local: tally("local"), external: tally("external"), human: tally("human") };
+      const solved = by_authority.local.solved;
       const spent = items.reduce((a, i) => a + i.spent_usd_milli, 0);
-      return wrap({ items, totals: { problems: items.length, solved, spent_usd_milli: spent, cost_per_solve_usd_milli: solved ? Math.floor(spent / solved) : null } });
+      return wrap({ items, totals: { problems: items.length, solved, spent_usd_milli: spent, cost_per_solve_usd_milli: solved ? Math.floor(spent / solved) : null, by_authority } });
     }
     if ((m = path.match(/^\/v1\/artifacts\/([^/]+)$/))) {
       const pid = ownerOf(m[1]);
