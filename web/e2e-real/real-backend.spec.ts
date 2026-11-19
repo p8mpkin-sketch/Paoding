@@ -108,3 +108,99 @@ test("真实图服务：开题后驾驶舱渲染，人写入的 Intent 经 SSE �
   expect(navigations).toBe(nav0);                                 // 全程没有重新加载页面
   await expect(page.locator("[data-conn-label]")).toHaveText("实时");
 });
+
+// ---- 人工验收（宪章 D3、02 §3.3；地图 Q23）：真图服务 + 真判官运行器（结构检查）+ 网页的验收卡 ----
+
+const HPID = "real-human-1";
+
+async function putInput(request: APIRequestContext, text: string) {
+  const bytes = Buffer.from(text, "utf-8");
+  const put = await request.put("/v1/blobs", { headers: { ...auth(), "Content-Type": "application/octet-stream" }, data: bytes });
+  expect(put.ok()).toBe(true);
+  const { hash } = await put.json();
+  return { op: "register_artifact", body: { hash, size: bytes.length, media_type: "text/plain; charset=utf-8", class: "input" } };
+}
+
+async function proposeTo(request: APIRequestContext, pid: string, ops: unknown[]) {
+  const r = await request.post(`/v1/problems/${pid}/proposals`, { headers: auth(), data: { idem_key: `real-${++n}-${Date.now()}`, ops } });
+  const out = await r.json();
+  expect(out.ok, JSON.stringify(out)).toBe(true);
+  return out.results as { id?: string }[];
+}
+
+test("真实全栈：人工验收的任务交付后由结构检查给读数，人在验收卡上逐条判，图服务以 accepted 关闭", async ({ page, request }) => {
+  const r = await request.post("/v1/problems", {
+    headers: auth(),
+    data: {
+      id: HPID,
+      idem_key: `open-${HPID}`,
+      ops: [
+        await putInput(request, "帮我调研一下主流的智能体框架，写一份对比。"),
+        {
+          op: "open_problem",
+          body: {
+            title: "框架对比（人工验收）",
+            origin: { statement_ref: "$0", materials: [] },
+            goal: {
+              statement: "写一份主流智能体框架的对比", check: { judge_id: "structure_check", expect: { format: "text", min_bytes: 20 } }, max_attempts: 3, accept: "human",
+              acceptance: [
+                { text: "帮我调研一下主流的智能体框架，写一份对比。", src: "span" },
+                { text: "对比覆盖至少三个框架，并附上对比表", src: "human", needs: "artifact" },
+              ],
+            },
+            scope: [{ resource: "workspace", pattern: "*", actions: ["read", "write"], risk: "r0" }],
+            budget: { usd_milli: 5000, wall_s: 3600, verify_share: 0.2, bootstrap_share: 0.3 },
+            env: { base: "basic", baseline_ref: "basic@1" },
+            judges: ["structure_check"],
+          },
+        },
+      ],
+    },
+  });
+  const opened = await r.json();
+  expect(opened.ok, JSON.stringify(opened)).toBe(true);
+  await page.addInitScript((t) => {
+    sessionStorage.setItem("paoding.human_token", JSON.stringify({ token: t, expires_at: Date.now() + 3600_000 }));
+  }, token());
+  await page.goto(`/p/${HPID}`);
+  await expect(page.locator("[data-conn-label]")).toHaveText("实时");
+
+  // 交付：候选与对比表（人给的 input 类），请判官做结构检查；判官运行器在后台领租约、出裁决
+  const [{ id: cand }, { id: table }] = await proposeTo(request, HPID, [
+    await putInput(request, "# 框架对比\n\nA、B、C 三个框架在编排、工具调用、记忆三方面的对比……\n"),
+    await putInput(request, "| 框架 | 编排 | 工具调用 |\n| A | 图 | 有 |\n| B | 链 | 有 |\n| C | 角色 | 有 |\n"),
+  ]);
+  await proposeTo(request, HPID, [{ op: "request_judge", body: { target: "goal", judge_id: "structure_check", candidate: cand } }]);
+
+  // 结构检查只给读数：Goal 不到 E3、不关题，待办里出现“人工验收”
+  const todo = page.locator(`[data-todo-item="acceptance:${HPID}"] button`);
+  await expect(todo).toBeVisible({ timeout: 20_000 });
+  await todo.click();
+  const card = page.locator('[data-card="acceptance"]');
+  await expect(card.locator("[data-deliverable]")).toContainText("只是读数");
+  await expect(card.locator("[data-accept-item]")).toHaveCount(2);
+
+  await card.locator('[data-accept-item="a1"] [data-verdict="pass"]').check();
+  await card.locator('[data-accept-item="a2"] [data-verdict="pass"]').check();
+  await expect(card.locator('[data-action="accept-submit"]')).toBeDisabled();       // a2 要附交付物
+  await card.locator('[data-ref="a2"]').fill(table!);
+  await card.locator('[data-action="accept-submit"]').click();
+
+  // 图服务的后续：以 accepted 关题（待办随之清空）；结果页首行写人工验收，不写“已证明”
+  await expect(page.locator("[data-result-head]")).toContainText("终态 accepted", { timeout: 15_000 });
+  await expect(page.locator("[data-result-head]")).toContainText("根结论等级上限 E0");
+  await expect(todo).toHaveCount(0);
+  await expect(page.locator("[data-result-authority]")).toContainText("判定来源：人工验收");
+  await expect(page.locator("[data-result]")).not.toContainText("已证明");
+  const st = await (await request.get(`/v1/problems/${HPID}/status`, { headers: auth() })).json();
+  expect(st.problem.terminal).toBe("accepted");
+  expect(st.goal.accept_log[0]).toMatchObject({ decision: "accept", checks: [{ id: "a1", verdict: "pass" }, { id: "a2", verdict: "pass", ref: table }] });
+
+  // 读数页：accepted 只进人工验收一行，不并进 solved
+  await page.goto("/readings");
+  const human = page.locator('[data-by-authority] [data-authority="human"]');
+  await expect(human).toContainText("人工验收");
+  const tot = (await (await request.get("/v1/problems", { headers: auth() })).json()).totals;
+  expect(tot.by_authority.human.accepted).toBe(1);
+  expect(tot.solved).toBe(tot.by_authority.local.solved);
+});

@@ -148,7 +148,8 @@ export function staticScripts(): Script[] {
       { resource: "telemetry", pattern: "svc/*", actions: ["read"], risk: "r0" },
       { resource: "config", pattern: "svc/main", actions: ["write"], risk: "r2" },
     ],
-    goal: { statement: "指标在观察窗内回到基线", check: { judge_id: "window_assert", expect: { metric: "error_rate", below: 0.01, window_s: 600 } }, max_attempts: 2, accept: "human" },
+    goal: { statement: "指标在观察窗内回到基线", check: { judge_id: "window_assert", expect: { metric: "error_rate", below: 0.01, window_s: 600 } }, max_attempts: 2, accept: "human",
+      acceptance: [{ id: "a1", text: "指标在观察窗内回到基线", src: "span" }, { id: "a2", text: "附上回滚前后的指标截图", src: "human", needs: "artifact" }] },
     judges: ["window_assert", "replay"],
     budget: { usd_milli: 6000, wall_s: 3600, verify_share: 0.2, bootstrap_share: 0.333 },
     profile: { info: "partial", judge: "deferred", reversibility: "r2" },
@@ -196,5 +197,24 @@ export function staticScripts(): Script[] {
   d.ev(adapter("P1", "bootstrap"), "request_scope", () => ({
     rules: [q9], risk_from: [0], why: "接口的错误信息指向 q9.lab:9000 的日志服务", auto: false, blockers: ["任务预算超过练习上限"],
   }), "r_q9");
-  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }];
+  // demo-5：人工验收（宪章 D3、02 §3.3）。交付物已过结构检查（只是读数），等人按清单逐条判。
+  const e = new Builder("demo-5");
+  e.input("statement", "帮我调研一下主流的智能体框架，写一份对比。\n");
+  e.open("示例题：框架对比（人工验收）", "写一份主流智能体框架的对比", {
+    goal: {
+      statement: "写一份主流智能体框架的对比", check: { judge_id: "structure_check", expect: { format: "text", min_bytes: 200 } }, max_attempts: 3, accept: "human",
+      acceptance: [
+        { id: "a1", text: "帮我调研一下主流的智能体框架，写一份对比。", src: "span" },
+        { id: "a2", text: "对比覆盖至少三个框架，并附上对比表", src: "human", needs: "artifact" },
+        { id: "a3", text: "写明没覆盖的部分与原因", src: "human", needs: "note" },
+      ],
+    },
+    judges: ["structure_check", "replay"],
+    profile: { info: "partial", judge: "deferred", reversibility: "r0" },
+  });
+  e.lease("Q1", "bootstrap");
+  e.exec("x_report", "Q1", "shell", "cat report.md", "# 框架对比\n\n| 框架 | 编排 | 工具调用 |\n| --- | --- | --- |\n| A | 图 | 有 |\n| B | 链 | 有 |\n| C | 角色 | 有 |\n");
+  e.release("Q1", "bootstrap", 900);
+  e.judge("k_struct", "goal", "structure_check", "pass", "format: text\nsize: 212\nproblems: []\n", "x_report");
+  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }];
 }

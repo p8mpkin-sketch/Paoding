@@ -57,13 +57,14 @@ export function AcceptanceCard({ pid, head, canWrite, log = [] }: { pid: string;
   const blank: Row = { verdict: null, ref: "", note: "" };
   const set = (id: string, patch: Partial<Row>) => setRows((x) => ({ ...x, [id]: { ...(x[id] ?? blank), ...patch } }));
   const checks = buildChecks(items, rows);
-  const failed = typeof checks === "string" ? [] : checks.filter((c) => c.verdict === "fail").map((c) => c.id);
+  // 一点“不过”就切到拒收：理由框立刻出现，不等其余条目判完
+  const failed = items.filter((a) => rows[a.id]?.verdict === "fail").map((a) => a.id);
   const ready = typeof checks !== "string" && (failed.length === 0 || reason.trim() !== "");
 
   return (
     <article className="card acceptance" data-card="acceptance" data-card-hash={card.card_hash}>
       <header><h3>人工验收</h3><span className="muted">card_hash <code>{shortHash(card.card_hash)}</code></span></header>
-      <p>按创建任务时登记的清单逐条判。终态最多为“已验收”（accepted），不写“已证明”，也不计入判定通过的数。</p>
+      <p>按创建任务时登记的清单逐条判。终态最多为“已验收”（accepted），不提升等级，也不计入判定通过的数。</p>
       {deliv ? (
         <p data-deliverable>待验收的交付物：<code>{deliv.candidate ?? "无"}</code>，结构检查在 seq {deliv.verdict_seq} 给出通过的读数（只是读数，不替你判）。</p>
       ) : <p className="muted" data-deliverable>还没有待验收的交付物：要等结构检查通过（拒收之后要等新的交付物）。</p>}
