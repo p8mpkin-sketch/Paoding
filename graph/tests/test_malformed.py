@@ -11,10 +11,11 @@
 """
 
 import copy
+import dataclasses
 import random
 
 import pytest
-from conftest import ADAPTER, EXECUTOR, HUMAN, JUDGE, Kernel, explore, reason
+from conftest import ADAPTER, CFG, EXECUTOR, HUMAN, JUDGE, Kernel, explore, reason
 
 from paoding_graph.cards import seen as seen_card
 from paoding_graph.parse import BadBody, Obj
@@ -55,7 +56,7 @@ JUNK = [
 
 def world():
     """一个各种对象都有的内核，以及每种操作的一条合法提议 (actor, pid, kind, body)。"""
-    k = Kernel()
+    k = Kernel(dataclasses.replace(CFG, grants_runtime=True))
     k.open("p1", scope_risks=("r0", "r2"))
     boot = k.submit(SINAN, "p1", "lease", {"kind": "bootstrap", "holder": "sn1", "reserve": R, "ttl_s": 600})
     assert k.submit(SINAN, "p1", "release", {"lease": boot, "outcome": "nothing"}) == "ok"
@@ -71,6 +72,8 @@ def world():
     req = k.submit(HUMAN, "p1", "request_judge", {"target": f, "judge_id": "replay"})
     a_judge = k.art("p1", "judge", b"evidence")
     st_in = k.art("p9", "input", b"statement p9")
+    net = {"resource": "net", "pattern": "q7.lab:8443", "actions": ["connect"]}
+    sreq = k.submit(explore(lid), "p1", "request_scope", {"rules": [net], "why": "要读接口"})
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -210,6 +213,25 @@ def world():
         ),
         (HUMAN, "p1", "close_problem", {"reason": "收工", "seen": seen_card(k.state, "p1", "closeout", "p1")}),
         (GRAPH, "p1", "budget_mark", {"mark": 50, "axis": "usd_milli"}),
+        (
+            explore(lid),
+            "p1",
+            "request_scope",
+            {"rules": [{**net, "pattern": "q8.lab:80"}], "why": "还要一台", "intent": plain},
+        ),
+        (
+            HUMAN,
+            "p1",
+            "grant_scope",
+            {"request": sreq, "decision": "approve", "risk": ["r2"], "seen": seen_card(k.state, "p1", "scope", sreq)},
+        ),
+        (
+            HUMAN,
+            "p1",
+            "grant_scope",
+            {"request": sreq, "decision": "deny", "reason": "不放", "seen": seen_card(k.state, "p1", "scope", sreq)},
+        ),
+        (HUMAN, "p1", "revoke_scope", {"rule": 1, "reason": "用不到了"}),
     ]
     return k, cases
 

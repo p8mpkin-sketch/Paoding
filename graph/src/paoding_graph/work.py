@@ -11,7 +11,7 @@ from typing import Any, TypedDict, cast
 
 from . import levels as lv
 from . import refmodel as rm
-from .state import Lease, State
+from .state import Lease, ScopeRequest, ScopeRule, State
 
 TASK_KINDS = ("bootstrap", "reason", "explore")
 FAIL_OUTCOMES = ("failed", "nothing", "budget_exhausted", "expired")
@@ -44,6 +44,25 @@ def in_flight(state: State, pid: str, kind: str, target: str | None = None) -> L
 _RANK = {"r0": 0, "r1": 1, "r2": 2}
 
 
+def requests(state: State) -> dict[str, ScopeRequest]:
+    """扩权申请（runtime-grants §4.1）；第一条申请之前状态里没有这个键。"""
+    return state.get("scope_requests", {})
+
+
+def active(scope: list[ScopeRule]) -> list[ScopeRule]:
+    """已批未撤的规则：执行层只编译这些（撤销的规则留在原位，下标不变）。"""
+    return [r for r in scope if "revoked" not in r]
+
+
+def pending_for_human(state: State, pid: str) -> list[str]:
+    """等人批的扩权申请：不自动批、也不随 Intent 审批走的那些。"""
+    return [
+        x["id"]
+        for x in requests(state).values()
+        if x["problem_id"] == pid and x["status"] == "pending" and not x["auto"] and "intent" not in x
+    ]
+
+
 def holds(state: State, iid: str) -> dict[int, str]:
     """Intent 占用的授权规则：下标 → read | write。声明了 touches 就用 add_intent 校验过的那份；
     没声明时保守展开为"全部 risk ≤ Intent 风险的规则，r1 以上按写"，所以不声明也正确，只是并行度低。"""
@@ -52,7 +71,11 @@ def holds(state: State, iid: str) -> dict[int, str]:
         return {t["rule"]: t["mode"] for t in rec["touches"]}
     scope = state["problems"][rec["problem_id"]]["scope"]
     rank = _RANK[rec["risk"]]
-    return {k: "read" if r["risk"] == "r0" else "write" for k, r in enumerate(scope) if _RANK[r["risk"]] <= rank}
+    return {
+        k: "read" if r["risk"] == "r0" else "write"
+        for k, r in enumerate(scope)
+        if _RANK[r["risk"]] <= rank and "revoked" not in r
+    }
 
 
 def clash(a: Mapping[int, str], b: Mapping[int, str]) -> list[int]:
@@ -280,6 +303,8 @@ def work(state: State, pid: str) -> list[dict[str, Any]]:
         and not reason_due
         and boot_done
     )
+    for rid in pending_for_human(state, pid):
+        items.append({"kind": "human", "target": rid, "why": "scope_request"})
     if stalled:
         items.append({"kind": "human", "target": pid, "why": "stalled"})
     return items

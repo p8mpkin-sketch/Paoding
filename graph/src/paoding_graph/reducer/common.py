@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from .. import cards
 from .. import refmodel as rm
@@ -17,6 +18,7 @@ RISKS = ("r0", "r1", "r2")
 
 
 RISK_RANK = {r: i for i, r in enumerate(RISKS)}
+RiskRow = dict[str, Any]  # 设置层风险表的一行 {resource, pattern, actions, risk}
 
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -49,6 +51,12 @@ class Config:
     settings: tuple[int, str] | None = None  # 设置存储当时的 (版本, 摘要)，开题时抄进事件体（宪章 D5）
     # 练习道信封（一句话开题增量 13、15）：None 即本部署不接受 lane=practice 的开题。版本与摘要开题时抄进事件体
     practice: PracticePolicy | None = None
+    # 运行时扩权（runtime-grants §4、§10.3）：设置层 grants 节与风险表，由组装根在设置变更时整体替换 Config。
+    # runtime 关时只接受随 needs_scope 而来的申请（图服务自己追加）；风险表未命中按 r2
+    grants_runtime: bool = False
+    grants_auto_practice: bool = True
+    risk_table: tuple[RiskRow, ...] = ()
+    scope_request_quota: int = 4  # 每个会话的扩权申请数
 
 
 def empty_state() -> State:

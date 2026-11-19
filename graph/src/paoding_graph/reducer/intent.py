@@ -77,7 +77,7 @@ def _capability(prob: Problem, risk: str, needs: list[ScopeRule], body: Obj) -> 
     不再另查。`touches` 只能指向 Problem.scope 的下标（needs_scope 尚未授权，不能被占用）；
     每条规则的 risk 不高于 Intent 的 risk；write 只用于 r1 以上的规则；同一条规则只列一次。
     返回规范化（按下标排序）的列表；未声明时返回 None，由 work.holds 保守展开。"""
-    ceiling = max((r["risk"] for r in prob["scope"] + needs), key=RISK_RANK.__getitem__)
+    ceiling = max((r["risk"] for r in wk.active(prob["scope"]) + needs), key=RISK_RANK.__getitem__)
     if RISK_RANK[risk] > RISK_RANK[ceiling]:
         return Reject("scope_mismatch", f"risk {risk} 高于授权范围的最高风险 {ceiling}")
     if body.get("touches") is None:
@@ -94,6 +94,8 @@ def _capability(prob: Problem, risk: str, needs: list[ScopeRule], body: Obj) -> 
         if k in out:
             return Reject("schema_error", f"touches 重复列出规则 {k}")
         rule = prob["scope"][k]
+        if "revoked" in rule:
+            return Reject("unknown_ref", f"touches 指向的规则 {k} 已撤销")
         if RISK_RANK[rule["risk"]] > RISK_RANK[risk]:
             return Reject("scope_mismatch", f"规则 {k} 的风险 {rule['risk']} 高于 Intent 的 risk {risk}")
         if mode == "write" and rule["risk"] == "r0":

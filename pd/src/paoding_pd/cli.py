@@ -5,6 +5,8 @@
     pd profile <pid> [--override <轴>=<值> --reason "<文本>"]
     pd hint add [--node <id>] "<文本>"      pd hint close <hid>
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
+    pd scope list    pd scope grant <申请> [--risk r1,…] [--yes]    pd scope deny <申请> --reason "<文本>"
+    pd scope revoke <规则下标> --reason "<文本>"     运行时扩权（docs/design/runtime-grants/）
     pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
     pd settings show                        pd settings set <键路径> <值>
     pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import json
 import os
 import sys
@@ -207,6 +210,55 @@ def cmd_decide(local: Local, a, w, decision: str, read=input) -> int:
     return 0
 
 
+def cmd_scope(local: Local, a, w, read=input) -> int:
+    """运行时扩权的人工一侧：列出申请、批或拒（带 seen，绑定所见）、撤销规则。"""
+    pid = _pid(a)
+    st = local.graph.state
+    reqs = {k: v for k, v in st.get("scope_requests", {}).items() if v["problem_id"] == pid}
+    if a.sub == "list":
+        p = st["problems"].get(pid)
+        if p is None:
+            w(f"[证据] 没有任务 {pid}\n")
+            return 1
+        for k, r in enumerate(p["scope"]):
+            mark = "已撤销" if "revoked" in r else ("扩权批准" if "granted" in r else "开题时")
+            w(f"[证据] 规则 {k} {r['resource']} {r['pattern']} {','.join(r['actions'])} {r['risk']}（{mark}）\n")
+        for rid in sorted(reqs, key=lambda x: reqs[x]["seq"]):
+            w(render.scope_card(st, pid, rid))
+        if not reqs:
+            w("[证据] 没有扩权申请\n")
+        return 0
+    if a.sub == "revoke":
+        body: dict = {"rule": int(a.target), "reason": a.reason}
+        op = "revoke_scope"
+    else:
+        if a.target not in reqs:
+            w(f"[证据] 本题没有扩权申请 {a.target}\n")
+            return 1
+        w(render.scope_card(st, pid, a.target))
+        decision = "approve" if a.sub == "grant" else "deny"
+        body = {"request": a.target, "decision": decision, "seen": seen_card(st, pid, "scope", a.target)}
+        if a.reason:
+            body["reason"] = a.reason
+        if decision == "approve" and a.risk:
+            body["risk"] = [x.strip() for x in a.risk.split(",")]
+        op = "grant_scope"
+    if not a.yes:
+        ans = read("确认？输入 yes 继续：")
+        if ans.strip() != "yes":
+            w("[证据] 未确认，未提交\n")
+            return 1
+    # 被拒的结果同样按 idem_key 缓存：改正后重交必须换键（graph/SPEC.md 的调用方惯例），所以键里带上提交体的摘要
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
+    out = local.submit(pid, f"pd-scope-{a.sub}:{a.target}:{st['seq']}:{digest}", [{"op": op, "body": body}])
+    if not out["ok"]:
+        w(f"[证据] 被拒：{_fail(out)}\n")
+        return 1
+    verb = {"grant": "批准", "deny": "拒绝", "revoke": "撤销"}[a.sub]
+    w(f"[证据] 已{verb} {a.target}\n")
+    return 0
+
+
 # ---------- 设置与密钥：经 HTTP 找运行中的全栈 ----------
 
 
@@ -329,6 +381,15 @@ def parser() -> argparse.ArgumentParser:
         d.add_argument("intent")
         d.add_argument("--yes", action="store_true")
         d.add_argument("--reason", required=(name == "deny"))
+    sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
+    sc.add_parser("list")
+    for name in ("grant", "deny", "revoke"):
+        x = sc.add_parser(name)
+        x.add_argument("target")
+        x.add_argument("--yes", action="store_true")
+        x.add_argument("--reason", required=(name != "grant"))
+        if name == "grant":
+            x.add_argument("--risk", help="逐条上调风险，逗号分隔（只可上调）")
     kaiti.add_parser(sp)
     st = sp.add_parser("settings").add_subparsers(dest="sub", required=True)
     st.add_parser("show")
@@ -360,6 +421,8 @@ def main(
         return kaiti.cmd_kaiti(local, a, w, read, model)
     if a.cmd in ("approve", "deny"):
         return cmd_decide(local, a, w, a.cmd, read)
+    if a.cmd == "scope":
+        return cmd_scope(local, a, w, read)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)
 
 

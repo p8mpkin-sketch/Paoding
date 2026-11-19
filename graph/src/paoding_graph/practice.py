@@ -87,6 +87,19 @@ def load_policy(doc: Any) -> PracticePolicy:
     )
 
 
+def rule_violations(p: PracticePolicy, rules: list[Mapping[str, Any]], where: str = "rules") -> list[str]:
+    """授权规则不在信封里的每一条。开题时查 scope，运行时扩权的练习道自动批准查申请的规则（同一套判定）。"""
+    out: list[str] = []
+    for i, r in enumerate(rules):
+        if r["resource"] not in p.resources:
+            out.append(f"{where}[{i}] 的资源 {r['resource']} 不在信封里")
+        if RISK_RANK[r["risk"]] > RISK_RANK[p.max_risk]:
+            out.append(f"{where}[{i}] 的风险 {r['risk']} 高于 {p.max_risk}")
+        if r["resource"] == "net" and not any(fnmatchcase(r["pattern"], g) for g in p.net_patterns):
+            out.append(f"{where}[{i}] 的地址 {r['pattern']} 不在白名单里")
+    return out
+
+
 def violations(
     p: PracticePolicy,
     scope: list[Mapping[str, Any]],
@@ -95,14 +108,7 @@ def violations(
     max_attempts: int,
 ) -> list[str]:
     """不在信封里的每一条，空即在信封内。纯函数。"""
-    out: list[str] = []
-    for i, r in enumerate(scope):
-        if r["resource"] not in p.resources:
-            out.append(f"scope[{i}] 的资源 {r['resource']} 不在信封里")
-        if RISK_RANK[r["risk"]] > RISK_RANK[p.max_risk]:
-            out.append(f"scope[{i}] 的风险 {r['risk']} 高于 {p.max_risk}")
-        if r["resource"] == "net" and not any(fnmatchcase(r["pattern"], g) for g in p.net_patterns):
-            out.append(f"scope[{i}] 的地址 {r['pattern']} 不在白名单里")
+    out = rule_violations(p, scope, "scope")
     if check["judge_id"] not in p.judge_ids:
         out.append(f"Goal 判官 {check['judge_id']} 不在信封里")
     if p.require_sealed and not check.get("sealed"):

@@ -10,7 +10,14 @@ export type Caps = {
 export type RiskRule = { resource: string; pattern: string; actions: string[]; risk: "r0" | "r1" | "r2" };
 export type ModelProfile = { name: string; endpoint: string; model: string; family: string; tier: "strong" | "mid" | "light"; key_slot: string };
 export type ModelRole = "draft" | "bootstrap" | "reason" | "explore" | "verify";
-export type Settings = { caps: Caps; risk: RiskRule[]; models: { profiles: ModelProfile[]; routes: Record<ModelRole, string> } };
+// grants：运行时扩权（docs/design/runtime-grants/ §10.3），设置页的呈现随 §12 第三步；旧快照里可缺
+export type Grants = { runtime: boolean; auto: { practice: boolean } };
+export type Settings = {
+  caps: Caps;
+  risk: RiskRule[];
+  models: { profiles: ModelProfile[]; routes: Record<ModelRole, string> };
+  grants?: Grants;
+};
 export type SettingsDoc = { version: number; digest: string; settings: Settings };
 export type SettingsLogEntry = { version: number; from: string | null; to: string; keys: string[]; by: string; ts: number };
 /** 密钥槽：没有任何字段是密钥本身；指纹 = 加盐 sha256 前 8 位 + 末 4 位。 */
