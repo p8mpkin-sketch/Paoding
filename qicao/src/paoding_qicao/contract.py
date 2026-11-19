@@ -1,0 +1,9 @@
+"""起草（一句话开题）的对外契约接口。其它组件只许 import 本模块（ci/check_deps.py 强制）。"""
+
+from .card import render_card
+from .draft import Draft, DraftError, MessagesClient, ModelPort, draft, parse_draft
+from .extract import Extraction, Span, extract
+from .ops import batch, blobs
+from .policy import DEFAULT_CAPS, Intake, Prior, PriorSource, PriorTableError, Settings, TablePriors, placeholder_priors
+from .vaultio import write_answer
+from .vet import ANSWER_SLOT, Note, Vetted, derivation_bytes, vet
