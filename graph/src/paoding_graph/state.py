@@ -94,9 +94,16 @@ class Goal(TypedDict):
     accept: str  # M0 只有 judge
 
 
+class DraftRef(TypedDict):
+    record: str  # 出处账（input 类 Artifact）
+    lane: str  # practice | confirm
+    policy: NotRequired[dict[str, Any]]  # 练习道：图服务抄入的信封 {version, digest}
+
+
 class Origin(TypedDict):
     statement_ref: str
     materials: list[str]
+    draft: NotRequired[DraftRef]
 
 
 class Profile(TypedDict):

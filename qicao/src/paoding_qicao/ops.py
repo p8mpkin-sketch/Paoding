@@ -42,6 +42,8 @@ def batch(v: Vetted, put: Callable[[bytes], str], vault_ref: dict[str, Any] | st
             {"op": "register_artifact", "body": {"hash": h, "size": len(data), "media_type": media, "class": "input"}}
         )
     body = _subst(copy.deepcopy(v.input), idx)
+    # 出处账引用与道别（内核增量 13）：lane=practice 时内核逐条对练习道信封，不满足整单拒绝
+    body["origin"]["draft"] = {"record": idx["$derivation"], "lane": v.lane}
     sealed = body["goal"]["check"].get("sealed")
     if sealed is not None:
         if vault_ref is None:

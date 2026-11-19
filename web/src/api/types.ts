@@ -39,7 +39,9 @@ export type Check = {
   control?: Control;
 };
 export type ScopeRule = { resource: string; pattern: string; actions: string[]; risk: Risk };
-export type Origin = { statement_ref: ArtifactId; materials: ArtifactId[] };
+/** 一句话开题的出处账引用与道别（增量 13）；policy 只在练习道，由图服务从信封抄入。 */
+export type DraftRef = { record: ArtifactId; lane: "practice" | "confirm"; policy?: { version: number; digest: string } };
+export type Origin = { statement_ref: ArtifactId; materials: ArtifactId[]; draft?: DraftRef };
 export type Env = { base: string; baseline_ref: string };
 /** open_problem 的事件体。没有 profile 字段：画像是派生量，提交时不接受（HMI §3.2 强制点）。题目 id 在批次外层。 */
 export type ProblemInput = {

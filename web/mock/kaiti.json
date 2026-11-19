@@ -335,7 +335,11 @@
        "title": "练习题：目标在 q1:8080，是个登录页，登录",
        "origin": {
         "statement_ref": "$0",
-        "materials": []
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "confirm"
+        }
        },
        "goal": {
         "statement": "练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。",
@@ -650,7 +654,11 @@
        "title": "仓库在 git.lab:8443，修好构建失败",
        "origin": {
         "statement_ref": "$0",
-        "materials": []
+        "materials": [],
+        "draft": {
+         "record": "$2",
+         "lane": "confirm"
+        }
        },
        "goal": {
         "statement": "仓库在 git.lab:8443，修好构建失败。",
@@ -1089,7 +1097,11 @@
        "title": "仓库在 git.lab:8443，修好构建失败",
        "origin": {
         "statement_ref": "$0",
-        "materials": []
+        "materials": [],
+        "draft": {
+         "record": "$2",
+         "lane": "confirm"
+        }
        },
        "goal": {
         "statement": "仓库在 git.lab:8443，修好构建失败。",
@@ -1414,7 +1426,11 @@
        "title": "仓库在 git.lab:8443，修好构建失败",
        "origin": {
         "statement_ref": "$0",
-        "materials": []
+        "materials": [],
+        "draft": {
+         "record": "$2",
+         "lane": "confirm"
+        }
        },
        "goal": {
         "statement": "仓库在 git.lab:8443，修好构建失败。",
