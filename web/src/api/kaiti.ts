@@ -11,7 +11,11 @@ export type KaitiSource = "span" | "table" | "prior" | "model" | "human";
 export type KaitiRow = { field: string; value: unknown; source: KaitiSource; spans?: string[]; note?: string };
 export type KaitiNote = { code: string; field: string; text: string; lane: "confirm" | "refuse" };
 export type KaitiBlob = { name: string; media_type: string; text: string; hash: string; size: number };
-export type KaitiOverrides = { risk?: Record<string, Risk>; usd_milli?: number; wall_s?: number };
+export type KaitiOverrides = { risk?: Record<string, Risk>; usd_milli?: number; wall_s?: number; ack_command?: boolean };
+/** 外部判定（external-verdict §5.8）：判定权在已登记的平台；批次由“从平台导入”领题时生成。 */
+export type KaitiExternal = { connector: string; judge_id: string; task: string };
+/** 拒绝页的降级路：补判定终点、人工验收、高级模式、去设置页登记这个平台。 */
+export type KaitiWay = "endpoint" | "human" | "advanced" | "register_platform";
 export type KaitiVetted = {
   lane: "practice" | "confirm" | "refuse";
   eligible: boolean;
@@ -34,4 +38,13 @@ export type KaitiVetted = {
   ops: Op[] | null;
   /** 答案来自原文答案行时回传一次，只用来写保密库。 */
   secret?: string;
+  /** 外部判定：ops 为空，创建时调导入领题拿批次。 */
+  external?: KaitiExternal | null;
+  /** "command"：命令有外发的形状，人勾“只检查、不提交”之前没有批次。 */
+  needs_ack?: "command" | null;
+  ways?: KaitiWay[];
 };
+
+/** 已登记的外部平台（GET /v1/connectors）：只读，凭据只说设没设。 */
+export type PlatformEntry = { id: string; version: string; digest: string; judges: string[]; hosts: string[]; deliver: "judge" | "worker"; slot: string; slot_set: boolean };
+export type PlatformTask = { task: string; title: string; time_limit_s?: number; max_submissions?: number };

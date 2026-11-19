@@ -70,3 +70,14 @@ def test_connector_credential_is_slot_only(tmp_path):
 
 def test_no_connectors_dir_means_none(tmp_path):
     assert load_connectors(tmp_path / "missing") == {}
+
+
+def test_form_key(tmp_path):
+    reg = load_registry(DEFAULT_DIR)
+    assert reg["exact_match"]["form"] == "answer" and reg["replay"]["form"] == "command"
+    (tmp_path / "e.yaml").write_text(EXT, encoding="utf-8")
+    assert load_registry(tmp_path)["ext_receipt"]["form"] == "external"  # 外部裁决恒为 external
+    for bad in (EXT + "form: answer\n", EXT.replace("authority: external", "authority: local") + "form: external\n"):
+        (tmp_path / "e.yaml").write_text(bad, encoding="utf-8")
+        with pytest.raises(RegistryError):
+            load_registry(tmp_path)

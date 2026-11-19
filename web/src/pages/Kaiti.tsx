@@ -137,13 +137,17 @@ export function Kaiti() {
   }
 
   async function openIt() {
-    if (!v || v.lane === "refuse" || busy) return;
+    if (!v || v.lane === "refuse" || v.needs_ack === "command" || busy) return;
     setBusy("open"); setErr(null);
     const body = JSON.stringify([v.ops, v.blobs.map((b) => b.hash)]);
     if (idem.current.body !== body) idem.current = { key: newIdemKey(), body };
     const t = pending("新建任务");
     try {
-      const r = await submitVetted(api, v, answer, idem.current.key);
+      // 外部判定：此刻才领题（平台从这一刻开始计时），批次由导入生成；卡上改过的预算一并带过去
+      const ready = v.external
+        ? await api.platformImport(v.external.connector, { task: v.external.task, nonce: v.nonce, budget: v.input ? { usd_milli: v.input.budget.usd_milli, wall_s: v.input.budget.wall_s } : undefined })
+        : v;
+      const r = await submitVetted(api, ready, answer, idem.current.key);
       recorded(t, "新建任务", r.seq);
       navigate({ page: "problem", pid: r.pid, asOf: null, node: null });
     } catch (e) {
@@ -201,6 +205,7 @@ export function Kaiti() {
   }
 
   const refused = v?.lane === "refuse";
+  const acked = !!v?.derivation.some((r) => r.field === "goal.check.ack");
   const notes = v?.notes ?? [];
   const noCriterion = notes.some((n) => n.code === "no_criterion" || n.code === "answer_missing");
 
@@ -213,6 +218,8 @@ export function Kaiti() {
             <Link to={{ page: "new", advanced: true }} data-action="advanced-blank">高级模式</Link>
             <span aria-hidden="true">·</span>
             <Link to={{ page: "import" }}>导入任务集</Link>
+            <span aria-hidden="true">·</span>
+            <Link to={{ page: "platform" }} data-action="to-platform">从平台导入</Link>
           </div>
         } />
 
@@ -285,8 +292,18 @@ export function Kaiti() {
                       {g === "判据" && v.has_answer && (
                         <div className="kt-row" data-field="answer"><dt>答案</dt><dd><span className="kt-val">已收起，只给判定器（保密库）</span><Mark ch="人" tone="jie" label="你给的" /></dd></div>
                       )}
-                      {g === "判据" && v.input!.goal.check.judge_id === "replay" && (
-                        <div className="kt-row kt-warn" data-field="command-note"><dt /><dd className="t2">这条命令会被当成完成的唯一标准，创建后不能改。</dd></div>
+                      {g === "判据" && v.input!.goal.check.spec_ref !== undefined && (
+                        <div className="kt-row kt-warn" data-field="command-note"><dt /><dd className="t2">
+                          判定器会在洁净容器里<b>重放</b>这条命令，按退出码判定，创建后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先<Link to={{ page: "settings" }}>登记这个平台</Link>，再<Link to={{ page: "platform" }}>从平台导入</Link>。
+                        </dd></div>
+                      )}
+                      {g === "判据" && (v.needs_ack === "command" || acked) && (
+                        <div className="kt-row kt-warn" data-field="command-ack"><dt /><dd>
+                          <label><input type="checkbox" checked={acked} disabled={busy !== null} data-action="ack-command"
+                            onChange={(e) => { const { ack_command: _drop, ...rest } = ov; void revet(e.target.checked ? { ...rest, ack_command: true } : rest); }} />
+                            {" "}我确认这条命令只检查、不提交</label>
+                          {!acked && <span className="t2">命令有外发的形状：勾选之后才能创建</span>}
+                        </dd></div>
                       )}
                     </dl>
                   </div>
@@ -298,6 +315,7 @@ export function Kaiti() {
             <aside className="kt-col kt-side" aria-label="为什么要你看">
               <div className="kt-lane" data-lane-chip>
                 <b>确认道 · 一步确认</b>
+                {v.external && <span className="t2" data-external>外部判定 · 平台 <span className="k-mono"><Plain text={v.external.connector} /></span> · 创建时领题</span>}
                 {v.eligible && <span className="t2" data-eligible>练习道候选 · 零确认尚未放行</span>}
               </div>
               <div className="sheet-sub">为什么要你看</div>
@@ -318,8 +336,8 @@ export function Kaiti() {
           </div>
 
           <footer className="wizard-foot">
-            <button type="button" className={btnClass("ink")} data-action="open-problem" disabled={busy !== null || !writable} onClick={() => void openIt()}>
-              {busy === "open" ? "创建中…" : "创建任务"} <Kbd>⌘↵</Kbd>
+            <button type="button" className={btnClass("ink")} data-action="open-problem" disabled={busy !== null || !writable || v.needs_ack === "command"} onClick={() => void openIt()}>
+              {busy === "open" ? (v.external ? "领题并创建中…" : "创建中…") : v.external ? "领题并创建任务" : "创建任务"} <Kbd>⌘↵</Kbd>
             </button>
             <button type="button" className={btnClass("line")} data-action="to-advanced" disabled={busy !== null} onClick={() => void advanced()}>在高级模式里改</button>
             <button type="button" className={btnClass("bare")} data-action="discard" disabled={busy !== null} onClick={() => { setV(null); box.current?.focus(); }}>放弃</button>
@@ -336,7 +354,7 @@ export function Kaiti() {
           <ol className="kt-why">
             {notes.filter((n) => n.lane === "refuse").map((n, i) => <li key={`${n.code}-${i}`} data-note={n.code}><span className="k-mono">{String(i + 1).padStart(2, "0")}</span> <Plain text={n.text} /></li>)}
           </ol>
-          <SectionHead title="三条路" note="不把它降级成模型自评，也不在你看不见的地方换判定方式" />
+          <SectionHead title="四条路" note="不把它降级成模型自评，也不在你看不见的地方换判定方式" />
           <ol className="kt-ways">
             <li data-way="endpoint">
               <span className="kt-way-no">01</span>
@@ -355,6 +373,15 @@ export function Kaiti() {
               <b>进高级模式</b>
               <p className="t2">带着原文进四步向导，自己从判定器目录里选、挂检查材料。</p>
               <button type="button" className={btnClass("line", "sm")} data-action="refuse-advanced" disabled={busy !== null} onClick={() => void advanced()}>进高级模式</button>
+            </li>
+            <li data-way="register_platform">
+              <span className="kt-way-no">04</span>
+              <b>去设置页登记这个平台</b>
+              <p className="t2">判定权在外部平台（平台回执说了算）的任务：先登记平台的连接器档案、设好凭据槽位，再从平台导入。登记后在这里贴同样的话也能认出平台。</p>
+              <span className="kt-way-links">
+                <Link to={{ page: "settings" }} className={btnClass("line", "sm")} data-action="refuse-register">去设置页</Link>{" "}
+                <Link to={{ page: "platform" }} className={btnClass("line", "sm")} data-action="refuse-platform">从平台导入</Link>
+              </span>
             </li>
           </ol>
         </section>

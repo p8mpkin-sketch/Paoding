@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 from typing import Any
 
+from .catalog import Catalog, Form, defaults_catalog
 from .draft import Draft
 from .extract import Extraction, norm
 from .policy import RISK_RANK, Intake, PriorSource, Settings
@@ -47,6 +49,9 @@ class Vetted:
     secret: str | None = field(default=None, repr=False)  # 答案；只交给保密库，不序列化
     pid: str = ""
     priors_version: str = ""
+    external: dict[str, Any] | None = None  # 外部裁决：{connector, judge_id, task}；批次由导入时领题生成（§5.8）
+    needs_ack: str | None = None  # "command"：命令有外发的形状，人勾“只检查、不提交”之前不给批次
+    notice: bytes | None = None  # 资源公告（导入时领题的说明全文）；有它时 deadline.bound_by 指向它
 
     def public(self) -> dict[str, Any]:
         """可登记、可打印的部分（不含答案）。"""
@@ -57,6 +62,8 @@ class Vetted:
             "derivation": self.derivation,
             "input": self.input,
             "priors": self.priors_version,
+            "external": self.external,
+            "needs_ack": self.needs_ack,
         }
 
 
@@ -80,6 +87,7 @@ def vet(
     zero_confirm: bool | None = None,
     nonce: str = "",
     draft_error: str = "",
+    catalog: Catalog | None = None,
 ) -> Vetted:
     notes: list[Note] = []
     der: list[dict[str, Any]] = []
@@ -110,15 +118,57 @@ def vet(
     der.append(_src("goal.statement", goal_text, "span", list(d.goal_sentence)))
     der.append(_src("title", d.title, "model"))
 
-    # ---------- 判据 ----------
+    # ---------- 判据（形态目录由注册表驱动，见 catalog.py） ----------
+    cat = catalog or defaults_catalog(dfl)
     judges: list[str]
     check: dict[str, Any]
     spec: str | None = None
+    needs_ack: str | None = None
+    external: dict[str, Any] | None = None
     max_attempts = int(dfl["max_attempts"])
-    if secret is not None:
+    plats: dict[str, tuple[Form, list[str]]] = {}  # 查表认出的平台：连接器 → (形态, 命中的地址区间)
+    for psp in ext.of("url") + ext.of("addr") + ext.of("host"):
+        for pf in cat.platform_of(str(psp.value)):
+            plats.setdefault(pf.connector, (pf, []))[1].append(psp.id)
+    plat_spans = {sid for _, ids in plats.values() for sid in ids}
+    if d.check_form == "external" and not set(d.check_spans) & plat_spans:
+        note(
+            "platform_unregistered",
+            "goal.check",
+            "起草认为判定权在外部平台，但原文里的地址不是已登记的平台：先去设置页登记这个平台，再从平台导入",
+            "refuse",
+        )
+    if secret is None and len(plats) > 1:
+        note(
+            "ambiguous_platform", "goal.check", f"原文里认出不止一个已登记的平台：{'、'.join(sorted(plats))}", "refuse"
+        )
+    if secret is None and len(plats) == 1:
+        ((f, hit_ids),) = plats.values()
+        tasks = cat.task_refs(f, ext.text)
+        task = tasks[0] if len(tasks) == 1 else ""
+        if not tasks:
+            note("no_task_ref", "goal.check", f"认出平台 {f.connector}，但原文里没有它的任务号", "refuse")
+        elif len(tasks) > 1:
+            note("ambiguous_task", "goal.check", f"原文里有不止一个任务号：{'、'.join(tasks)}", "refuse")
+        judges = [f.judge_id]
+        check = {"judge_id": f.judge_id, "binding": {"connector": f.connector, "task": task}}
+        external = {"connector": f.connector, "judge_id": f.judge_id, "task": task}
+        der.append(
+            _src("goal.check", f"{f.judge_id} · 平台 {f.connector} 的回执", "table", hit_ids, "地址查连接器档案")
+        )
+        der.append(_src("goal.binding.task", task, "span", note="按档案的任务号形状，逐字取自原文"))
+        note(
+            "external_platform",
+            "goal.check",
+            f"判定权在平台 {f.connector}：创建时由连接器领题（平台此刻开始计时），候选由判官代为提交，"
+            "按平台回执判定；外部判定的任务都要你确认",
+        )
+        if d.check_form == "command" or ext.of("code"):
+            note("submit_example_material", "goal.check", "原文里的命令没有当成检查命令：判定权在平台，它只作材料")
+    elif secret is not None:
         if d.check_form == "command":
             note("command_ignored", "goal.check", "有标准答案，忽略起草指认的检查命令，按答案匹配")
-        jid = str(dfl["answer_judge"])
+        jid = str(cat.judge("answer") or dfl["answer_judge"])
         judges, check = [jid], {"judge_id": jid, "sealed": [ANSWER_SLOT]}
         der.append(_src("goal.check", f"{jid} · 答案在保密库", "table", note="答案由人给出，起草模型看不到"))
         deliverable = ext.span(d.deliverable).value if d.deliverable else str(dfl["deliverable"])  # type: ignore[union-attr]
@@ -134,11 +184,24 @@ def vet(
         sp = ext.span(d.check_spans[0])
         assert sp is not None
         spec = str(sp.value)
-        jid = str(dfl["command_judge"])
+        jid = str(cat.judge("command") or dfl["command_judge"])
         judges = [jid]
         check = {"judge_id": jid, "spec_ref": "$spec", "expect": dict(dfl["command_expect"])}
         der.append(_src("goal.check", f"{jid} · {spec}", "span", [sp.id], "“这条命令就是完成标准”由起草模型指认"))
-        note("command_criterion", "goal.check", "没有标准答案，完成标准是原文里的一条命令；开题后不能改")
+        note(
+            "command_criterion",
+            "goal.check",
+            "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查："
+            "重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
+        )
+        outw = _outbound(spec, ext, intake.outbound)
+        if outw:
+            needs_ack = "command"
+            note(
+                "command_outbound",
+                "goal.check",
+                f"这条命令有外发的形状（{'、'.join(outw)}）：勾选“我确认这条命令只检查、不提交”之后才能创建",
+            )
     else:
         if d.check_form == "answer":
             note("answer_missing", "goal.check", "起草认为有标准答案，但答案栏与原文里都没有答案行", "refuse")
@@ -152,6 +215,10 @@ def vet(
     for sid, role in d.entries:
         sp = ext.span(sid)
         assert sp is not None
+        if sid in plat_spans and external is not None:
+            refs.append(sp.text)
+            der.append(_src("materials", sp.text, "span", [sid], "平台地址：连接器经档案的固定通道访问，不进授权"))
+            continue
         if role == "reference":
             refs.append(sp.text)
             der.append(_src("materials", sp.text, "span", [sid], "参考资料，只当文字，不开通路"))
@@ -192,9 +259,13 @@ def vet(
     prior = priors.lookup(tier, None)
     fb = dfl["fallback_budget"]
     usd = wall = 0
+    if external is not None and d.deadline is not None:
+        sp = ext.span(d.deadline)
+        assert sp is not None
+        der.append(_src("deadline", sp.text, "span", [d.deadline], "平台时限进截止时刻（领题时换算），不进花费预算"))
     for key, span_id, cap_key in (
         ("usd_milli", d.spend, "open_usd_milli"),
-        ("wall_s", d.deadline, "open_wall_s"),
+        ("wall_s", None if external is not None else d.deadline, "open_wall_s"),
     ):
         if span_id is not None:
             sp = ext.span(span_id)
@@ -220,7 +291,7 @@ def vet(
         else:
             wall = val
     for sp_kind, chosen, label in (("money", d.spend, "金额"), ("duration", d.deadline, "时长")):
-        if chosen is None and ext.of(sp_kind):
+        if chosen is None and ext.of(sp_kind) and not (external is not None and sp_kind == "duration"):
             note(f"unclaimed_{sp_kind}", "budget", f"原文里有{label}，起草没有指认它；用的是默认值")
     if tier_src == "model":
         note("model_tier", "budget", f"档位 {tier} 是起草模型猜的")
@@ -275,7 +346,25 @@ def vet(
         note("outside_envelope", "scope", "授权不全在练习道信封里（只读、白名单地址）")
     elif not caps_ok:
         note("over_practice_cap", "budget", "预算超过练习上限")
-    return _done(notes, der, problem, ext, secret, refs, spec, nonce, priors, eligible, intake, zero_confirm, d)
+    v = _done(notes, der, problem, ext, secret, refs, spec, nonce, priors, eligible, intake, zero_confirm, d)
+    if v.lane != "refuse":
+        v.external, v.needs_ack = external, needs_ack
+    return v
+
+
+def _outbound(spec: str, ext: Extraction, words: Mapping[str, Any]) -> list[str]:
+    """命令有没有外发的形状（§5.8 加重警告）：含地址区间、写方法的 HTTP 动词、原文里有“提交”一类词。
+    词表在 intake.yaml。"""
+    why: list[str] = []
+    if any(sp.text in spec for sp in ext.of("url") + ext.of("addr") + ext.of("host")):
+        why.append("命令里有地址")
+    verbs = [v for v in words.get("verbs", []) if re.search(r"(?<!\S)" + re.escape(str(v)) + r"(?!\S)", spec, re.I)]
+    if verbs:
+        why.append("写方法 " + "、".join(str(v) for v in verbs))
+    hits = [w for w in words.get("words", []) if str(w).lower() in ext.text.lower()]
+    if hits:
+        why.append("原文有“" + "、".join(str(w) for w in hits) + "”")
+    return why
 
 
 def _in_envelope(scope: list[dict[str, Any]], env: Mapping[str, Any]) -> bool:
@@ -333,8 +422,9 @@ def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
     """
     if v.input is None or v.lane == "refuse":
         raise ValueError("拒绝道没有可改的字段")
-    if set(ov) - {"risk", "usd_milli", "wall_s"}:
-        raise ValueError(f"只能改 risk、usd_milli、wall_s，不能改 {sorted(set(ov) - {'risk', 'usd_milli', 'wall_s'})}")
+    keys = {"risk", "usd_milli", "wall_s", "ack_command"}
+    if set(ov) - keys:
+        raise ValueError(f"只能改 risk、usd_milli、wall_s、ack_command，不能改 {sorted(set(ov) - keys)}")
     inp = json.loads(json.dumps(v.input))
     der = [dict(x) for x in v.derivation]
     touched: list[str] = []
@@ -374,11 +464,21 @@ def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
         if inp["budget"][key] != val:
             inp["budget"][key] = val
             mark(f"budget.{key}", val)
+    ack = ov.get("ack_command")
+    if ack is not None and not isinstance(ack, bool):
+        raise ValueError("ack_command 须是 true 或 false")
+    needs_ack = v.needs_ack
+    if ack and v.needs_ack == "command":
+        needs_ack = None
+        der.append(_src("goal.check.ack", "我确认这条命令只检查、不提交", "human", note="人在确认卡上勾选"))
+        touched.append("goal.check.ack")
     if not touched:
         return v
     gone = {"zero_confirm_off"} | {"clipped_" + f.split(".", 1)[1] for f in touched if f.startswith("budget.")}
     notes = [n for n in v.notes if n.code not in gone]
     notes.append(Note("human_edit", "lane", f"你在卡上改了 {'、'.join(touched)}", "confirm"))
-    return Vetted(
+    out = Vetted(
         "confirm", False, notes, der, inp, v.statement, v.references, v.spec, v.secret, v.pid, v.priors_version
     )
+    out.external, out.needs_ack, out.notice = v.external, needs_ack, v.notice
+    return out

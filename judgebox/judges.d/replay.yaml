@@ -7,6 +7,7 @@ version: "1"
 kind: programmatic
 grade: decisive
 applies_to: [goal, intent, observation]
+form: command  # 一句话开题的判据形态（external-verdict §5.8：形态目录由注册表驱动）
 runner: {type: container, base: basic}
 timeout_s: 60
 max_cost: {usd_milli: 10, wall_s: 120}

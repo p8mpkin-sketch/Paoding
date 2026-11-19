@@ -15,7 +15,7 @@ import type {
   Tagged, Terminal, WorkItem,
 } from "../src/api/types";
 import { demoScript, staticScripts, type Script } from "./scenario";
-import { kaitiDraft, kaitiExtract } from "./kaiti";
+import { kaitiDraft, kaitiExtract, platformRoute } from "./kaiti";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
 
@@ -31,6 +31,7 @@ export const JUDGES: Record<string, Omit<JudgeEntry, "judge_id">> = {
   replay: { version: "1", grade: "decisive", kind: "builtin", max_cost: 0.01 },
   exact_match: { version: "1", grade: "decisive", kind: "builtin", max_cost: 0 },
   window_assert: { version: "2", grade: "consistent", kind: "deferred", max_cost: 0.2 },
+  ext_receipt: { version: "1", grade: "decisive", kind: "deferred", max_cost: 0 }, // 外部判定（假平台 plat-a），见 mock/kaiti.ts
 };
 const EXTERNAL_RESOURCES = ["telemetry"];
 const RISK_RANK: Record<Risk, number> = { r0: 0, r1: 1, r2: 2 };
@@ -650,6 +651,12 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     let m: RegExpMatchArray | null;
 
     if (path === "/v1/settings" || path === "/v1/settings/log" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path.startsWith("/v1/connectors")) {
+      const auth = req.headers?.authorization ?? "";
+      if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");
+      const r = platformRoute(req.method, path, parse);
+      return r ? json(r.code, r.body) : notFound();
+    }
 
     if (req.method !== "GET") {
       const auth = req.headers?.authorization ?? "";

@@ -51,7 +51,7 @@ def validate_profile(doc: Any, name: str = "") -> dict[str, Any]:
     need(isinstance(doc.get("id"), str) and bool(doc["id"]), "缺 id")
     need(bool(str(doc.get("version", ""))), "缺 version")
     allowed = {"id", "version", "base_url", "match", "task_ref", "credential", "endpoints", "fields", "verdict"}
-    allowed |= {"deliver", "poll", "timeout_s"}
+    allowed |= {"deliver", "poll", "timeout_s", "items"}
     need(set(doc) <= allowed, f"多余字段 {sorted(set(doc) - allowed)}")
     url = urllib.parse.urlsplit(str(doc.get("base_url", "")))
     need(url.scheme in ("http", "https") and bool(url.netloc), "base_url 须是 http(s) 地址")
@@ -74,6 +74,21 @@ def validate_profile(doc: Any, name: str = "") -> dict[str, Any]:
     )
     for k, p in fields.items():
         need(isinstance(p, str) and bool(_PTR.match(p)), f"fields.{k} 须是 JSON 指针")
+    items = doc.get("items", {})
+    need(
+        isinstance(items, dict) and all(isinstance(p, str) and bool(_PTR.match(p)) for p in items.values()),
+        "items 是清单条目的 JSON 指针表",
+    )
+    match = doc.get("match", {})
+    need(isinstance(match, dict) and set(match) <= {"hosts"}, "match 只有 hosts")
+    need(all(isinstance(h, str) and bool(h) for h in match.get("hosts", [])), "match.hosts 是主机名（可带端口、通配）")
+    ref = doc.get("task_ref", {})
+    need(isinstance(ref, dict) and set(ref) <= {"pattern"}, "task_ref 只有 pattern")
+    if "pattern" in ref:
+        try:
+            re.compile(str(ref["pattern"]))
+        except re.error:
+            need(False, "task_ref.pattern 不是正则")
     verdict = doc.get("verdict")
     need(isinstance(verdict, dict) and bool(verdict), "verdict 映射表不能空")
     need(all(v in VERDICTS for v in verdict.values()), f"verdict 的值取 {VERDICTS}")

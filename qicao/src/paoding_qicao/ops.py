@@ -22,6 +22,8 @@ def blobs(v: Vetted) -> dict[str, Blob]:
         out["references"] = ("text/uri-list", ("\n".join(v.references) + "\n").encode())
     if v.spec is not None:
         out["spec"] = ("text/x-shellscript", (v.spec + "\n").encode())
+    if v.notice is not None:  # 资源公告：领题说明全文（external-verdict §5.5）
+        out["notice"] = ("application/json", v.notice)
     out["derivation"] = ("application/vnd.paoding.kaiti-derivation+json", derivation_bytes(v))
     return out
 
@@ -31,6 +33,10 @@ def batch(v: Vetted, put: Callable[[bytes], str], vault_ref: dict[str, Any] | st
     网页的起草服务传 ANSWER_SLOT 本身：批次原样带着占位符交给前端，前端写完保密库再换（service.py）。"""
     if v.input is None or v.lane == "refuse":
         raise ValueError("拒绝道不开题")
+    if v.needs_ack:
+        raise ValueError("命令有外发的形状：人确认只检查、不提交之前不开题")
+    if v.external is not None and v.notice is None:
+        raise ValueError("外部判定的题由导入时领题生成批次（connector import），起草结果本身不开题")
     ops: list[dict[str, Any]] = []
     idx: dict[str, str] = {}
     for name, (media, data) in blobs(v).items():

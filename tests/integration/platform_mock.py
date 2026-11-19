@@ -148,7 +148,8 @@ class Platform:
         t = self.get("/api/tasks")[0]
         hours = t["time_limit_s"] // 3600
         text = (
-            f"平台任务 {t['id']}：{t['title']}。服务里藏着一个口令，找到后提交给平台，平台回执判定通过就算完成。"
+            f"平台任务 {t['id']}（{self.base}/tasks/{t['id']}）：{t['title']}。"
+            "服务里藏着一个口令，找到后提交给平台，平台回执判定通过就算完成。"
             f"服务地址领题后由平台返回。限时 {hours} 小时，每题最多提交 {t['max_submissions']} 次。"
         )
         if with_example:  # 平台说明里常见的"提交示例"
@@ -171,7 +172,14 @@ def profile(plat: Platform, *, cid: str = "mock-platform", deliver: str = "judge
             "submit": {"method": "POST", "path": "/api/tasks/{task}/submissions", "body": {"answer": "$candidate"}},
             "receipt": {"method": "GET", "path": "/api/submissions/{sid}"},
         },
+        "items": {
+            "id": "/id",
+            "title": "/title",
+            "time_limit_s": "/time_limit_s",
+            "max_submissions": "/max_submissions",
+        },
         "fields": {
+            "statement": "/statement",
             "submission_id": "/submission_id",
             "status": "/status",
             "task": "/task",

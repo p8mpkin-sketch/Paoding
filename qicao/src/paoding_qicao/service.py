@@ -20,8 +20,10 @@ import secrets
 from collections.abc import Callable
 from typing import Any
 
-from .draft import SYSTEM, DraftError, ModelPort, draft_doc, first_json, parse_draft, prompt
+from .catalog import Catalog, Form
+from .draft import DraftError, ModelPort, draft_doc, first_json, parse_draft, prompt, system
 from .extract import Extraction
+from .importer import ImportError_, import_vetted
 from .ops import batch, blobs
 from .policy import Intake, PriorSource, Settings
 from .vet import ANSWER_SLOT, Vetted, override, vet
@@ -34,8 +36,10 @@ class BadRequest(ValueError):
     pass
 
 
-def model_drafter(model: ModelPort, max_tokens: int = 1200) -> Drafter:
-    return lambda ext, has: first_json(model.complete(SYSTEM, prompt(ext, has), max_tokens))
+def model_drafter(model: ModelPort, max_tokens: int = 1200, catalog: Catalog | None = None) -> Drafter:
+    """catalog：判据形态目录（注册表驱动）；有外部平台登记时提示里多一种 external。"""
+    sys_prompt = system(catalog.kinds() if catalog else None)
+    return lambda ext, has: first_json(model.complete(sys_prompt, prompt(ext, has), max_tokens))
 
 
 def heuristic_drafter(ext: Extraction, has_answer: bool) -> dict[str, Any]:
@@ -92,9 +96,12 @@ class KaitiService:
         priors: PriorSource,
         drafter: Drafter | None,
         profile: str = "",
+        catalog: Catalog | None = None,
     ) -> None:
-        """settings 是取设置快照的函数：生命周期地图的设置存储（/v1/settings）上线后由组装根换成它。"""
+        """settings 是取设置快照的函数：生命周期地图的设置存储（/v1/settings）上线后由组装根换成它。
+        catalog 是判据形态目录（注册表与连接器档案驱动，见 catalog.py）；缺省只有 answer 与 command。"""
         self.intake, self.settings, self.priors, self.drafter, self.profile = intake, settings, priors, drafter, profile
+        self.catalog = catalog
 
     def _extract(self, text: str) -> Extraction:
         return self.intake.extract(text)
@@ -130,7 +137,18 @@ class KaitiService:
                 d = parse_draft(doc, ext, model)
             except DraftError as e:
                 err = str(e)
-        v = vet(ext, answer, d, self.intake, settings, self.priors, zero_confirm=False, nonce=nonce, draft_error=err)
+        v = vet(
+            ext,
+            answer,
+            d,
+            self.intake,
+            settings,
+            self.priors,
+            zero_confirm=False,
+            nonce=nonce,
+            draft_error=err,
+            catalog=self.catalog,
+        )
         ov = body.get("overrides")
         if ov:
             if not isinstance(ov, dict):
@@ -157,7 +175,15 @@ class KaitiService:
             "ops": None,
         }
         if v.lane == "refuse" or v.input is None:
+            # 降级路（§5.8）：补判定终点、人工验收（D3）、高级模式、去设置页登记这个平台
+            out["ways"] = ["endpoint", "human", "advanced", "register_platform"]
             return out
+        if v.external is not None or v.needs_ack:
+            # 外部判定：创建时才领题，批次由导入生成；命令有外发形状：人勾选之前不给批次
+            return out
+        return self._ops(out, v, answer)
+
+    def _ops(self, out: dict[str, Any], v: Vetted, answer: str | None) -> dict[str, Any]:
         for name, (media, data) in blobs(v).items():
             out["blobs"].append(
                 {
@@ -172,3 +198,50 @@ class KaitiService:
         if v.secret is not None and not (answer or "").strip():
             out["secret"] = v.secret  # 只在答案来自原文答案行时回传：前端拿它写保密库
         return out
+
+    def import_view(
+        self,
+        form: Form,
+        item: dict[str, Any],
+        statement: str,
+        notice: bytes,
+        *,
+        now_ms: int,
+        nonce: str = "",
+        budget: Any = None,
+    ) -> dict[str, Any]:
+        """从平台导入（§5.8）：领题由调用方做完（组装根），这里排版成与 draft_view 同形的确认卡与批次。"""
+        if budget is not None and not isinstance(budget, dict):
+            raise BadRequest("budget 须是 {usd_milli?, wall_s?}")
+        settings = self.settings()
+        nonce = nonce or secrets.token_hex(8)
+        try:
+            v = import_vetted(
+                form,
+                item,
+                statement,
+                notice,
+                self.intake,
+                settings,
+                self.priors,
+                now_ms=now_ms,
+                nonce=nonce,
+                budget=budget,
+            )
+        except ImportError_ as e:
+            raise BadRequest(str(e)) from None
+        out: dict[str, Any] = {
+            **v.public(),
+            "pid": v.pid,
+            "nonce": nonce,
+            "text": statement,
+            "spans": [],
+            "has_answer": False,
+            "draft": None,
+            "model": "",
+            "zero_confirm": False,
+            "caps": {k: int(settings.caps[k]) for k in ("open_usd_milli", "open_wall_s")},
+            "blobs": [],
+            "ops": None,
+        }
+        return self._ops(out, v, None)
