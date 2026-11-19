@@ -1,4 +1,5 @@
-"""内建判官（§3.3.2）：只有领域中立的两个，`exact_match` 与 `replay`（`seal_check` 随 M3）。
+"""内建判官（§3.3.2）：领域中立的 `exact_match`、`replay`（`seal_check` 随 M3），与 advisory 的 `structure_check`
+（宪章 02 §3.3：人工验收的题的结构检查，只看交付物在不在、格式合不合法，只给读数，不让 Goal 到 E3）。
 
 每个判官是一个函数 `(ctx) → Outcome`。它不写日志、不登记：产出交回判官运行器，由运行器登记为 judge 类并提交裁决。
 """
@@ -261,4 +262,57 @@ def _replay_series(c: Ctx, inputs: tuple[bytes, ...] = (), tag: str = "") -> Out
     return Outcome("flaky", "flaky", last.output, last.provenance, last.wall_s)
 
 
-BUILTINS = {"exact_match": exact_match, "replay": replay}
+STRUCTURE_FORMATS = ("any", "text", "json")
+
+
+def structure_check(c: Ctx) -> Outcome:
+    """结构检查（advisory）：候选存在、非空（不少于 expect.min_bytes，缺省 1 字节），expect.format 为 text 时须是
+    UTF-8 文字，为 json 时须能解析。不读题意、不判内容对错：内容由人按验收清单逐条判（宪章 D3）。"""
+    cmd = f"structure_check {c.candidate_ref or '-'}"
+    expect = c.check.get("expect") or {}
+    fmt, min_bytes = expect.get("format", "any"), expect.get("min_bytes", 1)
+    if fmt not in STRUCTURE_FORMATS or type(min_bytes) is not int or min_bytes < 1 or set(expect) - {"format", "min_bytes"}:
+        return Outcome(
+            "inconclusive",
+            "unsupported",
+            _report(judge="structure_check", reason="unsupported", detail=f"expect 只认 format∈{STRUCTURE_FORMATS} 与正整数 min_bytes"),
+            _prov("structure_check", cmd, None, c.now_ms),
+        )
+    if c.candidate is None:
+        return Outcome(
+            "inconclusive",
+            "unsupported",
+            _report(judge="structure_check", reason="unsupported", detail="没有候选"),
+            _prov("structure_check", cmd, None, c.now_ms),
+        )
+    problems: list[str] = []
+    if len(c.candidate) < min_bytes:
+        problems.append(f"不足 {min_bytes} 字节")
+    if fmt in ("text", "json"):
+        try:
+            text = c.candidate.decode("utf-8")
+        except UnicodeDecodeError:
+            problems.append("不是 UTF-8 文字")
+        else:
+            if fmt == "json":
+                try:
+                    json.loads(text)
+                except ValueError:
+                    problems.append("不是合法的 JSON")
+    result = "fail" if problems else "pass"
+    return Outcome(
+        result,
+        "ok",
+        _report(
+            judge="structure_check",
+            result=result,
+            size=len(c.candidate),
+            format=fmt,
+            problems=problems,
+            candidate_sha256=hashlib.sha256(c.candidate).hexdigest(),
+        ),
+        _prov("structure_check", cmd, 0 if not problems else 1, c.now_ms),
+    )
+
+
+BUILTINS = {"exact_match": exact_match, "replay": replay, "structure_check": structure_check}

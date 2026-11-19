@@ -27,11 +27,11 @@ def judge_costs(r, pid="p1"):
 
 
 def test_registry_holds_only_the_neutral_builtins():
-    assert sorted(REG) == ["exact_match", "replay"] and sorted(BUILTINS) == ["exact_match", "replay"]
+    assert sorted(REG) == ["exact_match", "replay", "structure_check"] == sorted(BUILTINS)
     for spec in REG.values():
-        assert (
-            spec["grade"] == "decisive" and spec["version"] == "1" and spec["flake"]["require"] in ("all", "majority")
-        )
+        assert spec["version"] == "1" and spec["flake"]["require"] in ("all", "majority")
+    # 结构检查只给读数（宪章 02 §3.3）：advisory，不让 Goal 到 E3
+    assert {j: s["grade"] for j, s in REG.items()} == {"exact_match": "decisive", "replay": "decisive", "structure_check": "advisory"}
 
 
 def test_kernel_judges_shape_matches_graph_config():
@@ -612,3 +612,45 @@ def test_replay_of_a_goal_candidate_passes_spec_and_candidate(jr):
     assert jr.runner.tick()[0]["result"] == "pass" and jr.level("p1", "goal") == "E3"
     setup = jr.box.cmds[0][1]
     assert "/workspace/spec" in setup and spec_body not in setup  # 没有规格时候选本身就是被执行的脚本
+
+
+# ---------- structure_check（宪章 02 §3.3：人工验收题的结构检查，advisory） ----------
+
+SC = "structure_check"
+ACCEPTANCE = [{"text": "交付一份 JSON 报告", "src": "human"}]
+
+
+def human_open(r, expect=None):
+    r.open(
+        check={"judge_id": SC, **({"expect": expect} if expect else {})},
+        goal={"accept": "human", "acceptance": ACCEPTANCE},
+        judges=[SC],
+    )
+
+
+def test_structure_check_pass_is_advisory_and_waits_for_the_human(jr):
+    human_open(jr, {"format": "json"})
+    jr.candidate(b'{"ok": true}', judge=SC)
+    [done] = jr.runner.tick()
+    assert done["result"] == "pass"
+    p = jr.state["problems"]["p1"]
+    assert jr.level("p1", "goal") != "E3" and not p.get("closed")  # 只给读数：不自动关题
+    assert p["goal"]["authority"] == "human"
+    assert {"kind": "human", "target": "p1", "why": "acceptance"} in jr.svc.work("p1")
+    rep = json.loads(jr.blobs.get(jr.state["artifacts"][verdicts(jr)[0]["evidence"][0]]["hash"]))
+    assert rep["format"] == "json" and rep["problems"] == [] and "candidate_sha256" in rep
+
+
+@pytest.mark.parametrize("data,expect", [(b"", None), (b"{oops", {"format": "json"}), (b"\xff\xfe", {"format": "text"}), (b"ab", {"min_bytes": 3})])
+def test_structure_check_fails_on_shape(jr, data, expect):
+    human_open(jr, expect)
+    jr.candidate(data, judge=SC)
+    [done] = jr.runner.tick()
+    assert done["result"] == "fail"
+
+
+def test_structure_check_rejects_unknown_expect(jr):
+    human_open(jr, {"format": "xml"})
+    jr.candidate(b"<a/>", judge=SC)
+    [done] = jr.runner.tick()
+    assert done["result"] == "inconclusive"

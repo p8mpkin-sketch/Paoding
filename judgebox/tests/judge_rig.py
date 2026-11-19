@@ -105,7 +105,7 @@ class JRig:
             {"hash": self.blobs.put(data), "size": len(data), "media_type": "text/plain", "class": cls},
         )
 
-    def open(self, pid="p1", check=None, max_attempts=3, risk="r0", usd_milli=5000, scope=None):
+    def open(self, pid="p1", check=None, max_attempts=3, risk="r0", usd_milli=5000, scope=None, goal=None, judges=None):
         st = b"statement " + pid.encode()
         out = self.submit(
             "human",
@@ -125,13 +125,14 @@ class JRig:
                             "check": check or {"judge_id": "exact_match"},
                             "max_attempts": max_attempts,
                             "accept": "judge",
+                            **(goal or {}),
                         },
                         "scope": [{"resource": "net", "pattern": "target-a:8080", "actions": ["connect"], "risk": risk}]
                         if scope is None
                         else scope,
                         "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
                         "env": {"base": "basic", "baseline_ref": "basic@1"},
-                        "judges": ["exact_match", "replay"],
+                        "judges": judges or ["exact_match", "replay"],
                     },
                 },
             ],

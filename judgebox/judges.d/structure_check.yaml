@@ -1,0 +1,13 @@
+# 内建判官（advisory）：人工验收的题（accept: human，宪章 D3）的结构检查。只看交付物在不在、格式合不合法，
+# 只给读数，不让 Goal 到 E3；内容对不对由人按开题时登记的验收清单逐条判。
+# 判据可带 expect: {format: any|text|json, min_bytes: 正整数}；缺省即“非空”。
+id: structure_check
+version: "1"
+kind: deterministic
+grade: advisory
+applies_to: [goal, intent]
+runner: {type: builtin, base: builtin}
+timeout_s: 10
+max_cost: {usd_milli: 0, wall_s: 10}
+auto: true
+flake: {reruns: 0, require: all}

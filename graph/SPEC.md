@@ -44,7 +44,7 @@
 | --- | --- |
 | `GET /v1/health` | `{ok, head, api}` |
 | `GET /healthz` | 运维探针（不带版本前缀）：`{ok, status: ok｜degraded, api, components{名: {ok, …}}}`，全部正常 200，否则 503。`graph`（链头、题数）与 `blobs`（目录可写）由本组件给；其余组件的状态由组装根经 `HttpConfig.health` 给。不要令牌，不含题目内容；说明见 `docs/ops.md` |
-| `GET /v1/problems` | `items[]`：`id、title、closed、terminal、terminal_badge、profile、opened_seq、opened_ts、closed_seq、spent_usd_milli、cap_usd_milli`；`totals`：题数、solved 数、总花费、每解成本 |
+| `GET /v1/problems` | `items[]`：`id、title、closed、terminal、terminal_badge、profile、opened_seq、opened_ts、closed_seq、spent_usd_milli、cap_usd_milli`；`totals`：题数、solved 数（只计本地判定）、总花费、每解成本（分子只用本地 solved）、`by_authority{local, external, human}` 各自的 `{problems, solved, accepted, unsolved, open}`；`items[].authority` |
 | `GET /v1/problems/{pid}/status` | `problem`（画像、推出值与覆盖、scope、env、终态）、`goal{statement, accept, predicate}`、`facts[]`、`intents[]`、`hints[]`、`leases[]`、`requests[]`、`review`、`closeout` |
 | `GET /v1/problems/{pid}/view?layer=title｜summary&after_seq=&limit=` | 按创建顺序的节点清单，`next_after_seq` 为游标；`frontier`（活跃 Hint、待人处理、未结束 Intent 及其前提、未到终态的论断）。`layer=full` 需服务端开 `view_full_dump` |
 | `GET /v1/problems/{pid}/budget` | 账本投影：`cap、spent、reserved、by_kind、verify_spent、marks、mark_seqs、mark_lines、percent、wall、review` |
@@ -96,7 +96,7 @@
 - 判官裁决的 `grade` 取开题时的判官快照，不取裁决方自报。
 - `request_judge` 的判官必须是登记判据时的那一个（I4 判据先行的字面推论）；推断类论断在 M0 没有判据，不能请求判定。
 - `input` 类 Artifact 可以在 `open_problem` 之前登记（Origin 要引用它们）；其它类别要求题目已开。
-- M0 拒绝 `accept=human`、`done.tests` 与 `follows`/`executor`/`rollback`/`delegate`，返回 `schema_error`，待对应里程碑启用。
+- `accept=human` 必须带非空的 `goal.acceptance[]`（每项 `{text ≤200, src: span|human, needs?: artifact|note}`，图服务编号 a1…，开题后不可改，至多 32 条）；`accept=judge` 带验收清单拒收；Goal 判据来源为外部的题不能再要人工验收。M0 拒绝 `done.tests` 与 `follows`/`executor`/`rollback`/`delegate`，返回 `schema_error`，待对应里程碑启用。
 - 对照判据 `check.control`（§3.3.3，N1，2026-11-18 从 M1 提前）：只接受观察类论断的判据，形状 `{inputs: ArtifactId[]}`（1–8 个、互不相同、属于本题；对象形式的对照参数未启用）；Goal 与 `done` 的判据带它是 `schema_error`。内容键里对照输入按 Blob 哈希代入。目标的判据带对照时，`judge_verdict` 必须带 `control_end`（对照运行的结束类别）：`pass` 只在 `control_end=fail` 时接受，`inconclusive(no_contrast)` 只在对照也通过或抖动时接受；判据不带对照的目标不许出现这两样。裁决记录带 `controlled` 与 `control_end`；等级桥接把"判据带对照"交给参考模型（续期门的进展、r2 的观察类前提读它）。
 - Blob 是否存在由服务层在 validate 之前检查（IO 不进内核）。
 - `validate` 多一个参数 `ts`：这条事件将被赋予的时间戳，由服务层的时钟给出；过期判断（`expire_lease`、`renew`）用它，reducer 仍不读时钟。租约的 `expires_at = ts + ttl_s × 1000` 在 apply 里由事件 ts 算出。
@@ -108,7 +108,7 @@
 - 跨题隔离（I7 的推广）：凡是带引用的操作，引用指向别题的对象一律 `scope_mismatch`（引用不存在才是 `unknown_ref`）。这包括 `renew`/`release` 的租约（关题前后都查归属、持有者与在途）、`hint.about`、任务令牌的会话（会话即租约 id，只在租约所属的题内有效）。Goal 的候选次数按题计数。`graph/tests/test_isolation.py` 的性质测试常驻 CI：两题事件随机交错，每题的切片与派生视图等于只重放本题事件的结果。
 - 判官运行器的令牌按身份种类放行续租与释放，但只限 judge 租约；任务租约只认持有者或该租约的会话令牌。
 - 服务层（`service.py`）用一把可重入锁串行化提交与日志读取；新事件落盘后唤醒长轮询与事件流。`state_at(seq)` 的回放缓存永不失效（日志只追加、apply 纯函数）。
-- 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`、`rule`、`extend` 三个操作内核还没有，见异议报告 `docs/m0/dissent-p0-5-seen-binding.md`。
+- 人的决定绑定所见（§3.1.9、HMI H2）：`approve`（批准与拒绝）必须带 `seen {seq, card_hash}`。内核 `validate` 在提交那一刻的状态上重算审批卡（`cards.card_object`，与 `/cards` 端点同一个函数），哈希不等返回 `stale_view`，服务层在该条结果的 `card` 里附上链头的最新卡片（形状同 `/cards` 端点，另带 `as_of`）。`seen.seq` 只留作审计，随事件体落盘。校验先于状态检查。人提交的 `close_problem` 带了 `seen` 就按四顾清单卡校验，校验过的哈希记进事件的 `card_hash`；不再接受不经校验的裸 `card_hash`。`accept`（人工验收，设计 02 §3.3）：body `{decision: accept|reject, checks[{id, verdict: pass|fail, ref?, note?}], seen, reason?}`，按收尾卡校验所见；要等 Goal 最近一次裁决为 pass 且晚于上一次拒收才收；每条都要判，`needs` 要求的依据缺了返回 `missing_evidence`，依据只收本题的 exec 或 input 类；有 fail 只能拒收，拒收必须写理由，题回到人介入。全部 pass 之后图服务以终态 `accepted` 关题，`accepted` 只出现在 accept=human 的题上、不并进 solved。`rule`、`extend` 两个操作内核还没有，见异议报告 `docs/m0/dissent-p0-5-seen-binding.md`。
 - 目标陈述（`goal.statement`）的语域取“人”（开题人写下的文字）；规格的四语域表没有列这一项，见异议报告 004。
 - 一句话开题（设计 `docs/design/kaiti/` §4.4，内核增量 13、15）：`origin` 可带 `draft {record, lane: practice|confirm}`，`record` 是本题的 input 类出处账；其它字段、其它道别是 `schema_error`。`lane = practice` 时逐条对练习道信封（`practice.py` 的 `violations`：资源与风险 ≤ `max_risk`、net 地址匹配白名单、Goal 判官在信封内且有 `sealed`、金额与时长 ≤ 练习上限、`max_attempts` ≤ 上限），任一条不满足整单 `forbidden_op`；`Config.practice` 为空（没加载信封）时练习道一律 `forbidden_op`。通过时图服务把信封的 `{version, digest}`（`sha256(JCS(信封全文))`）抄进 `draft.policy`，提交体带 `policy` 是 `schema_error`；重放只读事件体。`lane = confirm` 与不带 `draft` 的开题不受信封限制。信封由组装根从 `qicao` 的 `practice.yaml` 与设置层 `caps.practice_*` 合成，设置变更时整体替换 `Config`。
 - 运行时扩权（设计 `docs/design/runtime-grants/`，§12 第一步）：三个操作 `request_scope`、`grant_scope`、`revoke_scope`。
