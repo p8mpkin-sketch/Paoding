@@ -57,6 +57,9 @@ describe("视图模型", () => {
     expect(t.marks?.title).toBe("human");
     expect(t.marks?.statement).toBe("span");
     expect(touch({ ...d, marks: undefined }, { title: "x" }).marks).toBeUndefined();
+    const nums = spanNumbers(v.spans, v.derivation);
+    expect(d.kaiti?.spans?.map((x) => x.n).sort((x, y) => x - y)).toEqual([...nums.values()].sort((x, y) => x - y));
+    expect(d.kaiti?.refs?.wall_s).toEqual(v.derivation.find((x) => x.field === "budget.wall_s")!.spans!.map((id) => nums.get(id)));
   });
 });
 
@@ -115,6 +118,19 @@ describe("输入框与确认卡", () => {
     expect(new TextDecoder().decode(await r.api.blob(stmt.hash))).not.toContain(SECRET);
   });
 
+  it("模型一块：起草用只列已登记档案，选了即重新起草、出处记“人”；会话用按全局路由", async () => {
+    const { r, container } = await drafted(rec("practice").text);
+    const block = () => container.querySelector("[data-model-block]")!;
+    const sel = await waitFor(() => { const el = block().querySelector<HTMLSelectElement>('[data-action="pick-draft-profile"]'); expect(el).not.toBeNull(); return el!; });
+    expect([...sel.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(["default"]);
+    expect(block().querySelector("[data-session-routes]")!.textContent).toBe("Bootstrap → default · Reason → default · Explore → default · Verify → default");
+    fireEvent.change(sel, { target: { value: "default" } });
+    await waitFor(() => expect(block().querySelector('[data-field="draft.model"] [data-source]')?.getAttribute("data-source")).toBe("human"));
+    const posts = r.fetch.calls.filter((c) => c.method === "POST" && c.url === "/v1/drafts");
+    expect(JSON.parse(posts.at(-1)!.body!)).toMatchObject({ profile: "default" });
+    expect(JSON.parse(posts.at(-1)!.body!).draft).toBeUndefined(); // 换档案是重新起草，不是重新校验
+  });
+
   it("运行时扩权开着：开题零出站，原文地址只作展示，卡上没有风险可改", async () => {
     const { r, container } = await drafted(rec("zero").text);
     const card = container.querySelector("[data-kaiti-card]")!;
@@ -169,8 +185,16 @@ describe("输入框与确认卡", () => {
     const w = renderWith(r, <Wizard />).container;
     await waitFor(() => expect(w.querySelector("[data-kaiti-origin]")).not.toBeNull());
     expect(w.querySelector('[data-src="title"]')?.getAttribute("data-source")).toBe("model");
+    // 逐字段的出处编号与确认卡同一套（宪章 Q11）：原文带编号，摘自原文的字段写第几段
+    const v = rec("practice").out;
+    const nums = spanNumbers(v.spans, v.derivation);
+    const stmt = v.derivation.find((x) => x.field === "goal.statement")!.spans!.map((id) => nums.get(id));
+    expect(w.querySelector('[data-src="statement"] [data-refs]')?.getAttribute("data-refs")).toBe(stmt.join(","));
+    expect(w.querySelectorAll("[data-kaiti-origin] [data-span-no]")).toHaveLength(nums.size);
     fireEvent.change(w.querySelector('[data-field="title"]')!, { target: { value: "我自己的题名" } });
     expect(w.querySelector('[data-src="title"]')?.getAttribute("data-source")).toBe("human");
+    fireEvent.change(w.querySelector('[data-field="statement"]')!, { target: { value: "我自己写的目标" } });
+    expect(w.querySelector('[data-src="statement"] [data-refs]')).toBeNull(); // 人改过：不再写摘自第几段
   });
 });
 

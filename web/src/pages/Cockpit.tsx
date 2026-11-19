@@ -21,6 +21,8 @@ import { Sessions } from "../ui/Sessions";
 import { Kbd, btnClass } from "../kit";
 import { MessageSquare } from "lucide-react";
 import { Todo, todoKey } from "../ui/Todo";
+import { StationStrip } from "../ui/StationStrip";
+import { stationsOf } from "../model/stations";
 
 type Sheet = { kind: "todo"; key: string } | { kind: "hint"; id: string } | { kind: "inject" } | null;
 
@@ -114,6 +116,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           </div>
         </details>
       </header>
+
+      <StationStrip st={stationsOf({ closed: vm.closed, active: vm.leases.filter((l) => l.active).map((l) => l.kind), todo: vm.todo.map((t) => t.why) })} />
 
       {/* 窄屏（< 1024px）三栏改为一栏，用这排按钮切换；宽屏时隐藏，三栏并排。 */}
       <nav className="panel-switch" aria-label="面板">

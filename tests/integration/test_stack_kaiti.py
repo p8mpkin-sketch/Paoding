@@ -146,6 +146,143 @@ def test_drafts_read_the_settings_store(stack):
     assert out["caps"]["open_usd_milli"] == 4321 == s.graph.cfg.open_cap_usd_milli
 
 
+def _upstream():
+    """假的 Anthropic 兼容端点：记下每次请求的端点、密钥与模型，回一段不是草案的文字（起草即失败、走拒绝页）。"""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    seen: list[dict] = []
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            seen.append({"path": self.path, "key": self.headers.get("x-api-key"), "model": body["model"]})
+            out = json.dumps({"content": [{"type": "text", "text": "不是 JSON"}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}", seen
+
+
+def test_draft_profile_and_key_come_from_settings_and_keyring(monkeypatch, caplog):
+    """宪章 Q28：起草的档案、端点、密钥槽每次从设置解析，密钥从钥匙环取；确认卡可按档案名改，未登记即 400。"""
+    from kaiti_hub import KaitiHub
+
+    from paoding_adapter.contract import KeyRing
+    from paoding_qicao.contract import BadRequest
+
+    monkeypatch.delenv("PD_DRAFT_TOKEN", raising=False)
+    srv, up, seen = _upstream()
+    ring = KeyRing({"default": "", "light": ""})
+    ring.install_redaction()
+    doc = {
+        "models": {
+            "profiles": [
+                {
+                    "name": "main",
+                    "endpoint": up,
+                    "model": "m-strong",
+                    "family": "",
+                    "tier": "strong",
+                    "key_slot": "default",
+                },
+                {
+                    "name": "cheap",
+                    "endpoint": up + "/alt",
+                    "model": "m-light",
+                    "family": "",
+                    "tier": "light",
+                    "key_slot": "light",
+                },
+            ],
+            "routes": {r: "main" for r in ("draft", "bootstrap", "reason", "explore", "verify")},
+        }
+    }
+    hub = KaitiHub({"draft": "messages"}, real=True, upstream="https://example.invalid", key=ring.get)
+    hub.use_settings(lambda: doc)
+    try:
+        # 槽位空着：不调模型，拒绝页写明去哪儿输入密钥
+        out = hub.svc.draft_view({"text": TEXT})
+        assert out["lane"] == "refuse" and seen == [] and hub.state["draft"] == "off"
+        assert any("槽位 default" in n["text"] for n in out["notes"]), out["notes"]
+
+        canary = "sk-canary-" + "d" * 24
+        ring.set("default", canary, source="page")
+        ring.set("light", "sk-canary-light-" + "e" * 20, source="page")
+        assert hub.state == {**hub.state, "draft": "messages", "profile": "main"}
+        out = hub.svc.draft_view({"text": TEXT})
+        assert seen[-1] == {"path": "/v1/messages", "key": canary, "model": "m-strong"} and out["model"] == "main"
+
+        out = hub.svc.draft_view({"text": TEXT, "profile": "cheap"})
+        assert seen[-1]["path"] == "/alt/v1/messages" and seen[-1]["model"] == "m-light" and out["model"] == "cheap"
+        assert seen[-1]["key"] == "sk-canary-light-" + "e" * 20
+        # 交回草案重新校验（卡上改预算）时带回同一个 profile：不再调模型，出处仍记“人”
+        n = len(seen)
+        again = hub.svc.draft_view({"text": TEXT, "draft": {}, "model": "cheap", "profile": "cheap"})
+        assert len(seen) == n and again["model"] == "cheap"
+
+        with pytest.raises(BadRequest):
+            hub.svc.draft_view({"text": TEXT, "profile": "nope"})
+        # 设置一改，下一次起草就换档案（不必重启）
+        doc["models"]["routes"]["draft"] = "cheap"
+        assert hub.svc.draft_view({"text": TEXT})["model"] == "cheap"
+        # 金丝雀：密钥不在回给网页的任何字段里，也不在日志里
+        assert canary not in json.dumps(out, ensure_ascii=False)
+        assert canary not in caplog.text
+    finally:
+        srv.shutdown()
+
+
+def test_heuristic_ignores_profile_choice():
+    from kaiti_hub import KaitiHub
+
+    hub = KaitiHub({}, real=False, upstream="")
+    out = hub.svc.draft_view({"text": TEXT, "profile": "whatever"})
+    assert out["model"] == "heuristic" and out["lane"] != "refuse"
+    row = next(r for r in out["derivation"] if r["field"] == "draft.model")
+    assert row["source"] == "table"  # 演示起草不按档案，不记成人选的
+
+
+def test_chosen_profile_is_recorded_as_human():
+    from kaiti_hub import KaitiHub
+
+    from paoding_qicao.contract import heuristic_drafter
+
+    hub = KaitiHub({}, real=False, upstream="")
+    hub.pick = lambda want: (heuristic_drafter, want or "main", "")  # 模拟按档案起草
+    hub.svc.pick = hub.pick
+    out = hub.svc.draft_view({"text": TEXT, "profile": "cheap"})
+    row = next(r for r in out["derivation"] if r["field"] == "draft.model")
+    assert out["model"] == "cheap" and row["source"] == "human" and row["value"] == "cheap"
+
+
+def test_settings_sources_are_read_only_and_follow_caps(stack):
+    """宪章 Q6：设置页的练习道信封与预算先验两节只读；信封的练习上限抄设置层，摘要与内核此刻加载的一致。"""
+    s, url = stack
+    out = call(url, "/v1/settings/sources")
+    env, pri = out["envelope"], out["priors"]
+    assert env["digest"] == s.graph.cfg.practice.digest and env["zero_confirm"] is False
+    assert env["budget"]["usd_milli_max"] == s.settings.store.settings["caps"]["practice_usd_milli"]
+    assert "q*:*" in env["allow"]["net_patterns"]
+    assert pri["placeholder"] is True and pri["version"].startswith("placeholder:") and pri["tiers"]
+    store = s.settings.store
+    store.settings = {**store.settings, "caps": {**store.settings["caps"], "practice_usd_milli": 400}}
+    s.settings.apply()
+    again = call(url, "/v1/settings/sources")["envelope"]
+    assert again["budget"]["usd_milli_max"] == 400 and again["digest"] == s.graph.cfg.practice.digest != env["digest"]
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(url, "/v1/settings/sources", {"x": 1}, token=s.human_token)
+    assert e.value.code in (404, 405)
+
+
 def test_one_sentence_opens_with_zero_egress(stack):
     """扩权第四步（§3.1）：新装缺省 runtime=on，开题只有工作区一条；原文里的地址只作展示，执行时按需申请。"""
     s, url = stack

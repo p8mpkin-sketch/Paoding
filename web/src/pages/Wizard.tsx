@@ -12,7 +12,7 @@ import { sha256Hex } from "../model/hash";
 import { GRADE_WORD } from "../model/levels";
 import { shortHash, usd } from "../model/text";
 import { buildOpen, draftFromProblem, draftFromTemplate, judgesFor, problemsOf, scopeOf, STEPS, textMaterial, touch, uploadedOf, type Draft, type DraftMaterial, type MarkedField, type MaterialKind } from "../model/wizard";
-import { SOURCE } from "../model/kaiti";
+import { circled, segments, SOURCE } from "../model/kaiti";
 import { FileUp } from "lucide-react";
 import { Mark, Mast, SectionHead, btnClass } from "../kit";
 import { Plain } from "../ui/registers";
@@ -94,7 +94,13 @@ export function Wizard({ from }: { from?: string } = {}) {
   /** 出处记号（从一句话开题带进来时才有）：摘、表、估、起草、人。 */
   const src = (f: MarkedField) => {
     const m = d.marks?.[f];
-    return m ? <span className="kt-src" data-src={f} data-source={m}><Mark ch={SOURCE[m].ch} tone={SOURCE[m].tone} label={SOURCE[m].word} /></span> : null;
+    const refs = m === "span" ? d.kaiti?.refs?.[f] ?? [] : [];
+    return m ? (
+      <span className="kt-src" data-src={f} data-source={m}>
+        <Mark ch={SOURCE[m].ch} tone={SOURCE[m].tone} label={SOURCE[m].word} />
+        {refs.length > 0 && <span className="k-mono" data-refs={refs.join(",")}>{refs.map(circled).join("")}<span className="sr-only">摘自原文第 {refs.join("、")} 段</span></span>}
+      </span>
+    ) : null;
   };
   const uploaded = uploadedOf(d);
   const allOk = issues.every((s) => s.length === 0);
@@ -180,7 +186,7 @@ export function Wizard({ from }: { from?: string } = {}) {
           {d.kaiti && (
             <details className="kt-origin" data-kaiti-origin>
               <summary>来自一句话新建的原文<span className="t2">已剪去答案</span></summary>
-              <p className="kt-origin-text"><Plain text={d.kaiti.text} /></p>
+              <OriginText k={d.kaiti} />
             </details>
           )}
           {on(0) && (
@@ -387,5 +393,23 @@ export function Wizard({ from }: { from?: string } = {}) {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** 原文，被引用的区间带确认卡上的同一编号（宪章 Q11）；旧草稿没有区间表时只显示原文。 */
+function OriginText({ k }: { k: NonNullable<Draft["kaiti"]> }) {
+  const segs = useMemo(() => {
+    const spans = k.spans ?? [];
+    return segments(k.text, spans, new Map(spans.map((s) => [s.id, s.n])));
+  }, [k]);
+  return (
+    <p className="kt-origin-text">
+      {segs.map((s, i) => (
+        <span key={i}>
+          <span className={[s.sentence ? "kt-sent" : "", s.token ? "kt-tok" : ""].filter(Boolean).join(" ") || undefined}><Plain text={s.text} /></span>
+          {s.ends.map((n) => <sup key={n} className="kt-n" data-span-no={n}><span aria-hidden="true">{circled(n)}</span><span className="sr-only">（原文第 {n} 段到此）</span></sup>)}
+        </span>
+      ))}
+    </p>
   );
 }

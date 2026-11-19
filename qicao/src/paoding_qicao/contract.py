@@ -7,6 +7,6 @@ from .extract import Extraction, Span, extract
 from .importer import ImportError_, import_vetted
 from .ops import batch, blobs
 from .policy import DEFAULT_CAPS, Intake, Prior, PriorSource, PriorTableError, Settings, TablePriors, placeholder_priors
-from .service import BadRequest, Drafter, KaitiService, heuristic_drafter, model_drafter
+from .service import BadRequest, Drafter, KaitiService, Picker, heuristic_drafter, model_drafter
 from .vaultio import write_answer
 from .vet import ANSWER_SLOT, Note, Vetted, derivation_bytes, override, vet

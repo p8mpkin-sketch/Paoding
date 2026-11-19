@@ -2,7 +2,7 @@
 // 材料先把字节传成 Blob，登记与开题在同一批里原子提交：Origin 用 "$<下标>" 指向同批前面的登记。
 import { ops } from "../api/ops";
 import type { ArtifactView, BudgetResponse, CatalogItem, JudgeEntry, Op, ProblemInput, Risk, ScopeRule, StatusView, VaultRef } from "../api/types";
-import type { KaitiSource } from "../api/kaiti";
+import type { KaitiSource, KaitiSpan } from "../api/kaiti";
 
 export type DraftRule = { resource: string; pattern: string; actions: string; risk: Risk | "" };
 /**
@@ -42,8 +42,11 @@ export type Draft = {
   sealed?: VaultRef[];
   /** 从一句话开题带进来的出处记号（设计 §7.5）：字段名 → 出处；人改过即为 human。 */
   marks?: Partial<Record<MarkedField, KaitiSource>>;
-  /** 一句话开题的原文（已剪去答案），向导左栏顶部折叠显示。 */
-  kaiti?: { text: string };
+  /**
+   * 一句话开题的原文（已剪去答案），向导左栏顶部折叠显示。spans 是被引用的区间（带确认卡上的同一编号 n），
+   * refs 是各字段摘自原文第几段（宪章 Q11）；人改过的字段记号变“人”，编号随之不再显示。
+   */
+  kaiti?: { text: string; spans?: (KaitiSpan & { n: number })[]; refs?: Partial<Record<MarkedField, number[]>> };
 };
 
 /** 带出处记号的字段。 */

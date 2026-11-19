@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { newIdemKey } from "../api/client";
 import type { ProfilePreview, Risk, VaultRef } from "../api/types";
 import type { KaitiExtract, KaitiOverrides, KaitiRow, KaitiVetted } from "../api/kaiti";
+import type { Settings } from "../api/settings-types";
 import { useServices } from "../app/context";
 import { saveDraft } from "../app/draft";
 import { navigate } from "../app/router";
@@ -65,6 +66,48 @@ function Source({ r, nums }: { r: KaitiRow; nums: Map<string, number> }) {
   );
 }
 
+const SESSION_ROLES = [["bootstrap", "Bootstrap"], ["reason", "Reason"], ["explore", "Explore"], ["verify", "Verify"]] as const;
+
+/** 05 模型（宪章 02 §3.2、Q10）：起草用哪个档案（只列设置页登记过的，改了即重新起草），会话按全局路由（只读）。 */
+function ModelBlock({ v, models, busy, onPick, nums }: {
+  v: KaitiVetted; models: Settings["models"] | null; busy: boolean; onPick: (name: string) => void; nums: Map<string, number>;
+}) {
+  const row = v.derivation.find((r) => r.field === "draft.model");
+  const names = models?.profiles.map((p) => p.name) ?? [];
+  const known = names.includes(v.model);
+  return (
+    <div className="kt-group" data-group="模型" data-model-block>
+      <div className="kt-group-h">模型</div>
+      <dl className="kt-rows">
+        <div className="kt-row" data-field="draft.model">
+          <dt>起草用</dt>
+          <dd>
+            {names.length > 0 ? (
+              <select value={known ? v.model : ""} aria-label="起草用的模型档案（改了即重新起草）" data-action="pick-draft-profile" disabled={busy}
+                onChange={(e) => { if (e.target.value) onPick(e.target.value); }}>
+                {!known && <option value="" disabled>{v.model ? `${v.model}（演示起草，不按档案）` : "（未起草）"}</option>}
+                {names.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            ) : <span className="kt-val"><Plain text={v.model || "—"} /></span>}
+            {row && <Source r={row} nums={nums} />}
+            <span className="t2 kt-note">只列设置页登记过的档案；改了会重新起草一次</span>
+          </dd>
+        </div>
+        <div className="kt-row" data-field="session.models">
+          <dt>会话用</dt>
+          <dd>
+            <span className="kt-val" data-session-routes>
+              {models ? SESSION_ROLES.map(([k, w]) => `${w} → ${models.routes[k]}`).join(" · ") : "读取中…"}
+            </span>
+            <Mark ch={SOURCE.table.ch} tone={SOURCE.table.tone} label="查设置页的角色路由" />
+            <span className="t2 kt-note">按设置页的角色路由，新会话起生效；按任务另选档案还没有做</span>
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 export function Kaiti() {
   const { api, cfg } = useServices();
   const writable = cfg.token !== null;
@@ -77,6 +120,8 @@ export function Kaiti() {
   const [err, setErr] = useState<Error | null>(null);
   const [fieldErr, setFieldErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<ProfilePreview | null>(null);
+  const [models, setModels] = useState<Settings["models"] | null>(null);
+  const [prof, setProf] = useState<string | null>(null);
   const [usdS, setUsdS] = useState("");
   const [minS, setMinS] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -89,6 +134,14 @@ export function Kaiti() {
     const t = setTimeout(() => { api.draftExtract(text).then((x) => { if (live) setExt(x); }, () => { if (live) setExt(null); }); }, EXTRACT_DEBOUNCE_MS);
     return () => { live = false; clearTimeout(t); };
   }, [api, text, writable]);
+
+  // 模型档案与角色路由：读设置页那一份（要人的令牌），卡上只列已登记的档案
+  useEffect(() => {
+    if (!writable) return;
+    let live = true;
+    api.settings().then((d) => { if (live) setModels(d.settings.models); }, () => { if (live) setModels(null); });
+    return () => { live = false; };
+  }, [api, writable]);
 
   // 卡上的数字框跟着校验结果走
   useEffect(() => {
@@ -109,12 +162,12 @@ export function Kaiti() {
 
   const nums = useMemo(() => (v ? spanNumbers(v.spans, v.derivation) : new Map<string, number>()), [v]);
 
-  async function draftIt() {
+  async function draftIt(profile: string | null = null) {
     if (!text.trim() || busy) return;
     setBusy("draft"); setErr(null); setFieldErr(null);
     try {
-      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}) });
-      setV(out); setOv({});
+      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}) });
+      setV(out); setOv({}); setProf(profile);
     } catch (e) {
       setErr(e as Error); setV(null);
     } finally {
@@ -126,7 +179,7 @@ export function Kaiti() {
     if (!v?.draft) return;
     setBusy("revet"); setFieldErr(null);
     try {
-      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: v.draft, model: v.model, nonce: v.nonce, overrides: next });
+      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: v.draft, model: v.model, ...(prof ? { profile: prof } : {}), nonce: v.nonce, overrides: next });
       setV(out); setOv(next);
     } catch (e) {
       setFieldErr(rejectText(e as Error) ?? (e as Error).message);
@@ -186,7 +239,7 @@ export function Kaiti() {
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
     e.preventDefault();
-    void draftIt();
+    void draftIt(prof);
   }
 
   function onCardKey(e: KeyboardEvent<HTMLDivElement>) {
@@ -235,7 +288,7 @@ export function Kaiti() {
             onChange={(e) => { setAnswer(e.target.value); if (v) setV(null); }} />
         </details>
         <div className="kt-go">
-          <button type="button" className={btnClass("ink")} data-action="draft" disabled={!writable || !text.trim() || busy !== null} onClick={() => void draftIt()}>
+          <button type="button" className={btnClass("ink")} data-action="draft" disabled={!writable || !text.trim() || busy !== null} onClick={() => void draftIt(prof)}>
             {busy === "draft" ? "起草中…" : "起草任务单"} <Kbd>↵</Kbd>
           </button>
           <span className="t2">⇧↵ 换行</span>
@@ -309,6 +362,7 @@ export function Kaiti() {
                   </div>
                 );
               })}
+              <ModelBlock v={v} models={models} busy={busy !== null} nums={nums} onPick={(n) => void draftIt(n)} />
               {fieldErr && <p className="error" data-field-error><Plain text={fieldErr} /></p>}
             </section>
 

@@ -326,7 +326,7 @@ class Stack:
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
         self.catalog = catalog_of(self.registry, self.connectors)  # 判据形态目录（注册表驱动，§5.8）
-        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog)
+        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog, key=self.keyring.get)
         self.kaiti.mount(self.http)
         self.platforms = ConnectorHub(
             self.connectors, self.catalog, self.keyring.get, self.keyring.ready, self.kaiti.svc
@@ -368,6 +368,12 @@ class Stack:
         self._practice(self.settings.store.settings)
         # 起草服务读同一份设置（单题硬顶、风险表），不再读 kaiti.settings 静态文件
         self.kaiti.use_settings(lambda: self.settings.store.settings)
+        # 设置页的两节只读（宪章 Q6）：练习道信封（内核此刻加载的那一份）与预算先验表
+        self.http.mount(
+            "GET",
+            r"/v1/settings/sources",
+            lambda q, b: self.kaiti.sources(self.settings.store.settings["caps"], self.graph.cfg.practice),
+        )
         self.endpoint = ToolEndpoint()
         # 端点先起：模型容器的启动器要知道它们在本机回环上的端口
         proxy_port = self.proxy.serve()[1]
