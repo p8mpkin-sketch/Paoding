@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from .connector import ProfileError, validate_profile
+
 KINDS = ("deterministic", "programmatic", "panel", "deferred")
 AUTHORITIES = ("local", "external")  # 判定来源（external-verdict §5.1）；人工验收走 goal.accept，不进注册表
 GRADES = ("decisive", "consistent", "advisory")
@@ -56,17 +58,17 @@ def load_registry(directory: str | Path = DEFAULT_DIR) -> dict[str, dict[str, An
 def load_connectors(directory: str | Path = CONNECTORS_DIR) -> dict[str, dict[str, Any]]:
     """连接器档案（external-verdict §5.1）：一个文件一份平台档案，领域词只在这里（红线 3）。
 
-    一期只读 id、version 与整份档案的摘要（规范化 JSON 的 sha256），供开题时抄进判官快照；
-    端点、字段、映射表的含义由二期的 connector 运行器解释。目录不存在即没有档案。"""
+    形状按 connector.validate_profile 校验，不合即启动失败；id、version 与整份档案的摘要（规范化 JSON 的 sha256）
+    供开题时抄进判官快照，端点、字段、映射表由 connector 运行器解释。目录不存在即没有档案。"""
     out: dict[str, dict[str, Any]] = {}
     for f in sorted(Path(directory).glob("*.y*ml")) if Path(directory).is_dir() else []:
         doc = yaml.safe_load(f.read_text(encoding="utf-8"))
-        if not isinstance(doc, dict) or not isinstance(doc.get("id"), str) or not str(doc.get("version", "")):
-            raise RegistryError(f"{f.name}：连接器档案须有 id 与 version")
+        try:
+            validate_profile(doc, f.name)
+        except ProfileError as e:
+            raise RegistryError(str(e)) from None
         if doc["id"] in out:
             raise RegistryError(f"{f.name}：连接器 {doc['id']} 重复")
-        if "credential" in doc and set(doc["credential"]) - {"key_slot"}:
-            raise RegistryError(f"{f.name}：凭据只写钥匙环槽位 key_slot，不写值")
         canon = json.dumps(doc, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         out[doc["id"]] = {"version": str(doc["version"]), "digest": hashlib.sha256(canon).hexdigest(), "doc": doc}
     return out

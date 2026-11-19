@@ -387,7 +387,7 @@ cz 2026-11-19：九条全部采纳"推荐"一列，"否则"一列作废，留作
 | 期 | 内容 | 前提 |
 | --- | --- | --- |
 | 一 | 内核：注册表条目 `authority`、快照带连接器摘要、开题三条检查、`goal.authority` 派生、`pending` 原因码与 `recheck_at`、`deadline` 与 `bind_deadline`；哮天犬三件事分开（受开关保护，缺省旧行为） | 本稿裁决；与 #93 合并 `_derive_profile` |
-| 二 | `judgebox` 的 `connector` 运行器、`connectors.d/`、钥匙环槽位；平台模拟从测试文件抽成夹具；复现用例翻转 | 一期 |
+| 二 | `judgebox` 的 `connector` 运行器、`connectors.d/`、钥匙环槽位；平台模拟从测试文件抽成夹具；复现用例翻转（行 2；行 5 换真运行器；金丝雀） | 一期 |
 | 三 | 入口："从平台导入"（`pd` 与网页）、一句话开题的 `external` 形态、判据形态改由注册表驱动、拒绝页第四条降级路 | 二期 |
 | 四 | 读数按 `authority` 分列；工作区 Goal 卡片的待定呈现 | 三期；D3 落地后 accepted 并入同一张表 |
 
