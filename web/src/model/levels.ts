@@ -11,7 +11,7 @@ export function levelWord(level: Level | null, word: string | null, badge: Pick<
 /** 终态三值。accepted 在任何地方不得显示为"已证明"。 */
 export function terminalWord(t: Terminal | null): string {
   switch (t) {
-    case "solved": return "solved · 判官确认";
+    case "solved": return "solved · 判定器确认";
     case "accepted": return "accepted · 人验收";
     case "unsolved": return "unsolved";
     case null: return "进行中";

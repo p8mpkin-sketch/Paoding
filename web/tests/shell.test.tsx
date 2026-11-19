@@ -25,7 +25,7 @@ describe("导航归属", () => {
 });
 
 describe("外壳", () => {
-  it("状态行：连接、令牌、在途与等你处理都来自题目列表", async () => {
+  it("状态行只说连接与能否写，不重复页面里的数字；侧栏待办数与正在运行来自题目列表", async () => {
     const r = rig();
     const { container } = render(<App cfg={r.cfg} />);
     await waitFor(() => expect(container.querySelector(".shell-status")!.textContent).toContain("已连接"));
@@ -33,8 +33,9 @@ describe("外壳", () => {
     const items = (await r.api.problems()).items;
     const running = items.filter((p) => !p.closed);
     expect(status).toContain("可写");
-    expect(status).toContain(`在途 ${running.length}`);
-    expect(status).toContain(`等你 ${running.reduce((a, p) => a + p.human_todo, 0)}`);
+    expect(status).not.toMatch(/在途|等你|花费|\$/);
+    const waiting = running.reduce((a, p) => a + p.human_todo, 0);
+    expect(container.querySelector('[data-nav="inbox"] .ct')?.textContent).toMatch(new RegExp(`^${waiting}`));
     expect(container.querySelectorAll(".shell-pins li")).toHaveLength(running.length);
   });
 

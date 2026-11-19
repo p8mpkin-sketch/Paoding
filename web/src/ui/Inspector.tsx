@@ -20,7 +20,7 @@ function PremiseChain({ rows, id, seq }: { rows: ReadonlyMap<string, NodeRow>; i
         {chain.map(({ row, depth }) => (
           <li key={row.id}>
             <details data-action="open-premise" data-premise={row.id}>
-              <summary>{"· ".repeat(depth - 1)}{row.id} · {row.kind === "fact" ? `${row.level} ${row.levelWord}` : row.state ? INTENT_STATE_WORD[row.state] : "Intent"} · {row.grounds.length} 份 Artifact</summary>
+              <summary>{"· ".repeat(depth - 1)}{row.id} · {row.kind === "fact" ? `${row.level} ${row.levelWord}` : row.state ? INTENT_STATE_WORD[row.state] : "尝试"} · {row.grounds.length} 份 Artifact</summary>
               <Text t={row.title} />
               {row.grounds.length === 0 ? <p className="muted">这一环没有登记 Artifact</p> : <ul className="tree">{row.grounds.map((a) => <ArtifactChip key={a} id={a} seq={seq} />)}</ul>}
             </details>
@@ -37,9 +37,9 @@ function NodeView({ ev, vm }: { ev: NodeEvidence; vm: ViewModel }) {
   if (ev.type === "hint") {
     return (
       <div className="inspector" data-node={ev.id}>
-        <header className="inspector-head"><strong>{ev.id}</strong><span className="muted">Hint{ev.closed ? "（已关闭）" : ""}</span></header>
+        <header className="inspector-head"><strong>{ev.id}</strong><span className="muted">指导{ev.closed ? "（已关闭）" : ""}</span></header>
         <Text t={ev.text} meta={{ author: ev.author, note: ev.about ? `about ${ev.about}` : undefined }} />
-        <p className="muted">Hint 是人的判断，不是证据，不能作前提。</p>
+        <p className="muted">指导是人的判断，不是证据，不能作前提。</p>
       </div>
     );
   }
@@ -51,7 +51,7 @@ function NodeView({ ev, vm }: { ev: NodeEvidence; vm: ViewModel }) {
     <div className="inspector" data-node={ev.id}>
       <header className="inspector-head">
         <strong>{ev.id}</strong>
-        <span className="muted">{ev.type === "fact" ? (ev.claim_type === "observation" ? "观察类论断" : "推断类论断") : "Intent"}</span>
+        <span className="muted">{ev.type === "fact" ? (ev.claim_type === "observation" ? "观察类论断" : "推断类论断") : "尝试"}</span>
         <LevelBadge level={ev.level} word={row?.levelWord ?? ""} />
         {ev.type === "intent" && <span className="badge">{INTENT_STATE_WORD[ev.status]}</span>}
         {ev.type === "intent" && <span className="badge">{ev.risk}</span>}
@@ -61,7 +61,7 @@ function NodeView({ ev, vm }: { ev: NodeEvidence; vm: ViewModel }) {
       </header>
 
       {/* —— 证据 —— */}
-      {ev.predicate ? <CriterionCard p={ev.predicate} seq={seq} /> : <p className="muted">没有判据：{ev.type === "fact" ? "推断类论断只有前提与 grounds。" : "这条 Intent 不带 done。"}</p>}
+      {ev.predicate ? <CriterionCard p={ev.predicate} seq={seq} /> : <p className="muted">没有判据：{ev.type === "fact" ? "推断类论断只有前提与 grounds。" : "这次尝试不带 done。"}</p>}
       {ev.type === "fact" && (
         <section>
           <h4>grounds</h4>
@@ -102,7 +102,7 @@ function GoalView({ vm }: { vm: ViewModel }) {
         <span className="badge">accept: {vm.goal.accept}</span>
       </header>
       <CriterionCard p={vm.goal.predicate} seq={vm.seq} />
-      <section><h4>目标陈述</h4><Text t={vm.goal.statement} meta={{ note: "开题时写下" }} /></section>
+      <section><h4>目标陈述</h4><Text t={vm.goal.statement} meta={{ note: "新建任务时写下" }} /></section>
     </div>
   );
 }
@@ -120,7 +120,7 @@ export function Inspector({ vm, nodeId }: { vm: ViewModel; nodeId: string | null
     api.node(nodeId, seq).then((r) => live && setEv(r), (e: Error) => live && setErr(e.message));
     return () => { live = false; };
   }, [api, nodeId, seq]);
-  if (!nodeId) return <p className="muted">点一行节点或一个判据徽章，这里显示它的判据、支持记录与证据。</p>;
+  if (!nodeId) return <p className="t2" data-inspect-empty>选一个节点，这里显示它的判据与证据。</p>;
   if (nodeId === "goal") return <GoalView vm={vm} />;
   if (err) return <p className="error">取不到 {nodeId} 在 seq {seq} 的证据层：<Plain text={err} /></p>;
   if (!ev || ev.id !== nodeId) return <p className="muted">读取中…</p>;

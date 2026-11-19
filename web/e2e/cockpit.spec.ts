@@ -80,6 +80,8 @@ test("时间轴回放：跳到早先的序号，写操作禁用，链接带 as_o
   await openCockpit(page, "demo-1");
   const head = Number(await page.locator(".cockpit").getAttribute("data-seq"));
   const target = Math.max(1, head - 5);
+  await expect(page.locator(".seq-input")).toBeHidden();               // 不常用的定位手段默认收起
+  await page.locator("[data-timeline-more] summary").click();
   await page.locator(".seq-input").fill(String(target));
   await page.getByRole("button", { name: "跳到" }).click();
   await expect(page).toHaveURL(new RegExp(`as_of=${target}`));
@@ -114,10 +116,15 @@ test("窄屏（< 1024px）：一栏显示，按钮切换面板，选中节点跳
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("宽屏：三栏并排，面板切换按钮不显示", async ({ page }) => {
+test("宽屏：三栏并排，面板切换按钮不显示；没选节点时检视栏收窄，选中后展开", async ({ page }) => {
   await openCockpit(page, "demo-1");
   await expect(page.locator(".panel-switch")).toBeHidden();
   for (const c of [".left", ".main", ".right"]) await expect(page.locator(c)).toBeVisible();
+  const narrow = (await page.locator(".right").boundingBox())!.width;
+  expect(narrow).toBeLessThanOrEqual(240);
+  await page.locator('[data-action="select-node"]').first().click();
+  await expect(page.locator(".cockpit")).toHaveAttribute("data-inspect", "node");
+  expect((await page.locator(".right").boundingBox())!.width).toBeGreaterThan(narrow + 60);
 });
 
 test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) => {
@@ -170,7 +177,7 @@ test("待办：侧栏数量与页面一致，去处理进工作区并定位节�
   await expect(page.locator(".cockpit")).toBeVisible();
 });
 
-test("题库：筛选写进 URL，刷新后仍在", async ({ page }) => {
+test("任务库：筛选写进 URL，刷新后仍在", async ({ page }) => {
   await page.goto("/problems");
   await expect(page.locator("tr[data-problem]").first()).toBeVisible();
   await page.locator('[data-tab="running"]').click();
@@ -180,7 +187,7 @@ test("题库：筛选写进 URL，刷新后仍在", async ({ page }) => {
   for (const t of await page.locator("td[data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
 });
 
-test("向导：四步走完，文字材料与初始提示，开题后进工作区；草稿刷新不丢", async ({ page }) => {
+test("向导：四步走完，文字材料与初始指导，创建后进工作区；草稿刷新不丢", async ({ page }) => {
   await page.goto("/new");
   await page.locator('[data-field="id"]').fill("e2e-wiz");
   await page.locator('[data-field="title"]').fill("浏览器里开的题");
@@ -202,7 +209,7 @@ test("向导：四步走完，文字材料与初始提示，开题后进工作�
   await expect(page.locator(".cockpit")).toBeVisible();
 });
 
-test("题库：克隆一道题进向导，id 留空、判据与 scope 已预填", async ({ page }) => {
+test("任务库：克隆一个任务进向导，id 留空、判据与 scope 已预填", async ({ page }) => {
   await page.goto("/problems");
   await page.locator('tr[data-problem] [data-action="clone"]').first().click();
   await expect(page).toHaveURL(/\/new\?from=/);

@@ -5,7 +5,7 @@ import type { WireTick } from "../api/types";
 import { TICK_LEGEND, ticksOf, type TickKind } from "../model/ticks";
 
 type Props = {
-  /** 本题每条事件的 seq、ts、种类（/ticks 与事件流）。 */
+  /** 本任务每条事件的 seq、ts、种类（/ticks 与事件流）。 */
   ticks: readonly WireTick[];
   head: number;
   /** null 即实时。 */
@@ -53,26 +53,30 @@ export function Timeline({ ticks: items, head, asOf, onSeek, link }: Props) {
       </div>
       <div className="timeline-ctl">
         <span data-timeline-pos>{asOf === null ? `●实时 · 链头 seq=${head}` : `回放于 seq=${asOf} · 链头 seq=${head}`}{drag !== null ? ` · 游标 seq=${seqs[drag]}（松手后读取）` : ""}</span>
-        <label>同类刻度
-          <select value={jump} onChange={(e) => setJump(e.target.value as TickKind)}>
-            {(Object.keys(TICK_LEGEND) as TickKind[]).map((k) => <option key={k} value={k}>{k} {TICK_LEGEND[k]}</option>)}
-          </select>
-        </label>
-        <button type="button" className="btn-small" onClick={() => neighbor(-1)}>上一个</button>
-        <button type="button" className="btn-small" onClick={() => neighbor(1)}>下一个</button>
-        <form className="inline" onSubmit={(e) => { e.preventDefault(); const n = Number(input); if (Number.isInteger(n) && n > 0) onSeek(n >= head ? null : n); }}>
-          <label>as_of <input className="seq-input" inputMode="numeric" value={input} onChange={(e) => setInput(e.target.value)} /></label>
-          <button type="submit" className="btn-small">跳到</button>
-        </form>
         <button type="button" className="btn-small" onClick={() => onSeek(null)} disabled={asOf === null}>回到实时</button>
         <button type="button" className="btn-small" data-action="copy-link" onClick={() => { void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => setCopied(false)); }}>
           复制链接{copied ? " ✓" : ""}
         </button>
-        <label><input type="checkbox" checked={showLeases} onChange={(e) => setShowLeases(e.target.checked)} /> 显示会话刻度（L）</label>
+        {/* 不常用的定位手段收起来（阅读质量轮第 7 条）：首屏只留位置、回到实时与复制链接。 */}
+        <details className="timeline-more" data-timeline-more>
+          <summary className="k-link">定位与图例</summary>
+          <div className="timeline-more-body">
+            <label>同类刻度
+              <select value={jump} onChange={(e) => setJump(e.target.value as TickKind)}>
+                {(Object.keys(TICK_LEGEND) as TickKind[]).map((k) => <option key={k} value={k}>{k} {TICK_LEGEND[k]}</option>)}
+              </select>
+            </label>
+            <button type="button" className="btn-small" onClick={() => neighbor(-1)}>上一个</button>
+            <button type="button" className="btn-small" onClick={() => neighbor(1)}>下一个</button>
+            <form className="inline" onSubmit={(e) => { e.preventDefault(); const n = Number(input); if (Number.isInteger(n) && n > 0) onSeek(n >= head ? null : n); }}>
+              <label>as_of <input className="seq-input" inputMode="numeric" value={input} onChange={(e) => setInput(e.target.value)} /></label>
+              <button type="submit" className="btn-small">跳到</button>
+            </form>
+            <label><input type="checkbox" checked={showLeases} onChange={(e) => setShowLeases(e.target.checked)} /> 显示会话刻度（L）</label>
+            <ul className="legend" aria-label="刻度图例">{(Object.keys(TICK_LEGEND) as TickKind[]).map((k) => <li key={k}><b>{k}</b> {TICK_LEGEND[k]}</li>)}</ul>
+          </div>
+        </details>
       </div>
-      <details className="legend"><summary>刻度图例</summary>
-        <ul>{(Object.keys(TICK_LEGEND) as TickKind[]).map((k) => <li key={k}><b>{k}</b> {TICK_LEGEND[k]}</li>)}</ul>
-      </details>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 // 基础组件（shadcn 模式：代码在仓库里，样式只用设计令牌）。页面只从这里拿外观，不各自定义颜色。
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { Brush, Zhupi } from "./flavor";
+import { Brush } from "./flavor";
 
-export { Brush, Quan, Seal, Zhupi } from "./flavor";
+export { Brush, Quan, Seal } from "./flavor";
 
 type Tone = "ink" | "zhu" | "line" | "bare";
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; size?: "sm" | "md" };
@@ -35,8 +35,9 @@ export function Meter({ value, cap, marks = [], hot = false, label }: { value: n
   );
 }
 
-/** 页眉：左侧竖排卷签，题签式的大标题（写成结论句），导语，右侧朱批或操作，下方一笔墨线。 */
-export function Mast({ vol, cap, title, dek, zhupi, actions }: { vol?: [string, string]; cap?: ReactNode; title: ReactNode; dek?: ReactNode; zhupi?: ReactNode; actions?: ReactNode }) {
+/** 页眉：左侧竖排卷签，大标题（写成结论句，是整页唯一焦点），一行导语，右侧操作，下方一笔墨线。
+ *  导语不重复页面里另有的数字（阅读质量轮第 2 条）。 */
+export function Mast({ vol, cap, title, dek, actions }: { vol?: [string, string]; cap?: ReactNode; title: ReactNode; dek?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="k-mast-wrap">
       <div className="k-mast">
@@ -47,7 +48,6 @@ export function Mast({ vol, cap, title, dek, zhupi, actions }: { vol?: [string, 
           {dek && <div className="k-dek">{dek}</div>}
         </div>
         <span className="grow" />
-        {zhupi && <Zhupi>{zhupi}</Zhupi>}
         {actions && <div className="k-mast-actions">{actions}</div>}
       </div>
       <Brush />

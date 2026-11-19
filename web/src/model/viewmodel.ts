@@ -71,11 +71,11 @@ export type ViewModel = {
 export type Projections = { status: StatusView; view: GraphView; budget: BudgetResponse; work: WorkView };
 
 const FRONTIER_TITLES: Record<FrontierGroup["key"], string> = {
-  hints: "活跃 Hint",
+  hints: "生效的指导",
   disputed: "争议与不稳定的节点",
   human: "待人处理",
-  intents: "未结束的 Intent",
-  premises: "未结束 Intent 的前提",
+  intents: "未结束的尝试",
+  premises: "未结束尝试的前提",
   facts: "未到终态的论断",
 };
 const FRONTIER_ORDER = Object.keys(FRONTIER_TITLES) as FrontierGroup["key"][];

@@ -153,7 +153,7 @@ describe("HT-4 判据徽章与终态", () => {
   });
 
   it("终态三值；accepted 写人验收，任何地方不写已证明", () => {
-    expect(terminalWord("solved")).toContain("判官确认");
+    expect(terminalWord("solved")).toContain("判定器确认");
     expect(terminalWord("accepted")).toContain("人验收");
     for (const t of ["solved", "accepted", "unsolved", null] as const) expect(terminalWord(t)).not.toMatch(/证明|proved|proven/);
     expect(levelWord("E3", "判定通过", { label: "replay@1" })).toBe("判定通过（replay@1）");

@@ -33,7 +33,7 @@ export type Draft = {
   /** 模板限定的判官；空即注册表全部。 */
   judgeFilter: string[];
   b1CapMilli: number | null;
-  /** 初始提示：开题成功后作为第一条 Hint 提交（人的判断语域；异议 web-workbench 第 3 条）。不进开题批次。 */
+  /** 初始指导：开题成功后作为第一条 Hint 提交（人的判断语域；异议 web-workbench 第 3 条）。不进开题批次。 */
   hint?: string;
   /** 克隆来源题目 id；只用于显示。 */
   clonedFrom?: string;
@@ -41,7 +41,7 @@ export type Draft = {
 
 /**
  * 六页（异议 web-workbench 第 2 条）：中间四页就是 HMI §3.2 的 Origin、判据、授权、预算，不增不藏；
- * “基本信息”只是把 id、题名、目标陈述单独成页，“复核”放画像预览、批次预览与初始提示。
+ * “基本信息”只是把 id、题名、目标陈述单独成页，“复核”放画像预览、批次预览与初始指导。
  */
 export const STEPS = ["基本信息", "起点", "终点", "资源", "预算", "复核"] as const;
 
@@ -148,14 +148,14 @@ export function problemsOf(d: Draft): string[][] {
   const has = (m: DraftMaterial) => m.hash !== null || ((m.kind ?? "file") !== "file" && (m.text ?? "").trim() !== "");
   const mats = d.materials.filter((m) => m.required && !has(m)).map((m) => `材料槽位"${m.slot}"必填`);
   const basics = [
-    ...(d.id.trim() === "" ? ["题目 id 必填"] : ID_OK.test(d.id.trim()) ? [] : ["题目 id 只能用字母、数字、点、下划线与连字符"]),
-    ...(d.title.trim() ? [] : ["题名必填"]),
+    ...(d.id.trim() === "" ? ["任务 id 必填"] : ID_OK.test(d.id.trim()) ? [] : ["任务 id 只能用字母、数字、点、下划线与连字符"]),
+    ...(d.title.trim() ? [] : ["名称必填"]),
     ...(d.statement.trim() ? [] : ["目标陈述必填"]),
   ];
-  const origin = [...(d.materials.some(has) ? [] : mats.length ? [] : ["至少一份材料作题面"]), ...mats];
+  const origin = [...(d.materials.some(has) ? [] : mats.length ? [] : ["至少一份起点材料"]), ...mats];
   const e = parseExpect(d.expect);
   const criterion = [
-    ...(d.judge ? [] : ["必须选 Goal 判官"]),
+    ...(d.judge ? [] : ["必须选目标判定器"]),
     ...(e instanceof Error ? [e.message] : []),
     ...(Number.isInteger(Number(d.maxAttempts)) && Number(d.maxAttempts) > 0 ? [] : ["max_attempts 必须是正整数"]),
   ];
@@ -172,7 +172,7 @@ export function problemsOf(d: Draft): string[][] {
     ...(share(d.verify_share) ? [] : ["verify_share 在 0 到 1 之间"]),
     ...(share(d.bootstrap_share) ? [] : ["bootstrap_share 在 0 到 1 之间"]),
   ];
-  const review = (d.hint ?? "").length > 2000 ? ["初始提示不超过 2000 字"] : [];
+  const review = (d.hint ?? "").length > 2000 ? ["初始指导不超过 2000 字"] : [];
   return [basics, origin, criterion, scope, budget, review];
 }
 

@@ -125,7 +125,7 @@ export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected:
               const r = rows.get(n.id)!;
               // 可见的三行原样放在名字开头（WCAG 2.5.3 名称含可见文字），再补全称
               const l1 = clip(`${n.id}${r.level ? ` · ${r.level}` : ""}${r.predicate ? ` · ${r.predicate.label}` : ""}`, 22);
-              const l2 = clip(r.predicateText ?? (n.kind === "fact" ? "推断" : "Intent"), 22);
+              const l2 = clip(r.predicateText ?? (n.kind === "fact" ? "推断" : "尝试"), 22);
               const l3 = `“${clip(r.title.value, 22)}”`;
               return (
                 <g
@@ -145,7 +145,7 @@ export function GraphView({ vm, selected, onSelect }: { vm: ViewModel; selected:
           </g>
         </svg>
       </div>
-      <p className="muted">布局只由创建 seq 决定：同一 as_of 坐标相同，时间轴向前拖时只增不挪。直角 = 论断，圆角 = Intent，菱形 = Hint。滚轮或 + − 缩放，拖动或方向键平移。</p>
+      <p className="muted">布局只由创建 seq 决定：同一 as_of 坐标相同，时间轴向前拖时只增不挪。直角 = 论断，圆角 = 尝试，菱形 = 指导。滚轮或 + − 缩放，拖动或方向键平移。</p>
     </div>
   );
 }

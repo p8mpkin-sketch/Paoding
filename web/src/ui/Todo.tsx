@@ -2,7 +2,7 @@
 import type { TodoItem } from "../model/viewmodel";
 
 export const WHY: Record<string, string> = {
-  needs_human: "审批", extension: "续期门", dispute: "争议待裁决", closeout: "验收与四顾", stalled: "停滞：等待 Hint 或人工关闭",
+  needs_human: "审批", extension: "续期门", dispute: "争议待裁决", closeout: "验收与四顾", stalled: "停滞：等待指导或人工关闭",
 };
 /** F1 实现了卡片的待办类别；其余只列出，处理走 pd。 */
 export const HAS_CARD = new Set(["needs_human", "extension"]);

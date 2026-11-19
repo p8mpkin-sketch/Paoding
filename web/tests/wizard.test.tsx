@@ -119,7 +119,7 @@ describe("导入页", () => {
     fireEvent.click(container.querySelector('[data-action="import-all"]')!);
     const row = () => container.querySelector('[data-import-row="imp-1"]');
     await until(() => ["done", "failed"].includes(row()?.getAttribute("data-state") ?? ""), "第一题有结果");
-    expect(row()?.textContent).toMatch(/已开题/);
+    expect(row()?.textContent).toMatch(/已创建/);
     expect(r.mock.pids()).toContain("imp-1");
     expect(r.mock.pids()).not.toContain("");
   });

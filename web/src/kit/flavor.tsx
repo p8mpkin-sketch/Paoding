@@ -1,5 +1,5 @@
 // 装饰层：印、圈、笔触、朱批、套准十字。全部对读屏器隐藏；要表达的意思另有文字在页面里。
-import { useId, type CSSProperties, type ReactNode } from "react";
+import { useId, type CSSProperties } from "react";
 
 /** 朱文印：位移滤镜做出印泥不匀与边缘毛糙。两个字竖排。 */
 export function Seal({ size = 30, text = ["庖", "丁"] }: { size?: number; text?: [string, string] }) {
@@ -20,8 +20,8 @@ export function Seal({ size = 30, text = ["庖", "丁"] }: { size?: number; text
       <g filter={`url(#r${id})`}>
         <g filter={`url(#i${id})`}>
           <rect x="2" y="2" width="36" height="36" rx="2.5" fill="var(--zhu)" />
-          <text x="20" y="18" textAnchor="middle" fontFamily="Ma Shan Zheng" fontSize="17" fill="var(--paper)">{text[0]}</text>
-          <text x="20" y="35" textAnchor="middle" fontFamily="Ma Shan Zheng" fontSize="17" fill="var(--paper)">{text[1]}</text>
+          <text x="20" y="18" textAnchor="middle" fontFamily="Noto Serif SC, serif" fontWeight="600" fontSize="15" fill="var(--paper)">{text[0]}</text>
+          <text x="20" y="35" textAnchor="middle" fontFamily="Noto Serif SC, serif" fontWeight="600" fontSize="15" fill="var(--paper)">{text[1]}</text>
         </g>
       </g>
     </svg>
@@ -48,9 +48,4 @@ export function Brush() {
       </svg>
     </div>
   );
-}
-
-/** 朱批：每页最多一处的毛笔短批。是真文字，读屏器照读；内容由页面按服务端给的量拼出。 */
-export function Zhupi({ children }: { children: ReactNode }) {
-  return <span className="k-zhupi">{children}</span>;
 }

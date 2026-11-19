@@ -41,20 +41,21 @@ export function Frontier({ vm, selected, onSelect, onOpenHint }: { vm: ViewModel
   const hints = new Map(vm.hints.map((h) => [h.id, h]));
   return (
     <div className="frontier">
-      {vm.frontier.map((g) => (
+      {vm.frontier.filter((g) => g.ids.length > 0).map((g) => (
         <section key={g.key} data-frontier={g.key}>
           <h4>{g.title} <span className="muted">{g.ids.length}</span></h4>
-          {g.ids.length === 0 ? <p className="muted">无</p> : (
-            <ul className="rows">
-              {g.ids.map((id) => {
-                const r = rows.get(id);
-                const h = hints.get(id);
-                return r ? <NodeRowView key={id} row={r} selected={selected === id} onSelect={onSelect} /> : h ? <HintRowView key={id} hint={h} onOpen={onOpenHint} /> : null;
-              })}
-            </ul>
-          )}
+          <ul className="rows">
+            {g.ids.map((id) => {
+              const r = rows.get(id);
+              const h = hints.get(id);
+              return r ? <NodeRowView key={id} row={r} selected={selected === id} onSelect={onSelect} /> : h ? <HintRowView key={id} hint={h} onOpen={onOpenHint} /> : null;
+            })}
+          </ul>
         </section>
       ))}
+      {vm.frontier.some((g) => g.ids.length === 0) && (
+        <p className="t2 frontier-none" data-frontier-none>暂时没有：{vm.frontier.filter((g) => g.ids.length === 0).map((g) => g.title).join("、")}。</p>
+      )}
       <section data-frontier="all">
         <h4>全部节点 <span className="muted">{vm.rows.length}，按创建序号倒序</span></h4>
         <ul className="rows">
@@ -62,7 +63,7 @@ export function Frontier({ vm, selected, onSelect, onOpenHint }: { vm: ViewModel
         </ul>
         {vm.hints.some((h) => h.closed) && (
           <>
-            <h4>已关闭的 Hint</h4>
+            <h4>已关闭的指导</h4>
             <ul className="rows">{vm.hints.filter((h) => h.closed).map((h) => <HintRowView key={h.id} hint={h} onOpen={onOpenHint} />)}</ul>
           </>
         )}
