@@ -122,6 +122,13 @@ def intent_status(state: State, pid: str, iid: str) -> str:
     return _st(state, pid, iid)
 
 
+def acceptance_ready(state: State, pid: str) -> int | None:
+    """人工验收的题：有待验收的交付物时，返回让它就绪的那条 Goal 裁决的 seq；否则 None。"""
+    from .work import acceptance_ready as _ready
+
+    return _ready(state, pid)
+
+
 def seen_card(state: State, pid: str, kind: str, target: str) -> Body:
     """人的决策操作要带的 seen {seq, card_hash}：取自调用方展示给人的那份状态快照（§3.1.9）。"""
     from .cards import seen

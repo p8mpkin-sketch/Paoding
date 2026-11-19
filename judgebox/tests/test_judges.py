@@ -31,7 +31,11 @@ def test_registry_holds_only_the_neutral_builtins():
     for spec in REG.values():
         assert spec["version"] == "1" and spec["flake"]["require"] in ("all", "majority")
     # 结构检查只给读数（宪章 02 §3.3）：advisory，不让 Goal 到 E3
-    assert {j: s["grade"] for j, s in REG.items()} == {"exact_match": "decisive", "replay": "decisive", "structure_check": "advisory"}
+    assert {j: s["grade"] for j, s in REG.items()} == {
+        "exact_match": "decisive",
+        "replay": "decisive",
+        "structure_check": "advisory",
+    }
 
 
 def test_kernel_judges_shape_matches_graph_config():
@@ -641,7 +645,10 @@ def test_structure_check_pass_is_advisory_and_waits_for_the_human(jr):
     assert rep["format"] == "json" and rep["problems"] == [] and "candidate_sha256" in rep
 
 
-@pytest.mark.parametrize("data,expect", [(b"", None), (b"{oops", {"format": "json"}), (b"\xff\xfe", {"format": "text"}), (b"ab", {"min_bytes": 3})])
+@pytest.mark.parametrize(
+    "data,expect",
+    [(b"", None), (b"{oops", {"format": "json"}), (b"\xff\xfe", {"format": "text"}), (b"ab", {"min_bytes": 3})],
+)
 def test_structure_check_fails_on_shape(jr, data, expect):
     human_open(jr, expect)
     jr.candidate(data, judge=SC)

@@ -54,7 +54,12 @@ def checks(k, pid="p1", fail=()):
 
 
 def accept(k, pid="p1", decision="accept", fail=(), seen=None, **extra):
-    body = {"decision": decision, "checks": checks(k, pid, fail), "seen": seen or seen_card(k.state, pid, "closeout", pid), **extra}
+    body = {
+        "decision": decision,
+        "checks": checks(k, pid, fail),
+        "seen": seen or seen_card(k.state, pid, "closeout", pid),
+        **extra,
+    }
     return k.submit(HUMAN, pid, "accept", body)
 
 
@@ -98,7 +103,9 @@ def test_accept_all_pass_then_graph_closes_accepted():
     assert accept(k) == "ok"
     p = k.state["problems"]["p1"]
     assert p["accepted"] and wk.terminal(k.state, "p1") == "accepted"
-    assert wk.followups(k.state, "p1") == [("close_problem", {"terminal": "accepted", "card_hash": None, "by": "accept"})]
+    assert wk.followups(k.state, "p1") == [
+        ("close_problem", {"terminal": "accepted", "card_hash": None, "by": "accept"})
+    ]
     assert k.submit(GRAPH, "p1", "close_problem", {"terminal": "accepted", "card_hash": None, "by": "accept"}) == "ok"
     assert k.state["problems"]["p1"]["terminal"] == "accepted"
 
@@ -114,14 +121,21 @@ def test_evidence_rules_per_item():
     assert k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": no_ref, "seen": seen}) == "missing_evidence"
     no_note = [{**x} for x in c]
     no_note[2].pop("note")
-    assert k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": no_note, "seen": seen}) == "missing_evidence"
+    assert (
+        k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": no_note, "seen": seen}) == "missing_evidence"
+    )
     authored = k.art("p1", "authored", b"self report")
     bad_ref = [{**x} for x in c]
     bad_ref[1]["ref"] = authored
     seen = seen_card(k.state, "p1", "closeout", "p1")
-    assert k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": bad_ref, "seen": seen}) == "inadmissible_class"
+    assert (
+        k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": bad_ref, "seen": seen}) == "inadmissible_class"
+    )
     assert k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": c[:2], "seen": seen}) == "schema_error"
-    assert k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": [c[0], c[0], c[2]], "seen": seen}) == "schema_error"
+    assert (
+        k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": [c[0], c[0], c[2]], "seen": seen})
+        == "schema_error"
+    )
 
 
 def test_any_fail_only_rejects_and_waits_for_a_new_deliverable():
@@ -154,7 +168,10 @@ def test_judge_lane_has_no_accept_and_no_accepted():
     k.open("p1")
     seen = seen_card(k.state, "p1", "closeout", "p1")
     assert k.submit(HUMAN, "p1", "accept", {"decision": "accept", "checks": [], "seen": seen}) == "forbidden_op"
-    assert k.submit(GRAPH, "p1", "close_problem", {"terminal": "accepted", "card_hash": None, "by": "accept"}) == "schema_error"
+    assert (
+        k.submit(GRAPH, "p1", "close_problem", {"terminal": "accepted", "card_hash": None, "by": "accept"})
+        == "schema_error"
+    )
 
 
 def test_external_judge_rejects_human_accept():

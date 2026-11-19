@@ -320,7 +320,9 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
     items, spent_all = [], 0
     # 按判定来源分列（external-verdict §5.7、宪章裁决附加 1）：local 与 external 的 solved 各数各的，
     # human 那一行只有 accepted；成功率、每解成本的分子只取本地判定的 solved
-    tally: dict[str, dict[str, int]] = {a: {"problems": 0, "solved": 0, "accepted": 0, "unsolved": 0, "open": 0} for a in ("local", "external", "human")}
+    tally: dict[str, dict[str, int]] = {
+        a: {"problems": 0, "solved": 0, "accepted": 0, "unsolved": 0, "open": 0} for a in ("local", "external", "human")
+    }
     for pid in sorted(state["problems"], key=lambda k: state["problems"][k]["opened_seq"]):
         p = state["problems"][pid]
         b = wk.budget_view(state, pid)

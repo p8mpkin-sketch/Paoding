@@ -755,7 +755,10 @@ define(
                 "wall": obj({"cap_s": INT, "elapsed_s": INT}),
                 "authority": ref("Authority"),
             },
-            doc="题目列表的一行。authority 是判定来源（派生，external-verdict §5.7）。closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。",
+            doc=(
+                "题目列表的一行。authority 是判定来源（派生，external-verdict §5.7）。"
+                "closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。"
+            ),
         ),
     ),
 )
@@ -772,7 +775,11 @@ define(
                         "spent_usd_milli": INT,
                         "cost_per_solve_usd_milli": doc(null(INT), "全部花费 ÷ 本地判定的 solved"),
                         "by_authority": obj(
-                            {"local": ref("AuthorityTally"), "external": ref("AuthorityTally"), "human": ref("AuthorityTally")}
+                            {
+                                "local": ref("AuthorityTally"),
+                                "external": ref("AuthorityTally"),
+                                "human": ref("AuthorityTally"),
+                            }
                         ),
                     }
                 ),

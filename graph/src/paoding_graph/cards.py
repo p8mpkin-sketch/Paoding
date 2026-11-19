@@ -45,7 +45,11 @@ def card_object(state: State, pid: str, kind: str, target: str, ref: tuple[Any, 
                 "closed": bool(p.get("closed")),
                 "terminal": p.get("terminal", "unsolved") if p.get("closed") else None,
                 # accept=human 的题（宪章 D3）：验收清单与待验收的那份交付物进哈希，人勾的是这一份
-                **({"acceptance": p["goal"]["acceptance"], "deliverable": _deliverable(state, pid)} if "acceptance" in p["goal"] else {}),
+                **(
+                    {"acceptance": p["goal"]["acceptance"], "deliverable": _deliverable(state, pid)}
+                    if "acceptance" in p["goal"]
+                    else {}
+                ),
             },
         }
     return None

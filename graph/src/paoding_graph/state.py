@@ -133,8 +133,9 @@ class Goal(TypedDict):
     statement: NotRequired[str]
     check: Check
     max_attempts: int
-    accept: str  # M0 只有 judge
-    authority: NotRequired[str]  # 派生，不接受提交：external 时写入；缺省即 local（external-verdict §4.2）
+    accept: str  # judge | human
+    authority: NotRequired[str]  # 派生，不接受提交：external、human 时写入；缺省即 local（external-verdict §4.2）
+    acceptance: NotRequired[list[Body]]  # accept=human 的验收清单（设计 02 §3.3）：开题时登记，之后不可改
 
 
 class DraftRef(TypedDict):
@@ -190,7 +191,9 @@ class Problem(TypedDict):
     terminal: NotRequired[str]  # solved | accepted | unsolved，关题时写入
     closed_seq: NotRequired[int]
     accepted: NotRequired[bool]  # 人的验收（accept 操作，宪章 D3）：只在 goal.accept = human 的题上写入
-    accept_log: NotRequired[list[Body]]  # 每次 accept 操作（验收或拒收）：{seq, decision, checks, reason?}；拒收之后要等新的 Goal 通过
+    accept_log: NotRequired[
+        list[Body]
+    ]  # 每次 accept 操作（验收或拒收）：{seq, decision, checks, reason?}；拒收之后要等新的 Goal 通过
     marks: NotRequired[list[int]]
     mark_seqs: NotRequired[list[int]]
     derived_profile: NotRequired[Profile]

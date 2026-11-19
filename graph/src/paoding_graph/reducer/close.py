@@ -113,7 +113,12 @@ def _a_accept(s: State, ev: Event) -> None:
     pid = ev["problem_id"]
     p = s["problems"][pid]
     b = ev["body"]
-    entry = {"seq": ev["seq"], "decision": b["decision"], "checks": b["checks"], **({"reason": b["reason"]} if "reason" in b else {})}
+    entry = {
+        "seq": ev["seq"],
+        "decision": b["decision"],
+        "checks": b["checks"],
+        **({"reason": b["reason"]} if "reason" in b else {}),
+    }
     nxt: Problem = {**p, "accept_log": [*p.get("accept_log", []), entry]}
     if ev["body"]["decision"] == "accept":
         nxt["accepted"] = True

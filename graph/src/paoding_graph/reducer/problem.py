@@ -72,7 +72,14 @@ def _acceptance(g: Obj, accept: str) -> list[Body] | Reject:
             return Reject("schema_error", f"验收条目的来源只许 {ACCEPTANCE_SRC}：模型起草的条目不进清单")
         if "needs" in it and it.get("needs") not in ACCEPTANCE_NEEDS:
             return Reject("schema_error", f"验收条目的 needs 取 {ACCEPTANCE_NEEDS}")
-        out.append({"id": f"a{i}", "text": text, "src": it.string("src"), **({"needs": it.string("needs")} if "needs" in it else {})})
+        out.append(
+            {
+                "id": f"a{i}",
+                "text": text,
+                "src": it.string("src"),
+                **({"needs": it.string("needs")} if "needs" in it else {}),
+            }
+        )
     return out
 
 

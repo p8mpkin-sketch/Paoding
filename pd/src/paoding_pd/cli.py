@@ -5,6 +5,8 @@
     pd profile <pid> [--override <轴>=<值> --reason "<文本>"]
     pd hint add [--node <id>] "<文本>"      pd hint close <hid>
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
+    pd accept [--ref 项=产物] [--note 项=文本] [--yes]       人工验收：清单逐条判过（设计 02 §3.3）
+    pd reject --fail 项[,项…] --reason "<文本>" [--ref …] [--note …] [--yes]   拒收：列出不过的项，其余算过
     pd scope list    pd scope grant <申请> [--risk r1,…] [--yes]    pd scope deny <申请> --reason "<文本>"
     pd scope revoke <规则下标> --reason "<文本>"     运行时扩权（docs/design/runtime-grants/）
     pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
@@ -41,8 +43,9 @@ HUMAN_TOKEN = "pd-local-human"
 
 
 def default_judges() -> dict:
-    """M0 内建判官（异议 001 裁决：只有这三个不含领域词的）。配置判官随 judgebox 落地后从 judges.d 读。"""
+    """内建判官（异议 001 裁决：只有不含领域词的）。配置判官随 judgebox 落地后从 judges.d 读。"""
     return {
+        "structure_check": {"version": "1", "grade": "advisory", "kind": "builtin", "max_cost": 0.0},
         "replay": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.01},
         "exact_match": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
         "seal_check": {"version": "1", "grade": "decisive", "kind": "builtin", "max_cost": 0.0},
@@ -260,6 +263,75 @@ def cmd_scope(local: Local, a, w, read=input) -> int:
     return 0
 
 
+def _pairs(items: list[str] | None, w) -> dict[str, str] | None:
+    out: dict[str, str] = {}
+    for x in items or []:
+        k, sep, v = x.partition("=")
+        if not sep or not k.strip():
+            w(f"[人] 格式是 项=值：{x}\n")
+            return None
+        out[k.strip()] = v
+    return out
+
+
+def cmd_accept(local: Local, a, w, decision: str, read=input) -> int:
+    """人工验收（accept=human 的题）：打印清单与待验收的交付物，逐条组装 checks，seen 绑定这份快照。"""
+    pid = _pid(a)
+    st = local.graph.state
+    if not _known(local, pid, w):
+        return 1
+    items = st["problems"][pid]["goal"].get("acceptance")
+    if not items:
+        w("[证据] 这个任务不由人验收：判定由判官给出\n")
+        return 1
+    refs, notes = _pairs(a.ref, w), _pairs(a.note, w)
+    if refs is None or notes is None:
+        return 2
+    failed = {x.strip() for x in (a.fail or "").split(",") if x.strip()}
+    ids = {i["id"] for i in items}
+    unknown = sorted((failed | set(refs) | set(notes)) - ids)
+    if unknown:
+        w(f"[人] 清单里没有 {'、'.join(unknown)}（清单：{'、'.join(sorted(ids))}）\n")
+        return 2
+    if decision == "reject" and not failed:
+        w("[人] 拒收要用 --fail 列出不过的项\n")
+        return 2
+    w(render.status(st, pid, local.graph.budget(pid)) if a.full else "")
+    o = render.Out()
+    render.acceptance(o, st, pid)
+    w(o.text())
+    checks = [
+        {
+            "id": i["id"],
+            "verdict": "fail" if i["id"] in failed else "pass",
+            **({"ref": refs[i["id"]]} if i["id"] in refs else {}),
+            **({"note": notes[i["id"]]} if i["id"] in notes else {}),
+        }
+        for i in items
+    ]
+    body: dict = {"decision": decision, "checks": checks, "seen": seen_card(st, pid, "closeout", pid)}
+    if a.reason:
+        body["reason"] = a.reason
+        w(f"[人] 理由：{a.reason}\n")
+    if not a.yes:
+        ans = read("确认？输入 yes 继续：")
+        if ans.strip() != "yes":
+            w("[证据] 未确认，未提交\n")
+            return 1
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
+    out = local.submit(pid, f"pd-{decision}:{pid}:{st['seq']}:{digest}", [{"op": "accept", "body": body}])
+    if not out["ok"]:
+        w(f"[证据] 被拒：{_fail(out)}\n")
+        if any(r.get("code") == "stale_view" for r in out["results"]):
+            w("[证据] 收尾卡在你查看之后已变化，未提交，请重看后再判\n")
+        return 1
+    if decision == "accept":
+        w(f"[证据] 已验收通过；终态 {render.terminal_phrase(local.graph.state, pid)}\n")
+    else:
+        w(f"[证据] 已拒收 {pid}：任务回到人介入，等新的交付物\n")
+    return 0
+
+
 # ---------- 设置与密钥：经 HTTP 找运行中的全栈 ----------
 
 
@@ -392,6 +464,17 @@ def parser() -> argparse.ArgumentParser:
         d.add_argument("intent")
         d.add_argument("--yes", action="store_true")
         d.add_argument("--reason", required=(name == "deny"))
+    for name in ("accept", "reject"):
+        x = sp.add_parser(name)
+        x.add_argument("--ref", action="append", help="项=产物编号（exec 或 input 类），可重复")
+        x.add_argument("--note", action="append", help="项=说明，可重复")
+        x.add_argument("--reason", required=(name == "reject"))
+        x.add_argument("--full", action="store_true", help="先打印整份状态")
+        x.add_argument("--yes", action="store_true")
+        if name == "reject":
+            x.add_argument("--fail", required=True, help="不过的项，逗号分隔")
+        else:
+            x.set_defaults(fail=None)
     sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
     sc.add_parser("list")
     for name in ("grant", "deny", "revoke"):
@@ -437,6 +520,8 @@ def main(
         return cmd_decide(local, a, w, a.cmd, read)
     if a.cmd == "scope":
         return cmd_scope(local, a, w, read)
+    if a.cmd in ("accept", "reject"):
+        return cmd_accept(local, a, w, a.cmd, read)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)
 
 

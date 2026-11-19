@@ -98,7 +98,10 @@ def world():
             "check": {"judge_id": "advice"},
             "max_attempts": 3,
             "accept": "human",
-            "acceptance": [{"text": "说明覆盖三个场景", "src": "span"}, {"text": "附运行结果", "src": "human", "needs": "artifact"}],
+            "acceptance": [
+                {"text": "说明覆盖三个场景", "src": "span"},
+                {"text": "附运行结果", "src": "human", "needs": "artifact"},
+            ],
         },
         "judges": ["advice"],
     }
@@ -215,7 +218,10 @@ def world():
             "accept",
             {
                 "decision": "accept",
-                "checks": [{"id": "a1", "verdict": "pass", "note": "看过"}, {"id": "a2", "verdict": "pass", "ref": run4}],
+                "checks": [
+                    {"id": "a1", "verdict": "pass", "note": "看过"},
+                    {"id": "a2", "verdict": "pass", "ref": run4},
+                ],
                 "seen": seen_card(k.state, "p4", "closeout", "p4"),
             },
         ),

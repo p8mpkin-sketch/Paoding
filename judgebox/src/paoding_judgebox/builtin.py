@@ -271,11 +271,20 @@ def structure_check(c: Ctx) -> Outcome:
     cmd = f"structure_check {c.candidate_ref or '-'}"
     expect = c.check.get("expect") or {}
     fmt, min_bytes = expect.get("format", "any"), expect.get("min_bytes", 1)
-    if fmt not in STRUCTURE_FORMATS or type(min_bytes) is not int or min_bytes < 1 or set(expect) - {"format", "min_bytes"}:
+    if (
+        fmt not in STRUCTURE_FORMATS
+        or type(min_bytes) is not int
+        or min_bytes < 1
+        or set(expect) - {"format", "min_bytes"}
+    ):
         return Outcome(
             "inconclusive",
             "unsupported",
-            _report(judge="structure_check", reason="unsupported", detail=f"expect 只认 format∈{STRUCTURE_FORMATS} 与正整数 min_bytes"),
+            _report(
+                judge="structure_check",
+                reason="unsupported",
+                detail=f"expect 只认 format∈{STRUCTURE_FORMATS} 与正整数 min_bytes",
+            ),
             _prov("structure_check", cmd, None, c.now_ms),
         )
     if c.candidate is None:
