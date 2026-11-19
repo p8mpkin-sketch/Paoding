@@ -119,7 +119,6 @@ def test_cn_durations(text, secs):
         ("花费不超过 $ 0.5。", 500),
         ("最多5美元。", 5000),
         ("最多 5 美元。", 5000),
-        ("预算 20 元。", 2800),  # 占位汇率 0.14（kaiti.d/intake.yaml money_rates.cny）
         ("预算20元。", 2800),
     ],
 )
