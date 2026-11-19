@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "e2e"))
 
 import oplog  # noqa: E402
 from drive import open_problem  # noqa: E402
-from settings_hub import KEY_NOTE, BadBody, defaults, digest_of  # noqa: E402
+from settings_hub import KEY_NOTE, BadBody, defaults, digest_of, grants_of  # noqa: E402
 from settings_hub import validate as validate_settings  # noqa: E402
 from stack import Stack, StackConfig  # noqa: E402
 
@@ -302,11 +302,13 @@ def test_no_key_sinan_waits_then_restart_empties_keyring(tmp_path, monkeypatch, 
 
 
 def test_grants_section_is_optional_and_checked():
-    """运行时扩权的 grants 节（runtime-grants §10.3）：新装缺省关；旧快照没有这一节照旧有效、摘要不变；形状不对即拒。"""
+    """运行时扩权的 grants 节（runtime-grants §10.3、§12 第四步）：新装缺省开；旧快照没有这一节照旧有效、摘要不变，
+    并且仍按关（切换要写一版设置，不靠缺省悄悄变）；形状不对即拒。"""
     d = defaults()
-    assert d["grants"] == {"runtime": False, "auto": {"practice": True}}
+    assert d["grants"] == {"runtime": True, "auto": {"practice": True}}
     old = {k: v for k, v in d.items() if k != "grants"}
     assert validate_settings(old) == old and digest_of(validate_settings(old)) == digest_of(old)
+    assert grants_of(old) == {"runtime": False, "auto": {"practice": True}}
     for bad in ({"runtime": "yes", "auto": {"practice": True}}, {"runtime": True}, {"runtime": True, "auto": {}}):
         with pytest.raises(BadBody):
             validate_settings({**d, "grants": bad})

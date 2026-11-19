@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -23,6 +24,9 @@ OUT = Path(__file__).resolve().parents[1] / "mock" / "kaiti.json"
 SETTINGS = Settings.from_doc(
     {"settings": {"risk": [{"resource": "net", "pattern": "q*:*", "actions": ["connect"], "risk": "r0"}]}}
 )
+# 运行时扩权开着（新装缺省，runtime-grants §3.1）：开题零出站，原文地址只作展示
+SETTINGS_ON = dataclasses.replace(SETTINGS, grants_runtime=True)
+ZERO = "目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。半小时内搞定。答案：PD-3R8W1ZNA"
 CASES = {
     "practice": (
         "练习题：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。半小时内搞定。答案：PD-7Q2M9XKD"
@@ -65,6 +69,9 @@ def main() -> None:
         out["extract"][name] = {"text": text, "out": svc.extract_view({"text": text})}  # type: ignore[index]
         d = svc.draft_view({"text": text, "nonce": f"fixture-{name}"})
         out["drafts"][name] = {"text": text, "out": d}  # type: ignore[index]
+    on = KaitiService(Intake.load(), lambda: SETTINGS_ON, placeholder_priors(), heuristic_drafter, "heuristic", CATALOG)
+    out["extract"]["zero"] = {"text": ZERO, "out": on.extract_view({"text": ZERO})}  # type: ignore[index]
+    out["drafts"]["zero"] = {"text": ZERO, "out": on.draft_view({"text": ZERO, "nonce": "fixture-zero"})}  # type: ignore[index]
     first = out["drafts"]["command"]["out"]  # type: ignore[index]
     base = {"text": CASES["command"], "draft": first["draft"], "nonce": first["nonce"], "model": first["model"]}
     for ov in ({"risk": {"0": "r1"}}, {"risk": {"0": "r1"}, "usd_milli": 3000}):

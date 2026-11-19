@@ -91,6 +91,21 @@ describe("设置页", () => {
     await waitFor(() => expect(container.querySelectorAll("[data-settings-log] tbody tr")).toHaveLength(2));
   });
 
+  it("运行时扩权：新装缺省开；关掉写一版新设置，自动批准随之灰显", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <SettingsPage />);
+    const on = await waitFor(() => { const el = container.querySelector<HTMLInputElement>('[data-field="grants.runtime"]'); expect(el).not.toBeNull(); return el!; });
+    const auto = () => container.querySelector<HTMLInputElement>('[data-field="grants.auto.practice"]')!;
+    expect(on.checked).toBe(true);
+    expect(auto().disabled).toBe(false);
+    fireEvent.click(on);
+    await waitFor(() => expect(auto().disabled).toBe(true));
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-action="save-settings"]')!);
+    await waitFor(() => expect(container.querySelector(".settings")!.getAttribute("data-settings-version")).toBe("2"));
+    const put = r.fetch.calls.find((c) => c.method === "PUT" && c.url === "/v1/settings")!;
+    expect(JSON.parse(put.body!).settings.grants).toEqual({ runtime: false, auto: { practice: true } });
+  });
+
   it("别处先改了：409 提示重读，不覆盖别人的改动", async () => {
     const r = rig();
     const { container } = renderWith(r, <SettingsPage />);

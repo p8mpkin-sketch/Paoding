@@ -189,6 +189,25 @@ def test_practice_lane_when_switch_on():
     assert v.lane == "practice" and not v.notes
 
 
+def test_runtime_grants_open_with_zero_egress():
+    """扩权第四步（runtime-grants §3.1）：开着时授权只有工作区一条，原文地址只作展示；道别判断不再看授权。"""
+    import dataclasses
+
+    on = dataclasses.replace(SETTINGS, grants_runtime=True)
+    e = extract(T1, INTAKE.labels)
+    v = vet(e, None, parse_draft(d1(e), e, "cheap"), INTAKE, on, PRIORS, zero_confirm=True)
+    assert v.input["scope"] == [{"resource": "workspace", "pattern": "", "actions": ["read", "write"], "risk": "r0"}]
+    assert [m["value"] for m in v.mentions] == ["q1:8080"] and v.public()["mentions"] == v.mentions
+    assert v.lane == "practice" and not v.notes
+    rows = [d for d in v.public()["derivation"] if d["field"] == "scope.mention"]
+    assert rows and rows[0]["note"] == "执行时如需访问，会按需申请"
+    # 原文地址没有风险表命中（r2）也不再挡道：旧路这里会是 risk_unmatched
+    e2 = extract(T1.replace("q1:8080", "z9.prod.example:443"), INTAKE.labels)
+    v2 = vet(e2, None, parse_draft(d1(e2), e2, "cheap"), INTAKE, on, PRIORS, zero_confirm=True)
+    assert v2.lane == "practice" and "risk_unmatched" not in {n.code for n in v2.notes}
+    assert Settings.from_doc({}).grants_runtime is False  # 没有 grants 节的旧快照：关
+
+
 def test_command_criterion_t2():
     def dd(e):
         return {

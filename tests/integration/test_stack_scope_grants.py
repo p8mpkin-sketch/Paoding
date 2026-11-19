@@ -89,7 +89,7 @@ def test_revoked_rule_leaves_the_sandbox(g):
 
 
 def test_settings_grants_reach_the_kernel(tmp_path):
-    """设置层 grants 节与风险表随设置变更整体替换内核 Config；缺省 runtime = off。"""
+    """设置层 grants 节与风险表随设置变更整体替换内核 Config；新装缺省 runtime = on（§12 第四步）。"""
     import sys
     from pathlib import Path
 
@@ -98,7 +98,7 @@ def test_settings_grants_reach_the_kernel(tmp_path):
 
     s = Stack(StackConfig.load(tmp_path / "home", port=0, executor="none"))
     try:
-        assert s.graph.cfg.grants_runtime is False and s.graph.cfg.grants_auto_practice is True
+        assert s.graph.cfg.grants_runtime is True and s.graph.cfg.grants_auto_practice is True
         store = s.settings.store
         table = [{"resource": "net", "pattern": "q*.lab:*", "actions": ["connect"], "risk": "r0"}]
         store.settings = {**store.settings, "risk": table, "grants": {"runtime": True, "auto": {"practice": False}}}
