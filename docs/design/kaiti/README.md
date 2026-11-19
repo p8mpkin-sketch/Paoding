@@ -217,15 +217,17 @@ tokens := 不设                                        // token 由端点代理
 ```python
 class PriorSource(Protocol):
     """档位 → 默认预算。实现方不限（文件、测试方的服务、M2 花费画像的投影），vet 只认这个接口。"""
+
     def lookup(self, tier: str, signature: str | None) -> Prior | None: ...
-    def version(self) -> str: ...            # 抄进出处账，审计时知道默认值出自哪一版表
+    def version(self) -> str: ...  # 抄进出处账，审计时知道默认值出自哪一版表
+
 
 @dataclass(frozen=True)
 class Prior:
     usd_milli: int
     wall_s: int
-    bootstrap_share: float | None = None     # None 即用模板缺省
-    note: str = ""                           # 显示在确认卡上，如"占位表"
+    bootstrap_share: float | None = None  # None 即用模板缺省
+    note: str = ""  # 显示在确认卡上，如"占位表"
 ```
 
 注入的表是一份数据文件（`kaiti.d/priors.yaml`，路径由部署配置给出，不入库时由测试方放置），格式固定：
