@@ -84,7 +84,6 @@ export function SettingsPage() {
   return (
     <div className="settings" data-settings-version={doc.version}>
       <Mast
-        vol={["卷五", "设置"]}
         cap="系统 · 存在服务端，改动只追加进变更记录"
         title="设置只许下一层收窄上一层"
         dek="任务里能改的只有预算、风险（只许往上调）、模型档案（只能选这里登记过的）；端点、密钥、硬顶、风险表都只在这里改。"

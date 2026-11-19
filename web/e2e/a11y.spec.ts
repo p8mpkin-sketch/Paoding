@@ -1,5 +1,5 @@
 // 可访问性（95 分计划阶段二第 10 项）：每个页面在亮、暗、高对比三套主题下跑 axe（WCAG 2.1 AA）。
-// 只查外壳与页面上真实可交互、可读的部分；装饰（界栏、刻度、印、朱圈）都对读屏器隐藏。
+// 只查外壳与页面上真实可交互、可读的部分；标志图形对读屏器隐藏。
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 

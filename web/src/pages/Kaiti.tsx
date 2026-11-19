@@ -320,7 +320,7 @@ export function Kaiti() {
 
   return (
     <div className="kaiti" data-kaiti data-lane={v?.lane ?? "input"}>
-      <Mast vol={["卷三", "新建"]} cap="新建任务" title="一句话说清要做的事"
+      <Mast cap="新建任务" title="一句话说清要做的事"
         dek="写要做什么就行。没有标准答案的，回车即开始，智能体自己找答案、交付时附证据（开放道，结果未经判定）；给了标准答案的，起草一张任务单，每个字段标着出处，你看过再创建。"
         actions={
           <div className="kt-links t2">

@@ -133,7 +133,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
       <div className="columns">
         <aside className="left" aria-label="待你、会话与指导">
           <section className="ws-sec">
-            <h2 className="ws-h"><span className="no" aria-hidden="true">01</span>待你<span className={`ct${vm.todo.length ? " hot" : ""}`}>{vm.todo.length}</span></h2>
+            <h2 className="ws-h">待你<span className={`ct${vm.todo.length ? " hot" : ""}`}>{vm.todo.length}</span></h2>
             <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); if (k) setPanel("main"); }} />
             {!writable && <p className="t2" data-readonly-note>{asOf !== null ? "回放中：写操作全部禁用，人的决定只能针对链头。" : vm.closed ? "任务已关闭。" : cfg.token === null ? "还没有配置人的令牌（左下角）：现在只读。" : "未连到链头：写操作暂时禁用。"}</p>}
           </section>
@@ -143,11 +143,11 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
             </button>
           )}
           <section className="ws-sec">
-            <h2 className="ws-h"><span className="no" aria-hidden="true">02</span>会话<span className="ct">{liveLeases} 个在途</span></h2>
+            <h2 className="ws-h">会话<span className="ct">{liveLeases} 个在途</span></h2>
             <Sessions leases={vm.leases} onSelect={select} />
           </section>
           <section className="ws-sec">
-            <h2 className="ws-h"><span className="no" aria-hidden="true">03</span>你的指导<span className="ct">{openHints.length} 条生效</span></h2>
+            <h2 className="ws-h">你的指导<span className="ct">{openHints.length} 条生效</span></h2>
             {openHints.length === 0 ? <p className="t2">还没有给过指导。点顶栏“给出指导”或按 H。</p> : (
               <ul className="rows ws-hints">{openHints.map((h) => <HintRowView key={h.id} hint={h} onOpen={(id) => { setSheet({ kind: "hint", id }); setPanel("main"); }} />)}</ul>
             )}

@@ -1,48 +1,46 @@
-// 应用外壳：左侧栏（导航、⌘K、正在运行）、顶栏（面包屑与本页唯一的主操作，下沿刻度尺）、
-// 内容区（十二栏界栏）、底部状态行。工作区（/p/…）把侧栏收成图标栏，把宽度让给图。
+// 应用外壳（v5）：左侧栏（标志、新任务、⌘K、导航、进行中、主题与连接状态）、顶栏（位置与本页主操作）、内容区。
+// 工作区（/p/…）把侧栏收成图标栏，把宽度让给图。
 import { useEffect, useState, type ReactNode } from "react";
-import { FileUp, Plus, Search } from "lucide-react";
+import { FileUp, Gauge, Inbox, LayoutList, Plus, Search, Settings, Sun } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ProblemsView } from "../api/types";
-import { useNow } from "../app/clock";
 import { navigate, type Route } from "../app/router";
 import { applyTheme, loadTheme, THEMES, type Theme } from "../app/theme";
 import { runningOf } from "../model/dashboard";
-import { Kbd, Seal, btnClass } from "../kit";
+import { Kbd, Logo, btnClass } from "../kit";
 import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
 
 export type NavKey = "home" | "inbox" | "tasks" | "readings" | "settings";
-type NavItem = { key: NavKey; no: string; word: string; to: Route };
+type NavItem = { key: NavKey; word: string; icon: LucideIcon; to: Route };
 export const NAV: NavItem[] = [
-  { key: "home", no: "01", word: "今日", to: { page: "home" } },
-  { key: "inbox", no: "02", word: "待办", to: { page: "inbox" } },
-  { key: "tasks", no: "03", word: "任务", to: { page: "problems" } },
-  { key: "readings", no: "04", word: "读数", to: { page: "readings" } },
-  { key: "settings", no: "05", word: "设置", to: { page: "settings" } },
+  { key: "home", word: "今日", icon: Sun, to: { page: "home" } },
+  { key: "tasks", word: "任务", icon: LayoutList, to: { page: "problems" } },
+  { key: "inbox", word: "待你处理", icon: Inbox, to: { page: "inbox" } },
+  { key: "readings", word: "读数", icon: Gauge, to: { page: "readings" } },
 ];
+const SETTINGS: NavItem = { key: "settings", word: "设置", icon: Settings, to: { page: "settings" } };
 
-/** 路由归哪个导航项、属于第几卷（竖排卷签与状态行用）。 */
-export function navOf(r: Route): { key: NavKey | null; vol: string; crumbs: string[] } {
+/** 路由归哪个导航项，顶栏写什么位置。 */
+export function navOf(r: Route): { key: NavKey | null; crumbs: string[] } {
   switch (r.page) {
-    case "home": return { key: "home", vol: "卷一", crumbs: ["今日"] };
-    case "inbox": return { key: "inbox", vol: "卷二", crumbs: ["待办"] };
-    case "problems": return { key: "tasks", vol: "卷三", crumbs: ["任务"] };
-    case "new": return { key: "tasks", vol: "卷三", crumbs: ["任务", r.from ? "克隆" : r.advanced ? "高级模式" : "新建"] };
-    case "import": return { key: "tasks", vol: "卷三", crumbs: ["任务", "导入任务集"] };
-    case "platform": return { key: "tasks", vol: "卷三", crumbs: ["任务", "从平台导入"] };
-    case "readings": return { key: "readings", vol: "卷四", crumbs: ["读数"] };
-    case "settings": return { key: "settings", vol: "卷五", crumbs: ["设置"] };
-    case "problem": return { key: null, vol: "工作区", crumbs: ["任务", r.pid] };
+    case "home": return { key: "home", crumbs: ["今日"] };
+    case "inbox": return { key: "inbox", crumbs: ["待你处理"] };
+    case "problems": return { key: "tasks", crumbs: ["任务"] };
+    case "new": return { key: "tasks", crumbs: ["任务", r.from ? "克隆" : r.advanced ? "高级模式" : "新建"] };
+    case "import": return { key: "tasks", crumbs: ["任务", "导入任务集"] };
+    case "platform": return { key: "tasks", crumbs: ["任务", "从平台导入"] };
+    case "readings": return { key: "readings", crumbs: ["读数"] };
+    case "settings": return { key: "settings", crumbs: ["设置"] };
+    case "problem": return { key: null, crumbs: ["任务", r.pid] };
   }
 }
 
 /** 顶栏放“导入任务集 / 新建任务”的页面；快捷键 C 也只在这些页面生效。 */
 export const hasNewButton = (r: Route) => r.page === "home" || r.page === "problems";
 
-const hm = (ms: number) => new Date(ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-
-/** 主题（本机偏好）：随、宣、墨、素。 */
+/** 主题（本机偏好）：跟随系统、亮、暗、高对比。 */
 function ThemeSwitch() {
   const [t, setT] = useState<Theme>(loadTheme);
   useEffect(() => applyTheme(t), [t]);
@@ -53,7 +51,7 @@ function ThemeSwitch() {
   }, []);
   return (
     <label className="shell-theme">
-      <span className="k-cap">主题</span>
+      <span className="sr-only">主题</span>
       <select value={t} data-field="theme" onChange={(e) => setT(e.target.value as Theme)}>
         {THEMES.map((x) => <option key={x.id} value={x.id}>{x.word}</option>)}
       </select>
@@ -92,31 +90,40 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
     return () => window.removeEventListener("keydown", on);
   }, [route]);
 
+  const status = problemsError && !problems ? <span className="bad">连不上图服务</span>
+    : problemsError ? <span className="bad">刷新失败，显示的是上一次读到的</span>
+    : <span className="ok">{problems ? "已连接" : "连接中"}<span className="sub">{canWrite ? " · 可写" : " · 只读（未配置令牌）"}</span></span>;
+  const item = (n: NavItem) => {
+    const Icon = n.icon;
+    return (
+      <Link key={n.key} to={n.to} className={`shell-nav-item${nav.key === n.key ? " on" : ""}`} data-nav={n.key}>
+        <Icon aria-hidden="true" className="ic" />
+        <span className={narrow ? "sr-only" : "word"}>{n.word}</span>
+        {!narrow && n.key === "tasks" && problems && <span className="ct num">{problems.items.length}</span>}
+        {n.key === "inbox" && waiting > 0 && <span className="ct hot num">{waiting}<span className="sr-only"> 项等你处理</span></span>}
+      </Link>
+    );
+  };
+
   return (
     <div className={`shell${narrow ? " shell-narrow" : ""}`}>
       <aside className="shell-side" aria-label="主导航">
         <div className="shell-brand">
-          <Seal size={narrow ? 30 : 32} />
-          {!narrow && <><b>庖丁</b><small>v0.4</small></>}
+          <Logo size={20} />
+          {!narrow && <b>庖丁</b>}
         </div>
         {!narrow && (
-          <button type="button" className="shell-find" onClick={() => setPalette(true)} data-action="open-palette">
-            <Search aria-hidden="true" /><span>搜索，或输入命令</span><Kbd>⌘K</Kbd>
-          </button>
+          <>
+            <Link to={{ page: "new" }} className={btnClass("ink", "md", "shell-new")} data-action="side-new"><Plus aria-hidden="true" /><span className="grow">新任务</span><Kbd>C</Kbd></Link>
+            <button type="button" className="shell-find" onClick={() => setPalette(true)} data-action="open-palette">
+              <Search aria-hidden="true" /><span>搜索或跳转</span><Kbd>⌘K</Kbd>
+            </button>
+          </>
         )}
-        <nav className="shell-nav">
-          {NAV.map((n) => (
-            <Link key={n.key} to={n.to} className={`shell-nav-item${nav.key === n.key ? " on" : ""}`} data-nav={n.key}>
-              <span className="no" aria-hidden="true">{narrow ? n.word.slice(0, 1) : n.no}</span>
-              <span className={narrow ? "sr-only" : "word"}>{n.word}</span>
-              {!narrow && n.key === "tasks" && problems && <span className="ct num">{problems.items.length}</span>}
-              {!narrow && n.key === "inbox" && waiting > 0 && <span className="ct hot num">{waiting}<span className="sr-only"> 项等你处理</span></span>}
-            </Link>
-          ))}
-        </nav>
+        <nav className="shell-nav">{NAV.map(item)}</nav>
         {!narrow && running.length > 0 && (
           <>
-            <div className="shell-group k-cap">正在运行</div>
+            <div className="shell-group">进行中</div>
             <ul className="shell-pins">
               {running.slice(0, 6).map((p) => (
                 <li key={p.id}>
@@ -131,8 +138,11 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
           </>
         )}
         <div className="shell-foot">
+          {item(SETTINGS)}
           {!narrow && <ThemeSwitch />}
           {token}
+          {/* 状态行只说一件主事：连得上、能不能写；数字都在页面里，不在这里重复（阅读质量轮第 6 条） */}
+          <div className="shell-status" aria-label="状态" role="status">{status}</div>
         </div>
       </aside>
 
@@ -146,27 +156,14 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
             {hasNewButton(route) && (
               <>
                 <Link to={{ page: "import" }} className={btnClass("line", "md")}><FileUp aria-hidden="true" />导入任务集</Link>
-                <Link to={{ page: "new" }} className={btnClass("ink", "md")}><Plus aria-hidden="true" />新建任务 <Kbd>C</Kbd></Link>
+                <Link to={{ page: "new" }} className={btnClass("ink", "md")}><Plus aria-hidden="true" />新建任务</Link>
               </>
             )}
           </header>
         )}
         <main className={narrow ? "shell-work" : "shell-page"} id="content">{children}</main>
-        {/* 状态行只留一件主事（连得上、能不能写），其余退成灰字；数字都在页面里，不在这里重复（阅读质量轮第 6 条） */}
-        <footer className="shell-status" aria-label="状态">
-          {problemsError && !problems ? <span className="bad">连不上图服务</span>
-            : problemsError ? <span className="bad">刷新失败，显示的是上一次读到的</span>
-            : <span className="ok">{problems ? "已连接" : "连接中"}<span className="sub">{canWrite ? " · 可写" : " · 只读（未配置令牌）"}</span></span>}
-          <span className="grow" />
-          <span className="dim">庖丁 v0.4 · <Clock /></span>
-        </footer>
       </div>
       <CommandPalette open={palette} onOpenChange={setPalette} problems={problems} />
     </div>
   );
-}
-
-function Clock() {
-  const now = useNow(30_000);
-  return <span className="num">{hm(now)}</span>;
 }

@@ -1,4 +1,4 @@
-// 应用外壳（视觉重做第一期）：导航与路由对应、状态行只排版服务端给的量、⌘K 与 C 两个全局快捷键。
+// 应用外壳（v5）：导航与路由对应、状态行只排版服务端给的量、⌘K 与 C 两个全局快捷键。
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../src/App";
@@ -12,8 +12,8 @@ Element.prototype.scrollIntoView ??= function () {};
 afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); });
 
 describe("导航归属", () => {
-  it("每个路由归到一个导航项和一卷；工作区不占导航项", () => {
-    expect(navOf({ page: "home" })).toMatchObject({ key: "home", vol: "卷一" });
+  it("每个路由归到一个导航项；工作区不占导航项", () => {
+    expect(navOf({ page: "home" })).toMatchObject({ key: "home", crumbs: ["今日"] });
     expect(navOf({ page: "new" }).key).toBe("tasks");
     expect(navOf({ page: "new", from: "x" }).crumbs).toEqual(["任务", "克隆"]);
     expect(navOf({ page: "import" }).key).toBe("tasks");
