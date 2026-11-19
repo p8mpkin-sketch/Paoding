@@ -21,7 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .draft import SYSTEM, DraftError, ModelPort, draft_doc, first_json, parse_draft, prompt
-from .extract import Extraction, extract
+from .extract import Extraction
 from .ops import batch, blobs
 from .policy import Intake, PriorSource, Settings
 from .vet import ANSWER_SLOT, Vetted, override, vet
@@ -97,7 +97,7 @@ class KaitiService:
         self.intake, self.settings, self.priors, self.drafter, self.profile = intake, settings, priors, drafter, profile
 
     def _extract(self, text: str) -> Extraction:
-        return extract(text, self.intake.labels, self.intake.url_ports)
+        return self.intake.extract(text)
 
     def extract_view(self, body: Any) -> dict[str, Any]:
         ext = self._extract(_text(body))

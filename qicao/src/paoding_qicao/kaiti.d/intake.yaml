@@ -4,6 +4,10 @@ version: 1
 answer_labels: ["答案", "标准答案", "期望输出", "answer", "expected answer", "expected"]
 # URL 换算成 host:port 时补的缺省端口
 url_ports: {http: 80, https: 443}
+# 金额换算：每单位折多少美元（预算记毫美元）。cny 是占位汇率，待 cz 定；删掉这一行则"N元"不当金额
+money_rates: {usd: 1.0, cny: 0.14}
+# 没写协议和端口的域名（纯展示）：只认这些顶级域，免得把 main.py、notes.md 当域名
+host_tlds: [com, net, org, io, dev, app, ai, cn, co, me, info, xyz, example, test, local, internal, lan, lab]
 # 模板缺省（出处记"表"）
 defaults:
   deliverable: answer.txt

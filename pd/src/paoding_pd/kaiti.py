@@ -30,7 +30,6 @@ from paoding_qicao.contract import (
     TablePriors,
     batch,
     draft,
-    extract,
     parse_draft,
     placeholder_priors,
     render_card,
@@ -66,7 +65,7 @@ def cmd_kaiti(local: Any, a: Any, w: Any, read: Any, model: ModelPort | None = N
     intake = Intake.load()
     settings = Settings.from_doc(_doc(a.settings))
     priors = TablePriors.load(a.priors) if a.priors else placeholder_priors()
-    ext = extract(raw, intake.labels, intake.url_ports)
+    ext = intake.extract(raw)
     has_answer = bool((answer or "").strip()) or bool(ext.answers)
 
     d, err = None, ""
