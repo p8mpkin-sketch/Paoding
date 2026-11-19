@@ -540,7 +540,8 @@ def work(state: State, pid: str) -> View:
 # ---------- 卡片投影（H2）：pd 的文本卡与网页卡是同一个对象，card_hash 相同 ----------
 
 
-def card(state: State, pid: str, kind: str, target: str) -> View:
+def card(state: State, pid: str, kind: str, target: str, cfg: Config | None = None) -> View:
+    """cfg 给出时，扩权卡另带批准前后的画像（与开题、扩权同一个推导函数）。"""
     p = _problem(state, pid)
     if kind not in CARD_KINDS:
         raise NotFound(f"没有卡片种类 {kind}")
@@ -599,21 +600,49 @@ def card(state: State, pid: str, kind: str, target: str) -> View:
         if x is None or x["problem_id"] != pid:
             raise NotFound(f"本题没有扩权申请 {target}")
         obj = cards.card_object(state, pid, kind, target, ctx["ref"])
+        froms = x.get("risk_from") or [None] * len(x["rules"])
+        top = max((r["risk"] for r in x["rules"]), key=lambda k: int(k[1]))
         display = {
             "status": x["status"],
             "why": tag("summary", x["why"]),  # 申请方写的理由：模型语域，不作证据
             "by": x["by"],
             "session": x["session"],
+            "role": x.get("role"),
             "intent": x.get("intent"),
             "auto": x["auto"],
             "blockers": list(x.get("blockers") or []),
-            "reason": tag("human_reason", x["reason"]) if x.get("reason") else None,
+            # 风险从哪来：风险表第几行（从 1 起，给人读），未命中为 null（按缺省 r2）；旧事件没有这一项时也是 null
+            "risk_rows": [None if i is None else i + 1 for i in froms] if "risk_from" in x else None,
+            "profile": _scope_profiles(p, x["rules"], cfg) if cfg is not None and x["status"] == "pending" else None,
+            # 人只可上调风险（runtime-grants §7.1），可选的下限是申请里最高的那一档
+            "risk_choices": [k for k in ("r0", "r1", "r2") if int(k[1]) >= int(top[1])],
+            "approve_enabled": x["status"] == "pending" and not x.get("intent") and not p.get("closed"),
+            "decision": None
+            if x["status"] == "pending"
+            else {
+                "decision": "approve" if x["status"] == "granted" else "deny",
+                "by": x.get("decided_by"),
+                "seq": x.get("decided_seq"),
+                "via": x.get("via"),
+                "policy_version": (x.get("policy") or {}).get("version"),
+                "reason": tag("human_reason", x.get("reason", "")),
+            },
         }
     else:
         raise NotEnabled(f"{kind} 卡随 M1 落地（续期门、争议裁决）")
     if obj is None:
         raise NotFound(f"没有 {kind} 卡 {target}")
     return {"card": obj, "card_hash": cards.card_hash(obj), "display": display}
+
+
+def _scope_profiles(p: Problem, rules: Sequence[Mapping[str, Any]], cfg: Config) -> View:
+    """扩权卡上"批准后画像怎样变"：现有有效范围与加上申请规则后的范围，各推一次。人工覆盖的轴照旧盖在上面。"""
+    judge = p["judge_snapshot"][p["goal"]["check"]["judge_id"]]
+    now = [r for r in p["scope"] if "revoked" not in r]
+    last = {o["axis"]: o["value"] for o in p.get("profile_overrides") or []}
+    before = _derive_profile(now, judge, cfg)
+    after = _derive_profile([*now, *cast(list[Any], rules)], judge, cfg)
+    return {"before": {**before, **last}, "after": {**after, **last}, "overridden": sorted(last)}
 
 
 # ---------- Hint 效果追溯（H4）：时序关联与暴露关联两列，都只是“关联” ----------

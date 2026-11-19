@@ -25,7 +25,7 @@ class Builder {
   constructor(readonly pid: string) {}
   /** 追加一步；name 给出时把新对象的 id（前缀_seq）记下来供后面引用。 */
   ev(actorIn: Actor | ((ids: Record<string, string>) => Actor), kind: string, body: (ids: Record<string, string>, api: Api) => Record<string, unknown>, name?: string, waitFor?: Step["waitFor"]) {
-    const prefix = { register_artifact: "a", add_fact: "f", add_intent: "i", request_judge: "j", hint: "h", lease: "l" }[kind];
+    const prefix = { register_artifact: "a", add_fact: "f", add_intent: "i", request_judge: "j", hint: "h", lease: "l", request_scope: "r" }[kind];
     this.steps.push({
       waitFor,
       run: (api) => {
@@ -175,5 +175,26 @@ export function staticScripts(): Script[] {
   c.ev(GRAPH, "budget_mark", () => ({ mark: 50, axis: "usd_milli" }));
   c.ev(GRAPH, "budget_mark", () => ({ mark: 80, axis: "usd_milli" }));
   c.ev(WATCHDOG, "close_problem", () => ({ terminal: "unsolved", by: "watchdog", card_hash: null }));
-  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }];
+  // demo-4：开题零出站，运行时扩权（runtime-grants §7）。一条练习道白名单自动批准，一条等人批。
+  const d = new Builder("demo-4");
+  d.input("statement", "题目服务分两台机器。\n\n接口在 q7.lab:8443，返回 JSON；数据另有镜像，放在 mirror.example.org 上。\n\n取出 flag 字段并提交。\n");
+  const ws = { resource: "workspace", pattern: "", actions: ["read", "write"], risk: "r0" };
+  const q7 = { resource: "net", pattern: "q7.lab:8443", actions: ["connect"], risk: "r0" };
+  const mirror = { resource: "net", pattern: "mirror.example.org:443", actions: ["connect"], risk: "r2" };
+  const prof = (info: string, rev: string) => ({ info, judge: "hard", reversibility: rev });
+  d.open("示例题：运行时扩权", "提交接口返回的 flag 字段", {
+    scope: [ws], profile: prof("complete", "r0"),
+  });
+  d.lease("P1", "bootstrap");
+  d.ev(adapter("P1", "bootstrap"), "request_scope", () => ({ rules: [q7], risk_from: [0], why: "题面说接口在 q7.lab:8443，需要读它的返回", auto: true }), "r_q7");
+  d.ev(GRAPH, "grant_scope", (i) => ({ request: i.r_q7, via: "auto", decision: "approve", policy: { version: 3, digest: "7e1a".repeat(16) }, rules: [q7], derived: prof("partial", "r0") }));
+  d.ev(adapter("P1", "bootstrap"), "request_scope", () => ({
+    rules: [mirror], risk_from: [null], why: "接口返回里给了一个镜像地址，想从那里取完整数据", auto: false,
+    blockers: ["mirror.example.org:443 不在练习道信封的地址段里", "风险表未命中，按缺省 r2，高于练习道上限 r0"],
+  }), "r_mirror");
+  const q9 = { resource: "net", pattern: "q9.lab:9000", actions: ["connect"], risk: "r0" };
+  d.ev(adapter("P1", "bootstrap"), "request_scope", () => ({
+    rules: [q9], risk_from: [0], why: "接口的错误信息指向 q9.lab:9000 的日志服务", auto: false, blockers: ["任务预算超过练习上限"],
+  }), "r_q9");
+  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }];
 }

@@ -55,6 +55,16 @@
 .todo-word { font-weight: 600; font-size: var(--fs-sm); }
 .todo-word .k-mono { font-weight: 400; font-size: var(--fs-xs); color: var(--ink-2); margin-left: 4px; }
 
+/* 扩权横幅（runtime-grants §7.2）：会话面板上方，点开是同一张扩权卡 */
+.ws-banner { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; height: auto; text-align: left; margin: -10px 0 22px; padding: 9px 12px; border: 0; border-left: 2px solid var(--zhu); border-radius: 0; background: var(--zhu-soft); color: var(--ink); font-weight: 600; font-size: var(--fs-sm); }
+.ws-banner:hover { background: var(--hover); }
+
+/* 扩权卡 */
+.scope-table td { padding: 4px 10px 4px 0; vertical-align: baseline; }
+.scope-table tr[data-rule="new"] td:first-child { color: var(--zhu); font-weight: 600; }
+.scope-risk { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 10px; font-size: var(--fs-sm); }
+.scope-risk select { margin-left: 6px; }
+
 /* 会话流 */
 .sess-list { list-style: none; margin: 0; padding: 0; }
 .sess { padding: 9px 0; border-bottom: 1px solid var(--rule); }

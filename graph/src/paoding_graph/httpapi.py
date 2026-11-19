@@ -159,7 +159,7 @@ class GraphHttp:
             (
                 "GET",
                 R(r"/v1/problems/(?P<pid>[^/]+)/cards/(?P<kind>[^/]+)/(?P<id>[^/]+)"),
-                g(lambda st, m, q: views.card(st, m["pid"], m["kind"], m["id"])),
+                g(lambda st, m, q: views.card(st, m["pid"], m["kind"], m["id"], self.svc.cfg)),
             ),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/events"), self.r_events),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/stream"), self.r_stream),
@@ -484,6 +484,12 @@ class GraphHttp:
                 t["result"] = b["result"]
             if ev["kind"] == "budget_mark" and "mark" in b:
                 t["mark"] = b["mark"]
+            if ev["kind"] == "grant_scope":  # 时间轴分出人批、人拒、自动批准（runtime-grants §7.2）
+                t["decision"] = b.get("decision")
+                if "via" in b:
+                    t["via"] = b["via"]
+                if "version" in (b.get("policy") or {}):
+                    t["policy_version"] = b["policy"]["version"]
             ticks.append(t)
             last = ev
         self._json(

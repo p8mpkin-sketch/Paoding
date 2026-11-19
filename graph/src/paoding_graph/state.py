@@ -82,9 +82,14 @@ class ScopeRequest(TypedDict):
     status: str  # pending | granted | denied
     by: str
     session: str | None
+    role: NotRequired[str]  # 申请方会话的角色（bootstrap | reason | explore）
     seq: int
+    risk_from: NotRequired[list[int | None]]  # 逐条：风险表命中的行号（从 0 起），null 即未命中、按缺省 r2
     intent: NotRequired[str]  # 随 needs_scope 而来的申请
     decided_seq: NotRequired[int]
+    decided_by: NotRequired[str]
+    via: NotRequired[str]  # 图服务批准时：auto（练习道白名单）| approval（随 Intent 的审批）
+    policy: NotRequired[dict[str, Any]]  # via=auto 时的信封戳 {version, digest}
     reason: NotRequired[str]
 
 

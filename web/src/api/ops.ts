@@ -6,6 +6,7 @@ import type { HumanOpKind, Op, Profile, Seen } from "./types";
 export const HUMAN_OPS: ReadonlySet<HumanOpKind> = new Set<HumanOpKind>([
   "open_problem", "register_artifact", "hint", "approve", "profile_override", "abandon_intent", "close_problem",
   "add_intent", "extend", "budget_add", "pause", "resume", "rule", "accept", "judge_revoke", "intent_done",
+  "grant_scope", "revoke_scope",
 ]);
 
 export const ops = {
@@ -22,4 +23,10 @@ export const ops = {
   // —— M1 ——
   extend: (seen: Seen): Op => ({ op: "extend", body: { seen } }),
   budgetAdd: (usd_milli: number): Op => ({ op: "budget_add", body: { usd_milli } }),
+  // —— 运行时扩权（runtime-grants §7）：与 pd scope 同一组字段 ——
+  /** risk 只在人要上调时给，与申请的规则一一对应。 */
+  grantScope: (request: string, seen: Seen, risk?: string[]): Op =>
+    ({ op: "grant_scope", body: { request, decision: "approve", seen, ...(risk ? { risk } : {}) } }),
+  denyScope: (request: string, reason: string, seen: Seen): Op => ({ op: "grant_scope", body: { request, decision: "deny", reason, seen } }),
+  revokeScope: (rule: number, reason: string): Op => ({ op: "revoke_scope", body: { rule, reason } }),
 } as const;

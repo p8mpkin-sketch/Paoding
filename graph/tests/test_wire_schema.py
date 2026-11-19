@@ -128,3 +128,43 @@ def test_generated_types_are_up_to_date():
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     assert (ROOT / "web" / "src" / "api" / "types.ts").read_text(encoding="utf-8") == gen.render()
+
+
+def test_scope_card_and_its_ticks_match_the_schema(api):
+    import dataclasses
+
+    api.svc.cfg = dataclasses.replace(api.svc.cfg, grants_runtime=True, external_resources=frozenset({"net"}))
+    api.open()
+    rule = {"resource": "net", "pattern": "q7.lab:8443", "actions": ["connect"]}
+    rid = api.one("p1", "request_scope", {"rules": [rule], "why": "读接口"})
+    card = api.get(f"/v1/problems/p1/cards/scope/{rid}")
+    ok("CardResponse", card)
+    ok("ScopeCardFields", card["card"]["fields"])
+    ok("ScopeDisplay", card["display"])
+    assert card["display"]["profile"]["after"]["info"] == "partial"  # 端点带上了图服务的配置
+    seen = {"seq": card["as_of"], "card_hash": card["card_hash"]}
+    api.one("p1", "grant_scope", {"request": rid, "decision": "approve", "seen": seen, "risk": ["r2"]})
+    ok("ScopeDisplay", api.get(f"/v1/problems/p1/cards/scope/{rid}")["display"])
+    ticks = api.get("/v1/problems/p1/ticks")
+    ok("TicksResponse", ticks)
+    [t] = [x for x in ticks["ticks"] if x["kind"] == "grant_scope"]
+    assert t["decision"] == "approve" and "via" not in t
+
+
+def test_status_with_granted_and_revoked_rules_matches_the_schema(api):
+    import dataclasses
+
+    api.svc.cfg = dataclasses.replace(api.svc.cfg, grants_runtime=True, external_resources=frozenset({"net"}))
+    api.open()
+    rule = {"resource": "net", "pattern": "q7.lab:8443", "actions": ["connect"]}
+    rid = api.one("p1", "request_scope", {"rules": [rule], "why": "读接口"})
+    card = api.get(f"/v1/problems/p1/cards/scope/{rid}")
+    api.one(
+        "p1",
+        "grant_scope",
+        {"request": rid, "decision": "approve", "seen": {"seq": card["as_of"], "card_hash": card["card_hash"]}},
+    )
+    api.one("p1", "revoke_scope", {"rule": 1, "reason": "用完了"})
+    st = api.get("/v1/problems/p1/status")
+    ok("StatusView", st)
+    assert st["problem"]["scope"][1]["revoked"] > st["problem"]["scope"][1]["granted"]["seq"]

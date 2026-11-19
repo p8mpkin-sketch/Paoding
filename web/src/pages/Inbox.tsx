@@ -12,7 +12,7 @@ import { Link, useProblems } from "./Problems";
 export const INBOX_POLL_MS = 8000;
 
 /** 待办类别的单字印。 */
-const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", stalled: "停" };
+const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", stalled: "停", scope_request: "权" };
 
 type Group = { p: ProblemItem; items: HumanWorkItem[] | null; error: string | null };
 
@@ -39,7 +39,7 @@ export function Inbox() {
   const total = runningOf(view.items).reduce((a, p) => a + p.human_todo, 0);
   return (
     <div className="inbox" data-page="inbox">
-      <Mast vol={["卷二", "待办"]} cap="待办" title={total > 0 ? `${total} 件事等你处理` : "没有事等你处理"} dek="审批、续期、争议裁决、验收与停滞，都集中在这里。点“去处理”进入任务的工作区，卡片在左栏打开。" />
+      <Mast vol={["卷二", "待办"]} cap="待办" title={total > 0 ? `${total} 件事等你处理` : "没有事等你处理"} dek="审批、申请访问、续期、争议裁决、验收与停滞，都集中在这里。点“去处理”进入任务的工作区，卡片在左栏打开。" />
       {error && <p className="error">刷新失败，显示的是上一次读到的：<Plain text={error} /></p>}
       {total === 0 ? (
         <Empty title="都处理完了">任务需要你拍板时（例如要扩大授权范围、预算将尽要续期、判定有争议），会出现在这里，左侧栏的“待办”也会标出数量。</Empty>

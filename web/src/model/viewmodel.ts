@@ -56,6 +56,8 @@ export type ViewModel = {
   derivedProfile: Profile;
   profileOverrides: ProfileOverride[];
   scope: ScopeRule[];
+  /** 题面的 Artifact（扩权卡做原文对照时读它）。 */
+  statementRef: string;
   goal: { predicate: Predicate; badge: Badge; levelWord: string; statement: Tagged; accept: "judge" | "human" };
   rows: NodeRow[];
   hints: HintRow[];
@@ -153,6 +155,7 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     title: status.problem.title, closed: status.problem.closed, terminal: status.problem.terminal,
     profile: status.problem.profile, derivedProfile: status.problem.derived_profile, profileOverrides: status.problem.profile_overrides,
     scope: status.problem.scope,
+    statementRef: status.problem.origin.statement_ref,
     leases: status.leases,
     goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept },
     rows, hints, frontier, todo, budget: budgetVM,

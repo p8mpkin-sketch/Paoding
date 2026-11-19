@@ -25,15 +25,21 @@ from .problem import _derive_profile
 REQUEST_ROLES = ("bootstrap", "reason", "explore")
 
 
-def table_risk(table: tuple[RiskRow, ...], resource: str, pattern: str, actions: list[str]) -> str | None:
-    """顺序匹配风险表（与起草服务 qicao 的 Settings.risk_of 同一语义）；未命中返回 None。"""
-    for r in table:
+def table_hit(table: tuple[RiskRow, ...], resource: str, pattern: str, actions: list[str]) -> int | None:
+    """顺序匹配风险表（与起草服务 qicao 的 Settings.risk_of 同一语义）：命中的行号（从 0 起），未命中 None。"""
+    for i, r in enumerate(table):
         if r.get("resource") != resource or not fnmatchcase(pattern, str(r.get("pattern", ""))):
             continue
         allowed = set(r.get("actions") or ["*"])
         if "*" in allowed or set(actions) <= allowed:
-            return str(r["risk"])
+            return i
     return None
+
+
+def table_risk(table: tuple[RiskRow, ...], resource: str, pattern: str, actions: list[str]) -> str | None:
+    """命中行的风险；未命中返回 None。"""
+    i = table_hit(table, resource, pattern, actions)
+    return None if i is None else str(table[i]["risk"])
 
 
 def risk_of(table: tuple[RiskRow, ...], resource: str, pattern: str, actions: list[str]) -> str:
@@ -131,8 +137,11 @@ def _v_request_scope(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
     if session and sum(1 for x in mine if x["session"] == session) >= cfg.scope_request_quota:
         return Reject("quota_exceeded", f"本会话已申请 {cfg.scope_request_quota} 次")
     blockers = auto_blockers(state, pid, rules, cfg)
+    rows = [table_hit(cfg.risk_table, r["resource"], r["pattern"], r["actions"]) for r in rules]
     out: Body = {
         "rules": rules,
+        # 风险从哪来（扩权卡照写，runtime-grants §7.1）：风险表第几行（从 0 起），未命中为 null，按缺省 r2
+        "risk_from": rows,
         "why": why,
         **({"intent": iid} if iid is not None else {}),
         "auto": not blockers,
@@ -270,7 +279,9 @@ def _a_request_scope(s: State, ev: Event) -> None:
         "status": "pending",
         "by": ev["actor"]["id"],
         "session": ev["actor"].get("session"),
+        **({"role": ev["actor"]["role"]} if ev["actor"].get("role") else {}),
         "seq": ev["seq"],
+        **({"risk_from": b["risk_from"]} if "risk_from" in b else {}),
         **({"intent": b["intent"]} if "intent" in b else {}),
         **({"blockers": b["blockers"]} if "blockers" in b else {}),
     }
@@ -284,7 +295,12 @@ def _a_grant_scope(s: State, ev: Event) -> None:
         **req,
         "status": "granted" if b["decision"] == "approve" else "denied",
         "decided_seq": ev["seq"],
+        "decided_by": ev["actor"]["id"],
     }
+    if b.get("via"):
+        done["via"] = b["via"]
+    if b.get("policy"):
+        done["policy"] = b["policy"]
     if b.get("reason"):
         done["reason"] = b["reason"]
     s["scope_requests"] = {**requests(s), req["id"]: done}

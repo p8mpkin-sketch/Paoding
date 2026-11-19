@@ -231,3 +231,16 @@ test("任务库：克隆一个任务进向导，id 留空、判据与 scope 已�
   await page.locator('[data-step-tab="2"]').click();
   await expect(page.locator('[data-rule="0"] input').nth(1)).not.toHaveValue("");
 });
+
+test("运行时扩权：横幅点开扩权卡，批准后横幅的数字减一，时间轴多一个扩权节点", async ({ page }) => {
+  await openCockpit(page, "demo-4");
+  const banner = page.locator('[data-banner="scope"]');
+  await expect(banner).toContainText("等你批准访问 2 个地址");
+  await banner.click();
+  const card = page.locator('[data-card="scope"]');
+  await expect(card.locator("[data-risk-source]").first()).toBeVisible();
+  const before = await page.locator('.tick[data-tick="S"]').count();
+  await card.locator('[data-action="approve"]').click();
+  await expect(banner).toContainText("等你批准访问 1 个地址");
+  await expect(page.locator('.tick[data-tick="S"]')).toHaveCount(before + 1);
+});

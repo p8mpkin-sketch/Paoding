@@ -77,7 +77,11 @@ class GraphService:
                             "code": r.code,
                             "detail": r.detail,
                             # stale_view：附上链头的最新卡片（§3.1.9），形状与 /cards 端点相同
-                            **({"card": {"as_of": state["seq"], **views.card(state, pid, *r.card)}} if r.card else {}),
+                            **(
+                                {"card": {"as_of": state["seq"], **views.card(state, pid, *r.card, self.cfg)}}
+                                if r.card
+                                else {}
+                            ),
                         }
                     )
                     raise _Abort(
