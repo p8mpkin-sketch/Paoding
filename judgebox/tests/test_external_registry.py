@@ -14,8 +14,13 @@ params: {connector: plat}
 """
 CONN = """id: plat
 version: "2"
+base_url: http://127.0.0.1:9
 credential: {key_slot: plat}
-endpoints: {receipt: {method: GET, path: "/api/submissions/{sid}"}}
+endpoints:
+  submit: {method: POST, path: "/api/tasks/{task}/submissions", body: {answer: $candidate}}
+  receipt: {method: GET, path: "/api/submissions/{sid}"}
+fields: {submission_id: /submission_id, status: /status}
+verdict: {accepted: pass, rejected: fail, pending: pending}
 """
 
 

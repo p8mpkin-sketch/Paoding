@@ -28,6 +28,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import re
 import secrets
 import shlex
 import shutil
@@ -44,9 +45,14 @@ ROOT = Path(__file__).resolve().parents[1]
 from kaiti_hub import KaitiHub, kaiti_config, practice_doc  # noqa: E402
 from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import (  # noqa: E402
+    BUILTINS,
+    CONNECTORS_DIR,
+    DEFAULT_DIR,
     JudgeConfig,
     JudgeRunner,
+    SubmissionStore,
     Vault,
+    connector_plugins,
     kernel_judges,
     load_connectors,
     load_registry,
@@ -120,6 +126,8 @@ class StackConfig:
     )
     memory: dict = field(default_factory=lambda: memory_config(None))  # 通鉴：case_seal、model_epoch（v1.5）
     kaiti: dict = field(default_factory=dict)  # 一句话开题的起草服务（scripts/kaiti_hub.py）
+    judges_dir: Path | None = None  # 判官注册表；缺省 judgebox/judges.d
+    connectors_dir: Path | None = None  # 外部平台的连接器档案；缺省 judgebox/connectors.d（测试另给目录）
 
     @classmethod
     def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
@@ -284,8 +292,18 @@ class Stack:
         }
 
         # 图服务
-        self.registry = load_registry()
-        self.connectors = load_connectors()  # 外部裁决的连接器档案（external-verdict §5.1）；摘要抄进判官快照
+        self.registry = load_registry(cfg.judges_dir or DEFAULT_DIR)
+        # 外部裁决的连接器档案（external-verdict §5.1）：摘要抄进判官快照；凭据各占一个钥匙环槽位，
+        # 启动时从环境变量 PD_CONNECTOR_<槽位> 注入，或之后在设置页输入。值只在钥匙环里，不落盘。
+        self.connectors = load_connectors(cfg.connectors_dir or CONNECTORS_DIR)
+        for c in self.connectors.values():
+            slot = c["doc"]["credential"]["key_slot"]
+            if slot == "default":
+                raise StackError(f"连接器 {c['doc']['id']}：钥匙环槽位 default 归模型密钥，换一个槽位名")
+            env = "PD_CONNECTOR_" + re.sub(r"[^A-Z0-9]", "_", slot.upper())
+            self.keyring.declare(slot, env)
+            if os.environ.get(env, "").strip():
+                self.keyring.set(slot, os.environ[env], source="env")
         self.judges = kernel_judges(self.registry, self.connectors)
         self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges), self.tokens)
         self.blobs = BlobStore(home / "blobs")
@@ -395,7 +413,17 @@ class Stack:
 
         # 判官运行器、哮天犬
         self.judge = JudgeRunner(
-            JudgeConfig(token=self.tok["judge"], registry=self.registry, bases=dict(cfg.bases)),
+            JudgeConfig(
+                token=self.tok["judge"],
+                registry=self.registry,
+                bases=dict(cfg.bases),
+                judges={
+                    **BUILTINS,
+                    **connector_plugins(
+                        self.registry, self.connectors, self.keyring.get, SubmissionStore(home / "connectors")
+                    ),
+                },
+            ),
             self.graph,
             self.graph,
             self.blobs,

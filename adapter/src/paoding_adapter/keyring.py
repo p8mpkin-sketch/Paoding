@@ -51,6 +51,11 @@ class KeyRing:
             self._keys[slot] = _Entry(key, source, int(time.time() * 1000))
         return self.slot_status(slot)
 
+    def declare(self, slot: str, env: str = "") -> None:
+        """登记一个槽位（不设值）：status() 里列出来，设置页可见“还没设”与可用的环境变量名。"""
+        with self._lock:
+            self._env.setdefault(slot, env)
+
     def clear(self, slot: str) -> None:
         with self._lock:
             self._keys.pop(slot, None)

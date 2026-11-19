@@ -4,9 +4,11 @@
 每次领题时现分配（运行时才知道），时限由平台规定（6 小时，超过本地单题硬顶 4 小时），"怎么算做完"由平台
 回执给出（本地没有答案，也没有可跑的检查）。
 
-每条用例断言的都是**设计稿写成时的行为**，作为设计的证据，不是期望的行为。翻转后的版本是验收门：
-一期（内核）翻转的行 1（结构化开题一侧）、4、4b、5 在 test_external_verdict_flip.py；这里留下的断言
-对应的是入口一侧（行 1、1b 的起草与校验，三期）、资源公告（行 2，二期）与 accept=human（行 3，D3），到期再翻。
+每条用例断言的都是**设计稿写成时的行为**，作为设计的证据，不是期望的行为。翻转后的版本是验收门，
+在 test_external_verdict_flip.py：一期（内核）翻转了行 1（结构化开题一侧）、4、4b、5，二期（connector 运行器）
+翻转了行 2（开题时领题，资源公告进材料）并把行 5 换成真运行器。这里留下的断言对应的是入口一侧
+（行 1、1b 的起草与校验，三期）与 accept=human（行 3，D3），到期再翻；行 2 这里留的是"起草时没有地址"这条证据，
+翻转后仍然成立。
 行 4 的"wall_s=21600 被单题硬顶拒"在新设计下仍然成立且正确：平台时限进 deadline，不进花费预算。
 
     uv run pytest -q tests/integration/test_external_verdict_repro.py
@@ -35,149 +37,8 @@ sys.path.insert(0, str(ROOT / "scripts" / "e2e"))
 from drive import call  # noqa: E402
 from stack import Stack, StackConfig  # noqa: E402
 
-# ---------------------------------------------------------------- 最小外部平台模拟
-
-
-class Platform:
-    """四类端点。凭据是一条 Bearer 令牌（真实部署里它归钥匙环管，见设计 §5.6）。
-
-    GET  /api/tasks                       任务清单：id、标题、时限、提交次数上限
-    GET  /api/tasks/{id}                  说明：题面；领题即开始计时，服务地址此刻现分配
-    POST /api/tasks/{id}/submissions      提交：{answer} → 202 {submission_id}
-    GET  /api/submissions/{sid}           回执：先 pending 若干次，再 accepted / rejected（平台说了算）
-    """
-
-    TIME_LIMIT_S = 6 * 3600
-    MAX_SUBMISSIONS = 3
-    PENDING_POLLS = 2
-
-    def __init__(self) -> None:
-        self.token = "plat-" + secrets.token_hex(8)
-        self.flag = "FLAG-" + secrets.token_hex(6)  # 只有平台知道；本地任何一方都拿不到
-        self.ports = itertools.count(31000)
-        self.started: dict[str, str] = {}  # task → 本次领题分到的服务地址
-        self.subs: dict[str, dict[str, Any]] = {}
-        self.log: list[str] = []
-        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
-        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
-        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
-
-    def close(self) -> None:
-        self.srv.shutdown()
-
-    def _handler(self) -> type[BaseHTTPRequestHandler]:
-        plat = self
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a: Any) -> None:
-                pass
-
-            def _send(self, code: int, body: Any) -> None:
-                data = json.dumps(body, ensure_ascii=False).encode()
-                self.send_response(code)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-            def _authed(self) -> bool:
-                if self.headers.get("Authorization") != f"Bearer {plat.token}":
-                    self._send(401, {"error": "unauthorized"})
-                    return False
-                return True
-
-            def do_GET(self) -> None:  # noqa: N802
-                if not self._authed():
-                    return
-                plat.log.append(f"GET {self.path}")
-                parts = self.path.strip("/").split("/")
-                if parts == ["api", "tasks"]:
-                    return self._send(
-                        200,
-                        [
-                            {
-                                "id": "T-17",
-                                "title": "找出服务里的口令",
-                                "time_limit_s": plat.TIME_LIMIT_S,
-                                "max_submissions": plat.MAX_SUBMISSIONS,
-                            }
-                        ],
-                    )
-                if parts[:2] == ["api", "tasks"] and len(parts) == 3:
-                    addr = f"127.0.0.1:{next(plat.ports)}"  # 每次领题现分配：开题时无从预测
-                    plat.started[parts[2]] = addr
-                    return self._send(
-                        200,
-                        {
-                            "id": parts[2],
-                            "statement": "服务里藏着一个口令，找到后提交给平台。平台按回执判定，限时与计分由平台规定。",
-                            "instance": addr,
-                            "time_limit_s": plat.TIME_LIMIT_S,
-                        },
-                    )
-                if parts[:2] == ["api", "submissions"] and len(parts) == 3:
-                    s = plat.subs.get(parts[2])
-                    if s is None:
-                        return self._send(404, {"error": "no such submission"})
-                    s["polls"] += 1
-                    if s["polls"] <= plat.PENDING_POLLS:
-                        return self._send(200, {"id": parts[2], "task": s["task"], "status": "pending"})
-                    ok = s["answer"] == plat.flag
-                    return self._send(
-                        200,
-                        {
-                            "id": parts[2],
-                            "task": s["task"],
-                            "status": "accepted" if ok else "rejected",
-                            "score": 100 * ok,
-                        },
-                    )
-                self._send(404, {"error": "not found"})
-
-            def do_POST(self) -> None:  # noqa: N802
-                if not self._authed():
-                    return
-                plat.log.append(f"POST {self.path}")
-                parts = self.path.strip("/").split("/")
-                if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "submissions":
-                    n = sum(1 for s in plat.subs.values() if s["task"] == parts[2])
-                    if n >= plat.MAX_SUBMISSIONS:
-                        return self._send(429, {"error": "submission limit"})
-                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
-                    sid = "s-" + secrets.token_hex(4)
-                    plat.subs[sid] = {"task": parts[2], "answer": body.get("answer"), "polls": 0}
-                    return self._send(202, {"submission_id": sid})
-                self._send(404, {"error": "not found"})
-
-        return H
-
-    # 测试方的动作：读清单与说明，把任务的自然语言描述拼出来贴进一句话开题
-    def get(self, path: str) -> Any:
-        req = urllib.request.Request(self.base + path, headers={"Authorization": f"Bearer {self.token}"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
-
-    def post(self, path: str, body: Any) -> Any:
-        req = urllib.request.Request(
-            self.base + path,
-            data=json.dumps(body).encode(),
-            method="POST",
-            headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
-
-    def pasted(self, with_example: bool = False) -> str:
-        t = self.get("/api/tasks")[0]
-        hours = t["time_limit_s"] // 3600
-        text = (
-            f"平台任务 {t['id']}：{t['title']}。服务里藏着一个口令，找到后提交给平台，平台回执判定通过就算完成。"
-            f"服务地址领题后由平台返回。限时 {hours} 小时，每题最多提交 {t['max_submissions']} 次。"
-        )
-        if with_example:  # 平台说明里常见的"提交示例"
-            text += f'提交方式：`curl -X POST {self.base}/api/tasks/{t["id"]}/submissions -d \'{{"answer":"..."}}\'`'
-        return text
-
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from platform_mock import Platform  # noqa: E402
 
 # ---------------------------------------------------------------- 夹具
 
