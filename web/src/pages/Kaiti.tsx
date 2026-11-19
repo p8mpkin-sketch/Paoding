@@ -20,7 +20,7 @@ import { Plain } from "../ui/registers";
 import { rejectText } from "../ui/useProposal";
 
 const EXAMPLE = "例：目标在 q1:8080，是个登录页，登录后页面会显示一个答案串，把它交出来。半小时内搞定。";
-const KIND_WORD: Record<string, string> = { code: "代码", url: "网址", addr: "地址", money: "金额", duration: "时长", file: "文件" };
+const KIND_WORD: Record<string, string> = { code: "代码", url: "网址", addr: "地址", host: "域名", money: "金额", duration: "时长", file: "文件" };
 const RISK_WORD: Record<Risk, string> = { r0: "r0 可逆或只读", r1: "r1 有成本", r2: "r2 不可逆" };
 const EXTRACT_DEBOUNCE_MS = 300;
 

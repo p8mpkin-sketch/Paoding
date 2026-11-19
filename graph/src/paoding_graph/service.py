@@ -3,7 +3,8 @@
 - 身份只来自令牌（tokens.py），不来自请求体。
 - 一批提议整批原子：逐条在演进中的状态上 validate，任何一条被拒则整批不落盘，返回各条结果。
 - 批内后一条可以用 "$<下标>" 引用前一条产生的 id。
-- 每批应用后，按 work.followups 追加图服务自己的事件（budget_mark、自动关题），与这批同一事务。
+- 每批应用后，按 work.followups 与 reducer.grants.followups 追加图服务自己的事件（budget_mark、自动关题、
+  随 needs_scope 的扩权申请与按判定的批准），与这批同一事务。
 - 同一 (problem_id, idem_key) 重放返回首次结果；进程被 kill -9 后重启，状态由日志重放得出（3.1.5 的 2）。
 - 时钟只在这里读（clock 可注入），作为参数交给 validate 与事件信封；reducer 不读时钟。
 """
@@ -20,12 +21,13 @@ from typing import Any
 from . import views
 from . import work as wk
 from .eventlog import Append, BatchRejected, EventLog
-from .reducer import Config, Ok, apply, empty_state, result_id, validate
+from .reducer import Config, Ok, apply, empty_state, grants, result_id, validate
 from .replay import replay
 from .state import Actor, Body, Event, State
 from .tokens import TokenRegistry, UnknownToken
 
 GRAPH_ACTOR: Actor = {"kind": "graph", "id": "graph"}
+FOLLOWUP_ROUNDS = 4
 
 
 class GraphService:
@@ -87,19 +89,19 @@ class GraphService:
                 evs.append(ev)
                 ids.append(result_id(ev))
                 results.append({"ok": True, "id": ids[-1], "seq": ev["seq"]})
-            for fkind, fbody in wk.followups(state, pid):
-                r = validate(state, GRAPH_ACTOR, pid, fkind, fbody, self.cfg, evs[-1]["ts"] if evs else self._ts())
-                if isinstance(r, Ok):
-                    ev = append(
-                        pid,
-                        fkind,
-                        r.body,
-                        GRAPH_ACTOR,
-                        evs[-1]["ts"] if evs else self._ts(),
-                        f"{idem_key}#auto-{fkind}-{len(evs)}",
-                    )
-                    state = apply(state, ev)
-                    evs.append(ev)
+            # 图服务自己追加的事件可能接连发生（needs_scope → 申请 → 自动批准），按轮重算，直到没有新事件
+            for _ in range(FOLLOWUP_ROUNDS):
+                applied = 0
+                for fkind, fbody in grants.followups(state, pid) + wk.followups(state, pid):
+                    ts = evs[-1]["ts"] if evs else self._ts()
+                    r = validate(state, GRAPH_ACTOR, pid, fkind, fbody, self.cfg, ts)
+                    if isinstance(r, Ok):
+                        ev = append(pid, fkind, r.body, GRAPH_ACTOR, ts, f"{idem_key}#auto-{fkind}-{len(evs)}")
+                        state = apply(state, ev)
+                        evs.append(ev)
+                        applied += 1
+                if not applied:
+                    break
             staged["state"] = state
             return {"ok": True, "results": results}
 

@@ -53,11 +53,39 @@ class ProblemBudget(TypedDict):
     tokens: NotRequired[int]
 
 
+class Granted(TypedDict):
+    """运行时扩权批下来的规则的出处（设计 runtime-grants §4.2）：哪条事件、谁批的、批的哪条申请。"""
+
+    seq: int
+    by: str  # 人的 id，或 graph（练习道白名单、随 Intent 审批）
+    request: str
+
+
 class ScopeRule(TypedDict):
     resource: str
     pattern: str
     actions: list[str]
     risk: str  # r0 | r1 | r2
+    granted: NotRequired[Granted]  # 开题时写下的规则没有
+    revoked: NotRequired[int]  # 撤销事件的 seq；编译跳过，下标不变（touches 按下标引用）
+
+
+class ScopeRequest(TypedDict):
+    """扩权申请（runtime-grants §4.1）：申请不是授权，批准只来自人或确定性的练习道白名单。"""
+
+    id: str
+    problem_id: str
+    rules: list[ScopeRule]  # risk 由图服务查风险表填，不信自报
+    why: str  # 申请方写的理由；模型语域，不作证据
+    auto: bool  # 写入时的练习道白名单判定
+    blockers: NotRequired[list[str]]  # 不能自动批准的原因（卡上照写）
+    status: str  # pending | granted | denied
+    by: str
+    session: str | None
+    seq: int
+    intent: NotRequired[str]  # 随 needs_scope 而来的申请
+    decided_seq: NotRequired[int]
+    reason: NotRequired[str]
 
 
 class VaultRef(TypedDict):
@@ -320,3 +348,4 @@ class State(TypedDict):
     now: int  # 最后一条事件的 ts
     seq: int
     decision_reasons: NotRequired[dict[str, DecisionReason]]
+    scope_requests: NotRequired[dict[str, ScopeRequest]]  # 第一条扩权申请时才出现，旧日志的状态哈希不变

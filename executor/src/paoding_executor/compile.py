@@ -1,6 +1,6 @@
 """授权编译（§3.6.2）：scope × 风险上限 × 批准 → ExecSpec。确定性纯函数，不做 IO。
 
-能力按风险注入：只取 risk 不高于上限的规则；r2 规则另须该 Intent 已获批准。
+能力按风险注入：只取 risk 不高于上限的规则；r2 规则另须该 Intent 已获批准；已撤销的规则不编入。
 内核不理解 resource，由资源种类插件解释（RESOURCE_KINDS）。M0 只有网络地址一种，外加 workspace（M3）。
 """
 
@@ -111,6 +111,8 @@ def compile_spec(
     rules: dict[str, set[str]] = {}
     for k, rule in enumerate(scope):
         if only is not None and k not in only:
+            continue
+        if "revoked" in rule:  # 运行时扩权：撤销的规则留在原位（下标不变），不再编入
             continue
         if RISK_RANK[rule["risk"]] > RISK_RANK[ceiling]:
             continue

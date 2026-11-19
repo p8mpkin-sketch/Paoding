@@ -28,7 +28,7 @@ from typing import Any
 import yaml
 
 from .draft import Draft, DraftError, MessagesClient, draft, parse_draft
-from .extract import Extraction, extract
+from .extract import Extraction
 from .policy import Intake, PriorSource, Settings, TablePriors, placeholder_priors
 from .vet import Vetted, vet
 
@@ -47,7 +47,7 @@ def score(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for i, c in enumerate(cases):
-        ext = extract(str(c["text"]), intake.labels, intake.url_ports)
+        ext = intake.extract(str(c["text"]))
         answer = c.get("answer")
         d, err = None, ""
         try:

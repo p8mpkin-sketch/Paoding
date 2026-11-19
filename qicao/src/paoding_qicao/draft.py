@@ -128,7 +128,8 @@ SYSTEM = """你是开题起草器。你只做"指认"：说明原文里哪一个
 
 
 def prompt(ext: Extraction, has_answer: bool) -> str:
-    rows = [f"{s.id}\t{s.kind}\t{s.text}" for s in ext.spans if s.kind != "sentence"]
+    # host（没写端口的域名）只供确认卡高亮，不给起草模型指认
+    rows = [f"{s.id}\t{s.kind}\t{s.text}" for s in ext.spans if s.kind not in ("sentence", "host")]
     sents = [f"{s.id}\t{s.text}" for s in ext.spans if s.kind == "sentence"]
     return (
         "区间表（id、种类、原文）：\n"

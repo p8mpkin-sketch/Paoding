@@ -379,3 +379,28 @@ def test_deny_requires_reason(home):
 
     assert intent_status(Local(home / "data", {"kind": "human", "id": "cz"}).graph.state, "p1", iid) == "abandoned"
     assert f"[人] {iid} 拒绝，human：回退方案不清楚" in pd(home, "status", "p1")[1]  # 理由入日志
+
+
+def test_scope_list_grant_revoke(home):
+    """运行时扩权的人工一侧：needs_scope 的 Intent 带出一条申请；pd scope 列出、批准（绑定所见）、撤销。"""
+    pd(home, "problem", "open", str(home / "p.yaml"))
+    local = Local(home / "data", {"kind": "human", "id": "cz"})
+    need = {"resource": "net", "pattern": "q7.lab:8443", "actions": ["connect"], "risk": "r0"}
+    body = {"title": "读接口", "premises": [], "risk": "r0", "budget": {"usd_milli": 100}, "needs_scope": [need]}
+    assert local.submit("p1", "i-ns", [{"op": "add_intent", "body": body}])["ok"]
+    (rid,) = local.graph.state["scope_requests"]
+    code, out = pd(home, "--pid", "p1", "scope", "list")
+    assert code == 0 and well_formed(out) and f"扩权申请 {rid}：pending" in out and "新增 net q7.lab:8443" in out
+    code, out = pd(home, "--pid", "p1", "scope", "grant", rid, "--risk", "r1", "--yes")
+    assert code == 1 and "只可上调" in out  # 没有风险表：按 r2，不能往下改
+    code, out = pd(home, "--pid", "p1", "scope", "grant", rid, "--yes")
+    assert code == 0 and f"已批准 {rid}" in out
+    st = Local(home / "data", {"kind": "human", "id": "cz"}).graph.state
+    k = len(st["problems"]["p1"]["scope"]) - 1
+    assert st["problems"]["p1"]["scope"][k]["risk"] == "r2"
+    with pytest.raises(SystemExit):
+        pd(home, "--pid", "p1", "scope", "revoke", str(k))
+    code, out = pd(home, "--pid", "p1", "scope", "revoke", str(k), "--reason", "用完了", "--yes")
+    assert code == 0 and f"已撤销 {k}" in out
+    code, out = pd(home, "--pid", "p1", "scope", "list")
+    assert f"规则 {k} net q7.lab:8443 connect r2（已撤销）" in out

@@ -594,6 +594,21 @@ def card(state: State, pid: str, kind: str, target: str) -> View:
             "terminal_if_closed_now": wk.terminal(state, pid),
             "terminal_badge": _badge(p, p["goal"]["check"]["judge_id"]),
         }
+    elif kind == "scope":
+        x = wk.requests(state).get(target)
+        if x is None or x["problem_id"] != pid:
+            raise NotFound(f"本题没有扩权申请 {target}")
+        obj = cards.card_object(state, pid, kind, target, ctx["ref"])
+        display = {
+            "status": x["status"],
+            "why": tag("summary", x["why"]),  # 申请方写的理由：模型语域，不作证据
+            "by": x["by"],
+            "session": x["session"],
+            "intent": x.get("intent"),
+            "auto": x["auto"],
+            "blockers": list(x.get("blockers") or []),
+            "reason": tag("human_reason", x["reason"]) if x.get("reason") else None,
+        }
     else:
         raise NotEnabled(f"{kind} 卡随 M1 落地（续期门、争议裁决）")
     if obj is None:
