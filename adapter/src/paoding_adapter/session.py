@@ -270,7 +270,7 @@ class SessionRunner:
 
     def _launch_sandbox(self, pid: str, lease: Mapping[str, Any], ws: Path) -> str:
         """按租约编译授权并起执行容器（§3.6.2）。上限取所服务 Intent 的 risk，Bootstrap 取 r0；
-        r2 规则只在该 Intent 已获批准时编入。reason 会话不走到这里。"""
+        r2 规则只在该 Intent 已获批准时编入；Intent 声明了 touches 时只编入其中的规则。reason 会话不走到这里。"""
         st = self.reader.state
         p = st["problems"][pid]
         intent = st["intents"].get(lease.get("target") or "")
@@ -278,7 +278,9 @@ class SessionRunner:
         approved = bool(intent and st.get("approvals", {}).get(intent["id"]))
         env = {**p["env"], "base": self.cfg.bases.get(p["env"]["base"], p["env"]["base"])}
         ws.chmod(0o777)  # 容器内进程丢了全部能力，靠目录权限写工作区
-        spec = compile_spec(lease["id"].replace("_", "-"), p["scope"], env, ceiling, approved, str(ws))
+        touches = intent.get("touches") if intent else None  # add_intent 已校验，这里只取用
+        only = None if touches is None else frozenset(t["rule"] for t in touches)
+        spec = compile_spec(lease["id"].replace("_", "-"), p["scope"], env, ceiling, approved, str(ws), only=only)
         assert self.executor is not None  # 调用方已查过 executor 有 launch
         sid: str = self.executor.launch(spec, lease["id"])
         return sid

@@ -184,6 +184,13 @@ class Rollback(TypedDict):
     done: NotRequired[Check]
 
 
+class Touch(TypedDict):
+    """资源占用（v1.5，增量 11）：Problem.scope 的下标与读写模式。"""
+
+    rule: int
+    mode: str  # read | write
+
+
 class Intent(TypedDict):
     id: str
     problem_id: str
@@ -196,6 +203,7 @@ class Intent(TypedDict):
     done: NotRequired[Done]
     needs_scope: NotRequired[list[ScopeRule]]
     expected_gain: NotRequired[float]  # 估值，只供司南排序（I8）
+    touches: NotRequired[list[Touch]]  # M2：只许收窄能力；缺省按 work.holds 保守展开
     rollback: NotRequired[Rollback]  # M4；M0 的内核不接受
 
 
