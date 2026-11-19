@@ -75,6 +75,14 @@ def run_baseline(
     )
 
 
+def record_terminal(got: dict[str, Any]) -> str:
+    """一次 full 运行记进读数的终态。只认判官判出的 solved 与 unsolved；其余一律 failed。
+    开放道的 delivered（以及人工验收的 accepted）永远不会成为评测读数里的 solved（open-lane 裁决附加条件 1）。"""
+    if got.get("closed") and got.get("terminal") in ("solved", "unsolved"):
+        return str(got["terminal"])
+    return "failed"
+
+
 def _write_meta(log_dir: Path, meta: dict[str, Any]) -> None:
     (log_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, sort_keys=True, indent=1), encoding="utf-8")
 
@@ -158,7 +166,7 @@ def run_full(
             wait_terminal(url, spec.id, timeout_s)
             got = collect(url, spec.id)
             events, cost = len(got["events"]), got["spent_usd_milli"] / 1000
-            terminal = got["terminal"] if got["closed"] and got["terminal"] in ("solved", "unsolved") else "failed"
+            terminal = record_terminal(got)
             (log_dir / "events.json").write_text(
                 json.dumps(got["events"], ensure_ascii=False, indent=2), encoding="utf-8"
             )

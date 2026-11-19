@@ -281,6 +281,37 @@ zcode 这类工具效果好，核心原因不是模型更强，而是它们让�
 
 **回滚**：设置项 `lanes.open`（开、关）。关掉后校验恢复拒绝，已创建的开放道任务照常可读、可关。
 
+### 11.1 第一步的实现记录（2026-11-19）
+
+落在 PR #106 的分支上，与本稿同一个 PR。各处的入口：
+
+| 面 | 做了什么 | 在哪 |
+| --- | --- | --- |
+| 内核 | `goal.accept: open`（只有 statement、可选 self_checks，judges 为空）；`deliver`（只收本题在途 solve 会话的，引用须 exec 或 input 类）；终态 `delivered`；`authority: self`；`close_problem.feedback`；/work 只派 solve，接力至多 5 个 | `graph/…/reducer/problem.py`、`reducer/deliver.py`、`work.py` |
+| 读数 | `by_authority` 四行；每解成本的分子分母都只取严格道（开放道的花费也不进）；评测记录收不进 delivered | `views.problems`、`graph/tests/test_open_lane.py::test_readings_*`、`eval/tests/test_open_lane_isolation.py` |
+| 校验 | 判不了的进开放道；命令变成必做自检项；`strict` 回到判据先行；`lanes.open=false` 回滚；未登记平台进开放道 | `qicao/…/vet.py` |
+| 适配层 | solve 角色与提示词（`adapter/prompts/solve.md`）、deliver 工具、收尾两种（预算软线、接力）、工作区接力 | `adapter/…/session.py`、`tools.py` |
+| 调度 | 司南派 solve，预留题里剩下的全部；哮天犬在墙钟 90% 处叫它收尾交付 | `sinan/…/loop.py`、`watchdog/…/dog.py` |
+| 命令行 | `pd kaiti` 开放道直接开（`--strict` 严格判定）；`pd status` 列交付；`pd close --feedback` | `pd/` |
+| 网页 | 现有新建页回车即开开放道（不出确认卡）；终态四值、判定来源 self 的显示 | `web/src/pages/Kaiti.tsx` 等 |
+
+实现时补的三处，都是收紧，不改裁决：
+
+1. **有外发形状的命令不当自检项。** 裁决第 2 条是“命令作必做自检项”。但原文里的命令若是向外部提交（带地址、写方法、原文有“提交”一类词，词表同 #94 的加重警告），让智能体“自检”时再跑一遍就是再提交一次。这类命令只留在题面里，不进 self_checks，卡上说明原因。
+2. **原话里的凭据不上卡，靠代码不靠模型。** 适配层按形状从原话里认出凭据（带标签的、常见前缀的、地址里的口令），扩权申请的理由与交付写出去之前逐字遮盖；访问申请的地址里带凭据直接不收（`adapter/…/creds.py`）。提示词里同样要求不写，这里是不靠自觉的那一道。
+3. **运行时扩权关着时，开放道也出一次确认卡。** 不出确认卡的前提是开题零出站；设置里关了 `grants.runtime` 时原文地址会在开题时开通，这时落回确认道（`open_needs_confirm`）。缺省是开着的。
+
+**验收清单（第一步）**：
+
+- [x] 今天被拒的那句话（“帮我调研一下主流的智能体框架，写一份对比。”）从起草服务走到一份带执行留档的交付（`tests/integration/test_open_lane_e2e.py`）；命令行与网页新建页同一条路。
+- [x] 正文带凭据：开题零出站，扩权卡与交付里没有凭据（同上，及 `adapter/tests/test_solve.py`）。
+- [x] 以“受阻”诚实收尾：不写需要人提供什么就不收；自己写的东西不能当依据；只有受阻的交付终态是 unsolved（同上）。
+- [x] 开放道读数与终态不进严格道统计与 G1 读数：写成断言（见上表“读数”一行）。
+- [x] #94 复现测试二次翻转：未登记平台进开放道，拒绝分支已删；已登记平台仍走严格道的用例保留。
+- [x] 严格道既有测试不变（全量 pytest、网页单测与 e2e）。
+- [ ] cz 侧给出的 10 条开放提示词逐条跑通，并在对照工具上同跑作基线（等提示词；其中须含上面两类）。
+- [ ] 预算到顶的收尾交付在真模型上跑一次（假 CLI 已覆盖收尾轮的接线）。
+
 ## 12. 待裁决
 
 **裁决（cz 2026-11-19）：全部采纳推荐项。**

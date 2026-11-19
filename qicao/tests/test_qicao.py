@@ -224,7 +224,7 @@ def test_command_criterion_t2():
             "tier_guess": "medium",
         }
 
-    _, v = run(T2, dd, zero_confirm=True)
+    _, v = run(T2, dd, zero_confirm=True, strict=True)
     assert v.lane == "confirm" and not v.eligible
     codes = {n.code for n in v.notes}
     assert {"command_criterion", "risk_unmatched", "clipped_usd_milli", "no_answer", "model_tier"} <= codes
@@ -244,18 +244,41 @@ def test_unclaimed_address_never_becomes_scope():
     assert "evil.example:443" in v.references and "q1:8080" in v.references
 
 
-def test_refuse_no_criterion():
+def test_no_criterion_goes_open_lane():
+    """open-lane §3.1：没有答案、没有命令、没有平台的一句话不再被拒，进开放道，不出确认卡。"""
     e = extract("帮我调研一下主流的智能体框架，写一份对比。", INTAKE.labels)
     d = parse_draft({"title": "调研", "goal_sentence": [sid(e, "sentence")], "check": {"form": "none"}}, e)
     v = vet(e, None, d, INTAKE, SETTINGS, PRIORS)
+    assert v.lane == "open" and not v.eligible and "no_criterion" not in {n.code for n in v.notes}
+    g = v.input["goal"]
+    assert g == {"statement": "帮我调研一下主流的智能体框架，写一份对比。", "accept": "open"}
+    assert v.input["judges"] == [] and v.input["scope"][0]["resource"] == "workspace"
+    assert not any(r["field"] == "goal.max_attempts" for r in v.derivation)
+    ops = batch(v, lambda b: __import__("hashlib").sha256(b).hexdigest(), None)
+    assert ops[-1]["body"]["origin"]["draft"]["lane"] == "open"
+
+
+def test_refuse_no_criterion_when_strict_or_lane_off():
+    import dataclasses
+
+    e = extract("帮我调研一下主流的智能体框架，写一份对比。", INTAKE.labels)
+    d = parse_draft({"title": "调研", "goal_sentence": [sid(e, "sentence")], "check": {"form": "none"}}, e)
+    v = vet(e, None, d, INTAKE, SETTINGS, PRIORS, strict=True)
     assert v.lane == "refuse" and v.input is None and "no_criterion" in {n.code for n in v.notes}
+    # 回滚开关 lanes.open=false：校验恢复判据先行（open-lane §11 回滚）
+    off = Settings.from_doc({"lanes": {"open": False}})
+    assert off.lanes_open is False and Settings.from_doc({}).lanes_open is True
+    v = vet(e, None, d, INTAKE, dataclasses.replace(SETTINGS, lanes_open=False), PRIORS)
+    assert v.lane == "refuse" and "no_criterion" in {n.code for n in v.notes}
 
 
-def test_refuse_model_claims_answer_without_one():
+def test_model_claims_answer_without_one():
     e = extract("取得页面上的串。", INTAKE.labels)
     d = parse_draft({"title": "x", "goal_sentence": [sid(e, "sentence")], "check": {"form": "answer"}}, e)
-    v = vet(e, None, d, INTAKE, SETTINGS, PRIORS)
+    v = vet(e, None, d, INTAKE, SETTINGS, PRIORS, strict=True)
     assert v.lane == "refuse" and "answer_missing" in {n.code for n in v.notes}
+    v = vet(e, None, d, INTAKE, SETTINGS, PRIORS)  # 开放道：去把它找出来
+    assert v.lane == "open" and "answer_missing" in {n.code for n in v.notes}
 
 
 def test_answer_field_and_conflict_and_leak():

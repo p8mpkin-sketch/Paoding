@@ -15,7 +15,7 @@ import { renderWith, rig, until } from "./helpers";
 beforeEach(() => { localStorage.clear(); window.history.pushState(null, "", "/new"); });
 afterEach(cleanup);
 
-const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external" | "zero") => KAITI.drafts[k];
+const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external" | "zero" | "open") => KAITI.drafts[k];
 const SECRET = "PD-7Q2M9XKD";
 
 describe("视图模型", () => {
@@ -35,7 +35,7 @@ describe("视图模型", () => {
     const v = rec("practice").out;
     expect(() => sealOps(v.ops!, null)).toThrow(/保密库/);
     const ops = sealOps(v.ops!, { vault: "kt-x", digest: "d".repeat(64) });
-    expect((ops.at(-1)!.body as unknown as ProblemInput).goal.check.sealed).toEqual([{ vault: "kt-x", digest: "d".repeat(64) }]);
+    expect((ops.at(-1)!.body as unknown as ProblemInput).goal.check!.sealed).toEqual([{ vault: "kt-x", digest: "d".repeat(64) }]);
     expect(JSON.stringify(v.ops)).toContain('"$answer"'); // 原批次不被改
   });
 
@@ -52,7 +52,7 @@ describe("视图模型", () => {
     const d = wizardDraftOf(v, { vault: "kt-1", digest: "e".repeat(64) });
     expect(d.marks).toMatchObject({ title: "model", statement: "span", judge: "table", scope: "span", wall_s: "span" });
     expect(JSON.stringify(d)).not.toContain(SECRET);
-    expect(buildOpen(d).problem.goal.check.sealed).toEqual([{ vault: "kt-1", digest: "e".repeat(64) }]);
+    expect(buildOpen(d).problem.goal.check!.sealed).toEqual([{ vault: "kt-1", digest: "e".repeat(64) }]);
     const t = touch(d, { title: "改过的题名" });
     expect(t.marks?.title).toBe("human");
     expect(t.marks?.statement).toBe("span");
@@ -129,6 +129,21 @@ describe("输入框与确认卡", () => {
     const posts = r.fetch.calls.filter((c) => c.method === "POST" && c.url === "/v1/drafts");
     expect(JSON.parse(posts.at(-1)!.body!)).toMatchObject({ profile: "default" });
     expect(JSON.parse(posts.at(-1)!.body!).draft).toBeUndefined(); // 换档案是重新起草，不是重新校验
+  });
+
+  it("开放道：判不了的一句话回车即创建，不出确认卡（open-lane §3.1）", async () => {
+    expect(rec("open").out.lane).toBe("open");
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti />);
+    fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("open").text } });
+    fireEvent.keyDown(container.querySelector('[data-field="kaiti-text"]')!, { key: "Enter" });
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${rec("open").out.pid}`));
+    expect(container.querySelector("[data-kaiti-refuse]")).toBeNull();
+    const posts = r.fetch.calls.filter((c) => c.method === "POST" && c.url === "/v1/problems");
+    expect(posts).toHaveLength(1); // 没有人按“创建”：回车起草后直接提交
+    const st = await r.api.status(rec("open").out.pid);
+    expect(st.goal.accept).toBe("open");
+    expect(st.problem.scope.map((x) => x.resource)).toEqual(["workspace"]); // 开题零出站
   });
 
   it("运行时扩权开着：开题零出站，原文地址只作展示，卡上没有风险可改", async () => {

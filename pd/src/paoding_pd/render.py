@@ -76,11 +76,15 @@ def closeout_word(c: dict) -> str:
     return f"交付物以外没有留下影响（容器、文件、外部状态；可逆性 {c.get('reason', '?')}）"
 
 
-AUTHORITY_WORDS = {"local": "本地判定", "external": "外部判定", "human": "人工验收"}
+AUTHORITY_WORDS = {"local": "本地判定", "external": "外部判定", "human": "人工验收", "self": "自述（未经判定）"}
+OUTCOME_WORDS = {"answered": "完整回答", "partial": "部分完成", "blocked": "受阻"}
+FEEDBACK_WORDS = {"adopted": "已采纳", "rejected": "未采纳", "none": "无反馈"}
 
 
 def authority(p: dict) -> str:
-    """开题时派生的判定来源（external-verdict §5.7）：内核只在非本地时写进 goal。"""
+    """开题时派生的判定来源（external-verdict §5.7）：内核只在非本地时写进 goal；开放道是 self（open-lane §5.2）。"""
+    if p["goal"].get("accept") == "open":
+        return "self"
     return str(p["goal"].get("authority", "local"))
 
 
@@ -124,7 +128,41 @@ def terminal_phrase(state: dict, pid: str) -> str:
         return f"solved（{judge_badge(state, pid, p['goal']['check']['judge_id'])}）"
     if t == "accepted":
         return "accepted（人工验收，未经判官判定）"
+    if t == "delivered":
+        fb = p.get("feedback")
+        return "delivered（已交付，未经判定" + (f"；{FEEDBACK_WORDS[fb]}" if fb else "") + "）"
     return "unsolved"
+
+
+def deliveries(o: Out, state: dict, pid: str) -> None:
+    """开放道的交付（open-lane §3.4、§3.5）：答案、主张与依据、自检、未验证项。会话写的一律叙述语域，
+    依据只列编号与类别（执行留档 exec / 材料 input），没有依据的主张标“无留档支撑”。"""
+    p = state["problems"][pid]
+    for c in p["goal"].get("self_checks", []):
+        o.add("structure", f"必做自检 {c['id']}（{'原文' if c['src'] == 'span' else '人写'}）")
+        o.add("statement", f"{c['id']}：{c['text']}")
+    ds = p.get("deliveries", [])
+    if not ds:
+        o.add("status", "交付：还没有")
+        return
+    for d in ds:
+        o.add("status", f"交付 {d['id']}（seq {d['seq']}）：{OUTCOME_WORDS[d['outcome']]}；未经判定")
+        if d.get("answer"):
+            o.add("structure", f"{d['id']} 答案：{d['answer']}（{state['artifacts'][d['answer']]['class']}）")
+        n = len(d["claims"])
+        m = sum(1 for c in d["claims"] if c["refs"])
+        o.add("structure", f"{d['id']} 主张 {n} 条，有留档支撑 {m} 条")
+        for k, c in enumerate(d["claims"], 1):
+            refs = ", ".join(f"{r}({state['artifacts'][r]['class']})" for r in c["refs"]) or "无留档支撑"
+            o.add("delivery", f"{d['id']} 主张 {k}：{c['text']}")
+            o.add("structure", f"{d['id']} 主张 {k} 依据：{refs}")
+        for c in d["self_check"]:
+            item = f"[{c['item']}] " if c.get("item") else ""
+            o.add("delivery", f"{d['id']} 自检 {item}{c['what']}：{c['result']}")
+        for x in d["unverified"]:
+            o.add("delivery", f"{d['id']} 未验证：{x}")
+        for x in d["needs"]:
+            o.add("delivery", f"{d['id']} 需要人提供：{x}")
 
 
 # ---------- 视图 ----------
@@ -139,11 +177,14 @@ def status(state: dict, pid: str, budget: dict) -> str:
         f"题 {pid} 终态 {terminal_phrase(state, pid)}；目标等级 {level_phrase(state, pid, 'goal', lv.get('goal'))}",
     )
     o.add("title", f"题名：{p['title']}")
-    o.add(
-        "predicate",
-        f"目标判据 {judge_badge(state, pid, p['goal']['check']['judge_id'])} "
-        f"expect={p['goal']['check'].get('expect', {})} 候选上限 {p['goal']['max_attempts']}",
-    )
+    if p["goal"].get("accept") == "open":
+        o.add("predicate", "开放道：不登记判据，智能体交付带证据，结果未经独立判定")
+    else:
+        o.add(
+            "predicate",
+            f"目标判据 {judge_badge(state, pid, p['goal']['check']['judge_id'])} "
+            f"expect={p['goal']['check'].get('expect', {})} 候选上限 {p['goal']['max_attempts']}",
+        )
     o.add(
         "profile",
         "画像 "
@@ -153,6 +194,8 @@ def status(state: dict, pid: str, budget: dict) -> str:
     o.add("structure", f"判定来源 {AUTHORITY_WORDS[authority(p)]}")
     o.add("budget", _budget_line(budget))
     acceptance(o, state, pid)
+    if p["goal"].get("accept") == "open":
+        deliveries(o, state, pid)
     o.blank()
     facts = sorted((f for f in state["facts"].values() if f["problem_id"] == pid), key=lambda f: int(f["id"][2:]))
     for f in facts:
@@ -231,6 +274,8 @@ def report(state: dict, pid: str, budget: dict) -> str:
     o.add("structure", f"判定来源 {AUTHORITY_WORDS[authority(state['problems'][pid])]}")
     o.add("budget", _budget_line(budget))
     acceptance(o, state, pid)
+    if state["problems"][pid]["goal"].get("accept") == "open":
+        deliveries(o, state, pid)
     o.blank()
     rank = {"E3": 0, "E3d": 1, "E2": 2, "E1": 3, "E0": 4, "X": 5}
     facts = sorted(

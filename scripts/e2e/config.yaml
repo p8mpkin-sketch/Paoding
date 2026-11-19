@@ -7,6 +7,7 @@ backend:
     bootstrap: bootstrap.json
     reason: reason.json
     explore: explore.json
+    solve: solve.json        # 开放道的求解会话（一个会话做到底，用 deliver 交付）
 
 executor:
   kind: docker               # docker：本机 Docker；fake：替身执行层（只供测试）

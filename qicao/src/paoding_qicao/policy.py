@@ -1,7 +1,8 @@
 """校验层读的确定性数据：开题模板数据（kaiti.d/intake.yaml）、练习道信封、设置层快照、预算先验数据源。
 
 设置层的形状以生命周期地图（PR #84）为准：GET /v1/settings → {version, digest, settings}，
-settings = {caps: {...}, risk: [...], models: {profiles: [...], routes: {...}}}。一期由调用方把 settings 对象交进来。
+settings = {caps: {...}, risk: [...], models: {profiles: [...], routes: {...}}, grants?: {runtime},
+lanes?: {open}}。一期由调用方把 settings 对象交进来。
 """
 
 from __future__ import annotations
@@ -106,6 +107,8 @@ class Settings:
     version: str = "default"
     # 运行时扩权（docs/design/runtime-grants/ §3.1）：开着时一句话开题零出站，原文里的地址只作展示
     grants_runtime: bool = False
+    # 开放道（docs/design/open-lane/ §11 回滚开关 lanes.open）：关掉后校验恢复判据先行，判不了就拒绝
+    lanes_open: bool = True
 
     @classmethod
     def from_doc(cls, doc: Any) -> Settings:
@@ -118,7 +121,15 @@ class Settings:
                 raise ValueError(f"风险表条目的 risk 须为 r0/r1/r2：{r}")
         ver = str(doc.get("version", "default")) if isinstance(doc, dict) else "default"
         grants = d.get("grants") or {}
-        return cls(caps, risk, dict(d.get("models") or {}), ver, bool(grants.get("runtime", False)))
+        lanes = d.get("lanes") or {}
+        return cls(
+            caps,
+            risk,
+            dict(d.get("models") or {}),
+            ver,
+            bool(grants.get("runtime", False)),
+            bool(lanes.get("open", True)),
+        )
 
     def risk_of(self, resource: str, pattern: str, actions: list[str]) -> tuple[str, int | None]:
         """顺序匹配风险表，返回 (风险, 命中的行号)；未命中按 r2（规格 3.1.2 的缺省）。"""

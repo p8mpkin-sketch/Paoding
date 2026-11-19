@@ -10,7 +10,12 @@ from typing import Any
 from .vet import Vetted
 
 MARK = {"span": "摘", "table": "表", "prior": "≈估", "model": "起草", "human": "人"}
-LANE = {"practice": "练习道 · 零确认", "confirm": "确认道 · 一步确认", "refuse": "没有开题"}
+LANE = {
+    "practice": "练习道 · 零确认",
+    "confirm": "确认道 · 一步确认",
+    "open": "开放道 · 直接开始（未经判定）",
+    "refuse": "没有开题",
+}
 
 
 def _val(v: Any) -> str:
@@ -33,7 +38,7 @@ def render_card(v: Vetted) -> str:
         out.append("  答案                   已收起，只给判定器（保密库）")
     if v.notes:
         out.append("")
-        out.append("为什么要你看" if v.lane != "refuse" else "为什么不开")
+        out.append({"refuse": "为什么不开", "open": "说明"}.get(v.lane, "为什么要你看"))
         for i, n in enumerate(v.notes, 1):
             out.append(f"  {i:02d} {n.text}")
     out.append(f"\n[估] 预算默认值来自 {v.priors_version}")
@@ -52,7 +57,7 @@ def render_view(doc: dict[str, Any]) -> str:
         out.append(f"  {d['field']:<22} {_val(d['value'])}  [{MARK[d['source']]}]{note}")
     if doc.get("notes"):
         out.append("")
-        out.append("为什么要你看" if doc["lane"] != "refuse" else "为什么不开")
+        out.append({"refuse": "为什么不开", "open": "说明"}.get(doc["lane"], "为什么要你看"))
         for i, n in enumerate(doc["notes"], 1):
             out.append(f"  {i:02d} {n['text']}")
     out.append(f"\n[估] 预算默认值来自 {doc.get('priors', '')}")

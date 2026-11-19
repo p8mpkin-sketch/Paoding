@@ -126,7 +126,7 @@ def test_work_offers_only_solve_and_relays_up_to_the_limit():
     k = Kernel()
     open_lane(k)
     assert wk.work(k.state, "p1") == [{"kind": "solve"}]
-    for n in range(wk.OPEN_RELAYS):
+    for _ in range(wk.OPEN_RELAYS):
         lid = lease_solve(k)
         assert lid.startswith("l_"), lid
         assert wk.work(k.state, "p1") == []  # 一次只有一个求解会话
@@ -272,6 +272,12 @@ def _mixed() -> Kernel:
         if outcome is None:
             continue
         lid = lease_solve(k, pid)
+        k.submit(
+            {"kind": "adapter", "id": "ad1", "session": lid},
+            pid,
+            "cost",
+            {"task_id": lid, "source": "proxy", "usd_milli": 700, "wall_s": 3, "price_table": "t"},
+        )
         if outcome == "answered":
             answered(k, lid, pid)
         else:
@@ -288,7 +294,14 @@ def test_readings_open_lane_never_enters_strict_statistics():
     strict_solved = sum(1 for p in k.state["problems"].values() if p.get("terminal") == "solved")
     # 严格道的统计只数判官判出的 solved：开放道的题无论交付与否都不进分子
     assert t["solved"] == by["local"]["solved"] == strict_solved
-    assert t["cost_per_solve_usd_milli"] in (None, t["spent_usd_milli"] // max(1, strict_solved))
+    # 每解成本只算严格道的花费：开放道两道题各花了 700，一分也不进
+    strict_spent = sum(
+        wk.budget_view(k.state, pid)["spent"]["usd_milli"]
+        for pid, p in k.state["problems"].items()
+        if p["goal"]["accept"] != "open"
+    )
+    assert t["spent_usd_milli"] == strict_spent + 1400
+    assert t["cost_per_solve_usd_milli"] == strict_spent // strict_solved
     # delivered 只在 self 一行；self 一行永远没有 solved 与 accepted；其他行永远没有 delivered
     assert by["self"] == {"problems": 3, "solved": 0, "accepted": 0, "delivered": 1, "unsolved": 1, "open": 1}
     for a in ("local", "external", "human"):

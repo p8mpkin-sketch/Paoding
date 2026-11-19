@@ -49,8 +49,10 @@ def batch(v: Vetted, put: Callable[[bytes], str], vault_ref: dict[str, Any] | st
         )
     body = _subst(copy.deepcopy(v.input), idx)
     # 出处账引用与道别（内核增量 13）：lane=practice 时内核逐条对练习道信封，不满足整单拒绝
-    body["origin"]["draft"] = {"record": idx["$derivation"], "lane": v.lane}
-    sealed = body["goal"]["check"].get("sealed")
+    # 开放道的题在内核里记 lane=open（与 goal.accept=open 互为充要），哪怕运行时扩权关着时它出过确认卡
+    lane = "open" if body["goal"].get("accept") == "open" else v.lane
+    body["origin"]["draft"] = {"record": idx["$derivation"], "lane": lane}
+    sealed = (body["goal"].get("check") or {}).get("sealed")
     if sealed is not None:
         if vault_ref is None:
             raise ValueError("有答案键时须先写保密库")

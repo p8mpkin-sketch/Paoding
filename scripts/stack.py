@@ -83,7 +83,7 @@ from paoding_qicao.contract import catalog_of  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
-TASK_KINDS = ("bootstrap", "reason", "explore")
+TASK_KINDS = ("bootstrap", "reason", "explore", "solve")  # solve：开放道的求解会话（docs/design/open-lane/）
 DEV_ORIGIN = "http://127.0.0.1:5173"  # web/ 的 vite 开发服务器（只监听回环）
 
 
@@ -379,7 +379,7 @@ class Stack:
         proxy_port = self.proxy.serve()[1]
         mcp_port = int(self.endpoint.serve().rsplit(":", 1)[1])
         if real:
-            self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")  # 真实后端三类任务都开；这张表只对假 CLI 有意义
+            self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")  # 真实后端各类任务都开；这张表只对假 CLI 有意义
             binding = CliBinding(model=cfg.model, **({"program": list(cfg.program)} if cfg.program else {}))
             if self.launch_mode == "local":
                 binding.program, binding.path_prefix = _host_program(binding.program)

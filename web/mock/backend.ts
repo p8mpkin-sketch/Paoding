@@ -272,15 +272,18 @@ function terminalOf(s: State): Terminal | null {
 
 /** 判定来源（external-verdict §5.7）：与图服务同一规则，开题时派生。 */
 const EXTERNAL_JUDGES = new Set(["ext_receipt"]);
-function authorityOf(goal: { accept: string; check: { judge_id: string } }): Authority {
-  return goal.accept === "human" ? "human" : EXTERNAL_JUDGES.has(goal.check.judge_id) ? "external" : "local";
+// 假后端只模拟到开放道的题面：goal.check 缺省（open）时判定来源是 self，徽章与判据是空壳（与图服务同形）
+const NO_CHECK = { judge_id: "" };
+function authorityOf(goal: { accept: string; check?: { judge_id: string } }): Authority {
+  if (goal.accept === "open") return "self";
+  return goal.accept === "human" ? "human" : EXTERNAL_JUDGES.has((goal.check ?? NO_CHECK).judge_id) ? "external" : "local";
 }
 
 function head(s: State, pid: string): ProblemItem {
   const p = s.problem!;
   return {
     authority: authorityOf(p.goal),
-    id: pid, title: tag("title", p.title), closed: closed(s), terminal: terminalOf(s), terminal_badge: badge(p.goal.check.judge_id), profile: p.profile,
+    id: pid, title: tag("title", p.title), closed: closed(s), terminal: terminalOf(s), terminal_badge: badge((p.goal.check ?? NO_CHECK).judge_id), profile: p.profile,
     opened_seq: p.opened_seq, opened_ts: p.opened_ts, closed_seq: p.closed_seq ?? null,
     spent_usd_milli: s.costs.reduce((a, c) => a + c.usd_milli, 0), cap_usd_milli: p.budget.usd_milli + s.capAdd,
     closed_ts: p.closed_ts ?? null, goal_level: levelOf(s, "goal"),
@@ -297,7 +300,7 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
   return {
     problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },
     goal: {
-      statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check, levelOf(s, "goal"), p.goal.max_attempts),
+      statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check ?? NO_CHECK, levelOf(s, "goal"), p.goal.max_attempts ?? null),
       ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
       ...(p.goal.acceptance ? { acceptance: p.goal.acceptance as AcceptanceItem[], acceptance_ready: acceptanceReady(s), accept_log: s.acceptLog } : {}),
     },
@@ -399,7 +402,7 @@ function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind
       items: closeoutItems(s), goal_level: levelOf(s, "goal"), closed: closed(s), terminal: terminalOf(s),
       ...(s.problem!.goal.acceptance ? { acceptance: s.problem!.goal.acceptance, deliverable: v ? { verdict_seq: v.seq, candidate: v.candidate ?? null } : null } : {}),
     };
-    display = { steps: ["四顾", "满志", "藏刀"], terminal_if_closed_now: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", terminal_badge: badge(s.problem!.goal.check.judge_id) };
+    display = { steps: ["四顾", "满志", "藏刀"], terminal_if_closed_now: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", terminal_badge: badge((s.problem!.goal.check ?? NO_CHECK).judge_id) };
   } else if (kind === "extension") {
     if (id !== pid) return "not_found";
     const m50 = s.marks.find((m) => m.pct === 50)?.seq ?? 0;
@@ -412,7 +415,7 @@ function card(s: State, pid: string, kind: CardKind, id: string): { card: { kind
     const keep = (x: ScopeRule): ScopeRule => ({ resource: x.resource, pattern: x.pattern, actions: x.actions, risk: x.risk });
     const f: ScopeCardFields = { rules: r.rules.map(keep), why: r.why, status: r.status, auto: r.auto, scope: now.map(keep), closed: closed(s) };
     const top = r.rules.reduce<Risk>((a, x) => (RISK_RANK[x.risk] > RISK_RANK[a] ? x.risk : a), "r0");
-    const jid = s.problem!.goal.check.judge_id;
+    const jid = (s.problem!.goal.check ?? NO_CHECK).judge_id;
     const disp: ScopeDisplay = {
       status: r.status, why: tag("summary", r.why), by: r.by, session: r.session ?? null, role: r.role ?? null, intent: r.intent ?? null,
       auto: r.auto, blockers: r.blockers, risk_rows: r.riskRows,
@@ -517,15 +520,22 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (s.problem) throw new Rejected("schema_error", "题目已存在");
       if (!b.title || !Array.isArray(b.scope) || b.scope.length === 0) throw new Rejected("schema_error", "title、scope 必填");
       if (!(b.budget?.usd_milli > 0) || !(b.budget?.wall_s > 0)) throw new Rejected("schema_error", "预算为正");
+      if (b.goal?.accept === "open") {
+        // 开放道（open-lane §8）：不登记判据、不启用判官；假后端只收题面，不模拟求解与交付（第二步的结果页再补）
+        if ("check" in b.goal || "max_attempts" in b.goal || (b.judges ?? []).length) throw new Rejected("schema_error", "开放道不登记判据、不启用判官");
+        if (b.origin?.draft && b.origin.draft.lane !== "open") throw new Rejected("schema_error", "lane=open 当且仅当 goal.accept=open");
+        for (const ref of [b.origin?.statement_ref, ...(b.origin?.materials ?? [])]) if (!pendingArts.has(ref) && !s.artifacts.has(ref)) throw new Rejected("unknown_ref", `材料 ${ref}`);
+        return { ...b, goal: { ...b.goal, authority: "self" }, profile: deriveProfile(b.scope, "") };
+      }
       if (!JUDGES[b.goal?.check?.judge_id] || (b.judges ?? []).some((j: string) => !JUDGES[j])) throw new Rejected("unknown_ref", "判官未注册");
-      if (b.goal.accept !== "judge" && b.goal.accept !== "human") throw new Rejected("schema_error", "accept 取 judge 或 human");
+      if (b.goal.accept !== "judge" && b.goal.accept !== "human") throw new Rejected("schema_error", "accept 取 judge、human 或 open");
       if ((b.goal.accept === "human") !== Array.isArray(b.goal.acceptance) || (b.goal.acceptance && b.goal.acceptance.length === 0)) throw new Rejected("schema_error", "accept=human 必须带非空的验收清单；判定器判定的不带");
       if (b.goal.acceptance) {
         for (const a of b.goal.acceptance) if ("id" in a || !["span", "human"].includes(a.src) || !a.text || a.text.length > 200) throw new Rejected("schema_error", "验收项须为 {text ≤200, src: span|human, needs?}");
         b = { ...b, goal: { ...b.goal, acceptance: b.goal.acceptance.map((a: object, k: number) => ({ ...a, id: `a${k + 1}` })) } };
       }
       for (const ref of [b.origin?.statement_ref, ...(b.origin?.materials ?? [])]) if (!pendingArts.has(ref) && !s.artifacts.has(ref)) throw new Rejected("unknown_ref", `材料 ${ref}`);
-      return { ...b, profile: deriveProfile(b.scope, b.goal.check.judge_id) };
+      return { ...b, profile: deriveProfile(b.scope, (b.goal.check ?? NO_CHECK).judge_id) };
     }
     if (!s.problem) throw new Rejected("unknown_ref", `题目 ${pid} 未开`);
     if (closed(s)) throw new Rejected("schema_error", "题目已关闭");
@@ -576,7 +586,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
           if (RISK_RANK[want] < RISK_RANK[x.risk]) throw new Rejected("schema_error", `${x.pattern} 的风险只可上调`);
           return { ...x, risk: want };
         });
-        const derived = deriveProfile([...activeScope(s.problem.scope), ...rules], s.problem.goal.check.judge_id);
+        const derived = deriveProfile([...activeScope(s.problem.scope), ...rules], (s.problem.goal.check ?? NO_CHECK).judge_id);
         return { request: r.id, decision: "approve", seen: b.seen, rules, derived, ...(reason ? { reason } : {}) };
       }
       case "revoke_scope": {
@@ -586,7 +596,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if (!String(b.reason ?? "").trim()) throw new Rejected("schema_error", "撤销须写理由");
         const rest = activeScope(s.problem.scope.filter((_y, j) => j !== k));
         if (rest.length === 0) throw new Rejected("schema_error", "授权范围至少留一条规则");
-        return { rule: k, reason: String(b.reason).trim(), derived: deriveProfile(rest, s.problem.goal.check.judge_id) };
+        return { rule: k, reason: String(b.reason).trim(), derived: deriveProfile(rest, (s.problem.goal.check ?? NO_CHECK).judge_id) };
       }
       case "budget_add": if (!(Number.isInteger(b.usd_milli) && b.usd_milli > 0)) throw new Rejected("schema_error", "金额为正"); return { usd_milli: b.usd_milli };
       case "accept": {

@@ -149,9 +149,9 @@ function Recent({ items, now }: { items: ProblemItem[]; now: number }) {
   return (
     <section className="today-sec dash-recent" aria-labelledby="h-recent">
       <SectionHead id="h-recent" title="最近完成" right={<Link to={{ page: "problems" }} className="k-link">任务库</Link>} />
-      {counts.solved + counts.accepted + counts.unsolved > 0 && <div className="seg" role="group" aria-label="按终态">
-        <button type="button" aria-pressed={f === null} onClick={() => setF(null)}>全部 {counts.solved + counts.accepted + counts.unsolved}</button>
-        {(["solved", "accepted", "unsolved"] as const).map((t) => (
+      {counts.solved + counts.accepted + counts.delivered + counts.unsolved > 0 && <div className="seg" role="group" aria-label="按终态">
+        <button type="button" aria-pressed={f === null} onClick={() => setF(null)}>全部 {counts.solved + counts.accepted + counts.delivered + counts.unsolved}</button>
+        {(["solved", "accepted", "delivered", "unsolved"] as const).map((t) => (
           <button key={t} type="button" aria-pressed={f === t} data-filter={t} onClick={() => setF(t)}>{TERMINAL_MARK[t].ch} {counts[t]}<span className="sr-only">（{terminalWord(t)}）</span></button>
         ))}
       </div>}

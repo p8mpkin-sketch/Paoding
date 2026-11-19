@@ -164,7 +164,6 @@ def _delivery(state: State, d: Mapping[str, Any]) -> View:
     }
 
 
-
 def _predicate(
     state: State, pid: str, target: str, check: Check, level: str | None, max_attempts: int | None = None
 ) -> View:
@@ -381,7 +380,7 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
     每行另带总览要的几项（工作台设计 §6 A 组），都是现有投影的搬运：Goal 的等级、在途租约的种类与目标、
     待人处理的项数、墙钟。`closed_ts` 是关题那条事件的 ts，由调用方经 `ts_of(pid, seq)` 从日志取；
     状态里不存它，所以不给 `ts_of` 时为 null。"""
-    items, spent_all = [], 0
+    items, spent_all, spent_strict = [], 0, 0
     # 按判定来源分列（external-verdict §5.7、宪章裁决附加 1）：local 与 external 的 solved 各数各的，
     # human 那一行只有 accepted；成功率、每解成本的分子只取本地判定的 solved
     # 开放道单独一行 self（open-lane §5.2、裁决附加条件 1）：delivered 只出现在 self 一行，永不进 solved、
@@ -399,6 +398,8 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
         end = closed_ts if closed_ts is not None else state["now"]
         spent_all += b["spent"]["usd_milli"]
         auth = p["goal"].get("authority", "local")
+        if auth != "self":  # 开放道的花费不进每解成本（裁决附加条件 1）：分子分母都只取严格道
+            spent_strict += b["spent"]["usd_milli"]
         tally[auth]["problems"] += 1
         tally[auth][term or "open"] += 1
         items.append(
@@ -431,7 +432,7 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
             "problems": len(items),
             "solved": tally["local"]["solved"],
             "spent_usd_milli": spent_all,
-            "cost_per_solve_usd_milli": spent_all // tally["local"]["solved"] if tally["local"]["solved"] else None,
+            "cost_per_solve_usd_milli": spent_strict // tally["local"]["solved"] if tally["local"]["solved"] else None,
             "by_authority": tally,
         },
     }

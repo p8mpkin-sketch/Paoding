@@ -6,7 +6,7 @@ import { terminalWord } from "../model/levels";
 import { Text } from "./registers";
 
 const RANK: Record<string, number> = { E3: 0, E3d: 1, E2: 2, E1: 3, E0: 4, X: 5 };
-export const AUTHORITY_WORD = { local: "本地判定", external: "外部判定", human: "人工验收" } as const;
+export const AUTHORITY_WORD = { local: "本地判定", external: "外部判定", human: "人工验收", self: "自述（开放道，未经判定）" } as const;
 
 /** 报告的事实顺序：等级高的在前，同级按创建先后（与 pd report 相同）。 */
 export function reportOrder(rows: ViewModel["rows"]): ViewModel["rows"] {
@@ -23,7 +23,7 @@ export function ResultReport({ vm }: { vm: ViewModel }) {
     <section className="ws-sec result" data-result>
       <h2 className="ws-h">结果</h2>
       <p data-result-head><b>终态 {terminalWord(vm.terminal)}</b>；根结论等级上限 {lv ? `${lv} ${vm.goal.levelWord}` : "无等级"}</p>
-      <p className="t2" data-result-authority>判定来源：{AUTHORITY_WORD[vm.goal.authority]}{vm.terminal === "accepted" ? "。人工验收不提升等级，也不计入 solved。" : ""}</p>
+      <p className="t2" data-result-authority>判定来源：{AUTHORITY_WORD[vm.goal.authority]}{vm.terminal === "accepted" ? "。人工验收不提升等级，也不计入 solved。" : vm.goal.authority === "self" ? "。开放道的交付不计入 solved。" : ""}</p>
       {vm.goal.acceptLog.length > 0 && (
         <ul className="rows" data-result-accept>
           {vm.goal.acceptLog.map((e) => (

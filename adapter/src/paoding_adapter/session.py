@@ -30,6 +30,7 @@ from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import backend as be
+from . import creds
 from .mcp import ToolEndpoint
 from .package import MEDIA_TYPE, render
 from .proxy import EndpointProxy
@@ -170,6 +171,7 @@ class SessionRunner:
         if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
+        s.secrets = creds.found(statement)  # 原话里的凭据：写进扩权申请与交付之前逐字遮盖（creds.py）
         host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor, access=lambda: self.reconcile(lease_id))
         url = self.endpoint.mount(host)
         lv = self.live[lease_id] = {

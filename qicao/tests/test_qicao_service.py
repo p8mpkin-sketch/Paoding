@@ -78,11 +78,26 @@ def test_answer_field_is_not_echoed():
 
 
 def test_command_and_refuse():
-    out = svc().draft_view({"text": T2})
+    out = svc().draft_view({"text": T2, "strict": True})
     assert out["lane"] == "confirm" and out["input"]["goal"]["check"]["judge_id"] == "replay"
-    out = svc().draft_view({"text": T3})
+    out = svc().draft_view({"text": T3, "strict": True})
     assert out["lane"] == "refuse" and out["ops"] is None and out["blobs"] == []
-    assert any(n["code"] == "no_criterion" for n in out["notes"])
+    assert any(n["code"] == "no_criterion" for n in out["notes"]) and out["ways"][0] == "open"
+    with pytest.raises(BadRequest):
+        svc().draft_view({"text": T3, "strict": "yes"})
+
+
+def test_open_lane_by_default():
+    """open-lane §3.1：判不了的进开放道，批次直接给出（前端不出确认卡就提交）；命令变成必做自检项。"""
+    out = svc().draft_view({"text": T3})
+    assert out["lane"] == "open" and out["ops"] and "ways" not in out
+    body = out["ops"][-1]["body"]
+    assert body["goal"]["accept"] == "open" and body["judges"] == [] and body["origin"]["draft"]["lane"] == "open"
+    out = svc().draft_view({"text": T2})
+    assert out["lane"] == "open" and out["ops"][-1]["body"]["goal"]["self_checks"] == [
+        {"text": "make test", "src": "span"}
+    ]
+    assert {b["name"] for b in out["blobs"]} == {"statement", "derivation"}  # 命令不登记成检查规格
 
 
 def test_no_drafter_refuses():
@@ -164,7 +179,7 @@ def test_bad_model_output_and_tampered_draft_refuse():
 def test_refuse_way_02_human_acceptance():
     """拒绝页第 02 条路（宪章 D3、02 §3.3）：人给验收清单（原文区间或自己写），任务改为人工验收。"""
     s = svc()
-    refused = s.draft_view({"text": T3})
+    refused = s.draft_view({"text": T3, "strict": True})
     assert refused["lane"] == "refuse" and "human" in refused["ways"]
     sent = next(x for x in refused["spans"] if x["kind"] == "sentence")
     body = {"text": T3, "draft": refused["draft"], "nonce": refused["nonce"]}
@@ -184,6 +199,6 @@ def test_refuse_way_02_human_acceptance():
     assert bad["lane"] == "refuse" and any(n["code"] == "acceptance_bad" for n in bad["notes"])
     with pytest.raises(BadRequest):
         s.draft_view({**body, "acceptance": [{"text": "x", "src": "model"}]})  # 不收出处字段：模型起草的不进
-    judged = s.draft_view({"text": T2, "acceptance": [{"text": "x"}]})
+    judged = s.draft_view({"text": T2, "acceptance": [{"text": "x"}], "strict": True})
     assert judged["input"]["goal"]["accept"] == "judge"
     assert any(n["code"] == "acceptance_ignored" for n in judged["notes"])

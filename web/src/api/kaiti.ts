@@ -16,10 +16,11 @@ export type KaitiOverrides = { risk?: Record<string, Risk>; usd_milli?: number; 
 export type KaitiAcceptance = ({ span: string } | { text: string }) & { needs?: "artifact" | "note" };
 /** 外部判定（external-verdict §5.8）：判定权在已登记的平台；批次由“从平台导入”领题时生成。 */
 export type KaitiExternal = { connector: string; judge_id: string; task: string };
-/** 拒绝页的降级路：补判定终点、人工验收、高级模式、去设置页登记这个平台。 */
-export type KaitiWay = "endpoint" | "human" | "advanced" | "register_platform";
+/** 拒绝页的降级路：不要严格判定（开放道）、补判定终点、人工验收、高级模式、去设置页登记这个平台。 */
+export type KaitiWay = "open" | "endpoint" | "human" | "advanced" | "register_platform";
 export type KaitiVetted = {
-  lane: "practice" | "confirm" | "refuse";
+  /** open：开放道（docs/design/open-lane/）。不出确认卡，拿到批次直接提交。 */
+  lane: "practice" | "confirm" | "refuse" | "open";
   eligible: boolean;
   notes: KaitiNote[];
   derivation: KaitiRow[];

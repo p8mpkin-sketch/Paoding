@@ -296,9 +296,12 @@ def open_work(state: State, pid: str) -> list[dict[str, Any]]:
     p = state["problems"][pid]
     items: list[dict[str, Any]] = []
     solves = [l for l in leases_of(state, pid) if l["kind"] == "solve"]
-    last = (p.get("deliveries") or [None])[-1]
+    ds = p.get("deliveries") or []
+    last = ds[-1] if ds else None
     if last is not None:
-        items.append({"kind": "human", "target": pid, "why": "blocked" if last["outcome"] == "blocked" else "delivered"})
+        items.append(
+            {"kind": "human", "target": pid, "why": "blocked" if last["outcome"] == "blocked" else "delivered"}
+        )
     elif not any(l["active"] for l in solves):
         if len(solves) < OPEN_RELAYS:
             items.append({"kind": "solve"})

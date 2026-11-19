@@ -39,7 +39,7 @@ describe("总览的纯函数", () => {
   it("最近完成：后关的在前，可按终态筛", () => {
     expect(recentOf(items, null).map((p) => p.id)).toEqual(["e", "b", "a", "c", "d"]);
     expect(recentOf(items, "solved").map((p) => p.id)).toEqual(["e", "a", "c"]);
-    expect(terminalCounts(items)).toEqual({ solved: 3, accepted: 1, unsolved: 1 });
+    expect(terminalCounts(items)).toEqual({ solved: 3, accepted: 1, delivered: 0, unsolved: 1 });
   });
   it("按本机时区分日；没有 closed_ts 的不进趋势也不算今日", () => {
     const s = dailySeries(items, NOW);

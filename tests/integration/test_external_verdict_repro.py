@@ -5,7 +5,15 @@
 回执给出（本地没有答案，也没有可跑的检查）。
 
 每条用例断言的都是**设计稿写成时的行为**，作为设计的证据，不是期望的行为。翻转后的版本是验收门，
-在 test_external_verdict_flip.py：一期（内核）翻转了行 1（结构化开题一侧）、4、4b、5，二期（connector 运行器）
+在 test_external_verdict_flip.py。
+
+二次翻转（开放道，docs/design/open-lane/ 裁决附加条件 2）：行 1 原来断言“未登记的平台被拒（no_criterion）”，
+拒绝分支已删：不选严格判定时，它进开放道，平台地址只作材料、开题零出站。行 1b 以下的证据都在**严格判定**下取
+（请求里带 strict=true）：那是“判据先行”仍然生效的地方，误绑的风险也只在那里。已登记平台仍走严格道的覆盖
+在 test_external_verdict_flip.py 的 test_row1_registered_* 与 test_row1b_registered_*。
+
+一期翻转的说明照旧：
+一期（内核）翻转了行 1（结构化开题一侧）、4、4b、5，二期（connector 运行器）
 翻转了行 2（开题时领题，资源公告进材料）并把行 5 换成真运行器。这里留下的断言对应的是入口一侧
 （行 1、1b 的起草与校验，三期）；行 3（accept=human，D3）已随 L2 翻转为“必须带验收清单”；
 行 2 这里留的是"起草时没有地址"这条证据，
@@ -83,26 +91,30 @@ def _rejects(res: dict[str, Any]) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------- 表现一：平台裁决型
 
 
-def case_platform_refused(s: Stack, url: str, plat: Platform) -> dict[str, Any]:
+def case_platform_unregistered(s: Stack, url: str, plat: Platform) -> dict[str, Any]:
     out = call(url, "/v1/drafts", {"text": plat.pasted()}, token=s.human_token)
-    return {"lane": out["lane"], "notes": _codes(out), "input": out.get("input")}
+    return {"lane": out["lane"], "notes": _codes(out), "input": out.get("input"), "out": out}
 
 
-def test_1_platform_verdict_is_refused(stack, plat):
-    """判定权在平台：本地没有答案键可密封，也没有检查命令可登记。判据形态只有 answer / command 两种，拒绝。"""
+def test_1_unregistered_platform_goes_open_lane(stack, plat):
+    """二次翻转：平台没登记时不再拒题。进开放道：不登记判据，平台的回执不当判定，地址只作材料，开题零出站。
+    起草不碰平台（不领题、不提交）；要让平台说了算，仍是先登记平台、再从平台导入（严格道）。"""
     s, url = stack
-    r = case_platform_refused(s, url, plat)
-    assert r["lane"] == "refuse"
-    assert "no_criterion" in r["notes"]
-    assert r["input"] is None
+    r = case_platform_unregistered(s, url, plat)
+    assert r["lane"] == "open" and "no_criterion" not in r["notes"]
+    g = r["input"]["goal"]
+    assert g["accept"] == "open" and "check" not in g and r["input"]["judges"] == []
+    assert r["out"]["external"] is None and all(x["resource"] == "workspace" for x in r["input"]["scope"])
+    assert plat.started == {}  # 起草不领题、不提交
 
 
 def case_platform_misbound(s: Stack, url: str, plat: Platform) -> dict[str, Any]:
     text = plat.pasted(with_example=True)
-    out = call(url, "/v1/drafts", {"text": text}, token=s.human_token)
+    # 严格判定：判据先行只在这里还生效（开放道里命令不当判据，见 test_1b 的末段）
+    out = call(url, "/v1/drafts", {"text": text, "strict": True}, token=s.human_token)
     first = out
     if out.get("needs_ack") == "command":  # 三期起：命令有外发形状，要人勾“只检查、不提交”才给批次（往返意见 a）
-        again = {"text": text, "draft": out["draft"], "model": out["model"], "nonce": out["nonce"]}
+        again = {"text": text, "draft": out["draft"], "model": out["model"], "nonce": out["nonce"], "strict": True}
         out = call(url, "/v1/drafts", {**again, "overrides": {"ack_command": True}}, token=s.human_token)
     body = out["ops"][-1]["body"] if out.get("ops") else {}
     spec = next((b["text"] for b in out.get("blobs", []) if b["text"].startswith("curl ")), None)
@@ -130,6 +142,11 @@ def test_1b_only_non_refusal_is_a_misbinding(stack, plat):
     assert r["spec"].startswith("curl -X POST")  # 判据就是那条提交命令，逐字
     assert "command_criterion" in r["notes"]
     assert "command_outbound" in r["notes"]  # 三期：加重警告，人勾选之后才拿得到这份批次
+    # 不选严格判定（开放道）：提交命令既不当判据，也不当自检项（自检时再提交一次就错了），只留在题面里
+    out = call(url, "/v1/drafts", {"text": plat.pasted(with_example=True)}, token=s.human_token)
+    assert out["lane"] == "open" and out["needs_ack"] is None and "self_checks" not in out["input"]["goal"]
+    assert "command_outbound_material" in _codes(out)
+    assert not any(b["text"].startswith("curl ") for b in out["blobs"])
 
 
 # ---------------------------------------------------------------- 表现二：资源运行时发现型（#91 已裁决，这里只留证据）
@@ -140,7 +157,9 @@ def test_2_instance_address_only_exists_at_runtime(stack, plat):
     a = plat.get("/api/tasks/T-17")["instance"]
     b = plat.get("/api/tasks/T-17")["instance"]
     assert a != b  # 每次领题现分配
-    out = call(url, "/v1/drafts", {"text": plat.pasted()}, token=s.human_token)
+    out = call(url, "/v1/drafts", {"text": plat.pasted(), "strict": True}, token=s.human_token)
+    assert a not in json.dumps(out, ensure_ascii=False) and b not in json.dumps(out, ensure_ascii=False)
+    out = call(url, "/v1/drafts", {"text": plat.pasted()}, token=s.human_token)  # 开放道同样没有
     assert a not in json.dumps(out, ensure_ascii=False) and b not in json.dumps(out, ensure_ascii=False)
 
 
@@ -233,7 +252,7 @@ def transcript(tmp: Path) -> dict[str, Any]:
     url = s.http.serve()
     try:
         out: dict[str, Any] = {"pasted": plat.pasted(), "pasted_with_example": plat.pasted(with_example=True)}
-        out["1_platform"] = case_platform_refused(s, url, plat)
+        out["1_platform"] = {k: v for k, v in case_platform_unregistered(s, url, plat).items() if k != "out"}
         mb = case_platform_misbound(s, url, plat)
         out["1b_misbound"] = {k: v for k, v in mb.items() if k != "out"}
         a, b = plat.get("/api/tasks/T-17")["instance"], plat.get("/api/tasks/T-17")["instance"]

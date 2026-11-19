@@ -233,7 +233,7 @@ export function draftFromProblem(st: StatusView, b: BudgetResponse, arts: Artifa
     lockJudge: false,
     expect: Object.keys(pred.expect ?? {}).length ? JSON.stringify(pred.expect) : "",
     specSlot: specSlot >= 0 ? String(specSlot) : "",
-    accept: st.goal.accept,
+    accept: st.goal.accept === "human" ? "human" : "judge", // 开放道的题克隆进向导：向导只开严格道，判据由人选
     maxAttempts: String(pred.max_attempts ?? 5),
     scope: p.scope.map((r) => ({ resource: r.resource, pattern: r.pattern, actions: r.actions.join(","), risk: r.risk })),
     usd: b.cap.usd_milli !== undefined ? String(b.cap.usd_milli / 1000) : "",

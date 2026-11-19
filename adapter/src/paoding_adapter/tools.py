@@ -41,6 +41,8 @@ from paoding_graph.contract import (
     node_levels,
 )
 
+from . import creds
+
 MAX_SAME_REJECT = 3
 SHOW_RANGE_MAX = 8 * 1024
 LATER_OPS = {"escalate_intent": "M1", "add_support": "完整版", "add_contradiction": "完整版"}
@@ -62,6 +64,22 @@ class Session:
     final: dict[str, Any] | None = None
     submitted: bool = False
     delivered: str | None = None  # 开放道：最近一次交付的 outcome（answered | partial | blocked）
+    secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
+
+
+def _mask_deep(x: Any, secrets: tuple[str, ...]) -> tuple[Any, bool]:
+    """把结构里每一段文字的凭据遮掉（交付的主张、自检、未验证项、需要人提供的）。"""
+    if not secrets:
+        return x, False
+    if isinstance(x, str):
+        return creds.mask(x, secrets)
+    if isinstance(x, list):
+        pairs = [_mask_deep(y, secrets) for y in x]
+        return [p[0] for p in pairs], any(p[1] for p in pairs)
+    if isinstance(x, dict):
+        kv = {k: _mask_deep(v, secrets) for k, v in x.items()}
+        return {k: v[0] for k, v in kv.items()}, any(v[1] for v in kv.values())
+    return x, False
 
 
 def _err(code: str, detail: str) -> dict[str, Any]:
@@ -138,6 +156,9 @@ class ToolHost:
         target, why = a.string("target").strip(), a.text("why").strip()
         if not why:
             raise BadBody("why 须写明为什么需要这个地址")
+        if creds.mask(target, self.s.secrets)[1]:
+            raise BadBody("target 里带着原话里的凭据：地址只写 host:port，凭据只在执行的命令里用")
+        why, masked = creds.mask(why, self.s.secrets)  # 扩权卡给人看、进事件账：凭据不上卡
         rule = {"resource": "net", "pattern": target, "actions": ["connect"]}
         st = self.reader.state
         if any(_same(r, rule) for r in st["problems"][self.s.pid]["scope"] if "revoked" not in r):
@@ -158,12 +179,15 @@ class ToolHost:
         if req["status"] == "granted":  # 练习道白名单：同一批里已自动批准
             return self._granted(rid, target)
         self._asked[rid] = req["status"]
-        return {
+        out = {
             "status": "pending",
             "request": rid,
             "target": target,
             "detail": "已进人的待办。可以先做不需要这个地址的事；批下来后 exec 的返回里会带 access 告诉你。",
         }
+        if masked:
+            out["masked"] = "理由里有原话里的凭据，已遮盖后再送审；以后不要把凭据写进理由"
+        return out
 
     def _granted(self, rid: str | None, target: str) -> dict[str, Any]:
         if rid:
@@ -225,13 +249,19 @@ class ToolHost:
         extra = a.keys() - allowed
         if extra:
             raise BadBody(f"deliver 只收 {sorted(allowed)}，多了 {sorted(extra)}")
-        body: dict[str, Any] = {k: a.get(k) for k in ("outcome", "claims", "self_check", "unverified", "needs") if k in a}
+        keys = ("outcome", "claims", "self_check", "unverified", "needs")
+        body: dict[str, Any] = {k: a.get(k) for k in keys if k in a}
+        body, masked = _mask_deep(body, self.s.secrets)  # 交付进事件账、给人看：凭据不进交付（creds.py）
         ops: list[dict[str, Any]] = []
         data: bytes | None = None
         if a.get("answer_path") is not None:
             data = self._read_ws(a.string("answer_path"))
         elif a.get("answer") is not None:
             data = a.text("answer").encode("utf-8")
+        if data is not None and self.s.secrets:
+            text, hit = creds.mask(data.decode("utf-8", "replace"), self.s.secrets)
+            if hit:
+                data, masked = text.encode("utf-8"), True
         if data is not None:
             ops.append(
                 {
@@ -252,11 +282,16 @@ class ToolHost:
             r = next(r for r in out["results"] if not r.get("ok"))
             return _err(r.get("code", "schema_error"), r.get("detail", ""))
         self.s.delivered = str(a.get("outcome"))
-        return {
+        res: dict[str, Any] = {
             "ok": True,
             "id": out["results"][-1]["id"],
             "detail": "已交付。人会看到你的答案、证据和没验证的部分；本会话可以结束了。",
         }
+        if data is not None:
+            res["answer"] = out["results"][0]["id"]  # 答案的产物编号（authored：它不是证据，不能当主张的依据）
+        if masked:
+            res["masked"] = "交付里有原话里的凭据，已遮盖"
+        return res
 
     # ---------- submit ----------
 

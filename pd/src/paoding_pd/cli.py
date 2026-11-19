@@ -9,7 +9,8 @@
     pd reject --fail 项[,项…] --reason "<文本>" [--ref …] [--note …] [--yes]   拒收：列出不过的项，其余算过
     pd scope list    pd scope grant <申请> [--risk r1,…] [--yes]    pd scope deny <申请> --reason "<文本>"
     pd scope revoke <规则下标> --reason "<文本>"     运行时扩权（docs/design/runtime-grants/）
-    pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
+    pd kaiti "<原文>" [--answer …] [--strict] [--yes]   一句话开题（判不了的进开放道，直接开始；见 kaiti.py）
+    pd close <pid> [--feedback adopted|rejected|none] [--reason "<文本>"] [--yes]   关题（开放道可带采纳与否）
     pd settings show                        pd settings set <键路径> <值>
     pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
     pd connector list    pd connector tasks <平台>    pd connector import <平台> <任务号> [--yes]   从平台导入
@@ -133,6 +134,40 @@ def cmd_report(local: Local, a, w) -> int:
     if not _known(local, pid, w):
         return 1
     w(render.report(local.graph.state, pid, local.graph.budget(pid)))
+    return 0
+
+
+def cmd_close(local: Local, a, w, read=input) -> int:
+    """人关题。开放道（open-lane §3.5）：终态由图服务按交付算出（有回答或部分完成即 delivered），
+    采纳与否是附加属性，不改终态。严格道的题照旧要经收尾四顾：这里只给开放道与已无四顾项的题用。"""
+    pid = a.target
+    if not _known(local, pid, w):
+        return 1
+    st = local.graph.state
+    p = st["problems"][pid]
+    if p.get("closed"):
+        w(f"[证据] 题 {pid} 已关，终态 {render.terminal_phrase(st, pid)}\n")
+        return 1
+    is_open = p["goal"].get("accept") == "open"
+    if a.feedback and not is_open:
+        w("[人] --feedback 只用于开放道的题\n")
+        return 2
+    w(render.status(st, pid, local.graph.budget(pid)))
+    if not a.yes and read("确认关题？输入 y 继续：").strip().lower() not in ("y", "yes", "是"):
+        w("[人] 已放弃，没有关题\n")
+        return 1
+    body: dict = {}
+    if a.feedback:
+        body["feedback"] = a.feedback
+    if a.reason:
+        body["reason"] = a.reason
+    if not is_open:
+        body["seen"] = seen_card(st, pid, "closeout", pid)
+    out = local.submit(pid, f"pd-close:{pid}:{st['seq']}", [{"op": "close_problem", "body": body}])
+    if not out["ok"]:
+        w(f"[证据] 关题被拒：{_fail(out)}\n")
+        return 1
+    w(f"[证据] 已关题 {pid}，终态 {render.terminal_phrase(local.graph.state, pid)}\n")
     return 0
 
 
@@ -479,6 +514,11 @@ def parser() -> argparse.ArgumentParser:
         else:
             x.set_defaults(fail=None)
             x.add_argument("--confirm", help="已逐条确认的四顾项，逗号分隔（见打印出的“四顾”行）")
+    cl = sp.add_parser("close")
+    cl.add_argument("target")
+    cl.add_argument("--feedback", choices=["adopted", "rejected", "none"], help="开放道：采纳、不采纳、不表态")
+    cl.add_argument("--reason")
+    cl.add_argument("--yes", action="store_true")
     sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
     sc.add_parser("list")
     for name in ("grant", "deny", "revoke"):
@@ -526,6 +566,8 @@ def main(
         return cmd_scope(local, a, w, read)
     if a.cmd in ("accept", "reject"):
         return cmd_accept(local, a, w, a.cmd, read)
+    if a.cmd == "close":
+        return cmd_close(local, a, w, read)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)
 
 

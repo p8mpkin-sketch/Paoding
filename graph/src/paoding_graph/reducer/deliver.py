@@ -128,4 +128,3 @@ def _a_deliver(s: State, ev: Event) -> None:
     p = s["problems"][pid]
     entry = {"id": f"d_{ev['seq']}", "seq": ev["seq"], **ev["body"]}
     s["problems"] = {**s["problems"], pid: cast(Problem, {**p, "deliveries": [*p.get("deliveries", []), entry]})}
-

@@ -1,6 +1,9 @@
 """录一句话开题的应答（qicao 的起草服务，演示起草）：mock/kaiti.json。前端的假服务与测试吃它，
 这样前端不必再写一份抽取与校验规则（禁令一的精神）。改了 qicao 之后重录：
 
+开放道（docs/design/open-lane/）之后，CASES 里的几段按**严格判定**录（strict=true）：它们测的是确认卡与拒绝页，
+那两样只在严格道里还有；开放道另录 OPEN 一段（运行时扩权开着，不出确认卡、直接开题）。
+
     uv run python web/tools/record_kaiti.py
 """
 
@@ -26,6 +29,7 @@ SETTINGS = Settings.from_doc(
 )
 # 运行时扩权开着（新装缺省，runtime-grants §3.1）：开题零出站，原文地址只作展示
 SETTINGS_ON = dataclasses.replace(SETTINGS, grants_runtime=True)
+OPEN = "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"  # 没有答案、没有命令：开放道
 ZERO = "目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。半小时内搞定。答案：PD-3R8W1ZNA"
 CASES = {
     "practice": (
@@ -67,24 +71,26 @@ def main() -> None:
     out: dict[str, object] = {"extract": {}, "drafts": {}, "overrides": [], "platforms": PLATFORMS, "tasks": [TASK]}
     for name, text in CASES.items():
         out["extract"][name] = {"text": text, "out": svc.extract_view({"text": text})}  # type: ignore[index]
-        d = svc.draft_view({"text": text, "nonce": f"fixture-{name}"})
+        d = svc.draft_view({"text": text, "nonce": f"fixture-{name}", "strict": True})
         out["drafts"][name] = {"text": text, "out": d}  # type: ignore[index]
     on = KaitiService(Intake.load(), lambda: SETTINGS_ON, placeholder_priors(), heuristic_drafter, "heuristic", CATALOG)
     out["extract"]["zero"] = {"text": ZERO, "out": on.extract_view({"text": ZERO})}  # type: ignore[index]
     out["drafts"]["zero"] = {"text": ZERO, "out": on.draft_view({"text": ZERO, "nonce": "fixture-zero"})}  # type: ignore[index]
+    out["extract"]["open"] = {"text": OPEN, "out": on.extract_view({"text": OPEN})}  # type: ignore[index]
+    out["drafts"]["open"] = {"text": OPEN, "out": on.draft_view({"text": OPEN, "nonce": "fixture-open"})}  # type: ignore[index]
     first = out["drafts"]["command"]["out"]  # type: ignore[index]
-    base = {"text": CASES["command"], "draft": first["draft"], "nonce": first["nonce"], "model": first["model"]}
+    base = {"text": CASES["command"], "draft": first["draft"], "nonce": first["nonce"], "model": first["model"], "strict": True}
     for ov in ({"risk": {"0": "r1"}}, {"risk": {"0": "r1"}, "usd_milli": 3000}):
         rec = {"name": "command", "overrides": ov, "out": svc.draft_view({**base, "overrides": ov})}
         out["overrides"].append(rec)  # type: ignore[attr-defined]
     ob = out["drafts"]["outbound"]["out"]  # type: ignore[index]
     ack = {"ack_command": True}
-    base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"]}
+    base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"], "strict": True}
     out["overrides"].append({"name": "outbound", "overrides": ack, "out": svc.draft_view({**base, "overrides": ack})})  # type: ignore[attr-defined]
     # 拒绝页第 02 条路（人工验收）：第一句原文作一条，人另写一条要附交付物的
     rf = out["drafts"]["refuse"]["out"]  # type: ignore[index]
     sent = next(x["id"] for x in rf["spans"] if x["kind"] == "sentence")
-    base = {"text": CASES["refuse"], "draft": rf["draft"], "nonce": rf["nonce"], "model": rf["model"]}
+    base = {"text": CASES["refuse"], "draft": rf["draft"], "nonce": rf["nonce"], "model": rf["model"], "strict": True}
     acc = [{"span": sent}, {"text": "附上对比表", "needs": "artifact"}]
     out["acceptance"] = [{"name": "refuse", "acceptance": acc, "out": svc.draft_view({**base, "acceptance": acc})}]
     notice = json.dumps(NOTICE, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
