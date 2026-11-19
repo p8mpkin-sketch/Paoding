@@ -74,7 +74,7 @@
 - **进与出**：进 `/work` 派生的可做事项；出 Fact、Intent、exec 类 Artifact 与花费事件。
 - **现有组件**：`sinan/`（读 `/work`、申请租约、按租约起会话）、`adapter/`（任务包、会话运行器、三个代理工具、端点代理计量）、`executor/`（沙箱、按租约编译授权、逐主机出站闸门）、`watchdog/`（过期回收、超预算终止）、`reducer/intent.py` 的 `touches` 校验。
 - **阻塞原因多一种“等扩权”**：会话用 `request_access` 申请一条 `host:port`，`/work` 出现扩权卡（确认道）或由图服务按白名单当场批准（练习道）；批准后闸门热加，撤销后热撤，下一次连接即失败。
-- **缺口**：Q14 按任务选模型档案（C13）○；Q15 按租约花费（C1）与花费序列（C2）◐（已有 `/budget` 总量）；Q29 运行时扩权（`request_scope`、`grant_scope`、`revoke_scope`，热加闸门，`needs_scope` 编进容器）○。
+- **缺口**：Q14 按任务选模型档案（C13）○；Q15 按租约花费（C1）与花费序列（C2）◐（已有 `/budget` 总量）；Q29 运行时扩权（`request_scope`、`grant_scope`、`revoke_scope`，热加闸门，`needs_scope` 编进容器）◐（内核一半已在 #93）。
 - **验收**：AC6.1–AC6.3。
 
 ### S7 判定
