@@ -85,13 +85,35 @@ def main() -> None:
     out["extract"]["open"] = {"text": OPEN, "out": on.extract_view({"text": OPEN})}  # type: ignore[index]
     out["drafts"]["open"] = {"text": OPEN, "out": on.draft_view({"text": OPEN, "nonce": "fixture-open"})}  # type: ignore[index]
     first = out["drafts"]["command"]["out"]  # type: ignore[index]
-    base = {"text": CASES["command"], "draft": first["draft"], "nonce": first["nonce"], "model": first["model"], "strict": True}
+    base = {
+        "text": CASES["command"],
+        "draft": first["draft"],
+        "nonce": first["nonce"],
+        "model": first["model"],
+        "strict": True,
+    }
     for ov in ({"risk": {"0": "r1"}}, {"risk": {"0": "r1"}, "usd_milli": 3000}):
         rec = {"name": "command", "overrides": ov, "out": svc.draft_view({**base, "overrides": ov})}
         out["overrides"].append(rec)  # type: ignore[attr-defined]
-    svc_m = KaitiService(Intake.load(), lambda: SETTINGS_M, placeholder_priors(), heuristic_drafter, "heuristic", CATALOG)
+    svc_m = KaitiService(
+        Intake.load(), lambda: SETTINGS_M, placeholder_priors(), heuristic_drafter, "heuristic", CATALOG
+    )
     pick = {"model": "light"}
-    out["overrides"].append({"name": "command", "overrides": pick, "out": svc_m.draft_view({**base, "overrides": pick})})  # type: ignore[attr-defined]
+    out["overrides"].append(
+        {"name": "command", "overrides": pick, "out": svc_m.draft_view({**base, "overrides": pick})}
+    )  # type: ignore[attr-defined]
+    # 开放道：输入框旁先选了执行模型，回车起草后交回同一份草案只加这一项，再直接开题
+    svc_om = KaitiService(
+        Intake.load(),
+        lambda: dataclasses.replace(SETTINGS_M, grants_runtime=True),
+        placeholder_priors(),
+        heuristic_drafter,
+        "heuristic",
+        CATALOG,
+    )
+    op = out["drafts"]["open"]["out"]  # type: ignore[index]
+    base = {"text": OPEN, "draft": op["draft"], "nonce": op["nonce"], "model": op["model"]}
+    out["overrides"].append({"name": "open", "overrides": pick, "out": svc_om.draft_view({**base, "overrides": pick})})  # type: ignore[attr-defined]
     ob = out["drafts"]["outbound"]["out"]  # type: ignore[index]
     ack = {"ack_command": True}
     base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"], "strict": True}

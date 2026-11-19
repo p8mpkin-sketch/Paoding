@@ -683,7 +683,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     risk: [{ resource: "workspace", pattern: "*", actions: ["read", "write"], risk: "r0" }],
     models: {
       profiles: [
-        { name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" },
+        { name: "default", endpoint: "", model: "main-1", family: "", tier: "strong", key_slot: "default" },
         { name: "light", endpoint: "", model: "light-1", family: "", tier: "light", key_slot: "default" },
       ],
       routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
@@ -745,6 +745,18 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       return json(200, settingsDoc());
     }
     if (method === "GET" && path === "/v1/keys") return json(200, keysView());
+    if (method === "POST" && path === "/v1/models/test") {
+      // 与 settings_hub.probe 同形；假上游：模型 ID 里带 bad 的回 404，其余按名字给一个稳定的延迟
+      const p = parse()?.profile;
+      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot}}");
+      if (!p.model) return json(200, { ok: false, code: "no_model", message: "没写模型 ID：填上再测（不写时用命令行的缺省模型，没法单独测）" });
+      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(p.key_slot ?? "")) return json(200, { ok: false, code: "bad_slot", message: "密钥槽名不对" });
+      if (!keySlots.has(p.key_slot)) return json(200, { ok: false, code: "key_not_set", message: `密钥槽 ${p.key_slot} 还没有密钥：先填密钥再测` });
+      if (p.endpoint && !/^https?:\/\/./.test(p.endpoint)) return json(200, { ok: false, code: "bad_endpoint", message: "接口地址要以 http:// 或 https:// 开头" });
+      const ms = 180 + (parseInt(sha256(enc.encode(String(p.model))).slice(0, 4), 16) % 460);
+      if (String(p.model).includes("bad")) return json(200, { ok: false, latency_ms: ms, status: 404, code: "not_found", message: "接口地址或模型 ID 不对（上游回 404）：model not found" });
+      return json(200, { ok: true, latency_ms: ms, status: 200 });
+    }
     if (method === "DELETE" && path === "/v1/keys") { keySlots.clear(); return json(200, keysView()); }
     const km = path.match(/^\/v1\/keys\/([^/]+)$/);
     if (km) {
@@ -770,7 +782,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     const notFound = (d = `没有端点 ${path}`) => err(404, "unknown_ref", d);
     let m: RegExpMatchArray | null;
 
-    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");

@@ -173,6 +173,8 @@ export function Kaiti() {
   const [preview, setPreview] = useState<ProfilePreview | null>(null);
   const [models, setModels] = useState<Settings["models"] | null>(null);
   const [prof, setProf] = useState<string | null>(null);
+  // 输入框旁选的执行模型（前端 v5 第二期）：空即按角色路由；选了就在起草后作为 overrides.model 交回校验，写进 prefs.model
+  const [runPick, setRunPick] = useState("");
   const [usdS, setUsdS] = useState("");
   const [minS, setMinS] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -220,9 +222,16 @@ export function Kaiti() {
     let out: KaitiVetted | null = null;
     try {
       out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}), ...(strict ? { strict } : {}) });
-      setV(out); setOv({}); setProf(profile); setAcc(null);
+      let picked: KaitiOverrides = {};
+      if (runPick && out.input && out.lane !== "refuse" && out.draft) {
+        // 交回同一份草案（不再调模型），只加执行模型这一项
+        picked = { model: runPick };
+        out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: out.draft, model: out.model, ...(profile ? { profile } : {}), nonce: out.nonce, overrides: picked });
+      }
+      setV(out); setOv(picked); setProf(profile); setAcc(null);
     } catch (e) {
       setErr(e as Error); setV(null);
+      out = null; // 人选的执行模型没写进去：不按开放道自动开题
     } finally {
       setBusy(null);
     }
@@ -358,6 +367,16 @@ export function Kaiti() {
             onChange={(e) => { setAnswer(e.target.value); if (v) setV(null); }} />
         </details>
         <div className="kt-go">
+          {models && models.profiles.length > 0 && (
+            <label className="kt-pick" data-field="run-model">
+              <span>执行模型</span>
+              <select value={runPick} disabled={!writable || busy !== null} aria-label="执行这个任务用的模型"
+                onChange={(e) => { setRunPick(e.target.value); if (v) setV(null); }}>
+                <option value="">自动（按默认分配）</option>
+                {models.profiles.map((p) => <option key={p.name} value={p.name}>{p.name}{p.model ? ` · ${p.model}` : ""}</option>)}
+              </select>
+            </label>
+          )}
           <button type="button" className={btnClass("ink")} data-action="draft" disabled={!writable || !text.trim() || busy !== null} onClick={() => void draftIt(prof)}>
             {busy === "draft" ? "起草中…" : "起草任务单"} <Kbd>↵</Kbd>
           </button>
@@ -433,7 +452,7 @@ export function Kaiti() {
                 );
               })}
               <ModelBlock v={v} models={models} busy={busy !== null} nums={nums} onPick={(n) => void draftIt(n)}
-                onRun={(n) => { const { model: _drop, ...rest } = ov; void revet(n ? { ...rest, model: n } : rest); }} />
+                onRun={(n) => { setRunPick(n ?? ""); const { model: _drop, ...rest } = ov; void revet(n ? { ...rest, model: n } : rest); }} />
               {fieldErr && <p className="error" data-field-error><Plain text={fieldErr} /></p>}
             </section>
 

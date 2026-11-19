@@ -116,6 +116,15 @@
 - 出现的地方：工作区左栏待办（`why: scope_request`）、会话面板上方的横幅“等你批准访问 N 个地址”（只在实时时出现，点开是同一张卡）、收件箱（按任务分组，印“权”）。时间轴的 S 节点：人批、人拒、随审批、自动批准（写明信封版本）与撤销各说各的。
 - 写操作 `grant_scope`、`revoke_scope` 与 `pd scope` 发出同一组字段（`api/ops.ts`）。假后端的 demo-4 是一道开题零出站的题：一条已自动批准，两条等人批。
 
+## 模型页（前端重新设计 v5 第二期）
+
+- `/models` 单独成页：一张档案表（模型、接口、密钥槽、连接、档位、用在哪些角色），添加与编辑在右侧抽屉；默认分配（五个角色）即改即存，仍是 `PUT /v1/settings` 带 `base_digest`。
+- 测试连接走 `POST /v1/models/test`（只认人的令牌）：服务端按档案实际调一次上游 `/v1/messages`（`max_tokens: 1`），密钥只从钥匙环取；回 `{ok, latency_ms, status, code, message}`，说明里不带密钥。抽屉里“测通了才能存”，测过之后改了地址、模型 ID 或密钥槽要重测。
+- 抽屉里填的密钥先 `PUT /v1/keys/{slot}` 再测，输入框随即清空，页面不留它。默认分配里还在用的档案删不掉。
+- 接口格式现在只有 Anthropic 兼容一种（OpenAI 兼容待定）。
+- 设置页不再编辑档案与路由，只留一条去模型页的链接；密钥一节仍在设置页。
+- 新建任务：输入框旁“执行模型”可先选一个已登记的档案；起草后交回同一份草案只加 `overrides.model`，写进任务的 `prefs.model`。开放道照旧回车即开；这一步失败时不自动开题。
+
 ## 检查
 
 `npm run lint`（先 `npm ci --prefix lint`）、`npm run typecheck`、`npm test`、`npm run build`、`npm run e2e`（构建后跑 Playwright；本机已有浏览器时直接用，CI 里先 `npx playwright install --with-deps chromium`）、`npm run e2e:real`（连真实图服务，需要 uv）。

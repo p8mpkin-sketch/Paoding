@@ -11,6 +11,8 @@
 .kt-answer summary .t2 { margin-left: 8px; }
 .kt-answer input { margin-top: 8px; width: min(420px, 100%); }
 .kt-go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.kt-pick { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
+.kt-pick select { height: 32px; font-size: var(--fs-sm); color: var(--ink); }
 
 .kt-card { border-top: 1px solid var(--rule); padding-top: 18px; }
 .kt-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) 300px; gap: 36px; align-items: start; }

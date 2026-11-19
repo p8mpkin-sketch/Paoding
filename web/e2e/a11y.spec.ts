@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const TOKEN = "mock-human-token";
-const PAGES = ["/", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
+const PAGES = ["/", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/models", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
 const THEMES = ["light", "dark", "contrast"];
 
 test.beforeEach(async ({ page, request }) => {
@@ -90,5 +90,22 @@ for (const theme of THEMES) {
     await page.goto("/p/demo-3");
     await expect(page.locator("[data-result]")).toBeVisible();
     await scan("结果页", "[data-result]");
+  });
+}
+
+// v5 第二期：模型页的添加抽屉（测过一次，结果条显示着）
+for (const theme of THEMES) {
+  test(`axe：模型页添加抽屉（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    await page.goto("/models");
+    await expect(page.locator(".shell-status")).toContainText("已连接");
+    await page.locator('[data-action="add-model"]').click();
+    await page.locator('[data-field="model.name"]').fill("备用");
+    await page.locator('[data-field="model.model"]').fill("bad-1");
+    await page.locator('[data-action="probe-model"]').click();
+    await expect(page.locator("[data-probe-result]")).toHaveAttribute("data-probe-result", "not_found");
+    await page.waitForTimeout(200);
+    const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
   });
 }

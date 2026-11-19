@@ -17,6 +17,7 @@ export type Route =
   | { page: "readings" }
   | { page: "inbox" }
   | { page: "settings" }
+  | { page: "models" }
   | { page: "problem"; pid: string; asOf: number | null; node: string | null };
 
 export function parseRoute(pathname: string, search: string): Route {
@@ -34,6 +35,7 @@ export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/readings") return { page: "readings" };
   if (pathname === "/inbox") return { page: "inbox" };
   if (pathname === "/settings") return { page: "settings" };
+  if (pathname === "/models") return { page: "models" };
   if (pathname === "/tasks") return { page: "problems", q: q.get("q") ?? "", terminal: q.get("terminal") ?? "", judge: q.get("judge") ?? "" };
   if (pathname === "/problems") return { page: "problems", q: q.get("q") ?? "", terminal: q.get("terminal") ?? "", judge: q.get("judge") ?? "" };
   return { page: "home" };
@@ -54,6 +56,7 @@ export function hrefOf(r: Route): string {
     case "readings": return "/readings";
     case "inbox": return "/inbox";
     case "settings": return "/settings";
+    case "models": return "/models";
     case "problem": {
       const q = new URLSearchParams();
       if (r.asOf !== null) q.set("as_of", String(r.asOf));

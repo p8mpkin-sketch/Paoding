@@ -197,6 +197,20 @@ describe("输入框与确认卡", () => {
     expect((await r.api.status(pid)).problem.prefs).toEqual({ model: "light" });
   });
 
+  it("输入框旁先选执行模型：开放道回车即开，任务带着 prefs.model，不出确认卡", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti />);
+    const pick = await waitFor(() => { const el = container.querySelector<HTMLSelectElement>('[data-field="run-model"] select'); expect(el).not.toBeNull(); return el!; });
+    expect([...pick.options].map((o) => o.value)).toEqual(["", "default", "light"]);
+    fireEvent.change(pick, { target: { value: "light" } });
+    fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("open").text } });
+    fireEvent.keyDown(container.querySelector('[data-field="kaiti-text"]')!, { key: "Enter" });
+    const pid = rec("open").out.pid;
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${pid}`));
+    expect(r.fetch.calls.filter((c) => c.method === "POST" && c.url === "/v1/problems")).toHaveLength(1); // 没人按“创建”
+    expect((await r.api.status(pid)).problem.prefs).toEqual({ model: "light" });
+  });
+
   it("超过单题硬顶：写在字段下面，数字框回到原值", async () => {
     const { container } = await drafted(rec("command").text);
     const usd = () => container.querySelector('[data-field="usd"]') as HTMLInputElement;

@@ -1,7 +1,7 @@
 // 应用外壳（v5）：左侧栏（标志、新任务、⌘K、导航、进行中、主题与连接状态）、顶栏（位置与本页主操作）、内容区。
 // 工作区（/p/…）把侧栏收成图标栏，把宽度让给图。
 import { useEffect, useState, type ReactNode } from "react";
-import { FileUp, Gauge, Inbox, LayoutList, Plus, Search, Settings, Sun } from "lucide-react";
+import { Boxes, FileUp, Gauge, Inbox, LayoutList, Plus, Search, Settings, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ProblemsView } from "../api/types";
 import { navigate, type Route } from "../app/router";
@@ -12,12 +12,13 @@ import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
 
-export type NavKey = "home" | "inbox" | "tasks" | "readings" | "settings";
+export type NavKey = "home" | "inbox" | "tasks" | "models" | "readings" | "settings";
 type NavItem = { key: NavKey; word: string; icon: LucideIcon; to: Route };
 export const NAV: NavItem[] = [
   { key: "home", word: "今日", icon: Sun, to: { page: "home" } },
   { key: "tasks", word: "任务", icon: LayoutList, to: { page: "problems" } },
   { key: "inbox", word: "待你处理", icon: Inbox, to: { page: "inbox" } },
+  { key: "models", word: "模型", icon: Boxes, to: { page: "models" } },
   { key: "readings", word: "读数", icon: Gauge, to: { page: "readings" } },
 ];
 const SETTINGS: NavItem = { key: "settings", word: "设置", icon: Settings, to: { page: "settings" } };
@@ -33,6 +34,7 @@ export function navOf(r: Route): { key: NavKey | null; crumbs: string[] } {
     case "platform": return { key: "tasks", crumbs: ["任务", "从平台导入"] };
     case "readings": return { key: "readings", crumbs: ["读数"] };
     case "settings": return { key: "settings", crumbs: ["设置"] };
+    case "models": return { key: "models", crumbs: ["模型"] };
     case "problem": return { key: null, crumbs: ["任务", r.pid] };
   }
 }
