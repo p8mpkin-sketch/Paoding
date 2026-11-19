@@ -6,7 +6,7 @@
 
 | 层 | 模块 | 确定性 |
 | --- | --- | --- |
-| ① 前置抽取 | `extract.py`：答案标签行剪出；地址、网址、时长、金额、代码块、文件名、句子 → 区间表 | 是 |
+| ① 前置抽取 | `extract.py`：答案标签行剪出（`答案：X`、`答案是X`、`Answer: X`）；地址、网址、域名（纯展示，不给起草模型）、时长、金额（`$N`、`N美元`、`N元` 按 intake.yaml 换算）、代码块、文件名、句子 → 区间表；形态用例见 `tests/test_extract_forms.py` | 是 |
 | ② 起草 | `draft.py`：模型只指认区间，严格 Schema；经端点代理（`MessagesClient` 拿"开题"账户的任务令牌，不拿密钥） | 否 |
 | ③ 校验 | `vet.py`：出处账、答案外泄、判据映射、风险表、预算先验与裁剪、分道 | 是（纯函数） |
 | 批次 | `ops.py`：Vetted → 登记 + `open_problem`（`origin.draft = {record: 出处账, lane}`）；答案先进保密库（`vaultio.py`），批次里只有 VaultRef | 是 |

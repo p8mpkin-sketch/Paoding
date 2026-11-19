@@ -13,6 +13,8 @@ from typing import Any, Protocol
 
 import yaml
 
+from .extract import Extraction, extract
+
 DATA_DIR = Path(__file__).with_name("kaiti.d")
 RISKS = ("r0", "r1", "r2")
 RISK_RANK = {r: i for i, r in enumerate(RISKS)}
@@ -148,6 +150,12 @@ class Intake:
     defaults: Mapping[str, Any]
     zero_confirm: bool
     envelope: Mapping[str, Any]
+    money_rates: dict[str, float] = field(default_factory=lambda: {"usd": 1.0})
+    host_tlds: tuple[str, ...] | None = None  # None → extract 的缺省表
+
+    def extract(self, raw: str) -> Extraction:
+        """按本模板数据做前置抽取（各调用点统一走这里，免得漏传换算表或顶级域表）。"""
+        return extract(raw, self.labels, self.url_ports, money_rates=self.money_rates, host_tlds=self.host_tlds)
 
     @classmethod
     def load(cls, data_dir: Path = DATA_DIR) -> Intake:
@@ -159,4 +167,6 @@ class Intake:
             dict(doc["defaults"]),
             bool(doc.get("zero_confirm", False)),
             dict(env),
+            {str(k): float(v) for k, v in (doc.get("money_rates") or {"usd": 1.0}).items()},
+            tuple(str(x) for x in doc["host_tlds"]) if doc.get("host_tlds") else None,
         )

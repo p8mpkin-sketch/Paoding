@@ -4,7 +4,7 @@ import type { Op, ProblemInput, Risk } from "./types";
 
 
 /** 原文里的一个区间。start/end 是 UTF-16 下标（前端字符串直接切）。 */
-export type KaitiSpan = { id: string; kind: "code" | "url" | "addr" | "money" | "duration" | "file" | "sentence"; start: number; end: number; text: string };
+export type KaitiSpan = { id: string; kind: "code" | "url" | "addr" | "host" | "money" | "duration" | "file" | "sentence"; start: number; end: number; text: string };
 export type KaitiExtract = { text: string; spans: KaitiSpan[]; answers: number };
 /** 出处：span 摘自原文、table 查表、prior 预算先验（估）、model 起草模型、human 人改。 */
 export type KaitiSource = "span" | "table" | "prior" | "model" | "human";
