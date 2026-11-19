@@ -3,7 +3,7 @@
 import type { Op, ProblemInput, Risk, VaultRef } from "../api/types";
 import type { KaitiRow, KaitiSource, KaitiSpan, KaitiVetted } from "../api/kaiti";
 import type { MarkTone } from "../kit";
-import type { Draft } from "./wizard";
+import type { Draft, MarkedField } from "./wizard";
 
 /** 出处记号：形状加文字，不靠颜色。朱色不用在这里（朱只标"需要你"）。 */
 export const SOURCE: Record<KaitiSource, { ch: string; tone: MarkTone; word: string }> = {
@@ -121,6 +121,9 @@ export function wizardDraftOf(v: KaitiVetted, ref: VaultRef | null): Draft {
   if (refs) mats.push(text("参考地址", refs.text));
   const spec = blob("spec");
   if (spec) mats.push(text("检查命令", spec.text));
+  const nums = spanNumbers(v.spans, v.derivation);
+  const numbered = v.spans.filter((s) => nums.has(s.id)).map((s) => ({ ...s, n: nums.get(s.id)! }));
+  const fieldNos = fieldRefs(v, nums);
   const edited = p.scope.some((_, i) => src(`scope[${i}].risk`) === "human");
   const scopeSrc: KaitiSource = edited ? "human" : p.scope[0]?.resource === "workspace" ? "table" : "span";
   return {
@@ -149,6 +152,29 @@ export function wizardDraftOf(v: KaitiVetted, ref: VaultRef | null): Draft {
       title: src("title"), statement: src("goal.statement"), judge: src("goal.check"), maxAttempts: src("goal.max_attempts"),
       scope: scopeSrc, usd: src("budget.usd_milli"), wall_s: src("budget.wall_s"), materials: "span",
     },
-    kaiti: { text: v.text },
+    kaiti: { text: v.text, spans: numbered, refs: fieldNos },
   };
+}
+
+/** 向导字段 → 确认卡出处行的字段名（scope 取全部 scope 行，materials 取参考材料行）。 */
+const FIELD_ROWS: Record<MarkedField, (f: string) => boolean> = {
+  title: (f) => f === "title",
+  statement: (f) => f === "goal.statement",
+  judge: (f) => f === "goal.check",
+  maxAttempts: (f) => f === "goal.max_attempts",
+  scope: (f) => f.startsWith("scope"),
+  usd: (f) => f === "budget.usd_milli",
+  wall_s: (f) => f === "budget.wall_s",
+  materials: (f) => f === "materials",
+};
+
+/** 每个向导字段摘自原文第几段（与确认卡同一套编号）。 */
+export function fieldRefs(v: KaitiVetted, nums: Map<string, number>): Partial<Record<MarkedField, number[]>> {
+  const out: Partial<Record<MarkedField, number[]>> = {};
+  for (const f of Object.keys(FIELD_ROWS) as MarkedField[]) {
+    const ns = [...new Set(v.derivation.filter((r) => FIELD_ROWS[f](r.field)).flatMap((r) => (r.spans ?? []).map((id) => nums.get(id))))]
+      .filter((n): n is number => n !== undefined).sort((a, b) => a - b);
+    if (ns.length) out[f] = ns;
+  }
+  return out;
 }

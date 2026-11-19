@@ -57,6 +57,9 @@ describe("视图模型", () => {
     expect(t.marks?.title).toBe("human");
     expect(t.marks?.statement).toBe("span");
     expect(touch({ ...d, marks: undefined }, { title: "x" }).marks).toBeUndefined();
+    const nums = spanNumbers(v.spans, v.derivation);
+    expect(d.kaiti?.spans?.map((x) => x.n).sort((x, y) => x - y)).toEqual([...nums.values()].sort((x, y) => x - y));
+    expect(d.kaiti?.refs?.wall_s).toEqual(v.derivation.find((x) => x.field === "budget.wall_s")!.spans!.map((id) => nums.get(id)));
   });
 });
 
@@ -166,8 +169,16 @@ describe("输入框与确认卡", () => {
     const w = renderWith(r, <Wizard />).container;
     await waitFor(() => expect(w.querySelector("[data-kaiti-origin]")).not.toBeNull());
     expect(w.querySelector('[data-src="title"]')?.getAttribute("data-source")).toBe("model");
+    // 逐字段的出处编号与确认卡同一套（宪章 Q11）：原文带编号，摘自原文的字段写第几段
+    const v = rec("practice").out;
+    const nums = spanNumbers(v.spans, v.derivation);
+    const stmt = v.derivation.find((x) => x.field === "goal.statement")!.spans!.map((id) => nums.get(id));
+    expect(w.querySelector('[data-src="statement"] [data-refs]')?.getAttribute("data-refs")).toBe(stmt.join(","));
+    expect(w.querySelectorAll("[data-kaiti-origin] [data-span-no]")).toHaveLength(nums.size);
     fireEvent.change(w.querySelector('[data-field="title"]')!, { target: { value: "我自己的题名" } });
     expect(w.querySelector('[data-src="title"]')?.getAttribute("data-source")).toBe("human");
+    fireEvent.change(w.querySelector('[data-field="statement"]')!, { target: { value: "我自己写的目标" } });
+    expect(w.querySelector('[data-src="statement"] [data-refs]')).toBeNull(); // 人改过：不再写摘自第几段
   });
 });
 
