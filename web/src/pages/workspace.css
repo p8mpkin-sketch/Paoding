@@ -182,3 +182,17 @@
 .timeline-more[open] { flex-basis: 100%; margin-left: 0; }
 .timeline-more-body { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; }
 .timeline-more-body .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; list-style: none; padding: 0; margin: 0; flex-basis: 100%; font-size: var(--fs-xs); color: var(--ink-2); }
+
+/* 站位条（宪章 06 屏五）：十二格；当前站墨底反白，等人的站朱红下划线并写数量（不只靠颜色：另有“等你 n”文字） */
+.stations { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; margin: 0 0 12px; padding: 0; list-style: none; }
+.stn { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border-bottom: 2px solid var(--ink-4); color: var(--ink-3); font-size: var(--fs-xs); min-width: 0; }
+.stn-w { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stn-id { font-size: var(--fs-xs); color: var(--ink-3); }
+.stn.cur { background: var(--ink); color: var(--paper, #fff); border-bottom-color: var(--ink); }
+.stn.cur .stn-id { color: inherit; }
+.stn.wait { border-bottom-color: var(--zhu); }
+.stn-n { color: var(--zhu-ink); font-weight: 600; }
+.stn.cur .stn-n { color: inherit; text-decoration: underline var(--zhu) 2px; }
+@media (max-width: 720px) {
+  .stations { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

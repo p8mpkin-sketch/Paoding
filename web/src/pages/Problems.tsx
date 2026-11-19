@@ -9,6 +9,8 @@ import { Empty, Mark, Mast, btnClass } from "../kit";
 import { RUN_MARK, TERMINAL_MARK } from "../ui/marks";
 import { usd } from "../model/text";
 import { CriterionBadge } from "../ui/criterion";
+import { StationCell } from "../ui/StationStrip";
+import { stationsOf } from "../model/stations";
 import { Plain, Text } from "../ui/registers";
 
 export function Link({ to, children, className, onClick, ...data }: { to: Route; children: React.ReactNode; className?: string; onClick?: () => void } & { [k: `data-${string}`]: string }) {
@@ -87,7 +89,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
       ) : (
         <div className="table-scroll">
           <table className="bank tasks">
-            <thead><tr><th aria-label="状态" /><th>编号</th><th>任务</th><th>判定器</th><th>画像</th><th className="r">花费 / 上限</th><th className="r">开于 seq</th><th aria-label="操作" /></tr></thead>
+            <thead><tr><th aria-label="状态" /><th>编号</th><th>任务</th><th>判定器</th><th>画像</th><th className="r">花费 / 上限</th><th>站位</th><th className="r">开于 seq</th><th aria-label="操作" /></tr></thead>
             <tbody>
               {list.map((p) => {
                 const m = p.terminal ? TERMINAL_MARK[p.terminal] : RUN_MARK;
@@ -99,6 +101,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
                     <td><CriterionBadge badge={p.terminal_badge} /></td>
                     <td className="t2">{p.profile.info} · {p.profile.judge} · {p.profile.reversibility}</td>
                     <td className="r k-mono">{usd(p.spent_usd_milli)}<span className="ink3"> / {p.cap_usd_milli === null ? "—" : usd(p.cap_usd_milli)}</span></td>
+                    <td><StationCell st={stationsOf({ closed: p.closed, active: p.active.map((a) => a.kind), todo: p.human_todo })} /></td>
                     <td className="r k-mono ink3">{p.opened_seq}</td>
                     <td className="r"><Link to={{ page: "new", advanced: true, from: p.id }} className={btnClass("bare", "sm")} data-action="clone">克隆</Link></td>
                   </tr>
