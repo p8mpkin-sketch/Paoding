@@ -14,6 +14,7 @@ dependencies = [
   "paoding-watchdog",
   "paoding-eval",
   "paoding-sinan",
+  "paoding-tongjian",
 ]
 
 [dependency-groups]
@@ -33,18 +34,19 @@ paoding-judgebox = { workspace = true }
 paoding-watchdog = { workspace = true }
 paoding-eval = { workspace = true }
 paoding-sinan = { workspace = true }
+paoding-tongjian = { workspace = true }
 
 [tool.uv.workspace]
-members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan"]
+members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan", "tongjian"]
 
 [tool.pytest.ini_options]
-testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "ci/tests", "tests/integration"]
+testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "tongjian/tests", "ci/tests", "tests/integration"]
 
 # 覆盖率（P2-3）：只量组件源码与组装脚本。CI 里 `pytest --cov` 之后由 ci/coverage_by_component.py 按组件汇总。
 # 子进程里跑的代码（假 CLI、被测试起成子进程的 run.py）量不到，读数因此偏低而不偏高。
 [tool.coverage.run]
 branch = true
-source = ["pd/src", "graph/src", "adapter/src", "executor/src", "judgebox/src", "watchdog/src", "eval/src", "sinan/src", "scripts"]
+source = ["pd/src", "graph/src", "adapter/src", "executor/src", "judgebox/src", "watchdog/src", "eval/src", "sinan/src", "tongjian/src", "scripts"]
 omit = ["scripts/e2e/*"]
 
 [tool.coverage.report]
@@ -55,7 +57,7 @@ skip_empty = true
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox"]
+files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian", "eval/src/paoding_eval"]
 untyped_calls_exclude = ["paoding_graph.refmodel"]
 
 [[tool.mypy.overrides]]
@@ -65,7 +67,7 @@ ignore_errors = true
 # 各组件的 contract.py 就是再导出（ci/check_deps.py 只许跨组件 import 它）：在这些模块上放开隐式再导出，
 # 不用把每个名字改写成 `import X as X`。
 [[tool.mypy.overrides]]
-module = ["paoding_graph.contract", "paoding_executor.contract", "paoding_adapter.contract", "paoding_judgebox.contract"]
+module = ["paoding_graph.contract", "paoding_executor.contract", "paoding_adapter.contract", "paoding_judgebox.contract", "paoding_tongjian.contract", "paoding_eval.contract"]
 implicit_reexport = true
 
 [[tool.mypy.overrides]]
@@ -90,4 +92,4 @@ ignore = ["E741", "UP031"]
 "**/contract.py" = ["F401", "E402"]         # 契约模块就是再导出
 
 [tool.ruff.lint.isort]
-known-first-party = ["paoding_graph", "paoding_adapter", "paoding_executor", "paoding_judge", "paoding_sinan", "paoding_pd"]
+known-first-party = ["paoding_graph", "paoding_adapter", "paoding_executor", "paoding_judge", "paoding_sinan", "paoding_pd", "paoding_tongjian"]

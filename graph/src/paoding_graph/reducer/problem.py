@@ -7,6 +7,7 @@ from typing import cast
 from .. import refmodel as rm
 from ..parse import Obj
 from ..state import Actor, Artifact, Body, Event, JudgeEntry, Problem, Profile, ScopeRule, State
+from . import recall
 from .common import _HEX64, RISK_RANK, RISKS, Config, Ok, Reject, _check, _reason, _ref, _rule
 
 # ---------- 校验 ----------
@@ -33,8 +34,9 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
     if "profile" in body:
         return Reject("schema_error", "profile 是派生字段，提交时不接受")
     allowed = {"title", "origin", "goal", "scope", "budget", "env", "judges"}
-    if body.keys() != allowed:
-        return Reject("schema_error", f"字段应为 {sorted(allowed)}")
+    optional = {"labels", "recall"}  # v1.5 增量 9、10：可选，缺省时事件体与旧版相同
+    if not allowed <= body.keys() <= allowed | optional:
+        return Reject("schema_error", f"字段应为 {sorted(allowed)}，可选 {sorted(optional)}")
     judges = body.strings("judges")
     for j in judges:
         if j not in cfg.judges:
@@ -73,6 +75,9 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         if state["artifacts"][ref]["class"] != "input":
             return Reject("inadmissible_class", "Origin 只接受 input 类")
     snapshot = {j: cfg.judges[j] for j in judges}
+    extras = recall.open_extras(state, pid, body, judges)
+    if isinstance(extras, Reject):
+        return extras
     return Ok(
         {
             "title": body.text("title"),
@@ -84,6 +89,7 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             "judges": judges,
             "judge_snapshot": {j: dict(e) for j, e in snapshot.items()},
             "profile": _derive_profile(scope, snapshot[check["judge_id"]], cfg),
+            **extras,
         }
     )
 

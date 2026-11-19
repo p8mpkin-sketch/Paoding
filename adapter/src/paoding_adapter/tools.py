@@ -221,7 +221,7 @@ class ToolHost:
                 "risk": op.req("risk"),
                 "budget": op.get("budget_hint") or {"usd_milli": 500, "wall_s": 600},
             }
-            for k in ("expected_gain", "needs_scope"):
+            for k in ("expected_gain", "needs_scope", "touches"):
                 if op.get(k) is not None:
                     body[k] = op.get(k)
             for k in ("follows", "rollback"):

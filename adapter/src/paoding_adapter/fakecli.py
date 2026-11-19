@@ -16,6 +16,7 @@ input 里形如 "$r3.artifact" 的字符串替换为第 3 步工具结果的字�
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 import urllib.error
@@ -103,6 +104,9 @@ def builtin(name: str, inp: dict[str, Any], allowed: list[str], restricted: bool
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(inp["content"])
         return False, f"Wrote {p}"
+    if name == "Bash":  # 原生 Bash：在工作目录里照跑命令（评测台 baseline 的干跑用它连题目环境）
+        r = subprocess.run(["sh", "-c", inp["command"]], cwd=cwd, capture_output=True, text=True, timeout=120)
+        return r.returncode != 0, (r.stdout + r.stderr)[-8000:]
     if name == "Glob":
         return False, "\n".join(sorted(str(x) for x in p.glob(inp.get("pattern", "*"))))
     return True, f"{name} not simulated"

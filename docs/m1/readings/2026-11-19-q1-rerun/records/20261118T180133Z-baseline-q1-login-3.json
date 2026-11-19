@@ -1,0 +1,28 @@
+{
+ "meta": {
+  "image": "paoding-cli",
+  "manifest": "f2af0e386bc10ba2",
+  "runner_commit": "363fca4f13d9-dirty",
+  "sandbox": true,
+  "target_connects": 54,
+  "tools": [
+   "Bash",
+   "Read",
+   "Write",
+   "Edit",
+   "Glob",
+   "Grep"
+  ]
+ },
+ "record": {
+  "cost_usd": 0.012,
+  "duration_s": 27.31,
+  "events": 10,
+  "log_dir": "paoding-eval-19/20261118T180133Z-baseline-q1-login-3/",
+  "mode": "baseline",
+  "model": "deepseek-chat",
+  "problem": "q1-login",
+  "run": 3,
+  "terminal": "solved"
+ }
+}

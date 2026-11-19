@@ -22,8 +22,9 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-MODES = ("baseline", "full")
+MODES = ("baseline", "full", "bk", "bn")  # bk、bn：瘦基线的等成本重试与共享笔记两臂（arms.py）
 TERMINALS = ("solved", "unsolved", "failed")
 
 
@@ -50,7 +51,7 @@ class Record:
         if self.terminal not in TERMINALS:
             raise ValueError(f"terminal 取 {TERMINALS} 之一，不是 {self.terminal!r}")
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["duration_s"] = round(self.duration_s, 2)
         d["cost_usd"] = round(self.cost_usd, 6)

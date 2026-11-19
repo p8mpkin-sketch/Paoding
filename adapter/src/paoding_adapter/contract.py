@@ -3,7 +3,14 @@
 from typing import Any, Protocol
 
 from .backend import FAKE_CLI, CliBinding, fake_program  # noqa: F401
-from .container import ContainerLauncher, LaunchError  # noqa: F401
+from .container import (  # noqa: F401
+    PROXY_PORT,
+    RELAY_ALIAS,
+    RELAY_SCRIPT,
+    ContainerLauncher,
+    LaunchError,
+    UnixBridge,
+)
 from .fakeupstream import FakeUpstream  # noqa: F401
 from .mcp import ToolEndpoint  # noqa: F401
 from .proxy import EndpointProxy, PriceTable, ProxyConfig  # noqa: F401

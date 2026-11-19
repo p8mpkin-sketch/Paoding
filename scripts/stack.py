@@ -40,6 +40,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
 
@@ -105,6 +106,7 @@ class StackConfig:
     log: dict = field(
         default_factory=lambda: {"level": "info", "format": "json", "file": "logs/stack.log", "access": False}
     )
+    memory: dict = field(default_factory=lambda: memory_config(None))  # 通鉴：case_seal、model_epoch（v1.5）
 
     @classmethod
     def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
@@ -160,6 +162,7 @@ class StackConfig:
         if not isinstance(lg, dict) or set(lg) - set(cfg.log):
             raise ValueError(f"log 只认 {sorted(cfg.log)} 这几项")
         cfg.log = {**cfg.log, **lg}
+        cfg.memory = memory_config(raw.get("memory"))
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
@@ -275,6 +278,8 @@ class Stack:
             ),
         )
         self.vault = Vault(home / "vault")
+        self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
+        self.memory.mount(self.http)
 
         # 执行层
         self.executor = (
@@ -384,6 +389,7 @@ class Stack:
         log("judge").info(
             "判官运行器已起：%s", ", ".join(f"{k}@{v['version']}" for k, v in sorted(self.judges.items()))
         )
+        self._spawn("memory", self._memory_loop)
         self._spawn("sinan", self._sinan_supervisor)
         missing = [k for k in TASK_KINDS if not self.cfg.scripts.get(k)]
         where = "模型容器" if self.launch_mode == "container" else "宿主子进程"
@@ -470,6 +476,7 @@ class Stack:
                 "problems_scheduled": sum(1 for t in self.workers.values() if t.is_alive()),
             },
             "watchdog": self._loop_health("watchdog"),
+            "memory": {**self._loop_health("memory"), "case_seal": self.cfg.memory["case_seal"]},
             "adapter": {
                 "ok": True,
                 "backend": self.cfg.backend,
@@ -533,6 +540,23 @@ class Stack:
             except (OSError, subprocess.SubprocessError) as e:  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")
                 self._beat("judge", e)
+            self.stop_event.wait(self.cfg.poll_s)
+
+    # ---------- 通鉴：召回复核与关题封存 ----------
+
+    def _memory_loop(self) -> None:
+        L = log("memory")
+        while not self.stop_event.is_set():
+            try:
+                r = self.memory.tick()
+                for d in r["recalled"]:
+                    L.info("%s 召回：%s %s", d["problem_id"], d["status"], d.get("facts", d.get("code", "")))
+                for pid in r["sealed"]:
+                    L.info("%s 已封存判例", pid, extra=ctx(problem_id=pid))
+                self._beat("memory")
+            except OSError as e:  # 磁盘等环境故障：记下，下一轮照常
+                L.exception("tick 失败")
+                self._beat("memory", e)
             self.stop_event.wait(self.cfg.poll_s)
 
     # ---------- 司南：每道未关的题一个循环 ----------
@@ -676,6 +700,7 @@ class Stack:
         if self.upstream is not None:
             self.upstream.close()
         self.http.close()
+        self.memory.close()
         if threading.excepthook == self._thread_died:
             threading.excepthook = self._prev_hook
         L.info("已停：链头 seq=%d", self.graph.head())

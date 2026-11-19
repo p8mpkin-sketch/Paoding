@@ -13,10 +13,16 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
+
+from .box import HOME as BOX_HOME
+from .box import PD_DIR
 
 ROOT = Path(__file__).resolve().parents[3]  # 仓库根：eval/src/paoding_eval/harness.py → 上四层
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
-NATIVE_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")  # baseline 的原生工具面（不挂代理工具）
+# baseline 的原生工具面（不挂代理工具）。规格 A2：B1 是"工具面原样"的单次瘦基线，所以含 Bash：
+# 模型要连题目环境，只能经它（在沙箱里跑，出站只到授权目标；见 box.py）
+NATIVE_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep")
 
 
 class MeteringLedger:
@@ -27,9 +33,9 @@ class MeteringLedger:
 
     def __init__(self) -> None:
         self.usd_milli = 0
-        self.costs: list[dict] = []
+        self.costs: list[dict[str, Any]] = []
 
-    def submit(self, token: str, pid: str, idem_key: str, ops: list[dict]) -> dict:
+    def submit(self, token: str, pid: str, idem_key: str, ops: list[dict[str, Any]]) -> dict[str, Any]:
         results = []
         for op in ops:
             if op.get("op") == "cost":
@@ -58,10 +64,20 @@ def run_cli(
     model: str = "",
     fake_script: Path | None = None,
     timeout_s: float = 300,
-) -> dict:
+    box: Any = None,
+) -> dict[str, Any]:
     """起一次 CLI 会话（原生工具面，直连端点代理）。返回 {ok, turns, cost_self_usd, stdout, stderr, timed_out}。
 
-    fake_script 给出时用脚本化假 CLI（program 指向 fakecli.py），不需要真模型；否则按真 CLI 的参数起 program。"""
+    fake_script 给出时用脚本化假 CLI（program 指向 fakecli.py），不需要真模型；否则按真 CLI 的参数起 program。
+    box（BaselineBox）给出时 CLI 在沙箱里经 docker exec 起：MCP 空配置与假 CLI 的脚本先拷进去，
+    代理地址换成沙箱网络上的中继，HOME 在沙箱里；program 是沙箱镜像里的命令。"""
+    if box is not None:
+        box.copy_in(mcp_config, f"{PD_DIR}/mcp.json")
+        mcp_config = Path(f"{PD_DIR}/mcp.json")
+        proxy_url = box.proxy_url
+        if fake_script is not None:
+            box.copy_in(fake_script, f"{PD_DIR}/script.json")
+            fake_script = Path(f"{PD_DIR}/script.json")
     sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"paoding:eval:baseline:{token}"))
     argv = [
         *program,
@@ -89,16 +105,30 @@ def run_cli(
     env = {
         "ANTHROPIC_BASE_URL": proxy_url,
         "ANTHROPIC_API_KEY": token,
-        "HOME": str(workspace.parent / "home"),
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": BOX_HOME if box is not None else str(workspace.parent / "home"),
         "LANG": "C.UTF-8",
     }
+    if box is None:
+        env["PATH"] = "/usr/local/bin:/usr/bin:/bin"
+        (workspace.parent / "home").mkdir(parents=True, exist_ok=True)
     if fake_script is not None:
         env["PD_FAKE_SCRIPT"] = str(fake_script)
-    (workspace.parent / "home").mkdir(parents=True, exist_ok=True)
+    if box is not None:
+        cmd, run_env, cwd = box.exec_argv(argv, env), None, None  # 沙箱镜像自己的 PATH
+    else:
+        cmd, run_env, cwd = argv, env, workspace
     timed_out = False
     try:
-        p = subprocess.run(argv, cwd=workspace, env=env, capture_output=True, text=True, timeout=timeout_s, check=False)
+        p = subprocess.run(
+            cmd,
+            cwd=cwd,
+            env=run_env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
         stdout, stderr, rc = p.stdout, p.stderr, p.returncode
     except subprocess.TimeoutExpired as e:
         timed_out = True
@@ -136,7 +166,9 @@ def run_cli(
 # ---------- 和图服务说话（full；人只做开题，之后旁观） ----------
 
 
-def _call(url: str, path: str, body: object = None, token: str | None = None, raw: bytes | None = None) -> dict:
+def _call(
+    url: str, path: str, body: object = None, token: str | None = None, raw: bytes | None = None
+) -> dict[str, Any]:
     data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
     method = "PUT" if raw is not None else ("GET" if body is None else "POST")
     headers = {"Content-Type": "application/octet-stream" if raw is not None else "application/json"}
@@ -144,16 +176,22 @@ def _call(url: str, path: str, body: object = None, token: str | None = None, ra
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url + path, data=data, method=method, headers=headers)
     with urllib.request.urlopen(req, timeout=40) as r:
-        return json.loads(r.read())
+        out: dict[str, Any] = json.loads(r.read())
+        return out
 
 
-def open_problem(url: str, token: str, pid: str, spec_ops: list[dict], statement: bytes) -> dict:
+def open_problem(url: str, token: str, pid: str, spec_ops: list[dict[str, Any]], statement: bytes) -> dict[str, Any]:
     """把题面 Blob 放进仓库，再提交开题操作（register_artifact + open_problem）。"""
     _call(url, "/v1/blobs", token=token, raw=statement)
     return _call(url, "/v1/problems", {"id": pid, "idem_key": f"open-{pid}", "ops": spec_ops}, token=token)
 
 
-def wait_terminal(url: str, pid: str, timeout_s: float) -> dict:
+def match_memory(url: str, problem: dict[str, Any]) -> dict[str, Any]:
+    """开题前向通鉴要匹配结果（v1.5）：problem 是开题事件体，应答见 scripts/memory_hub.py。"""
+    return _call(url, "/v1/memory/match", {"problem": problem})
+
+
+def wait_terminal(url: str, pid: str, timeout_s: float) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         st = _call(url, f"/v1/problems/{pid}/status")
@@ -163,7 +201,7 @@ def wait_terminal(url: str, pid: str, timeout_s: float) -> dict:
     return _call(url, f"/v1/problems/{pid}/status")
 
 
-def collect(url: str, pid: str) -> dict:
+def collect(url: str, pid: str) -> dict[str, Any]:
     """终态后的读数：事件数、花费、终态。"""
     st = _call(url, f"/v1/problems/{pid}/status")
     budget = _call(url, f"/v1/problems/{pid}/budget")
