@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
 
-from paoding_executor.contract import SandboxPort, compile_spec
+from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import backend as be
@@ -61,6 +61,10 @@ class AdapterConfig:
     env_for: Callable[[Mapping[str, Any]], dict[str, Any]] | None = (
         None  # 按租约追加 CLI 进程的环境变量（假 CLI 按角色取脚本）
     )
+    # 运行时扩权开没开（设置层 grants.runtime，组装根给出读当前 Config 的函数）；开着才给会话 request_access 工具
+    grants_runtime: Callable[[], bool] | None = None
+    # 热加闸门（设计 §12.2 的退路）：关掉时批下来的规则不进在跑的沙箱，等下一个租约起沙箱时生效
+    grants_hot: bool = True
 
 
 @dataclass
@@ -154,18 +158,21 @@ class SessionRunner:
         ws = sdir / "workspace"
         ws.mkdir(parents=True, exist_ok=True)
         (sdir / "home").mkdir(exist_ok=True)
-        tools = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
+        tools: tuple[str, ...] = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
+        if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
+            tools += ("request_access",)
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
         if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
-        host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor)
+        host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor, access=lambda: self.reconcile(lease_id))
         url = self.endpoint.mount(host)
         lv = self.live[lease_id] = {
             "proc": None,
             "closing": False,
             "killed": None,
             "sandbox_id": s.sandbox_id,
+            "ws": ws,
             "env": {**self.cfg.extra_env, **(self.cfg.env_for(lease) if self.cfg.env_for else {})},
         }
         try:
@@ -269,21 +276,38 @@ class SessionRunner:
                 self.executor.destroy(owned)
 
     def _launch_sandbox(self, pid: str, lease: Mapping[str, Any], ws: Path) -> str:
-        """按租约编译授权并起执行容器（§3.6.2）。上限取所服务 Intent 的 risk，Bootstrap 取 r0；
-        r2 规则只在该 Intent 已获批准时编入；Intent 声明了 touches 时只编入其中的规则。reason 会话不走到这里。"""
+        """按租约编译授权并起执行容器（§3.6.2）。reason 会话不走到这里。"""
+        ws.chmod(0o777)  # 容器内进程丢了全部能力，靠目录权限写工作区
+        spec = self._spec(pid, lease, ws)
+        assert self.executor is not None  # 调用方已查过 executor 有 launch
+        sid: str = self.executor.launch(spec, lease["id"])
+        return sid
+
+    def reconcile(self, lease_id: str) -> dict[str, Any] | None:
+        """运行时扩权（docs/design/runtime-grants/ §5）：按当前的 Problem.scope 重编这个会话的授权，
+        把在跑的沙箱的闸门对齐过去（热加、热撤销）。执行器不支持热对齐时返回 None，等下一个租约。"""
+        lv = self.live.get(lease_id)
+        hot = getattr(self.executor, "reconcile", None)
+        if lv is None or not lv.get("sandbox_id") or hot is None or not self.cfg.grants_hot:
+            return None
+        lease = self.reader.state["leases"][lease_id]
+        out: dict[str, Any] = hot(lv["sandbox_id"], self._spec(lease["problem_id"], lease, lv["ws"]))
+        if out.get("added") or out.get("removed"):
+            LOG.info("会话 %s 的出站闸门已对齐：新增 %s，撤下 %s", lease_id, out.get("added"), out.get("removed"))
+        return out
+
+    def _spec(self, pid: str, lease: Mapping[str, Any], ws: Path) -> ExecSpec:
+        """编译授权：上限取所服务 Intent 的 risk，Bootstrap 取 r0；r2 规则只在该 Intent 已获批准时编入；
+        Intent 声明了 touches 时只编入其中的规则；已撤销的规则不编入（compile_spec 跳过）。"""
         st = self.reader.state
         p = st["problems"][pid]
         intent = st["intents"].get(lease.get("target") or "")
         ceiling = intent["risk"] if intent else "r0"
         approved = bool(intent and st.get("approvals", {}).get(intent["id"]))
         env = {**p["env"], "base": self.cfg.bases.get(p["env"]["base"], p["env"]["base"])}
-        ws.chmod(0o777)  # 容器内进程丢了全部能力，靠目录权限写工作区
         touches = intent.get("touches") if intent else None  # add_intent 已校验，这里只取用
         only = None if touches is None else frozenset(t["rule"] for t in touches)
-        spec = compile_spec(lease["id"].replace("_", "-"), p["scope"], env, ceiling, approved, str(ws), only=only)
-        assert self.executor is not None  # 调用方已查过 executor 有 launch
-        sid: str = self.executor.launch(spec, lease["id"])
-        return sid
+        return compile_spec(lease["id"].replace("_", "-"), p["scope"], env, ceiling, approved, str(ws), only=only)
 
     # ---------- 一轮 CLI ----------
 
@@ -325,9 +349,14 @@ class SessionRunner:
         t.start()
         status = None
         next_renew = self.clock() + self.cfg.renew_s
+        scope_seen = _scope_sig(self.reader.state, pid)
         while proc.poll() is None:
             if lv.get("killed"):
                 break
+            sig = _scope_sig(self.reader.state, pid)
+            if sig != scope_seen:  # 有人批了或撤了一条规则：在跑的沙箱即时对齐（热加、热撤销）
+                scope_seen = sig
+                self.reconcile(plan.lease_id)
             now = self.clock()
             if now - last[0] > self.cfg.stall_s:
                 status = "failed(stalled)"
@@ -377,6 +406,12 @@ class SessionRunner:
             raise RegisterRefused(f"登记失败：{out['results']}")
         aid: str = out["results"][0]["id"]
         return aid
+
+
+def _scope_sig(state: Mapping[str, Any], pid: str) -> tuple[Any, ...]:
+    """授权范围的指纹：规则条数与已撤销的下标。范围只追加、撤销只打标记，所以这两样变了范围才变了。"""
+    scope = state["problems"][pid]["scope"]
+    return (len(scope), tuple(k for k, r in enumerate(scope) if "revoked" in r))
 
 
 class RegisterRefused(RuntimeError):

@@ -218,6 +218,8 @@ Adapter 的系统提示加一段："本任务开始时没有任何出站权限�
 
 ### 6.3 越界探测（可选，观察面）
 
+> 第二步未做 sink（cz 定为可选）。现状：未授权的主机名在沙箱里解析不到，连接直接失败，不生成 `scope_violation`。
+
 在沙箱网络里加一个兜底解析：所有未授权主机名解析到一个 sink 容器，它只记录并拒绝连接，生成规格 3.6.2 的 `scope_violation {task, resource, target}` 事件，并在 `exec` 回显里提示"这个地址没有授权，可用 `request_access` 申请"。sink 永远不触发批准。它只让"想访问但没申请"变得可见，并接上哮天犬"同一任务 3 次越界即终止"这条规格。推荐放在第二步做（§12），不挡第一步。
 
 ## 7. 扩权卡交互
@@ -321,7 +323,7 @@ Adapter 的系统提示加一段："本任务开始时没有任何出站权限�
 | 步 | 内容 | 前提 |
 | --- | --- | --- |
 | 一 | 内核三操作与 `state.scope_requests`；`compile_spec` 跳过已撤销规则；`needs_scope` 接上扩权（修 §1.3 缺陷）；`pd scope`；设置 `grants` 一节，缺省 `runtime = off`。验收门：§11 第 6 条在修复前失败、修复后通过（已实现：`graph/src/paoding_graph/reducer/grants.py`、`tests/integration/test_stack_scope_grants.py`、`pd scope`、设置 `grants` 节；实现取值见 `graph/SPEC.md`） | 本稿裁决 |
-| 二 | Adapter 的 `request_access` 工具与提示；执行层 `extend`、`shrink` 与隔离测试；越界 sink（可选） | 一 |
+| 二 | Adapter 的 `request_access` 工具与提示；执行层 `extend`、`shrink` 与隔离测试；越界 sink（可选）（已实现，sink 未做：执行层 `DockerExecutor.reconcile` 一个方法同时管热加与热撤销，契约 `HotGates`；Adapter 的 `request_access` 工具、会话运行器 `reconcile` 与会话循环里的范围指纹、`AdapterConfig.grants_hot` 退路；隔离测试与金丝雀 `executor/tests/test_docker.py` 的 `test_hot_*`，端到端 `adapter/tests/test_access_live.py`） | 一 |
 | 三 | 网页扩权卡、待办与工作区横幅、时间轴节点 | 一；与地图线程的 L1 修订同步 |
 | 四 | 一句话开题切到零出站：`vet` 不再生成 net 规则，确认卡撤掉风险控件，道别去掉授权条件；设置 `grants.runtime = on` | 二、三；测试方确认读数口径（§10.1 最后一行） |
 | 五 | `eval/SPEC.md` 写入 §9；评测运行器比对三份摘要 | 一 |
@@ -334,6 +336,12 @@ Adapter 的系统提示加一段："本任务开始时没有任何出站权限�
 - **事件不能回滚**：日志只追加，已写下的 `request_scope`、`grant_scope` 必须永远能重放。所以三个操作的 `apply` 永不删除。关掉开关只拒绝新申请，不影响旧事件。
 - **已批的规则**：关掉开关时，已经追加进 `Problem.scope` 的规则照旧生效（它们是人或策略批过的）。要收回，用 `revoke_scope`。
 - **热加闸门出问题**：Adapter 的配置项 `grants.hot = off` 退回到租约边界（§5.1 的 A），内核与界面都不受影响。
+
+### 12.3 与外部裁决（#94）的边界与转来的裁决
+
+- 边界按 `docs/design/external-verdict/` §7.1 的表：连接器自己访问平台的出站是档案登记的固定通道，**不进** `Problem.scope`，不走本稿的三个操作；智能体的一切出站（含 `deliver: worker` 时的提交端点）走 `request_scope`，风险查表，人或练习道白名单批准。
+- **资源公告不作自动批准依据（cz 2026-11-19，#94 §10 第 9 条）**：连接器登记的资源公告里的地址，v1 一律由人批。自动批准的依据仍只有练习道白名单（§4），`grants.auto_blockers` 不读公告；读数够了再议。
+- `goal.authority` 的派生与本稿随扩权重算的画像（`_derive_profile`）是同一个函数，由外部裁决一期合并实现。
 
 ## 13. 不做的事
 

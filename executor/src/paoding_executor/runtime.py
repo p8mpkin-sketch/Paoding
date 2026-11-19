@@ -25,6 +25,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -175,6 +176,7 @@ class DockerExecutor:
             Path(spool_dir).mkdir(parents=True, exist_ok=True)
         self.gate_image = gate_image
         self.owner = owner_id()
+        self._hot = threading.Lock()
         self._live: dict[str, dict[str, Any]] = {}
 
     # ---------- 生命周期 ----------
@@ -228,19 +230,62 @@ class DockerExecutor:
                 args += ["--tmpfs", "/workspace"]
             # 墙钟上限：容器自己到点退出，不靠外面记得来杀（limits.wall_s，§3.6.2）
             _docker(*args, spec.image, "sleep", str(int(lim.wall_s)))
-            gates = self._start_gates(sid, net, up, hosts, labels, lease_id, lim.wall_s)
+            gate_of = self._start_gates(sid, net, up, hosts, labels, lease_id, lim.wall_s)
         except BaseException:
             _teardown(sid)
             raise
         self._live[sid] = {
             "spec": spec,
             "net": net,
+            "up": up if hosts else None,
             "targets": sorted(hosts),
-            "gates": gates,
+            "gate_of": gate_of,
+            "gates": [gate_of[h] for h in sorted(gate_of)],
             "lease": lease_id,
             "mounted": mount_workspace,
+            "labels": labels,
+            "deadline": time.monotonic() + lim.wall_s,
         }
         return sid
+
+    def reconcile(self, sid: str, spec: ExecSpec) -> dict[str, list[str]]:
+        """运行时扩权（docs/design/runtime-grants/ §5）：把在跑的沙箱的出站闸门对齐到新编出的 spec。
+
+        只动闸门，不动执行容器与工作区：新授权的主机起一个闸门（热加），撤销的主机停掉它的闸门（热撤销，
+        主机名随之解析不到，进行中的连接断开），同一主机的端口集合变了就换一个闸门。隔离不变：新闸门照旧
+        只认执行容器的源地址、只为写明的端口开转发。spec 与在跑的相同时什么都不做。返回 {added, removed}。"""
+        with self._hot:  # 工具线程（批下即对齐）与会话循环（看到范围变了）可能同时来
+            return self._reconcile(sid, spec)
+
+    def _reconcile(self, sid: str, spec: ExecSpec) -> dict[str, list[str]]:
+        info = self._info(sid)
+        old, new = _by_host(info["spec"]), _by_host(spec)
+        drop = sorted(h for h in old if old[h] != new.get(h))
+        add = sorted(h for h in new if new[h] != old.get(h))
+        gate_of: dict[str, str] = dict(info["gate_of"])
+        for host in drop:
+            _docker("rm", "-f", "-v", gate_of.pop(host), check=False)
+            if host not in new and info["up"]:
+                _docker("network", "disconnect", "-f", info["up"], host, check=False)
+        if add:
+            up = info["up"] or f"{sid}-up-net"
+            if info["up"] is None:
+                _docker("network", "create", "--internal", *info["labels"], up)
+                info["up"] = up
+            for host in add:
+                if host in old:
+                    continue  # 目标已接在上游网络上
+                if _docker("inspect", "--type", "container", host, check=False).returncode != 0:
+                    raise ScopeError(f"M0 只支持本机题目容器作为出站目标：{host!r} 不是容器")
+                _docker("network", "connect", "--alias", host, up, host)
+            left = max(1, int(info["deadline"] - time.monotonic()))
+            gate_of.update(
+                self._start_gates(
+                    sid, info["net"], up, {h: new[h] for h in add}, info["labels"], info["lease"], left, fresh=True
+                )
+            )
+        info.update(spec=spec, gate_of=gate_of, gates=[gate_of[h] for h in sorted(gate_of)], targets=sorted(new))
+        return {"added": add, "removed": [h for h in drop if h not in new]}
 
     def _start_gates(
         self,
@@ -251,14 +296,18 @@ class DockerExecutor:
         labels: list[str],
         lease_id: str,
         wall_s: int,
-    ) -> list[str]:
-        """每台授权主机一个闸门：在沙箱网络上顶着主机名，另一只脚在上游网络。等它们都开始监听再返回。"""
+        fresh: bool = False,
+    ) -> dict[str, str]:
+        """每台授权主机一个闸门：在沙箱网络上顶着主机名，另一只脚在上游网络。等它们都开始监听再返回。
+        返回 主机 → 闸门容器名。fresh：热加时用随机后缀起名，不与已有闸门撞名。"""
         if not hosts:
-            return []
+            return {}
         src = _ip(sid, net)
         gates = []
+        names: dict[str, str] = {}
         for n, (host, rules) in enumerate(sorted(hosts.items())):
-            gate = f"{sid}-gate-{n}"
+            gate = f"{sid}-gate-{uuid.uuid4().hex[:6] if fresh else n}"
+            names[host] = gate
             cfg = {"host": host, "upstream": _ip(host, up), "allow_src": src, "rules": rules}
             _docker(
                 "create",
@@ -309,7 +358,7 @@ class DockerExecutor:
                         f"出站闸门 {gate} 未就绪：{(tail.stdout + tail.stderr).decode('utf-8', 'replace')[-300:]}"
                     )
                 time.sleep(0.05)
-        return gates
+        return names
 
     def reset(self, sid: str) -> str:
         """回到 baseline：销毁后从同一镜像重建，沙箱 id 不变（会话手里的 id 继续有效）。

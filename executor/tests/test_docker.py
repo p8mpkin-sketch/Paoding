@@ -370,3 +370,128 @@ def test_sweep_only_dead_owners(ex, tmp_path, targets):
     finally:
         subprocess.run(["docker", "rm", "-f", dead, foreign], capture_output=True)
         ex.destroy(live)
+
+
+# ---------- 运行时扩权：在跑的沙箱热加、热撤销闸门（docs/design/runtime-grants/ §5、§11 第 4、5 条） ----------
+
+WS_RULE = {"resource": "workspace", "pattern": "", "actions": ["read", "write"], "risk": "r0"}
+
+
+def _net(host, port, risk="r0"):
+    return {"resource": "net", "pattern": f"{host}:{port}", "actions": ["connect"], "risk": risk}
+
+
+def test_hot_add_opens_only_the_granted_port(ex, tmp_path, duo, targets):
+    """零出站开起的沙箱，热加 duo:8080 之后：它通，同主机的 8081 不通，别的主机不通，目标真实地址不通。"""
+    sid = ex.launch(compile_spec("ha", [WS_RULE], ENV, "r0", False, str(tmp_path)), "l_1")
+    assert ex.exec(sid, PROBE.format(h=duo, p=8080), "p1", "a0").exit_code != 0  # 开题零出站
+    work = ex.exec(sid, "echo keep > /workspace/kept", "p1", "a1")
+    assert work.exit_code == 0
+    out = ex.reconcile(sid, compile_spec("ha", [WS_RULE, _net(duo, 8080)], ENV, "r0", False, str(tmp_path)))
+    assert out == {"added": [duo], "removed": []}
+    assert ex.exec(sid, GET.format(h=duo, p=8080), "p1", "b").output.strip() == "200"
+    assert ex.exec(sid, PROBE.format(h=duo, p=8081), "p1", "c").exit_code == 7
+    assert ex.exec(sid, PROBE.format(h=targets[0], p=80), "p1", "d").exit_code != 0
+    for ip in _addresses(duo):
+        assert ex.exec(sid, PROBE.format(h=ip, p=8080), "p1", f"e{ip}").exit_code == 7
+    assert ex.exec(sid, "cat /workspace/kept", "p1", "f").output.strip() == "keep"  # 执行容器没被重建
+    # 新闸门照旧只认执行容器的源地址、照旧加固
+    gate = ex._live[sid]["gate_of"][duo]
+    fmt = "{{.HostConfig.CapDrop}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.User}}"
+    got = subprocess.run(["docker", "inspect", "--format", fmt, gate], capture_output=True).stdout.decode().strip()
+    assert got == "[ALL]|true|65534:65534"
+    other = f"pdt-{uuid.uuid4().hex[:6]}-other"
+    p = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            other,
+            "--network",
+            f"{sid}-net",
+            IMAGE,
+            "sh",
+            "-c",
+            GET.format(h=duo, p=8080),
+        ],
+        capture_output=True,
+    )
+    assert p.returncode != 0 and b"200" not in p.stdout
+    assert ex.reconcile(sid, ex._live[sid]["spec"]) == {"added": [], "removed": []}  # 没变就什么都不做
+
+
+def test_hot_change_and_revoke(ex, tmp_path, duo):
+    """同一主机加一个端口：换闸门，两个端口都通；撤销：主机名解析不到，下一次连接失败；拆沙箱不留闸门。"""
+    one = [WS_RULE, _net(duo, 8080)]
+    sid = ex.launch(compile_spec("hr", one, ENV, "r0", False, str(tmp_path)), "l_1")
+    first = ex._live[sid]["gate_of"][duo]
+    out = ex.reconcile(sid, compile_spec("hr", [*one, _net(duo, 8081)], ENV, "r0", False, str(tmp_path)))
+    assert out == {"added": [duo], "removed": []} and ex._live[sid]["gate_of"][duo] != first
+    assert ex.exec(sid, GET.format(h=duo, p=8081), "p1", "a").output.strip() == "200"
+    assert ex.exec(sid, GET.format(h=duo, p=8080), "p1", "b").output.strip() == "200"
+    left = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True).stdout.decode()
+    assert first not in left.split()
+    revoked = [WS_RULE, {**_net(duo, 8080), "revoked": 9}, {**_net(duo, 8081), "revoked": 10}]
+    out = ex.reconcile(sid, compile_spec("hr", revoked, ENV, "r0", False, str(tmp_path)))
+    assert out == {"added": [], "removed": [duo]}
+    assert ex.exec(sid, PROBE.format(h=duo, p=8080), "p1", "c").exit_code != 0
+    assert ex.exec(sid, PROBE.format(h=duo, p=8081), "p1", "d").exit_code != 0
+    assert ex._live[sid]["gates"] == []
+    ex.destroy(sid)
+    left = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True).stdout.decode()
+    assert sid not in left and duo in left
+
+
+HOLD = (
+    "import socket,time,os\n"
+    "s=socket.create_connection(('{h}',{p}),timeout=3)\n"
+    "open('/workspace/up','w').write('up')\n"
+    "while not os.path.exists('/workspace/go'): time.sleep(0.1)\n"
+    "try:\n"
+    "    s.settimeout(3); s.sendall(b'GET / HTTP/1.0\\r\\n\\r\\n'); got=s.recv(64)\n"
+    "except OSError as e:\n"
+    "    got=repr(e).encode()\n"
+    "open('/workspace/res','wb').write(got or b'closed')\n"
+)
+
+
+def test_hot_canary(ex, tmp_path, duo, targets):
+    """金丝雀（设计 §11 的 4、5）：热加之后把 3.6.4 的 1、4 重跑一遍；进行中的连接在撤销时断开。"""
+    from paoding_executor.runtime import gate_log
+
+    sid = ex.launch(compile_spec("hc", [WS_RULE], ENV, "r0", False, str(tmp_path)), "l_1")
+    # r1 规则热加进 r0 的沙箱：编译就不放行，闸门不出现
+    hi = compile_spec("hc", [WS_RULE, _net(duo, 8081, "r1")], ENV, "r0", False, str(tmp_path))
+    assert ex.reconcile(sid, hi) == {"added": [], "removed": []} and ex._live[sid]["gates"] == []
+    granted = compile_spec("hc", [WS_RULE, _net(duo, 8080)], ENV, "r0", False, str(tmp_path))
+    assert ex.reconcile(sid, granted)["added"] == [duo]
+    # 3.6.4 的 1：范围外不通；访问摘要来自新闸门
+    assert ex.exec(sid, PROBE.format(h="1.1.1.1", p=443), "p1", "a").exit_code != 0
+    assert ex.exec(sid, PROBE.format(h=targets[1], p=80), "p1", "b").exit_code != 0
+    one = ex.exec(sid, GET.format(h=duo, p=8080), "p1", "c")
+    assert one.provenance["touched"] == [f"net:{duo}:8080"]
+    [gate] = ex._live[sid]["gates"]
+    assert [e["dst"] for e in gate_log(gate) if e["event"] == "connect"] == [f"{duo}:8080"]
+    # 3.6.4 的 4：热加没有带进任何密钥，模型端点照旧连不上
+    env = ex.exec(sid, "env", "p1", "d").output
+    names = [line.split("=", 1)[0].upper() for line in env.splitlines() if "=" in line]
+    assert not [n for n in names if any(w in n for w in ("ANTHROPIC", "API_KEY", "TOKEN", "SECRET", "PASSWORD"))]
+    assert ex.exec(sid, PROBE.format(h="api.anthropic.com", p=443), "p1", "e").exit_code != 0
+    # 进行中的连接：撤销前已建立，撤销后不能再拿到内容
+    (tmp_path / "hold.py").write_text(HOLD.format(h=duo, p=8080))
+    ex.exec(sid, "nohup python /workspace/hold.py >/dev/null 2>&1 &", "p1", "f")
+    assert (
+        ex.exec(
+            sid, "for i in $(seq 50); do [ -f /workspace/up ] && break; sleep 0.1; done; cat /workspace/up", "p1", "g"
+        ).output.strip()
+        == "up"
+    )
+    revoked = compile_spec("hc", [WS_RULE, {**_net(duo, 8080), "revoked": 7}], ENV, "r0", False, str(tmp_path))
+    assert ex.reconcile(sid, revoked) == {"added": [], "removed": [duo]}
+    ex.exec(sid, "touch /workspace/go", "p1", "h")
+    res = ex.exec(
+        sid, "for i in $(seq 100); do [ -f /workspace/res ] && break; sleep 0.1; done; cat /workspace/res", "p1", "i"
+    ).output
+    assert res and "200" not in res
+    assert ex.exec(sid, PROBE.format(h=duo, p=8080), "p1", "j").exit_code != 0

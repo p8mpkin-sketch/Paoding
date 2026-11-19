@@ -37,12 +37,20 @@ class Rendered:
         return _j(self.package).encode()
 
 
-def role_prompt(role: str) -> str:
-    return (
-        (PROMPTS / "common.md").read_text(encoding="utf-8")
-        + "\n"
-        + (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
-    )
+ACCESS_NOTE = (
+    "- request_access：需要访问授权范围之外的外部地址时，调用它申请，写明为什么需要（target 写 host:port）。"
+    "申请不是授权：granted 才能连，pending 先做别的，denied 就别再要这个地址。不要猜别的地址或换端口重试。"
+    "本任务开始时没有任何出站权限。\n"
+)
+
+
+def role_prompt(role: str, access: bool = False) -> str:
+    """access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。"""
+    common = (PROMPTS / "common.md").read_text(encoding="utf-8")
+    if access:  # 接在工具清单（show 那一行）之后
+        at = common.index("\n", common.index("- show：")) + 1
+        common = common[:at] + ACCESS_NOTE + common[at:]
+    return common + "\n" + (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
 
 
 def problem_brief(state: State, pid: str, statement: str, judges_cfg: dict[str, Any]) -> str:
@@ -123,7 +131,7 @@ def render(
     )
     hint_text = [{"id": h, "text": state["hints"][h]["text"]} for h in focus["hints"]]
     sections = [
-        ("① 角色", role_prompt(role)),
+        ("① 角色", role_prompt(role, "request_access" in (limits or {}).get("tools", ()))),
         ("② 题目", problem_brief(state, pid, statement, judges_cfg)),
         ("③ 锦囊", _j(kit_index) + memory_notes(state, pid)),
         ("④ 节点", listing(state, pid)),

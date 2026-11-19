@@ -36,3 +36,10 @@ class SandboxPort(ExecPort, Protocol):
     """会话运行器按租约起执行容器用：launch 之后的 sid 交给 exec，会话结束时 destroy。"""
 
     def launch(self, spec: ExecSpec, lease_id: str, mount_workspace: bool = True) -> str: ...
+
+
+class HotGates(Protocol):
+    """运行时扩权（docs/design/runtime-grants/ §5）：把在跑的沙箱的出站闸门对齐到新编出的 spec。
+    执行器可以不实现它（例如将来的虚拟机隔离），那时退回租约边界：下一个租约起沙箱时才生效。"""
+
+    def reconcile(self, sid: str, spec: ExecSpec) -> dict[str, list[str]]: ...
