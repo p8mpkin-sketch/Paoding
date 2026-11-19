@@ -677,8 +677,14 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (path === "/v1/drafts/extract") return typeof body.text === "string" ? json(200, kaitiExtract(body.text)) : err(400, "schema_error", "text 须是字符串");
       if (path === "/v1/drafts") {
         if (typeof body.text !== "string") return err(400, "schema_error", "text 须是字符串");
+        const want = body.profile;
+        if (want !== undefined && !settings.models.profiles.some((p) => p.name === want)) return err(400, "schema_error", `没有登记名为 ${JSON.stringify(want)} 的模型档案`);
         const out = kaitiDraft(body);
-        return out instanceof Error ? err(400, "schema_error", out.message) : json(200, out);
+        if (out instanceof Error) return err(400, "schema_error", out.message);
+        if (want === undefined) return json(200, out);
+        // 假服务不调模型：只把起草档案换成人选的那个，出处记“人”（与 qicao 的起草服务同一种写法）
+        const derivation = out.derivation.map((r) => (r.field === "draft.model" ? { ...r, value: want, source: "human" as const, note: "你选的起草档案" } : r));
+        return json(200, { ...out, model: want, derivation });
       }
       const isOpen = path === "/v1/problems";
       m = path.match(/^\/v1\/problems\/([^/]+)\/proposals$/);

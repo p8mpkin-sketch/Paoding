@@ -115,6 +115,19 @@ describe("输入框与确认卡", () => {
     expect(new TextDecoder().decode(await r.api.blob(stmt.hash))).not.toContain(SECRET);
   });
 
+  it("模型一块：起草用只列已登记档案，选了即重新起草、出处记“人”；会话用按全局路由", async () => {
+    const { r, container } = await drafted(rec("practice").text);
+    const block = () => container.querySelector("[data-model-block]")!;
+    const sel = await waitFor(() => { const el = block().querySelector<HTMLSelectElement>('[data-action="pick-draft-profile"]'); expect(el).not.toBeNull(); return el!; });
+    expect([...sel.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(["default"]);
+    expect(block().querySelector("[data-session-routes]")!.textContent).toBe("Bootstrap → default · Reason → default · Explore → default · Verify → default");
+    fireEvent.change(sel, { target: { value: "default" } });
+    await waitFor(() => expect(block().querySelector('[data-field="draft.model"] [data-source]')?.getAttribute("data-source")).toBe("human"));
+    const posts = r.fetch.calls.filter((c) => c.method === "POST" && c.url === "/v1/drafts");
+    expect(JSON.parse(posts.at(-1)!.body!)).toMatchObject({ profile: "default" });
+    expect(JSON.parse(posts.at(-1)!.body!).draft).toBeUndefined(); // 换档案是重新起草，不是重新校验
+  });
+
   it("卡上改风险与预算：重新校验不再调模型，出处变“人”", async () => {
     const { r, container } = await drafted(rec("command").text);
     const card = () => container.querySelector("[data-kaiti-card]")!;
