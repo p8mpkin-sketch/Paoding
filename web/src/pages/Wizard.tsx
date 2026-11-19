@@ -24,7 +24,7 @@ const PAGES: { word: string; hint: string; of: number[] }[] = [
   { word: "要做什么", hint: "任务名、目标与材料", of: [0, 1] },
   { word: "怎么算做完", hint: "判定器与判定条件", of: [2] },
   { word: "能动用什么", hint: "环境与授权范围", of: [3] },
-  { word: "花多少，提交", hint: "预算、初始提示与复核", of: [4, 5] },
+  { word: "花多少，提交", hint: "预算、初始指导与复核", of: [4, 5] },
 ];
 const KIND_WORD: Record<MaterialKind, string> = { file: "文件", text: "文字", link: "链接" };
 const blankSlot = (n: number): DraftMaterial => ({ slot: `材料 ${n}`, required: false, name: null, hash: null, size: 0, media_type: "", kind: "file", text: "" });
@@ -86,7 +86,7 @@ export function Wizard({ from }: { from?: string } = {}) {
   }, [api, scopeKey]);
 
   const issues = useMemo(() => (d ? problemsOf(d) : STEPS.map(() => [])), [d]);
-  if (!templates || !registry || !d) return <p className={err ? "error" : "muted"}>{err ? rejectText(err) : "读取模板与判官注册表…"}</p>;
+  if (!templates || !registry || !d) return <p className={err ? "error" : "muted"}>{err ? rejectText(err) : "读取模板与判定器注册表…"}</p>;
   const judges = judgesFor(d, registry);
   const set = (patch: Partial<Draft>) => setD({ ...d, ...patch });
   const setMat = (i: number, patch: Partial<DraftMaterial>) => setD((cur) => cur && { ...cur, materials: cur.materials.map((m, k) => (k === i ? { ...m, ...patch } : m)) });
@@ -117,16 +117,16 @@ export function Wizard({ from }: { from?: string } = {}) {
     setHintNote(null);
     const body = JSON.stringify([open, d!.hint ?? ""]);
     if (idem.current.body !== body) idem.current = { key: newIdemKey(), body };
-    const t = pending("开题");
+    const t = pending("新建任务");
     try {
       const r = await submitDraft(api, d!, idem.current.key);
       clearDraft();
-      recorded(t, "开题", r.seq, r.hintError ? `初始提示没交上：${r.hintError}` : r.hintSeq !== null ? `初始提示 seq ${r.hintSeq}` : undefined);
-      if (r.hintError) { setHintNote(`题已开出（seq ${r.seq}），但初始提示没交上：${r.hintError}。可以到工作区再注入。`); return; }
+      recorded(t, "新建任务", r.seq, r.hintError ? `初始指导没交上：${r.hintError}` : r.hintSeq !== null ? `初始指导 seq ${r.hintSeq}` : undefined);
+      if (r.hintError) { setHintNote(`任务已创建（seq ${r.seq}），但初始指导没交上：${r.hintError}。可以到工作区再给出。`); return; }
       navigate({ page: "problem", pid: r.pid, asOf: null, node: null });
     } catch (e) {
       setErr(e as Error);
-      rejected(t, "开题", rejectText(e as Error) ?? (e as Error).message);
+      rejected(t, "新建任务", rejectText(e as Error) ?? (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -141,7 +141,7 @@ export function Wizard({ from }: { from?: string } = {}) {
   return (
     <div className="wizard" data-wizard data-step-index={step}>
       <Mast vol={["卷三", "新建"]} cap={d.clonedFrom ? "克隆任务" : "新建任务"}
-        title={d.clonedFrom ? <>从 <span className="k-mono" data-cloned-from={d.clonedFrom}><Plain text={d.clonedFrom} /></span> 克隆一个任务</> : "四步开一个任务"}
+        title={d.clonedFrom ? <>从 <span className="k-mono" data-cloned-from={d.clonedFrom}><Plain text={d.clonedFrom} /></span> 克隆一个任务</> : "四步新建一个任务"}
         dek="说清要做什么、怎么算做完、能动用什么、花多少。右边的任务单随填随变，缺什么会直接标出来。草稿只存在本机。"
         actions={
           <div className="wizard-tpl">
@@ -182,7 +182,7 @@ export function Wizard({ from }: { from?: string } = {}) {
 
           {on(1) && (
             <section className="today-sec" data-step="origin">
-              <SectionHead title="起点：材料" note="第一份是题面；网址只当文字存，不抓取" />
+              <SectionHead title="起点：材料" note="第一份必填；网址只当文字存，不抓取" />
               <ul className="materials">
                 {d.materials.map((m, i) => {
                   const kind = m.kind ?? "file";
@@ -213,7 +213,7 @@ export function Wizard({ from }: { from?: string } = {}) {
                           {kind === "text"
                             ? <textarea value={m.text ?? ""} data-text-slot={i} placeholder="贴一段文字" aria-label={`${m.slot}：文字`} onChange={(e) => setMat(i, { text: e.target.value })} />
                             : <input value={m.text ?? ""} data-text-slot={i} placeholder="网址（只当文字存）" aria-label={`${m.slot}：网址`} onChange={(e) => setMat(i, { text: e.target.value })} />}
-                          <p className="t2">开题时自动存成材料；也可以现在就存，看到哈希。
+                          <p className="t2">提交时自动存成材料；也可以现在就存，看到哈希。
                             <button type="button" className={btnClass("bare", "sm")} data-action="store-text" disabled={!writable || !textMaterial(m)} onClick={() => { const t = textMaterial(m); if (t) void store(i, t.bytes, t.name, t.media_type); }}>现在存</button></p>
                         </div>
                       )}
@@ -222,7 +222,7 @@ export function Wizard({ from }: { from?: string } = {}) {
                 })}
               </ul>
               <button type="button" className={btnClass("line", "sm")} data-action="add-slot" onClick={() => set({ materials: [...d.materials, blankSlot(d.materials.length)] })}>加一份材料</button>
-              {!writable && <p className="t2">上传材料与开题都是写操作：先在左下角配置人的令牌。</p>}
+              {!writable && <p className="t2">上传材料与新建任务都是写操作：先在左下角配置人的令牌。</p>}
             </section>
           )}
 
@@ -295,7 +295,7 @@ export function Wizard({ from }: { from?: string } = {}) {
 
           {on(4) && (
             <section className="today-sec" data-step="budget">
-              <SectionHead title="预算" note={d.b1CapMilli && Number(d.usd) > 0 ? `B1 单题上限 ${usd(d.b1CapMilli)}，这份是它的 ${((Number(d.usd) * 1000) / d.b1CapMilli).toFixed(1)} 倍（默认 3 倍）` : "模板没有给出 B1 单题上限"} />
+              <SectionHead title="预算" note={d.b1CapMilli && Number(d.usd) > 0 ? `B1 单任务上限 ${usd(d.b1CapMilli)}，这份是它的 ${((Number(d.usd) * 1000) / d.b1CapMilli).toFixed(1)} 倍（默认 3 倍）` : "模板没有给出 B1 单任务上限"} />
               <div className="form-grid four">
                 <label>成本上限<span className="t2">美元</span><input inputMode="decimal" value={d.usd} data-field="usd" onChange={(e) => set({ usd: e.target.value })} /></label>
                 <label>时间上限 wall_s<span className="t2">{Number(d.wall_s) > 0 ? `约 ${(Number(d.wall_s) / 3600).toFixed(1)} 小时` : "秒"}</span><input inputMode="numeric" value={d.wall_s} data-field="wall_s" onChange={(e) => set({ wall_s: e.target.value })} /></label>
@@ -318,7 +318,7 @@ export function Wizard({ from }: { from?: string } = {}) {
                 ))}
               </ol>
               <div className="form-grid">
-                <label className="wide">初始提示<span className="t2">可空；开题后作为第一条提示提交，属于人的判断，不是证据</span>
+                <label className="wide">初始指导<span className="t2">可空；任务创建后作为第一条指导提交，属于人的判断，不是证据</span>
                   <textarea value={d.hint ?? ""} data-field="hint" maxLength={2000} onChange={(e) => set({ hint: e.target.value })} />
                 </label>
               </div>
@@ -335,8 +335,8 @@ export function Wizard({ from }: { from?: string } = {}) {
           <footer className="wizard-foot">
             <button type="button" className={btnClass("line")} disabled={step === 0} onClick={() => setStep(step - 1)}>上一步</button>
             {step < 3 && <button type="button" className={btnClass("ink")} data-action="next" onClick={() => setStep(step + 1)}>下一步<span className="t2 inv">{PAGES[step + 1].word}</span></button>}
-            {step === 3 && <button type="button" className={btnClass("zhu")} data-action="open-problem" disabled={!allOk || busy || !writable} onClick={submit}>{busy ? "提交中…" : "提交开题"}</button>}
-            {step === 3 && !writable && <span className="t2">开题是写操作：先在左下角配置令牌。</span>}
+            {step === 3 && <button type="button" className={btnClass("ink")} data-action="open-problem" disabled={!allOk || busy || !writable} onClick={submit}>{busy ? "提交中…" : "创建任务"}</button>}
+            {step === 3 && !writable && <span className="t2">新建任务是写操作：先在左下角配置令牌。</span>}
             {rejectText(err) && <span className="error" data-reject>{rejectText(err)}</span>}
             {hintNote && <span className="warn" data-hint-note><Plain text={hintNote} /></span>}
           </footer>

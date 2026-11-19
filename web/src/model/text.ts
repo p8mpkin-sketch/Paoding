@@ -36,4 +36,14 @@ export function headTail(text: string, lines = 20): { head: string; tail: string
 }
 
 export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-4)}` : h);
-export const usd = (milli: number) => `$${(milli / 1000).toFixed(3)}`;
+/** 金额（美元；内部单位是千分之一美元）。阅读质量轮第 9 条：两位小数加千分位，不足一分写“< $0.01”，
+ *  始终带“$”、从不写三位小数，免得读成“元·角·分”。 */
+export function usd(milli: number): string {
+  if (milli === 0) return "$0.00";
+  const sign = milli < 0 ? "-" : "";
+  const a = Math.abs(milli);
+  if (a < 10) return `${sign}< $0.01`;
+  const cents = Math.round(a / 10);
+  const whole = Math.floor(cents / 100).toLocaleString("en-US");
+  return `${sign}$${whole}.${String(cents % 100).padStart(2, "0")}`;
+}

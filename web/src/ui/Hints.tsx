@@ -40,7 +40,7 @@ export function HintInject({ pid, rows, canWrite, onDone }: { pid: string; rows:
       <label className="hint-about">引用节点（可选，只列论断与尝试）
         <select value={about} onChange={(e) => setAbout(e.target.value)} disabled={!canWrite} data-about>
           <option value="">不指向节点</option>
-          {aboutCandidates(rows).map((r) => <option key={r.id} value={r.id}>{r.id} · {r.kind === "fact" ? "论断" : "Intent"} · {visible(r.title.value).slice(0, 30)}</option>)}
+          {aboutCandidates(rows).map((r) => <option key={r.id} value={r.id}>{r.id} · {r.kind === "fact" ? "论断" : "尝试"} · {visible(r.title.value).slice(0, 30)}</option>)}
         </select>
       </label>
       <div className="hint-foot">
@@ -75,14 +75,14 @@ export function HintTraceCard({ pid, hintId, seq, ts, rows, canWrite }: { pid: s
     api.hintTrace(hintId, seq).then((r) => live && setT(r), (e: Error) => live && setErr(e.message));
     return () => { live = false; };
   }, [api, hintId, seq]);
-  if (err) return <p className="error">取不到 Hint 追溯：<Plain text={err} /></p>;
-  if (!t) return <p className="muted">读取 Hint 追溯…</p>;
+  if (err) return <p className="error">取不到指导追溯：<Plain text={err} /></p>;
+  if (!t) return <p className="muted">读取指导追溯…</p>;
   const byId = new Map(rows.map((r) => [r.id, r]));
   return (
     <article className={`card hint-trace${t.hint.closed ? " closed" : ""}`} data-card="hint-trace">
       <header>
-        <h3>Hint {t.hint.id}{t.hint.closed ? `（已关闭${t.closed_seq !== null ? `于 seq ${t.closed_seq}` : ""}）` : ""}</h3>
-        {!t.hint.closed && <button type="button" className="btn-small" data-action="hint-close" disabled={!canWrite || busy} onClick={() => run([ops.hintClose(t.hint.id)])}>关闭 Hint</button>}
+        <h3>指导 {t.hint.id}{t.hint.closed ? `（已关闭${t.closed_seq !== null ? `于 seq ${t.closed_seq}` : ""}）` : ""}</h3>
+        {!t.hint.closed && <button type="button" className="btn-small" data-action="hint-close" disabled={!canWrite || busy} onClick={() => run([ops.hintClose(t.hint.id)])}>关闭指导</button>}
       </header>
       <Text t={t.hint.text} meta={{ author: t.hint.author, ts, note: t.hint.about ? `about ${t.hint.about}` : undefined }} />
       <div className="trace-cols">

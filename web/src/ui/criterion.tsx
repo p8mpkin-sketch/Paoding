@@ -67,7 +67,7 @@ export function CriterionCard({ p, seq }: { p: Predicate; seq: number }) {
               <details data-action="open-support">
                 <summary><Glyph g={RESULT_GLYPH[v.result]} />seq {v.seq} · {v.judge}@{v.version} · {v.grade ? GRADE_WORD[v.grade] : "未定级"} · {RESULT_WORD[v.result]}{v.candidate ? ` · 候选 ${v.candidate}` : ""}</summary>
                 <ul className="tree">
-                  {v.evidence.map((a) => <ArtifactChip key={a} id={a} seq={seq} hint="判官输出" />)}
+                  {v.evidence.map((a) => <ArtifactChip key={a} id={a} seq={seq} hint="判定器输出" />)}
                   {v.candidate && <ArtifactChip id={v.candidate} seq={seq} hint="候选（authored）" />}
                 </ul>
               </details>
@@ -76,7 +76,7 @@ export function CriterionCard({ p, seq }: { p: Predicate; seq: number }) {
         </ul>
       )}
       <p className="muted">
-        {p.fail_means === "refuted" ? "这是一条论断：判官给出 fail 即证伪。" : "这是待达成的状态：判官给出 fail 即未达成，计一次尝试。"}
+        {p.fail_means === "refuted" ? "这是一条论断：判定器给出 fail 即证伪。" : "这是待达成的状态：判定器给出 fail 即未达成，计一次尝试。"}
       </p>
     </section>
   );

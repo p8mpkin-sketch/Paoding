@@ -7,7 +7,6 @@ import { useNow } from "../app/clock";
 import { navigate, type Route } from "../app/router";
 import { applyTheme, loadTheme, THEMES, type Theme } from "../app/theme";
 import { runningOf } from "../model/dashboard";
-import { usd } from "../model/text";
 import { Kbd, Seal, btnClass } from "../kit";
 import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
@@ -150,17 +149,13 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
           </header>
         )}
         <main className={narrow ? "shell-work" : "shell-page"} id="content">{children}</main>
+        {/* 状态行只留一件主事（连得上、能不能写），其余退成灰字；数字都在页面里，不在这里重复（阅读质量轮第 6 条） */}
         <footer className="shell-status" aria-label="状态">
-          {problemsError && !problems ? <span className="bad">连不上图服务</span> : <span className={problemsError ? "bad" : "ok"}>{problemsError ? "刷新失败" : problems ? "已连接" : "连接中"}</span>}
-          <i aria-hidden="true">/</i><span>{canWrite ? "令牌有效 · 可写" : "未配置令牌 · 只读"}</span>
-          {problems && <>
-            <i aria-hidden="true">/</i><span>在途 {running.length}</span>
-            <i aria-hidden="true">/</i><span>等你 {waiting}</span>
-            <i aria-hidden="true">/</i><span>累计花费 {usd(problems.totals.spent_usd_milli)}</span>
-          </>}
+          {problemsError && !problems ? <span className="bad">连不上图服务</span>
+            : problemsError ? <span className="bad">刷新失败，显示的是上一次读到的</span>
+            : <span className="ok">{problems ? "已连接" : "连接中"}<span className="sub">{canWrite ? " · 可写" : " · 只读（未配置令牌）"}</span></span>}
           <span className="grow" />
-          <span>{nav.vol} · 庖丁 v0.4</span>
-          <i aria-hidden="true">/</i><Clock />
+          <span className="dim">庖丁 v0.4 · <Clock /></span>
         </footer>
       </div>
       <CommandPalette open={palette} onOpenChange={setPalette} problems={problems} />

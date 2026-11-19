@@ -82,10 +82,10 @@ export function parseCsv(text: string): string[][] {
 /** CSV 列 → 草稿字段。-1 即不映射。只映射文字类字段；判官、scope、预算等取自 base（模板或手填的那一份）。 */
 export type CsvMapping = { id: number; title: number; statement: number; material: number };
 export const CSV_TARGETS: { key: keyof CsvMapping; word: string }[] = [
-  { key: "id", word: "题目 id" },
-  { key: "title", word: "题名" },
+  { key: "id", word: "任务 id" },
+  { key: "title", word: "名称" },
   { key: "statement", word: "目标陈述" },
-  { key: "material", word: "材料：题面（文字）" },
+  { key: "material", word: "起点材料（文字）" },
 ];
 
 /** 按表头名猜一个初始映射（只是方便，人可改）。 */

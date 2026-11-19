@@ -11,8 +11,8 @@ import { usd } from "../model/text";
 import { CriterionBadge } from "../ui/criterion";
 import { Plain, Text } from "../ui/registers";
 
-export function Link({ to, children, className, ...data }: { to: Route; children: React.ReactNode; className?: string } & { [k: `data-${string}`]: string }) {
-  return <a {...data} className={className} href={hrefOf(to)} onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); navigate(to); }}>{children}</a>;
+export function Link({ to, children, className, onClick, ...data }: { to: Route; children: React.ReactNode; className?: string; onClick?: () => void } & { [k: `data-${string}`]: string }) {
+  return <a {...data} className={className} href={hrefOf(to)} onClick={(e) => { onClick?.(); if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); navigate(to); }}>{children}</a>;
 }
 
 /** 读一次题目列表；every 给出时按毫秒轮询（页面不可见时跳过）。 */
@@ -81,7 +81,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
         <span className="t2">显示 {list.length} / {view.items.length}</span>
       </form>
       {list.length === 0 ? (
-        <Empty title={view.items.length ? "没有符合筛选的任务" : "还没有任务"} action={view.items.length ? undefined : <Link to={{ page: "new" }} className={btnClass("ink", "sm")}>新建任务</Link>}>
+        <Empty title={view.items.length ? "没有符合筛选的任务" : "还没有任务"} action={view.items.length ? undefined : <Link to={{ page: "new" }} className={btnClass("line", "sm")}>新建任务</Link>}>
           {view.items.length ? "换个关键词，或者回到“全部”。" : "新建一个，或者导入一批。"}
         </Empty>
       ) : (

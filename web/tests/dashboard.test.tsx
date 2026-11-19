@@ -1,11 +1,11 @@
 // 总览与题库（工作台设计 §1 模块一、二）：只排版服务端给的字段，不推断等级或“阶段”。
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ProblemItem } from "../src/api/types";
 import { applyTheme, loadTheme } from "../src/app/theme";
 import { dailySeries, dayStart, leaseKinds, recentOf, solvedToday, terminalCounts } from "../src/model/dashboard";
 import { Inbox } from "../src/pages/Inbox";
-import { Dashboard } from "../src/pages/Dashboard";
+import { Dashboard, Trend } from "../src/pages/Dashboard";
 import { filterBank, Problems } from "../src/pages/Problems";
 import { playToEnd, renderWith, rig, until } from "./helpers";
 
@@ -63,7 +63,7 @@ describe("总览页（假后端）", () => {
     const pid = r.mock.demoPid;
     await until(() => container.querySelector(`.run-card[data-problem="${pid}"]`) !== null, "演示题卡片");
     const card = container.querySelector(`.run-card[data-problem="${pid}"]`)!;
-    expect(card.querySelector("[data-human-todo]")?.textContent).toMatch(/待人 1/);
+    expect(card.querySelector("[data-human-todo]")?.textContent).toBe("等你处理"); // 件数只在等你处理清单里出现一次
     expect(container.querySelector("[data-waiting]")).not.toBeNull();
     // 卡片上不出现前端自造的“阶段”词
     expect(card.textContent).not.toMatch(/探索中|推理中|执行中|判定中/);
@@ -72,8 +72,22 @@ describe("总览页（假后端）", () => {
     const again = renderWith(r, <Dashboard now={NOW} />).container;
     await until(() => again.querySelector(`.dash-recent tr[data-problem="${pid}"]`) !== null, "关题后进最近完成");
     expect(again.querySelector(`.run-card[data-problem="${pid}"]`)).toBeNull();
+  });
+
+  it("近七日：没有结束的任务时只一句话、不列空位；有数据时可切表格，无完成的日子不写百分比", () => {
+    const day = 86_400_000;
+    const empty = Array.from({ length: 7 }, (_, i) => ({ day: i * day, closed: 0, solved: 0 }));
+    const a = render(<Trend series={empty} />).container;
+    expect(a.querySelector("[data-trend-empty]")).not.toBeNull();
+    expect(a.textContent).not.toContain("—");
+    expect(screen.queryByRole("button", { name: /^表格/ })).toBeNull();
+    cleanup();
+    const some = empty.map((b, i) => (i === 3 ? { ...b, closed: 2, solved: 1 } : b));
+    const b = render(<Trend series={some} />).container;
+    expect([...b.querySelectorAll(".t-tick")].map((t) => t.textContent).filter((t) => t!.endsWith("%"))).toEqual(["50%"]);
     fireEvent.click(screen.getByRole("button", { name: /^表格/ }));
-    expect(again.querySelector("[data-trend-table] tbody")?.children).toHaveLength(7);
+    expect(b.querySelector("[data-trend-table] tbody")?.children).toHaveLength(7);
+    expect(b.textContent).not.toContain("—");
   });
 
   it("题库按 URL 里的条件筛选", async () => {

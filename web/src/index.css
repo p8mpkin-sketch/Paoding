@@ -1,7 +1,10 @@
 /* 设计系统（视觉重做第四版：纸、墨、朱印、界栏）。
    令牌全部是 CSS 变量，四套主题只换变量；Tailwind 只在构建期运行，产物是普通 CSS。
-   字体全部自托管（CSP 只许同源）：标题思源宋体，正文 IBM Plex Sans 配系统中文黑体，
-   编号与金额 IBM Plex Mono，朱批马善政，模型撰写的文字霞鹜文楷。中文字体按 unicode-range 分片，只下载用到的字。 */
+   字体全部自托管（CSP 只许同源），只三族、各司其职（阅读质量轮）：
+     宋体 --serif：只给页面标题与小节标题；
+     无衬线 --sans：一切正文、按钮、表格（含模型撰写的文字，语域靠标签区分，不靠字体）；
+     等宽 --mono：只给编号、序号、金额与代码。
+   字号只用六级阶梯 --fs-*（12 / 13 / 14 / 17 / 22 / 30），最小 12px；不在样式里写裸的 px 字号。 */
 @import "tailwindcss";
 
 @import "@fontsource/noto-serif-sc/600.css";
@@ -10,8 +13,6 @@
 @import "@fontsource/ibm-plex-sans/600.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
-@import "@fontsource/ma-shan-zheng/400.css";
-@import "lxgw-wenkai-webfont/lxgwwenkai-regular.css";
 
 /* 宣：纸本（亮色） */
 :root, :root[data-theme="light"] {
@@ -71,9 +72,8 @@
   --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
   --sans: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --brush: "Ma Shan Zheng", "Kaiti SC", "STKaiti", cursive;
-  /* 霞鹜文楷用按 unicode-range 分片的包（只下载页面用到的字）；拉丁字母仍交给 Plex Sans */
-  --kai: "IBM Plex Sans", "LXGW WenKai", "Kaiti SC", "STKaiti", serif;
+  /* 字号阶梯：说明小字 / 次要正文 / 正文 / 小节标题 / 卡片大数 / 页面标题 */
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 17px; --fs-xl: 22px; --fs-2xl: 30px;
   --side-w: 216px;
 }
 
@@ -98,13 +98,11 @@
   --font-serif: var(--serif);
   --font-sans: var(--sans);
   --font-mono: var(--mono);
-  --font-brush: var(--brush);
-  --font-kai: var(--kai);
 }
 
 @layer base {
   html, body { height: 100%; }
-  body { font: 400 13.5px/1.55 var(--sans); color: var(--ink); background: var(--paper); -webkit-font-smoothing: antialiased; }
+  body { font: 400 var(--fs-md)/1.6 var(--sans); color: var(--ink); background: var(--paper); -webkit-font-smoothing: antialiased; }
   ::selection { background: var(--zhu-soft); }
   :focus-visible { outline: 2px solid var(--zhu); outline-offset: 2px; }
 }

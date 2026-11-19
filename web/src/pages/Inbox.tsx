@@ -55,7 +55,7 @@ export function Inbox() {
                     <div>{WHY[t.why] ?? t.why} · <span className="k-mono">{t.target}</span></div>
                     <div className="t2">{HAS_CARD.has(t.why) ? "在工作区左栏的待办里打开卡片处理" : "网页暂不处理这一类，请用 pd"}</div>
                   </div>
-                  <Link to={{ page: "problem", pid: p.id, asOf: null, node: t.target }} className={btnClass(HAS_CARD.has(t.why) ? "zhu" : "line", "sm")}>去处理</Link>
+                  <Link to={{ page: "problem", pid: p.id, asOf: null, node: t.target }} className={btnClass("line", "sm")}>去处理</Link>
                 </li>
               ))}
             </ol>

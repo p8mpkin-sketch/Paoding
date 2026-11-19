@@ -80,7 +80,7 @@ export function Import() {
       setRows((rs) => rs.map((r, k) => (k === i ? { ...r, state: "busy", note: "提交中…" } : r)));
       try {
         const res = await submitDraft(api, rows[i].draft, newIdemKey());
-        const note = `已开题 seq ${res.seq}${res.hintSeq !== null ? `，初始提示 seq ${res.hintSeq}` : ""}${res.hintError ? `；初始提示失败：${res.hintError}` : ""}`;
+        const note = `已创建 seq ${res.seq}${res.hintSeq !== null ? `，初始指导 seq ${res.hintSeq}` : ""}${res.hintError ? `；初始指导失败：${res.hintError}` : ""}`;
         ok++;
         setRows((rs) => rs.map((r, k) => (k === i ? { ...r, state: "done", note } : r)));
       } catch (e) {
@@ -95,7 +95,7 @@ export function Import() {
   const ready = rows.filter((r) => r.state === "ready" || r.state === "failed").length;
   return (
     <div className="importer" data-page="import">
-      <Mast vol={["卷三", "导入"]} cap="导入任务集" title="把一批任务一次开好" dek="文件在本机解析，逐个先存材料、再开题，与向导走同一条路；每个任务的结果单独显示，失败的可以重试。" />
+      <Mast vol={["卷三", "导入"]} cap="导入任务集" title="一次新建一批任务" dek="文件在本机解析，逐个先存材料、再创建任务，与向导走同一条路；每个任务的结果单独显示，失败的可以重试。" />
       <section className="today-sec">
         <SectionHead title="选文件与缺省值" note="JSON 或 CSV" />
         <div className="import-grid">
@@ -146,8 +146,8 @@ export function Import() {
         <section className="today-sec" data-import-queue>
           <SectionHead title="待导入" note={`${rows.length} 个`} right={
             <span className="row">
-              {cfg.token === null && <span className="t2">开题是写操作，先在左下角配置令牌</span>}
-              <button type="button" className={btnClass("zhu", "sm")} data-action="import-all" disabled={running || ready === 0 || cfg.token === null} onClick={runAll}>{running ? "导入中…" : `导入 ${ready} 个`}</button>
+              {cfg.token === null && <span className="t2">创建任务是写操作，先在左下角配置令牌</span>}
+              <button type="button" className={btnClass("ink", "sm")} data-action="import-all" disabled={running || ready === 0 || cfg.token === null} onClick={runAll}>{running ? "导入中…" : `导入 ${ready} 个`}</button>
             </span>
           } />
           <div className="table-scroll">
@@ -178,6 +178,6 @@ const STATE_MARK: Record<Row["state"], { ch: string; tone: MarkTone; word: strin
   ready: { ch: "待", tone: "wei", word: "待提交" },
   invalid: { ch: "缺", tone: "dai", word: "缺项" },
   busy: { ch: "行", tone: "xing", word: "提交中" },
-  done: { ch: "开", tone: "jie", word: "已开题" },
+  done: { ch: "建", tone: "jie", word: "已创建" },
   failed: { ch: "拒", tone: "dai", word: "被拒" },
 };

@@ -64,7 +64,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
     navigate({ page: "problem", pid, asOf: patch.asOf !== undefined ? patch.asOf : asOf, node: patch.node !== undefined ? patch.node : node });
   const select = (id: string) => { countUsage("inspect"); setPanel("right"); go({ node: id }); };
 
-  if (!vm) return <p className={s.error ? "error" : "muted"}>{s.error ? <>读不到题目 <Plain text={pid} />：<Plain text={s.error} /></> : "读取中…"}</p>;
+  if (!vm) return <p className={s.error ? "error" : "muted"}>{s.error ? <>读不到任务 <Plain text={pid} />：<Plain text={s.error} /></> : "读取中…"}</p>;
 
   const graphEnabled = vm.rows.length > GRAPH_MIN_NODES || graphPref === "always";
   const conn = asOf !== null ? `回放于 seq=${vm.seq}` : s.conn === "live" ? "实时" : s.conn === "connecting" ? "连接中" : `已断开，停在 seq=${vm.seq}`;
@@ -76,7 +76,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const liveLeases = vm.leases.filter((l) => l.active).length;
 
   return (
-    <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel}>
+    <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel} data-inspect={node ? "node" : "none"}>
       {/* 顶栏分主次（P2-2）：一眼要看的放主栏——任务名、终态与判定器、连接、花费、给出指导；其余收进“详情”。 */}
       <header className="topbar">
         <div className="topbar-primary">
@@ -96,10 +96,10 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
         <details className="topbar-secondary" data-topbar="secondary">
           <summary className="k-link">详情</summary>
           <div className="topbar-secondary-body">
-            <span className="badge" data-goal-attempts>Goal 尝试 {vm.goal.predicate.attempts_used ?? 0}/{vm.goal.predicate.max_attempts ?? "—"}</span>
+            <span className="badge" data-goal-attempts>目标尝试 {vm.goal.predicate.attempts_used ?? 0}/{vm.goal.predicate.max_attempts ?? "—"}</span>
             <details className="profile">
               <summary className="badge">画像 {vm.profile.info} · {vm.profile.judge} · {vm.profile.reversibility}{vm.profileOverrides.length ? " · 已人工覆盖" : ""}</summary>
-              <p className="muted">画像是派生量：reversibility 取 scope 的最高风险，judge 取 Goal 判官的类型，info 取资源是否 external。人不填写，只能事后覆盖（pd profile --override）。</p>
+              <p className="muted">画像是派生量：reversibility 取 scope 的最高风险，judge 取目标判定器的类型，info 取资源是否 external。人不填写，只能事后覆盖（pd profile --override）。</p>
               <p>推导值：{vm.derivedProfile.info} · {vm.derivedProfile.judge} · {vm.derivedProfile.reversibility}</p>
               {vm.profileOverrides.map((o) => (
                 <div key={o.seq} data-override={o.axis}>

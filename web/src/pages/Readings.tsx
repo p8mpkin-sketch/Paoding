@@ -26,7 +26,7 @@ export function Readings() {
     return () => { live = false; };
   }, [api, list]);
 
-  if (error) return <p className="error">读不到题目列表：<Plain text={error} /></p>;
+  if (error) return <p className="error">读不到任务列表：<Plain text={error} /></p>;
   if (!list) return <p className="muted">读取中…</p>;
   const closed = list.filter((p) => p.closed);
   const totals = view!.totals;
@@ -37,9 +37,9 @@ export function Readings() {
     <div className="readings">
       <h2>读数</h2>
       <section>
-        <h3>题组</h3>
+        <h3>任务集</h3>
         <dl className="kv">
-          <dt>题数</dt><dd>{totals.problems}（已关 {closed.length}）</dd>
+          <dt>任务数</dt><dd>{totals.problems}（已关 {closed.length}）</dd>
           <dt>终态</dt><dd>{(["solved", "accepted", "unsolved"] as const).map((t) => `${t} ${closed.filter((p) => p.terminal === t).length}`).join(" · ")}</dd>
           <dt>每解成本</dt><dd data-cost-per-solve>{totals.cost_per_solve_usd_milli !== null ? `${usd(totals.cost_per_solve_usd_milli)}（全部花费 ${usd(totals.spent_usd_milli)} ÷ solved ${totals.solved} 题；图服务给出）` : "尚无 solved 的题"}</dd>
         </dl>
@@ -47,7 +47,7 @@ export function Readings() {
       <section>
         <h3>按角色分项</h3>
         <table className="mini wide">
-          <thead><tr><th>题目</th><th>终态</th>{roles.map((r) => <th key={r}>{r}</th>)}<th>验证池</th><th>已花 / 上限</th></tr></thead>
+          <thead><tr><th>任务</th><th>终态</th>{roles.map((r) => <th key={r}>{r}</th>)}<th>验证池</th><th>已花 / 上限</th></tr></thead>
           <tbody>
             {list.map((p) => {
               const b = budgets[p.id];
@@ -70,7 +70,7 @@ export function Readings() {
       </section>
       <section>
         <h3>界面使用读数（本机）</h3>
-        <p className="muted">只存在这台机器上，不进题目日志，不发往服务端。用来判断各感知官模块有没有人用。</p>
+        <p className="muted">只存在这台机器上，不进任务日志，不发往服务端。用来判断各感知官模块有没有人用。</p>
         {Object.keys(usage).length === 0 ? <p className="muted">还没有读数。</p> : (
           <table className="mini"><tbody>{Object.keys(usage).sort().map((k) => <tr key={k}><td>{k}</td><td>{usage[k]}</td></tr>)}</tbody></table>
         )}
