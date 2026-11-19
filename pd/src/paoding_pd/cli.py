@@ -5,6 +5,7 @@
     pd profile <pid> [--override <轴>=<值> --reason "<文本>"]
     pd hint add [--node <id>] "<文本>"      pd hint close <hid>
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
+    pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
 
 pid 取 --pid 或环境变量 PD_PROBLEM。数据目录取 --home 或 PD_HOME（g.sqlite 与 blobs/）。
 M0 的骨架以本机进程内方式打开图服务；图服务独立成进程后改走 HTTP/Unix socket 绑定（接口相同，D10）。
@@ -22,7 +23,7 @@ import yaml
 
 from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, seen_card
 
-from . import render
+from . import kaiti, render
 
 HUMAN_TOKEN = "pd-local-human"
 
@@ -222,15 +223,18 @@ def parser() -> argparse.ArgumentParser:
         d.add_argument("intent")
         d.add_argument("--yes", action="store_true")
         d.add_argument("--reason", required=(name == "deny"))
+    kaiti.add_parser(sp)
     return ap
 
 
-def main(argv: list[str] | None = None, out=None, read=input, judges: dict | None = None) -> int:
+def main(argv: list[str] | None = None, out=None, read=input, judges: dict | None = None, model=None) -> int:
     a = parser().parse_args(argv)
     w = (out or sys.stdout).write
     local = Local(Path(a.home), {"kind": "human", "id": a.actor}, judges)
     if a.cmd == "problem":
         return cmd_open(local, a, w)
+    if a.cmd == "kaiti":
+        return kaiti.cmd_kaiti(local, a, w, read, model)
     if a.cmd in ("approve", "deny"):
         return cmd_decide(local, a, w, a.cmd, read)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)

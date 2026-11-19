@@ -1,0 +1,12 @@
+# 练习道信封（设计 §4.4）。金额与时长的上限不在这里：取设置层的 caps.practice_usd_milli / practice_wall_s（同一个数）。
+# 一期只在校验层判"是否练习道候选"；内核按信封拒绝随迁移表第三期落地。
+version: 1
+allow:
+  resources: [net, workspace]
+  net_patterns: ["q*:*", "127.0.0.1:*", "localhost:*", "10.*:*", "192.168.*:*"]
+  max_risk: r0
+judge:
+  ids: [exact_match]
+  require_sealed: true
+goal:
+  max_attempts_max: 5

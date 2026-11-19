@@ -15,6 +15,7 @@ members = [
     "paoding-graph",
     "paoding-judgebox",
     "paoding-pd",
+    "paoding-qicao",
     "paoding-sinan",
     "paoding-tongjian",
     "paoding-watchdog",
@@ -397,6 +398,7 @@ dependencies = [
     { name = "paoding-graph" },
     { name = "paoding-judgebox" },
     { name = "paoding-pd" },
+    { name = "paoding-qicao" },
     { name = "paoding-sinan" },
     { name = "paoding-tongjian" },
     { name = "paoding-watchdog" },
@@ -419,6 +421,7 @@ requires-dist = [
     { name = "paoding-graph", editable = "graph" },
     { name = "paoding-judgebox", editable = "judgebox" },
     { name = "paoding-pd", editable = "pd" },
+    { name = "paoding-qicao", editable = "qicao" },
     { name = "paoding-sinan", editable = "sinan" },
     { name = "paoding-tongjian", editable = "tongjian" },
     { name = "paoding-watchdog", editable = "watchdog" },
@@ -480,6 +483,17 @@ requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
 name = "paoding-pd"
 version = "0.0.0"
 source = { editable = "pd" }
+dependencies = [
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
+
+[[package]]
+name = "paoding-qicao"
+version = "0.0.0"
+source = { editable = "qicao" }
 dependencies = [
     { name = "pyyaml" },
 ]

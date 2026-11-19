@@ -1,0 +1,20 @@
+# 一句话开题的确定性数据（设计 docs/design/kaiti）。领域词只许写在这类数据里，不进组件代码（红线 3）。
+version: 1
+# 答案标签：原文里以它们开头、后跟冒号的那一段剪出，存保密库，不进题面、不给起草模型
+answer_labels: ["答案", "标准答案", "期望输出", "answer", "expected answer", "expected"]
+# URL 换算成 host:port 时补的缺省端口
+url_ports: {http: 80, https: 443}
+# 模板缺省（出处记"表"）
+defaults:
+  deliverable: answer.txt
+  max_attempts: 5
+  verify_share: 0.2
+  bootstrap_share: 0.3
+  env: {base: basic, baseline_ref: basic@1}
+  answer_judge: exact_match
+  command_judge: replay
+  command_expect: {exit_code: 0}
+  tier: medium              # 起草模型没有给档位、也没有确定性档位时
+  fallback_budget: {usd_milli: 2000, wall_s: 1800}   # 先验数据源查不到时（占位）
+# 零确认开关（cz 2026-11-19 裁决 #83 第 2 条附条件）：放行前一律走确认道；由人按 §10.3 离线读数达标后打开
+zero_confirm: false

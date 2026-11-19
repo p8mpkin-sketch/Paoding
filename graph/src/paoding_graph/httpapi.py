@@ -45,6 +45,7 @@ from .tokens import UnknownToken
 
 MAX_BODY = 8 * 1024 * 1024  # JSON 请求体上限
 MAX_BLOB = 256 * 1024 * 1024  # 单个 Blob 上限（§3.2.2）
+MAX_VAULT = 64 * 1024  # 保密库单条上限：答案与期望输出，不是文件
 LOOPBACK = ("127.0.0.1", "localhost", "[::1]")
 _ACCESS = logging.getLogger("http")  # 访问日志；格式由组装根决定，这里只给字段
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -65,6 +66,9 @@ class HttpConfig:
     extra_hosts: tuple[str, ...] = field(default_factory=tuple)
     health: Callable[[], dict[str, Doc]] | None = None  # 组装根给出的其它组件状态：{组件名: {ok, …}}（/healthz）
     access_log: bool = False  # HTTP 访问日志（logging 的 "http"），缺省关
+    # 保密库的只写入口（一句话开题设计 §2.5）：组装根注入 fn(内容) → VaultRef。图服务不依赖保密库的实现，
+    # 也读不到库里的内容；没有注入时 PUT /v1/vault 返回 404。
+    vault_put: Callable[[bytes], dict[str, Any]] | None = None
 
 
 class HttpError(Exception):
@@ -163,6 +167,7 @@ class GraphHttp:
             ("GET", R(r"/v1/templates"), lambda h, m, q: self._json(h, 200, _catalog(self.cfg.templates_dir))),
             ("GET", R(r"/v1/renderers"), lambda h, m, q: self._json(h, 200, _catalog(self.cfg.renderers_dir))),
             ("PUT", R(r"/v1/blobs"), self.r_blob_put),
+            ("PUT", R(r"/v1/vault"), self.r_vault_put),
             ("POST", R(r"/v1/profile/preview"), self.r_profile_preview),
             ("POST", R(r"/v1/problems"), p(self.w_open)),
             ("POST", R(r"/v1/problems/(?P<pid>[^/]+)/proposals"), p(self.w_proposals)),
@@ -632,6 +637,20 @@ class GraphHttp:
         except BlobError as e:
             raise HttpError(413, "schema_error", str(e)) from None
         self._json(h, 201, {"hash": bh, "size": n, "by": actor["kind"]})
+
+    def r_vault_put(self, h: Handler, m: Params, q: Params) -> None:
+        """只写：人的令牌，内容是一份含密级判官资产（如答案），返回 {vault, digest}。没有读的端点。"""
+        if self.cfg.vault_put is None:
+            raise HttpError(404, "unknown_ref", "本部署没有保密库入口")
+        actor = self._actor(h)
+        if actor["kind"] != "human":
+            raise HttpError(403, "forbidden_op", "只有人的令牌能写保密库")
+        n = _length(h, -1)
+        if n < 0:
+            raise HttpError(411, "schema_error", "需要 Content-Length")
+        if n == 0 or n > MAX_VAULT:
+            raise HttpError(413, "schema_error", f"保密库条目须为 1 到 {MAX_VAULT} 字节")
+        self._json(h, 201, self.cfg.vault_put(h.rfile.read(n)))
 
     def _actor(self, h: Handler) -> Actor:
         token = self._token(h)

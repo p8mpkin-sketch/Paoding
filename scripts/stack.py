@@ -265,10 +265,12 @@ class Stack:
         self.judges = kernel_judges(self.registry)
         self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges), self.tokens)
         self.blobs = BlobStore(home / "blobs")
+        self.vault = Vault(home / "vault")
         self.http = GraphHttp(
             self.graph,
             self.blobs,
             HttpConfig(
+                vault_put=lambda b: self.vault.put("kt-" + secrets.token_hex(12), b),
                 port=cfg.port,
                 allowed_origins=tuple(cfg.allow_origins),
                 static_dir=cfg.static_dir,
@@ -277,7 +279,6 @@ class Stack:
                 access_log=bool(cfg.log.get("access")),
             ),
         )
-        self.vault = Vault(home / "vault")
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
 

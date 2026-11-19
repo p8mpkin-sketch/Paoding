@@ -1,0 +1,8 @@
+# 档位 → 默认预算。占位表：数字只为让流程跑通，没有任何读数依据。
+# 真实数据由测试方另行注入（同格式的文件，路径由部署配置给出），本仓库不读取、也不推导任何题库或校准目录。
+source: placeholder
+version: placeholder-0
+tiers:
+  easy:   {usd_milli: 500,  wall_s: 600}
+  medium: {usd_milli: 2000, wall_s: 1800}
+  hard:   {usd_milli: 6000, wall_s: 3600}

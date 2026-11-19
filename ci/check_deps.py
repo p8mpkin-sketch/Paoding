@@ -17,10 +17,11 @@ ALLOWED: dict[str, set[str]] = {
     "judgebox": {"graph", "executor"},
     "adapter": {"graph", "executor"},
     "watchdog": {"graph"},
-    "pd": {"graph"},
+    "pd": {"graph", "qicao"},
     "eval": {"graph", "adapter", "executor", "tongjian"},
     "sinan": {"graph", "adapter"},
     "tongjian": {"graph"},
+    "qicao": {"judgebox"},
 }
 
 

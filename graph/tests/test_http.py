@@ -1264,3 +1264,31 @@ def test_access_log_is_off_by_default_and_never_carries_tokens_or_queries(tmp_pa
         assert "tok-human" not in text and "as_of" not in text and "idem_key" not in text
     finally:
         b.close()
+
+
+# ---------- 保密库只写入口（一句话开题 §2.5） ----------
+
+
+def test_vault_put_is_write_only_and_human_only(tmp_path):
+    got = []
+    a = Api(tmp_path, vault_put=lambda b: got.append(b) or {"vault": f"kt-{len(got)}", "digest": "d" * 64})
+    try:
+        n = a.svc.head()
+        st, body, _ = a.req("PUT", "/v1/vault", b"PD-1", token="tok-human")
+        assert st == 201 and body == {"vault": "kt-1", "digest": "d" * 64} and got == [b"PD-1"]
+        st, body, _ = a.req("PUT", "/v1/vault", b"x", token="tok-sinan")
+        assert st == 403 and body["code"] == "forbidden_op"
+        st, _, _ = a.req("PUT", "/v1/vault", b"x")
+        assert st == 401
+        st, body, _ = a.req("PUT", "/v1/vault", b"", token="tok-human")
+        assert st == 413
+        st, _, _ = a.req("GET", "/v1/vault")
+        assert st in (404, 405)
+        assert a.svc.head() == n and len(got) == 1  # 保密库写入不进日志
+    finally:
+        a.close()
+
+
+def test_vault_put_absent_without_injection(api):
+    st, body, _ = api.req("PUT", "/v1/vault", b"x", token="tok-human")
+    assert st == 404 and body["code"] == "unknown_ref"
