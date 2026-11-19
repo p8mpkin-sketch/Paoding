@@ -41,6 +41,21 @@ class Draft:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+def draft_doc(d: Draft) -> dict[str, Any]:
+    """Draft 的草案形态（parse_draft 的逆）：确认卡改风险或预算后重新校验时原样交回，不再调模型。"""
+    return {
+        "title": d.title,
+        "goal_sentence": list(d.goal_sentence),
+        "entries": [{"span": s, "role": r} for s, r in d.entries],
+        "deliverable": {"span": d.deliverable} if d.deliverable else None,
+        "check": {"form": d.check_form, **({"spans": list(d.check_spans)} if d.check_spans else {})},
+        "deadline": d.deadline,
+        "spend": d.spend,
+        "tier_guess": d.tier_guess,
+        "materials": list(d.materials),
+    }
+
+
 def _sid(v: Any, ext: Extraction, kinds: tuple[str, ...], what: str) -> str:
     if not isinstance(v, str):
         raise DraftError(f"{what} 须为区间 id")

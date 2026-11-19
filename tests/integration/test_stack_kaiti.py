@@ -1,0 +1,75 @@
+"""一句话开题第二期在组装根里的接线：/v1/drafts 只给人，开题仍由人的令牌按网页同一条路提交。不需要 Docker。
+
+POST /v1/drafts → PUT /v1/blobs（逐份核对哈希）→ PUT /v1/vault（答案）→ 换掉 "$answer" → POST /v1/problems
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+import urllib.error
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts" / "e2e"))
+
+from drive import call  # noqa: E402
+from kaiti_hub import KaitiConfigError, kaiti_config  # noqa: E402
+from stack import Stack, StackConfig  # noqa: E402
+
+TEXT = "目标在 q1:8080，登录后页面会显示一个答案串，交出来。半小时内搞定。答案：PD-7Q2M9XKD"
+
+
+@pytest.fixture
+def stack(tmp_path):
+    s = Stack(StackConfig.load(tmp_path / "home", port=0, executor="none"))
+    url = s.http.serve()
+    yield s, url
+    s.http.close()
+
+
+def test_drafts_then_open_like_the_web(stack):
+    s, url = stack
+    tok = s.human_token
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(url, "/v1/drafts", {"text": TEXT}, token=s.tok["sinan"])
+    assert e.value.code == 403
+    ext = call(url, "/v1/drafts/extract", {"text": TEXT}, token=tok)
+    assert ext["answers"] == 1 and "PD-7Q2M9XKD" not in str(ext)
+
+    out = call(url, "/v1/drafts", {"text": TEXT}, token=tok)
+    assert out["lane"] == "confirm" and out["model"] == "heuristic"
+    for b in out["blobs"]:
+        assert call(url, "/v1/blobs", token=tok, raw=b["text"].encode())["hash"] == b["hash"]
+    ref = call(url, "/v1/vault", token=tok, raw=out["secret"].encode())
+    ops = out["ops"]
+    ops[-1]["body"]["goal"]["check"]["sealed"] = [ref]
+    res = call(url, "/v1/problems", {"id": out["pid"], "idem_key": "k1", "ops": ops}, token=tok)
+    assert res["ok"], res
+    p = s.graph.state["problems"][out["pid"]]
+    assert p["goal"]["check"]["judge_id"] == "exact_match"
+    assert p["scope"][0]["pattern"] == "q1:8080" and p["scope"][0]["risk"] == "r2"  # 没有风险表：r2
+    assert (s.vault.root / ref["vault"]).read_bytes() == b"PD-7Q2M9XKD"
+    assert ref["digest"] != hashlib.sha256(b"PD-7Q2M9XKD").hexdigest()  # 加盐
+    assert s.kaiti.state == {"draft": "heuristic", "profile": "heuristic", "priors": "placeholder:placeholder-0"}
+
+
+def test_kaiti_config_rejects_keys_in_file(tmp_path):
+    with pytest.raises(KaitiConfigError):
+        kaiti_config({"api_key": "sk-x"}, tmp_path)
+    with pytest.raises(KaitiConfigError):
+        kaiti_config({"draft": "gpt"}, tmp_path)
+    assert kaiti_config({"priors": "p.yaml"}, tmp_path)["priors"] == str((tmp_path / "p.yaml").resolve())
+
+
+def test_real_backend_without_token_means_no_drafter(tmp_path, monkeypatch):
+    monkeypatch.delenv("PD_DRAFT_TOKEN", raising=False)
+    from kaiti_hub import KaitiHub
+
+    hub = KaitiHub({"model": "m"}, real=True, upstream="https://example.invalid")
+    assert hub.state["draft"] == "off"
+    out = hub.svc.draft_view({"text": TEXT})
+    assert out["lane"] == "refuse"

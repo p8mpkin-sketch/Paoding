@@ -322,3 +322,63 @@ def _done(
 def derivation_bytes(v: Vetted) -> bytes:
     """出处账的登记形态（input 类 Artifact 的正文）：规范化 JSON，不含答案。"""
     return json.dumps({"pid": v.pid, **v.public()}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+
+
+def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
+    """确认卡上人能改的两类（设计 §7.3）：每条授权规则的风险（三选一）与预算的金额、时限。纯函数。
+
+    ov = {"risk": {"<规则下标>": "r0|r1|r2"}, "usd_milli": int, "wall_s": int}，都可省。
+    改过的字段出处记"人"；只要改过一项，这道题就不再是练习道候选（零确认只给没人碰过的草案）。
+    超过单题硬顶、风险取值不合法、下标越界一律 ValueError，不裁剪：人写的数不替人改。
+    """
+    if v.input is None or v.lane == "refuse":
+        raise ValueError("拒绝道没有可改的字段")
+    if set(ov) - {"risk", "usd_milli", "wall_s"}:
+        raise ValueError(f"只能改 risk、usd_milli、wall_s，不能改 {sorted(set(ov) - {'risk', 'usd_milli', 'wall_s'})}")
+    inp = json.loads(json.dumps(v.input))
+    der = [dict(x) for x in v.derivation]
+    touched: list[str] = []
+
+    def mark(field_: str, value: Any) -> None:
+        for row in der:
+            if row["field"] == field_:
+                if row["value"] == value:
+                    return
+                row.update(value=value, source="human", note="人在确认卡上改")
+                row.pop("spans", None)
+                touched.append(field_)
+                return
+        raise ValueError(f"出处账里没有 {field_}")
+
+    risk = ov.get("risk") or {}
+    if not isinstance(risk, Mapping):
+        raise ValueError("risk 须是 {规则下标: 风险}")
+    for k, r in risk.items():
+        i = int(k)
+        if not 0 <= i < len(inp["scope"]) or inp["scope"][i]["resource"] == "workspace":
+            raise ValueError(f"没有可改风险的第 {i} 条规则")
+        if r not in RISK_RANK:
+            raise ValueError(f"风险只能取 r0/r1/r2，不是 {r!r}")
+        if inp["scope"][i]["risk"] != r:
+            inp["scope"][i]["risk"] = r
+            mark(f"scope[{i}].risk", r)
+    for key, cap_key in (("usd_milli", "open_usd_milli"), ("wall_s", "open_wall_s")):
+        if key not in ov:
+            continue
+        val = ov[key]
+        if not isinstance(val, int) or isinstance(val, bool) or val <= 0:
+            raise ValueError(f"{key} 须为正整数")
+        cap = int(settings.caps[cap_key])
+        if val > cap:
+            raise ValueError(f"{key} = {val} 超过单题硬顶 {cap}")
+        if inp["budget"][key] != val:
+            inp["budget"][key] = val
+            mark(f"budget.{key}", val)
+    if not touched:
+        return v
+    gone = {"zero_confirm_off"} | {"clipped_" + f.split(".", 1)[1] for f in touched if f.startswith("budget.")}
+    notes = [n for n in v.notes if n.code not in gone]
+    notes.append(Note("human_edit", "lane", f"你在卡上改了 {'、'.join(touched)}", "confirm"))
+    return Vetted(
+        "confirm", False, notes, der, inp, v.statement, v.references, v.spec, v.secret, v.pid, v.priors_version
+    )

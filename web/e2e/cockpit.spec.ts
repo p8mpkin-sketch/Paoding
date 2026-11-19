@@ -1,5 +1,6 @@
 // 浏览器里的驾驶舱、审批卡、时间轴回放与窄屏（P2-2）。后端是假后端（e2e/server.ts），剧本由测试推进。
 import { expect, test, type Page } from "@playwright/test";
+import { KAITI } from "../mock/kaiti";
 
 const TOKEN = "mock-human-token";
 
@@ -187,8 +188,20 @@ test("任务库：筛选写进 URL，刷新后仍在", async ({ page }) => {
   for (const t of await page.locator("td[data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
 });
 
-test("向导：四步走完，文字材料与初始指导，创建后进工作区；草稿刷新不丢", async ({ page }) => {
+test("一句话新建：回车起草，确认卡核对出处，创建后进工作区", async ({ page }) => {
   await page.goto("/new");
+  await page.locator('[data-field="kaiti-text"]').fill(KAITI.drafts.practice.text);
+  await expect(page.locator('[data-kaiti-extract] [data-kind="addr"]')).toContainText("q1:8080");
+  await page.locator('[data-field="kaiti-text"]').press("Enter");
+  await expect(page.locator("[data-kaiti-card] [data-eligible]")).toContainText("零确认尚未放行");
+  await expect(page.locator("[data-kaiti-card]")).not.toContainText("PD-7Q2M9XKD");
+  await page.locator('[data-action="open-problem"]').click();
+  await expect(page).toHaveURL(new RegExp(`/p/${KAITI.drafts.practice.out.pid}`));
+  await expect(page.locator(".cockpit")).toBeVisible();
+});
+
+test("向导：四步走完，文字材料与初始指导，创建后进工作区；草稿刷新不丢", async ({ page }) => {
+  await page.goto("/new/advanced");
   await page.locator('[data-field="id"]').fill("e2e-wiz");
   await page.locator('[data-field="title"]').fill("浏览器里开的题");
   await page.locator('[data-field="statement"]').fill("提交答案串");
@@ -212,7 +225,7 @@ test("向导：四步走完，文字材料与初始指导，创建后进工作�
 test("任务库：克隆一个任务进向导，id 留空、判据与 scope 已预填", async ({ page }) => {
   await page.goto("/problems");
   await page.locator('tr[data-problem] [data-action="clone"]').first().click();
-  await expect(page).toHaveURL(/\/new\?from=/);
+  await expect(page).toHaveURL(/\/new\/advanced\?from=/);
   await expect(page.locator("[data-cloned-from]")).toBeVisible();
   await expect(page.locator('[data-field="id"]')).toHaveValue("");
   await page.locator('[data-step-tab="2"]').click();

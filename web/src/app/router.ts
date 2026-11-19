@@ -9,7 +9,8 @@ export const NO_FILTER: BankFilter = { q: "", terminal: "", judge: "" };
 export type Route =
   | { page: "home" }
   | ({ page: "problems" } & Partial<BankFilter>)
-  | { page: "new"; from?: string }
+  /** /new 是一句话开题的输入框；/new/advanced 是四步向导（高级模式，克隆也到这里）。 */
+  | { page: "new"; advanced?: boolean; from?: string }
   | { page: "import" }
   | { page: "readings" }
   | { page: "inbox" }
@@ -23,7 +24,8 @@ export function parseRoute(pathname: string, search: string): Route {
     const n = raw === null ? NaN : Number(raw);
     return { page: "problem", pid: decodeURIComponent(m[1]), asOf: Number.isInteger(n) && n > 0 ? n : null, node: q.get("node") };
   }
-  if (pathname === "/new") return q.get("from") ? { page: "new", from: q.get("from")! } : { page: "new" };
+  if (pathname === "/new/advanced") return q.get("from") ? { page: "new", advanced: true, from: q.get("from")! } : { page: "new", advanced: true };
+  if (pathname === "/new") return q.get("from") ? { page: "new", advanced: true, from: q.get("from")! } : { page: "new" };
   if (pathname === "/import") return { page: "import" };
   if (pathname === "/readings") return { page: "readings" };
   if (pathname === "/inbox") return { page: "inbox" };
@@ -41,7 +43,7 @@ export function hrefOf(r: Route): string {
       const s = q.toString();
       return `/problems${s ? `?${s}` : ""}`;
     }
-    case "new": return r.from ? `/new?from=${encodeURIComponent(r.from)}` : "/new";
+    case "new": return r.advanced || r.from ? `/new/advanced${r.from ? `?from=${encodeURIComponent(r.from)}` : ""}` : "/new";
     case "import": return "/import";
     case "readings": return "/readings";
     case "inbox": return "/inbox";

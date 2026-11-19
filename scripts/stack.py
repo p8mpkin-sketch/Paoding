@@ -40,6 +40,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+from kaiti_hub import KaitiHub, kaiti_config  # noqa: E402
 from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import JudgeConfig, JudgeRunner, Vault, kernel_judges, load_registry  # noqa: E402
 from paoding_watchdog.contract import DogConfig, Watchdog  # noqa: E402
@@ -107,6 +108,7 @@ class StackConfig:
         default_factory=lambda: {"level": "info", "format": "json", "file": "logs/stack.log", "access": False}
     )
     memory: dict = field(default_factory=lambda: memory_config(None))  # 通鉴：case_seal、model_epoch（v1.5）
+    kaiti: dict = field(default_factory=dict)  # 一句话开题的起草服务（scripts/kaiti_hub.py）
 
     @classmethod
     def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
@@ -163,6 +165,7 @@ class StackConfig:
             raise ValueError(f"log 只认 {sorted(cfg.log)} 这几项")
         cfg.log = {**cfg.log, **lg}
         cfg.memory = memory_config(raw.get("memory"))
+        cfg.kaiti = kaiti_config(raw.get("kaiti"), base)
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
@@ -281,6 +284,8 @@ class Stack:
         )
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
+        self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream)
+        self.kaiti.mount(self.http)
 
         # 执行层
         self.executor = (
@@ -478,6 +483,7 @@ class Stack:
             },
             "watchdog": self._loop_health("watchdog"),
             "memory": {**self._loop_health("memory"), "case_seal": self.cfg.memory["case_seal"]},
+            "kaiti": {"ok": True, **self.kaiti.state},
             "adapter": {
                 "ok": True,
                 "backend": self.cfg.backend,

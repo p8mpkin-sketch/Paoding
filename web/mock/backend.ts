@@ -15,6 +15,7 @@ import type {
   Tagged, Terminal, WorkItem,
 } from "../src/api/types";
 import { demoScript, staticScripts, type Script } from "./scenario";
+import { kaitiDraft, kaitiExtract } from "./kaiti";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
 
@@ -335,6 +336,8 @@ class Rejected extends Error { constructor(readonly code: string, readonly detai
 export function createMock(opts: { autoplayMs?: number } = {}) {
   const log: Event[] = [];
   const blobs = new Map<string, Uint8Array>();
+  /** 保密库：只写（PUT /v1/vault）。测试从这里核对答案确实只进了保密库。 */
+  const vault = new Map<string, Uint8Array>();
   const idem = new Map<string, ProposalResponse>();
   const subs = new Set<{ pid: string; cb: (e: Event) => void }>();
   // 假服务自己的时钟：固定起点、每个事件 +7 秒，保证两次启动得到逐字节相同的日志。
@@ -507,10 +510,23 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (!auth.startsWith("Bearer ") || !auth.slice(7).trim()) return err(401, "forbidden_op", "写操作须带 Authorization: Bearer <令牌>");
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "未知令牌");
       if (req.method === "PUT" && path === "/v1/blobs") { const b = req.body ?? new Uint8Array(); return json(201, { hash: putBlob(b), size: b.length, by: "human" }); }
+      if (req.method === "PUT" && path === "/v1/vault") {
+        const b = req.body ?? new Uint8Array();
+        if (b.length === 0 || b.length > 64 * 1024) return err(413, "schema_error", "保密库条目须为 1 到 65536 字节");
+        const key = `kt-mock-${vault.size + 1}`;
+        vault.set(key, b);
+        return json(201, { vault: key, digest: sha256(new Uint8Array([...new TextEncoder().encode(`salt-${key}`), ...b])) });
+      }
       if (req.method !== "POST") return err(405, "schema_error", `${path} 不支持 ${req.method}`);
       const body = parse();
       if (!body || typeof body !== "object") return err(400, "schema_error", "请求体须为 JSON 对象");
       if (path === "/v1/profile/preview") return preview(body);
+      if (path === "/v1/drafts/extract") return typeof body.text === "string" ? json(200, kaitiExtract(body.text)) : err(400, "schema_error", "text 须是字符串");
+      if (path === "/v1/drafts") {
+        if (typeof body.text !== "string") return err(400, "schema_error", "text 须是字符串");
+        const out = kaitiDraft(body);
+        return out instanceof Error ? err(400, "schema_error", out.message) : json(200, out);
+      }
       const isOpen = path === "/v1/problems";
       m = path.match(/^\/v1\/problems\/([^/]+)\/proposals$/);
       if (!isOpen && !m) return notFound();
@@ -670,5 +686,5 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return () => subs.delete(sub);
   }
 
-  return { handle, subscribe, partsHash, step, append, putBlob, eventsOf, pids, head: (pid: string) => eventsOf(pid).at(-1)?.seq ?? 0, globalHead: headSeq, demoPid: demo.pid };
+  return { handle, subscribe, partsHash, step, append, putBlob, vault, eventsOf, pids, head: (pid: string) => eventsOf(pid).at(-1)?.seq ?? 0, globalHead: headSeq, demoPid: demo.pid };
 }

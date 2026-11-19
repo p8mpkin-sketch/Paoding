@@ -9,6 +9,7 @@ import "./shell/shell.css";
 import "./styles.css";
 import "./pages/pages.css";
 import "./pages/workspace.css";
+import "./pages/kaiti.css";
 
 applyTheme(loadTheme()); // 先于首帧，免得闪一下
 

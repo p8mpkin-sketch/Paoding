@@ -1,10 +1,9 @@
 // 前端发出的全部 HTTP 请求都从这里与 stream.ts 走（HT-12：只到图服务 API，没有任何模型端点）。
 // 契约是 graph/SPEC.md 的「HTTP 绑定」：读用 GET；写只有 POST /v1/problems、POST …/proposals 与 PUT /v1/blobs，
-// 都带人的令牌，与 pd 是同一条提议通道。
-import type {
-  ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
-  NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, WorkView,
-} from "./types";
+// 都带人的令牌，与 pd 是同一条提议通道。一句话开题多三个：PUT /v1/vault（答案只写不读）与起草服务的
+// POST /v1/drafts、/v1/drafts/extract（组装根挂在图服务上，同源；只算不写，模型调用在服务端，前端不碰模型）。
+import type { ArtifactView, BudgetResponse, VaultRef, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry, NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, WorkView } from "./types";
+import type { KaitiExtract, KaitiOverrides, KaitiVetted } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
 
 export type ApiConfig = {
@@ -101,6 +100,14 @@ export function createApi(cfg: ApiConfig) {
     profilePreview: (p: { scope: Partial<ScopeRule>[]; goal: { check: { judge_id: string } } }) => post<ProfilePreview>("/v1/profile/preview", p),
     putBlob: async (bytes: Uint8Array): Promise<{ hash: string; size: number }> =>
       (await (await call("PUT", "/v1/blobs", bytes as BodyInit, "application/octet-stream")).json()) as { hash: string; size: number },
+    /** 保密库：只写，返回写进 sealed 的引用。答案不进 Blob、不进日志。 */
+    putVault: async (bytes: Uint8Array): Promise<VaultRef> =>
+      (await (await call("PUT", "/v1/vault", bytes as BodyInit, "application/octet-stream")).json()) as VaultRef,
+    /** 一句话开题的前置抽取：确定性，不调模型；输入时实时显示。 */
+    draftExtract: (text: string) => post<KaitiExtract>("/v1/drafts/extract", { text }),
+    /** 起草并校验。交回 draft（与 nonce）即不再调模型，只重新校验；overrides 是确认卡上人改的风险与预算。 */
+    draftVet: (body: { text: string; answer?: string; draft?: Record<string, unknown>; model?: string; nonce?: string; overrides?: KaitiOverrides }) =>
+      post<KaitiVetted>("/v1/drafts", body),
     /** 开题：若干条 input 类登记加最后一条 open_problem，Origin 用 "$<下标>" 指向前面的材料。整批原子。 */
     openProblem: async (id: string, materials: Op[], problem: ProblemInput, idemKey: string) => {
       const ops: Op[] = [...materials, { op: "open_problem", body: problem as unknown as Record<string, unknown> }];
