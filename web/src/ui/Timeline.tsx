@@ -68,7 +68,7 @@ export function Timeline({ ticks: items, head, asOf, onSeek, link }: Props) {
         <button type="button" className="btn-small" data-action="copy-link" onClick={() => { void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => setCopied(false)); }}>
           复制链接{copied ? " ✓" : ""}
         </button>
-        <label><input type="checkbox" checked={showLeases} onChange={(e) => setShowLeases(e.target.checked)} /> 显示租约刻度（L）</label>
+        <label><input type="checkbox" checked={showLeases} onChange={(e) => setShowLeases(e.target.checked)} /> 显示会话刻度（L）</label>
       </div>
       <details className="legend"><summary>刻度图例</summary>
         <ul>{(Object.keys(TICK_LEGEND) as TickKind[]).map((k) => <li key={k}><b>{k}</b> {TICK_LEGEND[k]}</li>)}</ul>

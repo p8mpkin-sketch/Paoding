@@ -300,7 +300,7 @@ describe("HT-2 开题向导", () => {
     expect(Object.keys(open.problem).sort()).toEqual(["budget", "env", "goal", "judges", "origin", "scope", "title"]);
   });
 
-  it("表单里没有可填的画像；画像预览来自服务端；走完六页能开出题", async () => {
+  it("表单里没有可填的画像；画像预览来自服务端；走完四步能开出题", async () => {
     const r = rig();
     const { container } = renderWith(r, <Wizard />);
     await waitFor(() => expect(container.querySelector("[data-wizard]")).not.toBeNull());
@@ -312,21 +312,17 @@ describe("HT-2 开题向导", () => {
     fireEvent.change(q('[data-field="id"]'), { target: { value: "web-1" } });
     fireEvent.change(q('[data-field="title"]'), { target: { value: "网页开的题" } });
     fireEvent.change(q('[data-field="statement"]'), { target: { value: "提交答案串" } });
-    fields().forEach((f) => seen.add(f));
-    step(1);
     const file = new File(["题面正文"], "s.txt", { type: "text/plain" });
     fireEvent.change(q('[data-slot="题面"]'), { target: { files: [file] } });
     await waitFor(() => expect(container.querySelector(".hash-badge")).not.toBeNull());
     fields().forEach((f) => seen.add(f));
-    step(2);
+    step(1);
     fields().forEach((f) => seen.add(f));
-    step(3);
+    step(2);
     const rule = container.querySelectorAll<HTMLInputElement>('[data-rule="0"] input');
     fireEvent.change(rule[1], { target: { value: "target:8080" } });
     fields().forEach((f) => seen.add(f));
-    step(4);
-    fields().forEach((f) => seen.add(f));
-    step(5);
+    step(3);
     fields().forEach((f) => seen.add(f));
     for (const f of seen) expect(f).not.toMatch(/profile|reversibility|info/);
 

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -98,14 +98,20 @@ def compile_spec(
     workspace: str,
     limits: Limits = Limits(),
     kinds: dict[str, ResourceKind] = RESOURCE_KINDS,
+    only: Collection[int] | None = None,
 ) -> ExecSpec:
-    """ceiling：所服务 Intent 的 risk（Bootstrap 取 r0；判官容器取被判对象的风险但不超过 r1）。"""
+    """ceiling：所服务 Intent 的 risk（Bootstrap 取 r0；判官容器取被判对象的风险但不超过 r1）。
+
+    only：Intent 的 `touches` 里的规则下标（v1.5 增量 11）。这份集合已在图服务 add_intent 的同一处
+    校验过（只许收窄，规格第 52 条），这里只消费、不另查；给了就只编译这些规则，None 表示未声明。"""
     if ceiling not in RISK_RANK:
         raise ScopeError(f"上限非法：{ceiling}")
     egress: list[str] = []
     creds: list[str] = []
     rules: dict[str, set[str]] = {}
-    for rule in scope:
+    for k, rule in enumerate(scope):
+        if only is not None and k not in only:
+            continue
         if RISK_RANK[rule["risk"]] > RISK_RANK[ceiling]:
             continue
         if rule["risk"] == "r2" and not approved_r2:

@@ -445,7 +445,7 @@ define(
 define(
     "WorkItem",
     one(
-        obj({"kind": lit("bootstrap")}),
+        obj({"kind": lit("bootstrap", "recall")}),
         obj({"kind": lit("reason")}, {"reflect": BOOL}),
         obj({"kind": lit("explore", "judge"), "target": STR}),
         obj(

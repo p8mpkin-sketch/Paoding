@@ -183,6 +183,11 @@ def open_problem(url: str, token: str, pid: str, spec_ops: list[dict], statement
     return _call(url, "/v1/problems", {"id": pid, "idem_key": f"open-{pid}", "ops": spec_ops}, token=token)
 
 
+def match_memory(url: str, problem: dict) -> dict:
+    """开题前向通鉴要匹配结果（v1.5）：problem 是开题事件体，应答见 scripts/memory_hub.py。"""
+    return _call(url, "/v1/memory/match", {"problem": problem})
+
+
 def wait_terminal(url: str, pid: str, timeout_s: float) -> dict:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:

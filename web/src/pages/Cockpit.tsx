@@ -1,4 +1,4 @@
-// 题内驾驶舱（HMI 设计 §4、§10.2）。每个面板都是 view(as_of) 的排版；写操作只在链头且实时的时候可用。
+// 题内驾驶舱（HMI 设计 §4、§10.2；视觉重做第三期）。每个面板都是 view(as_of) 的排版；写操作只在链头且实时的时候可用。
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { GRAPH_MIN_NODES, prefs } from "../app/config";
 import { useServices } from "../app/context";
@@ -10,12 +10,15 @@ import { ApprovalCard } from "../ui/ApprovalCard";
 import { CostMeter } from "../ui/CostMeter";
 import { TerminalBadge } from "../ui/criterion";
 import { ExtensionDialog } from "../ui/ExtensionDialog";
-import { Frontier } from "../ui/Frontier";
+import { Frontier, HintRowView } from "../ui/Frontier";
 import { GraphView } from "../ui/GraphView";
 import { HintInject, HintTraceCard } from "../ui/Hints";
 import { Inspector } from "../ui/Inspector";
 import { Plain, Text } from "../ui/registers";
 import { Timeline } from "../ui/Timeline";
+import { Sessions } from "../ui/Sessions";
+import { Kbd, btnClass } from "../kit";
+import { MessageSquare } from "lucide-react";
 import { Todo, todoKey } from "../ui/Todo";
 
 type Sheet = { kind: "todo"; key: string } | { kind: "hint"; id: string } | { kind: "inject" } | null;
@@ -44,6 +47,17 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const [sheet, setSheet] = useState<Sheet>(null);
   const [panel, setPanel] = useState<"left" | "main" | "right">("main");
 
+  // H 打开“给出指导”，Esc 收起卡片；焦点在输入框里时不抢键
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) return;
+      if (e.key === "h" || e.key === "H") { e.preventDefault(); setSheet({ kind: "inject" }); setPanel("main"); }
+      else if (e.key === "Escape") setSheet(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const vm = s.vm;
   const writable = canWrite(s) && cfg.token !== null;
   const go = (patch: { asOf?: number | null; node?: string | null }) =>
@@ -58,19 +72,29 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const hint = sheet?.kind === "hint" ? vm.hints.find((h) => h.id === sheet.id) : undefined;
   const link = window.location.origin + hrefOf({ page: "problem", pid, asOf: vm.seq, node });
 
+  const openHints = vm.hints.filter((h) => !h.closed);
+  const liveLeases = vm.leases.filter((l) => l.active).length;
+
   return (
     <div className="cockpit" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-panel={panel}>
-      {/* 顶栏分主次（P2-2）：一眼要看的放主栏——题名、终态与判官、连接、花费；其余收进“详情”。 */}
+      {/* 顶栏分主次（P2-2）：一眼要看的放主栏——任务名、终态与判定器、连接、花费、给出指导；其余收进“详情”。 */}
       <header className="topbar">
         <div className="topbar-primary">
-          <h2><Text t={vm.title} block={false} /></h2>
+          <div className="ws-id">
+            <div className="ws-cap k-mono">任务 <Plain text={pid} /> · {vm.profile.info} · {vm.profile.judge} · {vm.profile.reversibility}</div>
+            <h1 className="ws-title"><Text t={vm.title} block={false} /></h1>
+          </div>
+          <span className="grow" />
           <TerminalBadge terminal={vm.terminal} badge={vm.goal.badge} level={vm.goal.predicate.level} onOpen={() => select("goal")} />
           <span className="conn" data-conn-label>{conn}</span>
           <CostMeter b={vm.budget} />
           {s.error && <span className="error">刷新失败：<Plain text={s.error} /></span>}
+          <button type="button" className={btnClass("ink", "sm")} data-action="open-inject" aria-pressed={sheet?.kind === "inject"} onClick={() => setSheet(sheet?.kind === "inject" ? null : { kind: "inject" })}>
+            <MessageSquare aria-hidden="true" />给出指导<Kbd>H</Kbd>
+          </button>
         </div>
         <details className="topbar-secondary" data-topbar="secondary">
-          <summary className="badge">详情</summary>
+          <summary className="k-link">详情</summary>
           <div className="topbar-secondary-body">
             <span className="badge" data-goal-attempts>Goal 尝试 {vm.goal.predicate.attempts_used ?? 0}/{vm.goal.predicate.max_attempts ?? "—"}</span>
             <details className="profile">
@@ -99,16 +123,28 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
       </nav>
 
       <div className="columns">
-        <aside className="left">
-          <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); if (k) setPanel("main"); }} />
-          <button type="button" data-action="open-inject" onClick={() => setSheet(sheet?.kind === "inject" ? null : { kind: "inject" })}>注入 Hint…</button>
-          {!writable && <p className="muted" data-readonly-note>{asOf !== null ? "回放中：写操作全部禁用，人的决定只能针对链头。" : vm.closed ? "题目已关闭。" : cfg.token === null ? "还没有配置人的令牌（页面右上角）：现在只读。" : "未连到链头：写操作暂时禁用。"}</p>}
+        <aside className="left" aria-label="待你、会话与指导">
+          <section className="ws-sec">
+            <h2 className="ws-h"><span className="no" aria-hidden="true">01</span>待你<span className={`ct${vm.todo.length ? " hot" : ""}`}>{vm.todo.length}</span></h2>
+            <Todo items={vm.todo} open={sheet?.kind === "todo" ? sheet.key : null} onOpen={(k) => { if (k) countUsage("todo"); setSheet(k ? { kind: "todo", key: k } : null); if (k) setPanel("main"); }} />
+            {!writable && <p className="t2" data-readonly-note>{asOf !== null ? "回放中：写操作全部禁用，人的决定只能针对链头。" : vm.closed ? "任务已关闭。" : cfg.token === null ? "还没有配置人的令牌（左下角）：现在只读。" : "未连到链头：写操作暂时禁用。"}</p>}
+          </section>
+          <section className="ws-sec">
+            <h2 className="ws-h"><span className="no" aria-hidden="true">02</span>会话<span className="ct">{liveLeases} 个在途</span></h2>
+            <Sessions leases={vm.leases} onSelect={select} />
+          </section>
+          <section className="ws-sec">
+            <h2 className="ws-h"><span className="no" aria-hidden="true">03</span>你的指导<span className="ct">{openHints.length} 条生效</span></h2>
+            {openHints.length === 0 ? <p className="t2">还没有给过指导。点顶栏“给出指导”或按 H。</p> : (
+              <ul className="rows ws-hints">{openHints.map((h) => <HintRowView key={h.id} hint={h} onOpen={(id) => { setSheet({ kind: "hint", id }); setPanel("main"); }} />)}</ul>
+            )}
+          </section>
         </aside>
 
         <main className="main">
           {sheet && (
-            <div className="sheet">
-              <button type="button" className="btn-small sheet-close" onClick={() => setSheet(null)}>收起</button>
+            <div className="sheet" data-sheet={sheet.kind}>
+              <button type="button" className={`${btnClass("bare", "sm")} sheet-close`} onClick={() => setSheet(null)}>收起<Kbd>Esc</Kbd></button>
               {sheet.kind === "inject" && <HintInject pid={pid} rows={vm.rows} canWrite={writable} />}
               {sheet.kind === "hint" && <HintTraceCard pid={pid} hintId={sheet.id} seq={vm.seq} ts={hint?.ts ?? null} rows={vm.rows} canWrite={writable} />}
               {sheet.kind === "todo" && openTodo?.why === "needs_human" && <ApprovalCard key={openTodo.target} pid={pid} intentId={openTodo.target} head={s.head} canWrite={writable} onInspect={select} />}
@@ -116,14 +152,15 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
               {sheet.kind === "todo" && !openTodo && <p className="muted">这一项已不在待办里。</p>}
             </div>
           )}
-          <nav className="tabs">
+          <nav className="tabs ws-tabs" aria-label="主区视图">
             <button type="button" aria-pressed={tab === "frontier"} onClick={() => setTab("frontier")}>前沿</button>
             <button type="button" aria-pressed={tab === "graph"} disabled={!graphEnabled} data-action="tab-graph" onClick={() => { countUsage("graph"); setTab("graph"); }}>
-              图{graphEnabled ? "" : `（节点超过 ${GRAPH_MIN_NODES} 个时启用，现有 ${vm.rows.length}）`}
+              图{graphEnabled ? "" : <span className="t2">（节点超过 {GRAPH_MIN_NODES} 个时启用，现有 {vm.rows.length}）</span>}
             </button>
-            <label className="muted">
+            <span className="grow" />
+            <label className="t2">
               <input type="checkbox" checked={graphPref === "always"} data-action="graph-always" onChange={(e) => { const v = e.target.checked ? "always" : "auto"; prefs.setGraphView(v); setGraphPref(v); if (v === "auto" && vm.rows.length <= GRAPH_MIN_NODES) setTab("frontier"); }} />
-              {" "}不足 {GRAPH_MIN_NODES} 个节点也显示图（本机开关）
+              {" "}不足 {GRAPH_MIN_NODES} 个节点也显示图
             </label>
           </nav>
           {tab === "graph" && graphEnabled
@@ -131,8 +168,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
             : <Frontier vm={vm} selected={node} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })} />}
         </main>
 
-        <aside className="right">
-          <h3>检视</h3>
+        <aside className="right" aria-label="检视">
+          <h2 className="ws-h">检视{node && <span className="ct k-mono">{node}</span>}</h2>
           <Inspector vm={vm} nodeId={node} />
         </aside>
       </div>

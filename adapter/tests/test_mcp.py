@@ -169,6 +169,7 @@ def test_malformed_tool_args_are_schema_errors_never_raise(rig):
         "reason",
         "tmp_id",
         "needs_scope",
+        "touches",
     ]
     kinds = ["add_fact", "add_intent", "abandon_intent", "claim_done", "request_judge", "nope", 3]
     codes = set()

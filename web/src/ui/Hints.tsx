@@ -6,6 +6,7 @@ import type { HintTrace } from "../api/types";
 import { useServices } from "../app/context";
 import type { NodeRow } from "../model/viewmodel";
 import { visible } from "../model/text";
+import { Kbd, btnClass } from "../kit";
 import { Plain, Text } from "./registers";
 import { rejectText, useProposal } from "./useProposal";
 
@@ -30,21 +31,24 @@ export function HintInject({ pid, rows, canWrite, onDone }: { pid: string; rows:
         if (await run([ops.hintAdd(text.trim(), about || undefined)])) { setText(""); setAbout(""); onDone?.(); }
       }}
     >
-      <h3>注入 Hint</h3>
-      <label>文本（纯文本，上限 {MAX} 字）
-        <textarea value={text} maxLength={MAX} onChange={(e) => setText(e.target.value)} disabled={!canWrite} />
-      </label>
-      <span className="muted">{text.length} / {MAX}</span>
-      <label>about（可选，只列论断与 Intent）
+      <h3 className="hint-h">给出指导<span className="t2">只影响之后的会话</span></h3>
+      <label className="sr-only" htmlFor="hint-text">指导内容</label>
+      <textarea id="hint-text" className="hint-text" value={text} maxLength={MAX} autoFocus placeholder="写下你的判断，例如：先看归档目录，不要下载整个目录" disabled={!canWrite}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+      <span className="t2 hint-count">{text.length} / {MAX}</span>
+      <label className="hint-about">引用节点（可选，只列论断与尝试）
         <select value={about} onChange={(e) => setAbout(e.target.value)} disabled={!canWrite} data-about>
           <option value="">不指向节点</option>
           {aboutCandidates(rows).map((r) => <option key={r.id} value={r.id}>{r.id} · {r.kind === "fact" ? "论断" : "Intent"} · {visible(r.title.value).slice(0, 30)}</option>)}
         </select>
       </label>
-      <p className="muted">提示：下一个任务包生效，在途会话不受影响。</p>
-      <button type="submit" data-action="hint-submit" disabled={!ok}>注入</button>
+      <div className="hint-foot">
+        <span className="t2">系统会把它当成你的判断，不当成事实；下一个任务包生效，在途会话不受影响。</span>
+        <button type="submit" className={btnClass("ink", "sm")} data-action="hint-submit" disabled={!ok}>发送<Kbd>⌘↵</Kbd></button>
+      </div>
       {done && <span> 已注入，事件 seq {done[0]?.seq}。</span>}
-      {!canWrite && <p className="muted">现在不能注入：写操作只能针对链头，且连接必须是实时的。</p>}
+      {!canWrite && <p className="t2">现在不能发：写操作只能针对链头，且连接必须是实时的。</p>}
       {rejectText(error) && <p className="error" data-reject>{rejectText(error)}</p>}
     </form>
   );

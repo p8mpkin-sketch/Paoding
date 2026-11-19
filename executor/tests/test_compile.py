@@ -139,3 +139,16 @@ def test_bind_args_use_v_and_strip_private_on_macos(monkeypatch, tmp_path):
         runtime.bind_args(tmp_path / "missing", "/workspace")
     with pytest.raises(ValueError):
         runtime.bind_args("/a:b", "/workspace")
+
+
+def test_only_compiles_the_validated_touches():
+    """v1.5 增量 11：给了 touches 的下标就只编译这些规则；集合已在 add_intent 校验过，这里不另查。"""
+    assert compile_spec("s", SCOPE, ENV, "r1", False, "/w", only=frozenset({0})).egress_allow == ("t0:80",)
+    assert compile_spec("s", SCOPE, ENV, "r1", False, "/w", only=frozenset({1})).egress_allow == ("t1:22",)
+    assert compile_spec("s", SCOPE, ENV, "r1", False, "/w", only=frozenset()).egress_allow == ()
+    # 风险上限与 r2 批准仍照旧生效：only 只会收窄，不会放宽
+    assert compile_spec("s", SCOPE, ENV, "r1", False, "/w", only=frozenset({2})).egress_allow == ()
+    assert compile_spec("s", SCOPE, ENV, "r2", False, "/w", only=frozenset({2})).egress_allow == ()
+    assert compile_spec("s", SCOPE, ENV, "r1", False, "/w", only=None) == compile_spec(
+        "s", SCOPE, ENV, "r1", False, "/w"
+    )

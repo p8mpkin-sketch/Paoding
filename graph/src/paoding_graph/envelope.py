@@ -16,7 +16,7 @@ from .state import Event
 SCHEMA_VERSION = 1
 GENESIS = "0" * 64
 ACTOR_KINDS = frozenset({"human", "sinan", "adapter", "judge", "executor", "watchdog", "graph"})
-ROLES = frozenset({"bootstrap", "reason", "explore", "verify", "idler"})
+ROLES = frozenset({"bootstrap", "reason", "explore", "verify", "idler", "recall"})
 FIELDS = ("v", "seq", "problem_id", "ts", "actor", "kind", "body", "idem_key", "prev_hash", "hash")
 
 

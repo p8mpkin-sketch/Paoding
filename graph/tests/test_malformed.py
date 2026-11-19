@@ -156,6 +156,7 @@ def world():
                 "done": {"judge_id": "replay", "expect": {"x": 1}, "max_attempts": 2},
                 "expected_gain": 0.4,
                 "needs_scope": [{"resource": "target", "pattern": "x", "actions": ["write"], "risk": "r2"}],
+                "touches": [{"rule": 0, "mode": "read"}],
             },
         ),
         (HUMAN, "p1", "request_judge", {"target": "goal", "judge_id": "exact_match", "candidate": a_auth}),

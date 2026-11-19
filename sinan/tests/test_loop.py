@@ -53,6 +53,8 @@ class World:
         self.gains = (0.2, 0.9)
         self.intent_budget = {"usd_milli": 100, "wall_s": 60}
         self.candidate = b"42"
+        self.scope = [{"resource": "net", "pattern": "target-a:8080", "actions": ["connect"], "risk": "r0"}]
+        self.intent_extra = ()  # 第 n 个 Intent 额外的字段（risk、touches），覆盖缺省
         self.lock = threading.Lock()
         self.gate = None  # 给了就在 explore 会话里等它：测试用来让会话停在半路
         self.inside = []  # 当前在会话里的 (kind, target)
@@ -105,9 +107,7 @@ class World:
                             "max_attempts": 3,
                             "accept": "judge",
                         },
-                        "scope": [
-                            {"resource": "net", "pattern": "target-a:8080", "actions": ["connect"], "risk": "r0"}
-                        ],
+                        "scope": self.scope,
                         "budget": {"usd_milli": usd_milli, "wall_s": 3600, "verify_share": 0.2, "bootstrap_share": 0.3},
                         "env": {"base": "basic", "baseline_ref": "basic@1"},
                         "judges": ["exact_match", "replay"],
@@ -169,6 +169,7 @@ class World:
                         "risk": "r0",
                         "budget": self.intent_budget,
                         "expected_gain": gain,
+                        **(self.intent_extra[n] if n < len(self.intent_extra) else {}),
                     },
                 )
         else:

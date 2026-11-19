@@ -8,7 +8,7 @@ from .. import levels as lv
 from .. import refmodel as rm
 from .. import work as wk
 from ..parse import Obj
-from ..state import Actor, Body, Done, Event, Hint, Intent, State
+from ..state import Actor, Body, Done, Event, Hint, Intent, Problem, ScopeRule, State, Touch
 from .common import RISK_RANK, RISKS, Config, Ok, Reject, _check, _node, _reason, _rule, _seen, _session_count
 
 # ---------- 校验 ----------
@@ -18,7 +18,7 @@ def _v_add_intent(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) 
     later = {"follows", "executor", "rollback", "delegate"} & body.keys()
     if later:
         return Reject("schema_error", f"{sorted(later)} 属于后续里程碑，M0 未启用")
-    allowed = {"title", "summary", "premises", "risk", "budget", "done", "needs_scope", "expected_gain"}
+    allowed = {"title", "summary", "premises", "risk", "budget", "done", "needs_scope", "expected_gain", "touches"}
     if not body.keys() <= allowed:
         return Reject("schema_error", f"多余字段 {sorted(body.keys() - allowed)}")
     prob = state["problems"][pid]
@@ -26,9 +26,9 @@ def _v_add_intent(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) 
     if risk not in RISKS:
         return Reject("schema_error", "risk 非法")
     needs = [_rule(r) for r in body.children("needs_scope", None)]
-    ceiling = max((r["risk"] for r in prob["scope"] + needs), key=RISK_RANK.__getitem__)
-    if RISK_RANK[risk] > RISK_RANK[ceiling]:
-        return Reject("scope_mismatch", f"risk {risk} 高于授权范围的最高风险 {ceiling}")
+    touches = _capability(prob, risk, needs, body)
+    if isinstance(touches, Reject):
+        return touches
     premises = body.strings("premises", [])
     lvls = lv.levels(state, pid)
     for p in premises:
@@ -63,10 +63,43 @@ def _v_add_intent(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) 
         "budget": budget,
         **({"done": done} if done else {}),
         **({"needs_scope": needs} if needs else {}),
+        **({"touches": touches} if touches is not None else {}),
     }
     if "expected_gain" in body:  # 估值，只供司南排序（I8）
         out["expected_gain"] = float(body.number("expected_gain"))
     return Ok(out)
+
+
+def _capability(prob: Problem, risk: str, needs: list[ScopeRule], body: Obj) -> list[Touch] | None | Reject:
+    """I5 在内核里的唯一校验点：能力 ≤ Intent 风险 ≤ 授权范围（规格 v1.5 第 52 条）。
+
+    风险上限与 `touches` 的只许收窄是同一个检查，不拆到执行层：执行层只按这里存下的规则集编译，
+    不再另查。`touches` 只能指向 Problem.scope 的下标（needs_scope 尚未授权，不能被占用）；
+    每条规则的 risk 不高于 Intent 的 risk；write 只用于 r1 以上的规则；同一条规则只列一次。
+    返回规范化（按下标排序）的列表；未声明时返回 None，由 work.holds 保守展开。"""
+    ceiling = max((r["risk"] for r in prob["scope"] + needs), key=RISK_RANK.__getitem__)
+    if RISK_RANK[risk] > RISK_RANK[ceiling]:
+        return Reject("scope_mismatch", f"risk {risk} 高于授权范围的最高风险 {ceiling}")
+    if body.get("touches") is None:
+        return None
+    out: dict[int, Touch] = {}
+    for t in body.children("touches"):
+        if not t.keys() <= {"rule", "mode"}:
+            return Reject("schema_error", f"touches 多余字段 {sorted(t.keys() - {'rule', 'mode'})}")
+        k, mode = t.integer("rule"), t.string("mode")
+        if mode not in ("read", "write"):
+            return Reject("schema_error", "touches.mode 只取 read、write")
+        if not 0 <= k < len(prob["scope"]):
+            return Reject("unknown_ref", f"touches 指向的规则 {k} 不在授权范围内")
+        if k in out:
+            return Reject("schema_error", f"touches 重复列出规则 {k}")
+        rule = prob["scope"][k]
+        if RISK_RANK[rule["risk"]] > RISK_RANK[risk]:
+            return Reject("scope_mismatch", f"规则 {k} 的风险 {rule['risk']} 高于 Intent 的 risk {risk}")
+        if mode == "write" and rule["risk"] == "r0":
+            return Reject("scope_mismatch", f"规则 {k} 是 r0，只能读")
+        out[k] = {"rule": k, "mode": mode}
+    return [out[k] for k in sorted(out)]
 
 
 def _v_abandon_intent(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
