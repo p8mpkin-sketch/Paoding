@@ -104,6 +104,8 @@ class Settings:
     risk: tuple[Mapping[str, Any], ...]
     models: Mapping[str, Any] = field(default_factory=dict)
     version: str = "default"
+    # 运行时扩权（docs/design/runtime-grants/ §3.1）：开着时一句话开题零出站，原文里的地址只作展示
+    grants_runtime: bool = False
 
     @classmethod
     def from_doc(cls, doc: Any) -> Settings:
@@ -115,7 +117,8 @@ class Settings:
             if r.get("risk") not in RISKS:
                 raise ValueError(f"风险表条目的 risk 须为 r0/r1/r2：{r}")
         ver = str(doc.get("version", "default")) if isinstance(doc, dict) else "default"
-        return cls(caps, risk, dict(d.get("models") or {}), ver)
+        grants = d.get("grants") or {}
+        return cls(caps, risk, dict(d.get("models") or {}), ver, bool(grants.get("runtime", False)))
 
     def risk_of(self, resource: str, pattern: str, actions: list[str]) -> tuple[str, int | None]:
         """顺序匹配风险表，返回 (风险, 命中的行号)；未命中按 r2（规格 3.1.2 的缺省）。"""

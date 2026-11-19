@@ -32,6 +32,8 @@ export type KaitiVetted = {
   blobs: KaitiBlob[];
   /** 开题批次：若干条 input 类登记加 open_problem；有答案时 sealed 里是 "$answer"，写完保密库再换。 */
   ops: Op[] | null;
+  /** 运行时扩权开着时（runtime-grants §3.1）：原文里提到的地址只作展示，不进授权；执行时按需申请。 */
+  mentions?: { value: string; span: string }[];
   /** 答案来自原文答案行时回传一次，只用来写保密库。 */
   secret?: string;
 };
