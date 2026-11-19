@@ -38,3 +38,22 @@ def render_card(v: Vetted) -> str:
             out.append(f"  {i:02d} {n.text}")
     out.append(f"\n[估] 预算默认值来自 {v.priors_version}")
     return "\n".join(out) + "\n"
+
+
+def render_view(doc: dict[str, Any]) -> str:
+    """服务端视图（draft_view、import_view 的 JSON）的文本版：pd connector import 经 HTTP 拿到的就是它。"""
+    out = [f"[叙述] {LANE[doc['lane']]}"]
+    if doc.get("input"):
+        out.append(f"[叙述] 题名：{doc['input']['title']}")
+    out.append("")
+    out.append("出处账")
+    for d in doc.get("derivation", []):
+        note = f"  ——{d['note']}" if d.get("note") else ""
+        out.append(f"  {d['field']:<22} {_val(d['value'])}  [{MARK[d['source']]}]{note}")
+    if doc.get("notes"):
+        out.append("")
+        out.append("为什么要你看" if doc["lane"] != "refuse" else "为什么不开")
+        for i, n in enumerate(doc["notes"], 1):
+            out.append(f"  {i:02d} {n['text']}")
+    out.append(f"\n[估] 预算默认值来自 {doc.get('priors', '')}")
+    return "\n".join(out) + "\n"

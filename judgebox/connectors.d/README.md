@@ -18,6 +18,10 @@
 - `verdict` 把回执状态映射到 `pass` / `fail` / `pending`；表外的值记 `inconclusive(unsupported)`。
 - `deliver`：`judge`（缺省，判官代交，同一候选只交一次）或 `worker`（候选正文就是提交号，判官只读回执）。
 - `poll`：`first_s`、`max_s` 是待定时复判的退避（按次数翻倍、封顶）。
+- `match.hosts`：一句话开题按原文里的地址**查表**认出平台（可带端口、可通配）；`task_ref.pattern` 是任务号的正则，
+  任务号逐字取自原文，不唯一即拒绝。起草模型只能指认地址区间，不能报平台名。
+- `items`：清单条目的 JSON 指针（`id`、`title`、`time_limit_s`、`max_submissions`），“从平台导入”列清单、领题用；
+  `fields.statement` 指说明里的题面，缺省用说明全文。平台没给 `max_submissions` 的任务不能导入（次数由内核计）。
 
 提交号存在 `<home>/connectors/`（一个（题、候选）一个文件），重启之后复判照旧只读回执、不重交。
 

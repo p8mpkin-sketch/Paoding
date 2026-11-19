@@ -12,6 +12,8 @@ export type Route =
   /** /new 是一句话开题的输入框；/new/advanced 是四步向导（高级模式，克隆也到这里）。 */
   | { page: "new"; advanced?: boolean; from?: string }
   | { page: "import" }
+  /** 从已登记的外部平台导入（external-verdict §5.8）；task 给了即直接领那一题。 */
+  | { page: "platform"; id?: string }
   | { page: "readings" }
   | { page: "inbox" }
   | { page: "settings" }
@@ -28,6 +30,7 @@ export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/new/advanced") return q.get("from") ? { page: "new", advanced: true, from: q.get("from")! } : { page: "new", advanced: true };
   if (pathname === "/new") return q.get("from") ? { page: "new", advanced: true, from: q.get("from")! } : { page: "new" };
   if (pathname === "/import") return { page: "import" };
+  if (pathname === "/import/platform") return q.get("id") ? { page: "platform", id: q.get("id")! } : { page: "platform" };
   if (pathname === "/readings") return { page: "readings" };
   if (pathname === "/inbox") return { page: "inbox" };
   if (pathname === "/settings") return { page: "settings" };
@@ -47,6 +50,7 @@ export function hrefOf(r: Route): string {
     }
     case "new": return r.advanced || r.from ? `/new/advanced${r.from ? `?from=${encodeURIComponent(r.from)}` : ""}` : "/new";
     case "import": return "/import";
+    case "platform": return `/import/platform${r.id ? `?id=${encodeURIComponent(r.id)}` : ""}`;
     case "readings": return "/readings";
     case "inbox": return "/inbox";
     case "settings": return "/settings";

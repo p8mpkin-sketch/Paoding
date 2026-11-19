@@ -8,6 +8,7 @@ import { useNow } from "./app/clock";
 import { Cockpit } from "./pages/Cockpit";
 import { Dashboard } from "./pages/Dashboard";
 import { Import } from "./pages/Import";
+import { PlatformImport } from "./pages/PlatformImport";
 import { Inbox } from "./pages/Inbox";
 import { Kaiti } from "./pages/Kaiti";
 import { Problems, useProblems } from "./pages/Problems";
@@ -55,6 +56,7 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
       {route.page === "new" && !route.advanced && <Kaiti />}
       {route.page === "new" && route.advanced && <Wizard key={route.from ?? ""} from={route.from} />}
       {route.page === "import" && <Import />}
+      {route.page === "platform" && <PlatformImport key={route.id ?? ""} id={route.id} />}
       {route.page === "readings" && <Readings />}
       {route.page === "inbox" && <Inbox />}
       {route.page === "settings" && <SettingsPage />}

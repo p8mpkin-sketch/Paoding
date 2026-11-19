@@ -242,3 +242,148 @@ def test_canary_platform_token_never_lands(tmp_path, plat, monkeypatch, caplog):
         assert all(plat.token not in json.dumps(x) for x in s.keyring.status())
     finally:
         s.http.close()
+
+
+# ---------------------------------------------------------------- 三期：入口（行 1、1b 的起草一侧，§5.8）
+
+
+def _codes(out: dict[str, Any]) -> list[str]:
+    return [n["code"] for n in out["notes"]]
+
+
+def _submit_view(s: Stack, url: str, out: dict[str, Any]) -> dict[str, Any]:
+    tok = s.human_token
+    for b in out["blobs"]:
+        call(url, "/v1/blobs", token=tok, raw=b["text"].encode())
+    return call(url, "/v1/problems", {"id": out["pid"], "idem_key": f"k-{out['pid']}", "ops": out["ops"]}, token=tok)
+
+
+def test_row1_registered_platform_is_recognized_then_imported(tmp_path, plat, monkeypatch):
+    s, url = _stack(tmp_path, plat, monkeypatch)
+    try:
+        tok = s.human_token
+        out = call(url, "/v1/drafts", {"text": plat.pasted()}, token=tok)
+        assert out["lane"] == "confirm"
+        assert out["input"]["goal"]["check"]["judge_id"] == "ext_receipt"
+        assert out["external"] == {"connector": "mock-platform", "judge_id": "ext_receipt", "task": "T-17"}
+        assert "external_platform" in _codes(out)
+        assert out["ops"] is None and plat.started == {}  # 起草不领题：创建时才领
+        assert all(r["resource"] == "workspace" for r in out["input"]["scope"])  # 平台地址不进授权
+        # 卡上改过的预算带进导入
+        imp = call(
+            url,
+            "/v1/connectors/mock-platform/import",
+            {"task": "T-17", "budget": {"wall_s": 3600}},
+            token=tok,
+        )
+        assert plat.started  # 领了题
+        assert imp["lane"] == "confirm" and imp["ops"]
+        body = imp["ops"][-1]["body"]
+        assert body["budget"]["wall_s"] == 3600
+        assert body["goal"]["check"]["binding"] == {"connector": "mock-platform", "task": "T-17", "max_submissions": 3}
+        assert body["deadline"]["source"] == "external" and body["deadline"]["bound_by"].startswith("$")
+        res = _submit_view(s, url, imp)
+        assert res["ok"], res
+        p = s.graph.state["problems"][imp["pid"]]
+        assert p["goal"]["authority"] == "external" and p["deadline"]["at"] > p["opened_ts"]
+        notice = s.graph.state["artifacts"][p["origin"]["materials"][0]]
+        assert json.loads(s.blobs.get(notice["hash"]))["instance"] == plat.started["T-17"]
+    finally:
+        s.http.close()
+
+
+def test_row1_unregistered_platform_refuses_with_register_way(tmp_path, plat):
+    s = Stack(StackConfig.load(tmp_path / "home", port=0, executor="none"))
+    url = s.http.serve()
+    try:
+        out = call(url, "/v1/drafts", {"text": plat.pasted()}, token=s.human_token)
+        assert out["lane"] == "refuse" and "no_criterion" in _codes(out)
+        assert "register_platform" in out["ways"]
+        assert call(url, "/v1/connectors", token=s.human_token) == {"items": []}
+    finally:
+        s.http.close()
+
+
+def test_row1b_registered_submit_example_is_only_material(tmp_path, plat, monkeypatch):
+    s, url = _stack(tmp_path, plat, monkeypatch)
+    try:
+        out = call(url, "/v1/drafts", {"text": plat.pasted(with_example=True)}, token=s.human_token)
+        assert out["lane"] == "confirm"
+        assert out["input"]["goal"]["check"]["judge_id"] == "ext_receipt"
+        assert "submit_example_material" in _codes(out) and "command_criterion" not in _codes(out)
+        assert "spec_ref" not in out["input"]["goal"]["check"]
+    finally:
+        s.http.close()
+
+
+def test_row1b_unregistered_command_needs_explicit_ack(tmp_path, plat):
+    s = Stack(StackConfig.load(tmp_path / "home", port=0, executor="none"))
+    url = s.http.serve()
+    try:
+        tok = s.human_token
+        out = call(url, "/v1/drafts", {"text": plat.pasted(with_example=True)}, token=tok)
+        assert out["lane"] == "confirm" and out["input"]["goal"]["check"]["judge_id"] == "replay"
+        assert {"command_criterion", "command_outbound"} <= set(_codes(out))
+        assert out["needs_ack"] == "command" and out["ops"] is None  # 不勾选拿不到批次
+        again = call(
+            url,
+            "/v1/drafts",
+            {
+                "text": plat.pasted(with_example=True),
+                "draft": out["draft"],
+                "model": out["model"],
+                "nonce": out["nonce"],
+                "overrides": {"ack_command": True},
+            },
+            token=tok,
+        )
+        assert again["needs_ack"] is None and again["ops"]
+        ack = [r for r in again["derivation"] if r["field"] == "goal.check.ack"]
+        assert ack and ack[0]["source"] == "human"
+    finally:
+        s.http.close()
+
+
+def test_connector_listing_and_tasks(tmp_path, plat, monkeypatch):
+    s, url = _stack(tmp_path, plat, monkeypatch)
+    try:
+        tok = s.human_token
+        (c,) = call(url, "/v1/connectors", token=tok)["items"]
+        assert c["id"] == "mock-platform" and c["judges"] == ["ext_receipt"] and c["slot_set"] is True
+        assert plat.token not in json.dumps(c)
+        items = call(url, "/v1/connectors/mock-platform/tasks", token=tok)["items"]
+        assert items == [{"task": "T-17", "title": "找出服务里的口令", "time_limit_s": 21600, "max_submissions": 3}]
+        assert plat.started == {}  # 列清单不领题
+    finally:
+        s.http.close()
+
+
+def test_pd_connector_import(tmp_path, plat, monkeypatch):
+    import io
+
+    from paoding_pd.cli import main
+
+    s, url = _stack(tmp_path, plat, monkeypatch)
+    try:
+        monkeypatch.setenv("PD_TOKEN", s.human_token)
+        out = io.StringIO()
+        assert main(["--url", url, "connector", "list"], out=out) == 0
+        assert "mock-platform@1" in out.getvalue() and "已设" in out.getvalue()
+        out = io.StringIO()
+        assert main(["--url", url, "connector", "tasks", "mock-platform"], out=out) == 0
+        assert out.getvalue().startswith("T-17")
+        out = io.StringIO()
+        rc = main(
+            ["--url", url, "connector", "import", "mock-platform", "T-17", "--minutes", "30"],
+            out=out,
+            read=lambda _: "",
+        )
+        assert rc == 0, out.getvalue()
+        assert "外部判定 · 平台 mock-platform" in out.getvalue() and plat.token not in out.getvalue()
+        (pid,) = [p for p in s.graph.state["problems"] if p.startswith("kt-")]
+        p = s.graph.state["problems"][pid]
+        assert p["goal"]["authority"] == "external" and p["budget"]["wall_s"] == 1800
+        out = io.StringIO()  # 被拒的路：没登记的平台
+        assert main(["--url", url, "connector", "tasks", "nope"], out=out) == 1 and "没有登记平台" in out.getvalue()
+    finally:
+        s.http.close()

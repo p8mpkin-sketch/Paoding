@@ -8,6 +8,11 @@ url_ports: {http: 80, https: 443}
 money_rates: {usd: 1.0, cny: 0.14}
 # 没写协议和端口的域名（纯展示）：只认这些顶级域，免得把 main.py、notes.md 当域名
 host_tlds: [com, net, org, io, dev, app, ai, cn, co, me, info, xyz, example, test, local, internal, lan, lab]
+# command 判据的加重警告（external-verdict §5.8，往返意见 a）：命令里有这些写方法，或原文里有这些词，
+# 确认卡要人勾“我确认这条命令只检查、不提交”才能创建；命令里有地址区间也算。只是提示，不是拒绝
+command_outbound:
+  verbs: ["-X POST", "-X PUT", "-X PATCH", "-X DELETE", "--request POST", "--data", "--data-raw", "--data-binary", "-d", "-F", "--form", "--upload-file", "-T"]
+  words: ["提交", "上传", "submit", "upload"]
 # 模板缺省（出处记"表"）
 defaults:
   deliverable: answer.txt

@@ -10,10 +10,11 @@
     pd kaiti "<原文>" [--answer …] [--yes]   一句话开题（确认道；见 kaiti.py）
     pd settings show                        pd settings set <键路径> <值>
     pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
+    pd connector list    pd connector tasks <平台>    pd connector import <平台> <任务号> [--yes]   从平台导入
 
 pid 取 --pid 或环境变量 PD_PROBLEM。数据目录取 --home 或 PD_HOME（g.sqlite 与 blobs/）。
 M0 的骨架以本机进程内方式打开图服务；图服务独立成进程后改走 HTTP/Unix socket 绑定（接口相同，D10）。
-settings 与 keys 走运行中的全栈的 HTTP（--url 或 PD_URL，缺省 http://127.0.0.1:8100）：钥匙环只在端点代理的
+settings、keys 与 connector 走运行中的全栈的 HTTP（--url 或 PD_URL，缺省 http://127.0.0.1:8100）：钥匙环只在端点代理的
 内存里（宪章 03 §4）。人的令牌取 PD_TOKEN，或 --token-file（缺省 <home>/human.token）。
 输出遵守四语域标记、等级词表与判据徽章（render.py）。不存在人填画像三轴的入口：画像只能事后覆盖。
 """
@@ -34,7 +35,7 @@ import yaml
 
 from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, seen_card
 
-from . import kaiti, render
+from . import connector, kaiti, render
 
 HUMAN_TOKEN = "pd-local-human"
 
@@ -278,6 +279,16 @@ class Remote:
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
 
+    def put(self, path: str, data: bytes) -> tuple[int, dict]:
+        req = urllib.request.Request(self.url + path, data=data, method="PUT")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("Content-Type", "application/octet-stream")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
 
 def _remote(a) -> Remote:
     token = os.environ.get("PD_TOKEN", "").strip()
@@ -391,6 +402,7 @@ def parser() -> argparse.ArgumentParser:
         if name == "grant":
             x.add_argument("--risk", help="逐条上调风险，逗号分隔（只可上调）")
     kaiti.add_parser(sp)
+    connector.add_parser(sp)
     st = sp.add_parser("settings").add_subparsers(dest="sub", required=True)
     st.add_parser("show")
     ss = st.add_parser("set")
@@ -414,6 +426,8 @@ def main(
         return cmd_settings(_remote(a), a, w)
     if a.cmd == "keys":
         return cmd_keys(_remote(a), a, w, read_key or _read_key)
+    if a.cmd == "connector":
+        return connector.cmd_connector(_remote(a), a, w, read)
     local = Local(Path(a.home), {"kind": "human", "id": a.actor}, judges)
     if a.cmd == "problem":
         return cmd_open(local, a, w)

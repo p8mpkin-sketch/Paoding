@@ -152,6 +152,7 @@ class Intake:
     envelope: Mapping[str, Any]
     money_rates: dict[str, float] = field(default_factory=lambda: {"usd": 1.0})
     host_tlds: tuple[str, ...] | None = None  # None → extract 的缺省表
+    outbound: Mapping[str, Any] = field(default_factory=dict)  # command 判据的加重警告词表（external-verdict §5.8）
 
     def extract(self, raw: str) -> Extraction:
         """按本模板数据做前置抽取（各调用点统一走这里，免得漏传换算表或顶级域表）。"""
@@ -169,4 +170,5 @@ class Intake:
             dict(env),
             {str(k): float(v) for k, v in (doc.get("money_rates") or {"usd": 1.0}).items()},
             tuple(str(x) for x in doc["host_tlds"]) if doc.get("host_tlds") else None,
+            dict(doc.get("command_outbound") or {}),
         )

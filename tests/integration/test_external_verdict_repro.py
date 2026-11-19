@@ -97,12 +97,17 @@ def test_1_platform_verdict_is_refused(stack, plat):
 
 
 def case_platform_misbound(s: Stack, url: str, plat: Platform) -> dict[str, Any]:
-    out = call(url, "/v1/drafts", {"text": plat.pasted(with_example=True)}, token=s.human_token)
+    text = plat.pasted(with_example=True)
+    out = call(url, "/v1/drafts", {"text": text}, token=s.human_token)
+    first = out
+    if out.get("needs_ack") == "command":  # 三期起：命令有外发形状，要人勾“只检查、不提交”才给批次（往返意见 a）
+        again = {"text": text, "draft": out["draft"], "model": out["model"], "nonce": out["nonce"]}
+        out = call(url, "/v1/drafts", {**again, "overrides": {"ack_command": True}}, token=s.human_token)
     body = out["ops"][-1]["body"] if out.get("ops") else {}
     spec = next((b["text"] for b in out.get("blobs", []) if b["text"].startswith("curl ")), None)
     return {
         "lane": out["lane"],
-        "notes": _codes(out),
+        "notes": _codes(first),
         "judge": body.get("goal", {}).get("check", {}).get("judge_id"),
         "spec": spec,
         "wall_s": body.get("budget", {}).get("wall_s"),
@@ -123,6 +128,7 @@ def test_1b_only_non_refusal_is_a_misbinding(stack, plat):
     assert r["judge"] == "replay" and r["spec"] is not None and "/submissions" in r["spec"]
     assert r["spec"].startswith("curl -X POST")  # 判据就是那条提交命令，逐字
     assert "command_criterion" in r["notes"]
+    assert "command_outbound" in r["notes"]  # 三期：加重警告，人勾选之后才拿得到这份批次
 
 
 # ---------------------------------------------------------------- 表现二：资源运行时发现型（#91 已裁决，这里只留证据）

@@ -4,6 +4,7 @@ version: "1"
 kind: deterministic
 grade: decisive
 applies_to: [goal, intent]
+form: answer  # 一句话开题的判据形态（external-verdict §5.8：形态目录由注册表驱动）
 runner: {type: builtin, base: builtin}
 timeout_s: 10
 max_cost: {usd_milli: 0, wall_s: 10}
