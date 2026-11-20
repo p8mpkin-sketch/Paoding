@@ -138,6 +138,17 @@ L3 原来的三项（续期门、模型偏好、会话花费）有两项已经�
 | ⑤ | 会话花费：按租约花费端点（C1）与花费序列（C2），`pd status` 每会话一行 | Q15（后端） | 本线 | ③ 之后，可与 ④ 并行 |
 | ⑥ | 网页：任务页“结果”一栏（交付、主张与证据、自检、未验证）、追问框、采纳 / 不采纳 / 叫停按钮、待办“等你看”、站位条认 `delivered`、会话行金额 | Q30、Q31、Q32、Q37、Q15（网页） | v5 第三期 | 接 ③ 的契约 |
 
+**③⑤ 给 v5 第三期的接口草案**（2026-11-20，随 ③ 的实现 PR 定稿；网页可以先照它做假服务）：
+
+| 用途 | 接口 | 形状 |
+| --- | --- | --- |
+| 读交付（已有，#106） | `GET /v1/problems/{pid}/status` | 开放道题带 `deliveries[]`：`{id, seq, lease, outcome, answer, claims[{text, refs[{id, class}], supported}], self_check[{what, result, refs, item?}], unverified[], needs[]}`，另有 `self_checks[]`、`feedback?`；证据下钻 `GET /v1/artifacts/{id}`。③ 只加 `follow_ups[]`、`halted?`、`idle_close_at?`，不改已有字段 |
+| 追问（Q31） | `POST /v1/problems/{pid}/proposals`，人的令牌 | `{op: "follow_up", body: {text, budget_add_usd_milli?, seen: {seq}}}`；`text` ≤ 2000 字符；剩余低于收尾保留而没附追加、或追加后超单题硬顶 → `over_budget`；已关题或非开放道 → `conflict`。成功后 `/work` 再派一个 solve，`follow_ups[]` 追加 `{id, seq, text, after_delivery}` |
+| 叫停（Q20） | 同上 | `{op: "halt", body: {reason?}}`；只认人的令牌；之后 `/work` 不再派 solve，在途会话收到收尾轮，60 秒不交付则终止；`halted: {seq}` |
+| 采纳与不采纳（Q32） | 同上（已有 `close_problem.feedback`） | `{op: "close_problem", body: {terminal, feedback: "adopted"\|"rejected", reason?, closeout?, seen?}}`；有四顾项时必须带 `closeout`（已确认的四顾项名单）与 `seen`（`closeout` 卡），与 `accept` 同法 |
+| 待办（Q37，已有） | `GET /v1/problems/{pid}/work` | 人工项 `why: "delivered"`（等你看）、`"blocked"`（要你补什么）、`"stalled"`、`"scope_request"` |
+| 会话花费（Q15） | `GET /v1/problems/{pid}/budget` | 加 `by_lease[]`：`{lease, kind, role, model, usd_milli, tokens, active}`，各行之和等于 `spent` |
+
 每一步的验收都含金丝雀（AC-M5）与“开放道读数不进严格道统计”的既有断言（开放道裁决附加 1）。
 
 ## 4. 前端与后端分开数（2026-11-19 重核）
