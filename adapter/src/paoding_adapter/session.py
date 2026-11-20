@@ -73,6 +73,11 @@ class AdapterConfig:
     resolve_model: Callable[[str, str | None], Mapping[str, Any] | None] | None = None
     # 查资料的端口（资料库第二期）：任务有可查的资料时给会话 kb_search / kb_read；组装根接上书库
     knowledge: KnowledgePort | None = None
+    # 活动入账（焚决首炼“可回放的实时性”，炼档 001）：哪些席位的会话把活动分段登记进事件账。
+    # 缺省只有开放道的 solve；严格道缺省不入账，事件日志与今天逐字节相同。
+    ledger_roles: tuple[str, ...] = ("solve",)
+    anchor_interval_s: float = 30.0  # 两次入账至多隔这么久（cz 2026-11-20 定）
+    anchor_cap: int = 200  # 每题因入账新增的事件上限（cz 2026-11-20 定）；到了之后只在每轮结束与会话收尾时入账
 
 
 @dataclass
@@ -193,7 +198,7 @@ class SessionRunner:
             knowledge=kb if "kb_search" in tools else None,
         )
         url = self.endpoint.mount(host)
-        log = act.ActivityLog(sdir, s.secrets)  # 实时活动（工作台轮询 activity()；原话里的凭据先遮盖）
+        log = act.ActivityLog(sdir, s.secrets, lease_id)  # 实时活动（工作台轮询 activity()；原话里的凭据先遮盖）
         lv = self.live[lease_id] = {
             "proc": None,
             "closing": False,
@@ -206,6 +211,9 @@ class SessionRunner:
             "task_token": task_token,
             "rec": rec,
             "role": role,
+            "ledger": role in self.cfg.ledger_roles,
+            "anchor_at": self.clock(),
+            "anchor_lock": threading.Lock(),
         }
         try:
             limits = {
@@ -269,6 +277,7 @@ class SessionRunner:
                 plan.resume, plan.user_prompt = True, be.CLOSING_PROMPT  # 软线或从未 submit：收尾轮
                 exit_status = self._round(plan, rec, pid, token)
             rec.status = "collecting"
+            self._anchor(lease_id, pid, token)  # 收尾：没入账的活动最后入一次，赶在释放租约之前（关题后内核不收登记）
             t = self.proxy.task(task_token)
             if lv["killed"]:
                 exit_status = "expired" if lv["killed"] == "expired" else f"killed({lv['killed']})"
@@ -331,14 +340,36 @@ class SessionRunner:
 
     # ---------- 实时活动（工作台的“会话活动”面板） ----------
 
-    def activity(self, lease_id: str, after: int = 0) -> dict[str, Any] | None:
+    def activity(self, lease_id: str, after: int = 0, as_of: int | None = None) -> dict[str, Any] | None:
         """一个会话的活动：在途的从内存读，结束了的从会话目录读。没有这个会话（或目录已清掉）返回 None。
-        耗时按本进程的墙钟、花费取端点代理给这个任务令牌记的账（与 cost 事件同一个计量）。"""
+        耗时按本进程的墙钟、花费取端点代理给这个任务令牌记的账（与 cost 事件同一个计量）。
+
+        as_of 给出时是回放：只从事件账里那个 seq 及之前入账的段重建（链校验不过抛 activity.ChainBroken），
+        与实时面板当时已入账的部分逐字节相同。`anchored_through` 是已入账的最后一个序号（None：这个会话不入账）。"""
+        lease = self.reader.state["leases"].get(lease_id)
+        if as_of is not None:
+            items = self.ledger_items(lease_id, as_of)
+            if items is None:
+                return None
+            head = {
+                "lease": lease_id,
+                "role": lease["kind"] if lease else None,
+                "live": False,
+                "status": "replay",
+                "as_of": as_of,
+                "rounds": max((int(x.get("round", 0)) for x in items), default=0),
+                "model": "",
+                "elapsed_s": 0,
+                "spent_usd_milli": 0,
+                "closing": False,
+            }
+            return {**head, **act.view(items, after, anchored=len(items)), "now": None}
         lv = self.live.get(lease_id)
         sdir = self.cfg.root / lease_id
         if lv is not None and "activity" in lv:
             t = self.proxy.task(lv["task_token"])
             rec = lv["rec"]
+            log: act.ActivityLog = lv["activity"]
             head = {
                 "lease": lease_id,
                 "role": lv["role"],
@@ -350,13 +381,22 @@ class SessionRunner:
                 "spent_usd_milli": t.spent_usd_milli if t else 0,
                 "closing": bool(lv["closing"]),
             }
-            return {**head, **act.view(lv["activity"].snapshot(), after)}
-        if not sdir.is_dir() or not (sdir / act.FILE).exists() and act.read_end(sdir) is None:
+            anchored = log.anchored if lv["role"] in self.cfg.ledger_roles else None
+            return {**head, **act.view(log.snapshot(), after, anchored=anchored)}
+        try:
+            ledger = self.ledger_items(lease_id)
+        except act.ChainBroken:
+            ledger = None  # 账上的段对不上：不认它，退回会话目录里的流水，且不标“已入账”
+        files = act.read_items(sdir) if sdir.is_dir() else []
+        if ledger is None and (not sdir.is_dir() or not (sdir / act.FILE).exists() and act.read_end(sdir) is None):
             return None
-        end = act.read_end(sdir) or {}
+        items = files
+        if ledger is not None and [x.get("h") for x in files[: len(ledger)]] != [x["h"] for x in ledger]:
+            items = ledger  # 会话目录里的流水与账上的对不上（或已清掉）：以账为准
+        end = (act.read_end(sdir) if sdir.is_dir() else None) or {}
         head = {
             "lease": lease_id,
-            "role": end.get("role"),
+            "role": end.get("role", lease["kind"] if lease else None),
             "live": False,
             "status": end.get("status", "ended"),
             "rounds": end.get("rounds", 0),
@@ -365,7 +405,70 @@ class SessionRunner:
             "spent_usd_milli": end.get("spent_usd_milli", 0),
             "closing": False,
         }
-        return {**head, **act.view(act.read_items(sdir), after), "now": None}  # 结束了就没有“正在做”
+        anchored = len(ledger) if ledger is not None else None
+        return {**head, **act.view(items, after, anchored=anchored), "now": None}  # 结束了就没有“正在做”
+
+    def _maybe_anchor(self, lease_id: str, pid: str, token: str, new: list[dict[str, Any]]) -> None:
+        """锚点：exec 返回、一轮结束、或距上次入账已满间隔。每题入账数到了上限，就只在一轮结束时入账。"""
+        lv = self.live.get(lease_id)
+        if lv is None:
+            return
+        round_end = any(x["kind"] == "end" for x in new)
+        exec_back = any(x["kind"] == "result" and "artifact" in x for x in new)
+        due = self.clock() - lv["anchor_at"] >= self.cfg.anchor_interval_s
+        if not (round_end or exec_back or due):
+            return
+        if not round_end and self._segments_in(pid) >= self.cfg.anchor_cap:
+            return
+        self._anchor(lease_id, pid, token)
+
+    def _segments_in(self, pid: str) -> int:
+        arts = self.reader.state["artifacts"].values()
+        return sum(1 for a in arts if a["problem_id"] == pid and a.get("media_type") == act.SEGMENT_MEDIA)
+
+    def _anchor(self, lease_id: str, pid: str, token: str) -> None:
+        """把自上一锚点以来的活动作为一段登记（authored 类，parents 指上一段）。题已关、登记被拒就停止入账。"""
+        lv = self.live.get(lease_id)
+        if lv is None or not lv.get("ledger"):
+            return
+        log: act.ActivityLog = lv["activity"]
+        with lv["anchor_lock"]:
+            seg = log.segment()
+            if seg is None:
+                return
+            data, last = seg
+            try:
+                aid = self._register(
+                    token, pid, f"activity:{lease_id}:{last}", data, act.SEGMENT_MEDIA, parents=log.segments[-1:]
+                )
+            except RegisterRefused:
+                lv["ledger"] = False  # 题已关或令牌已撤：这一会话不再入账，活动仍在会话目录里
+                return
+            log.mark(last, aid)
+            lv["anchor_at"] = self.clock()
+
+    def segments(self, lease_id: str, as_of: int | None = None) -> list[str]:
+        """事件账里这个会话的入账段（按登记顺序）；as_of 给出时只认那个 seq 及之前登记的。"""
+        lease = self.reader.state["leases"].get(lease_id)
+        if lease is None:
+            return []
+        out = [
+            a
+            for a in self.reader.state["artifacts"].values()
+            if a["problem_id"] == lease["problem_id"]
+            and a.get("media_type") == act.SEGMENT_MEDIA
+            and a.get("producer", {}).get("session") == lease_id
+            and (as_of is None or int(a["id"][2:]) <= as_of)
+        ]
+        return [a["id"] for a in sorted(out, key=lambda a: int(a["id"][2:]))]
+
+    def ledger_items(self, lease_id: str, as_of: int | None = None) -> list[dict[str, Any]] | None:
+        """从事件账重建的活动条目；没有入账段返回 None。链对不上抛 activity.ChainBroken。"""
+        ids = self.segments(lease_id, as_of)
+        if not ids:
+            return None
+        arts = self.reader.state["artifacts"]
+        return act.replay_segments(self.blobs.get(arts[i]["hash"]) for i in ids)
 
     def _end_activity(self, lease_id: str, sdir: Path) -> None:
         lv = self.live.get(lease_id)
@@ -487,7 +590,9 @@ class SessionRunner:
                     continue
                 rec.events.append({"round": rec.rounds, **ev})
                 if "activity" in lv and isinstance(ev, dict):
-                    lv["activity"].feed(ev, rec.rounds)
+                    new = lv["activity"].feed(ev, rec.rounds)
+                    if new and lv.get("ledger"):
+                        self._maybe_anchor(lv["activity"].lease, pid, token, new)
                 if ev.get("type") == "assistant":
                     turns[0] += 1
 
@@ -535,7 +640,9 @@ class SessionRunner:
             )
         return status
 
-    def _register(self, token: str, pid: str, idem: str, data: bytes, media_type: str) -> str:
+    def _register(
+        self, token: str, pid: str, idem: str, data: bytes, media_type: str, parents: list[str] | None = None
+    ) -> str:
         h = self.blobs.put(data)
         out = self.graph.submit(
             token,
@@ -544,7 +651,13 @@ class SessionRunner:
             [
                 {
                     "op": "register_artifact",
-                    "body": {"hash": h, "size": len(data), "media_type": media_type, "class": "authored"},
+                    "body": {
+                        "hash": h,
+                        "size": len(data),
+                        "media_type": media_type,
+                        "class": "authored",
+                        **({"parents": parents} if parents else {}),
+                    },
                 }
             ],
         )

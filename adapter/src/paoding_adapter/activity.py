@@ -12,15 +12,26 @@ CLI 以 stream-json 把每一回合的工具调用、自述（assistant 的文�
 只排版、不推断：条目只来自 CLI 的事件，花费与耗时取端点代理与会话运行器自己的量。
 原话里认出的凭据（creds.found）写进条目之前逐字遮盖；条目长度有上限，全文仍在会话记录里。
 确定性代码，不调模型。
+
+可回放的实时性（焚决首炼，炼档 001：docs/design/fenjue/dossiers/001-replayable-live.md）在此之上加三处：
+
+1. **条目成链。** 每条带 `h = sha256(上一条的 h ‖ JCS(本条除 h 外))`，第一条的上一条取 64 个 0。遮盖在成链之前。
+2. **分段入账。** 运行器在锚点处取 `segment()`：自上一锚点以来的条目连同首尾序号与链头，规范化成一段，
+   以 authored 类登记进事件账（parents 指上一段）。事件只记 Blob 的哈希，这段内容就钉在了那个 seq 上。
+   `replay_segments` 按段校验链，回放 `as_of` 时只认那时已入账的段。
+3. **执行行可点。** exec 的结果条目带上执行层返回的 ArtifactId（`artifact`），工作台据此打开那次执行的留档。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
+
+from paoding_graph.contract import canonicalize
 
 from . import creds
 
@@ -29,6 +40,8 @@ END_FILE = "activity.end.json"  # 会话目录里：会话结束时的耗时、�
 GIST = 240  # 工具调用的摘要
 OUT = 400  # 工具结果的摘要
 SAY = 2000  # 一段自述
+SEGMENT_MEDIA = "application/vnd.paoding.activity-segment+json"  # 入账段的媒体类型（authored 类）
+GENESIS = "0" * 64
 _KEYS = ("cmd", "command", "file_path", "path", "pattern", "target", "url", "query", "q", "outcome", "id", "list")
 
 
@@ -65,6 +78,21 @@ def _text_of(content: object) -> str:
     return "" if content is None else str(content)
 
 
+def _artifact_of(text: str) -> str | None:
+    """exec 的结果是一段 JSON，带执行层登记的 ArtifactId；认不出就是没有。"""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    aid = doc.get("artifact") if isinstance(doc, dict) else None
+    return aid if isinstance(aid, str) and aid.startswith("a_") else None
+
+
+def item_hash(prev: str, item: Mapping[str, Any]) -> str:
+    body = {k: v for k, v in item.items() if k != "h"}
+    return hashlib.sha256(prev.encode() + canonicalize(body)).hexdigest()
+
+
 def fold(ev: Mapping[str, Any], rnd: int) -> list[dict[str, Any]]:
     """一行 stream-json 事件 → 零到多条活动条目（不带序号）。认不得的事件忽略。"""
     t = ev.get("type")
@@ -91,15 +119,18 @@ def fold(ev: Mapping[str, Any], rnd: int) -> list[dict[str, Any]]:
     elif t == "user" and isinstance(content, list):
         for c in content:
             if isinstance(c, Mapping) and c.get("type") == "tool_result":
-                out.append(
-                    {
-                        "round": rnd,
-                        "kind": "result",
-                        "id": str(c.get("tool_use_id", "")),
-                        "ok": not c.get("is_error"),
-                        "gist": _clip(_text_of(c.get("content")), OUT),
-                    }
-                )
+                text = _text_of(c.get("content"))
+                item = {
+                    "round": rnd,
+                    "kind": "result",
+                    "id": str(c.get("tool_use_id", "")),
+                    "ok": not c.get("is_error"),
+                    "gist": _clip(text, OUT),
+                }
+                aid = _artifact_of(text)
+                if aid:
+                    item["artifact"] = aid  # 只给 exec 的结果留（ActivityLog.feed 按调用的工具名再筛一次）
+                out.append(item)
     elif t == "result":
         out.append(
             {
@@ -123,31 +154,95 @@ def _mask(item: dict[str, Any], secrets: tuple[str, ...]) -> dict[str, Any]:
 
 
 class ActivityLog:
-    """一个会话的活动条目：内存里一份（在途时读），同时追加到会话目录（会话结束后读）。线程安全。"""
+    """一个会话的活动条目：内存里一份（在途时读），同时追加到会话目录（会话结束后读）。线程安全。
 
-    def __init__(self, sdir: Path, secrets: tuple[str, ...] = ()):
+    条目成链（`h`）；`anchored` 是已入账的最后一个序号，`segment()` 取下一段、`mark()` 记下它已入账。"""
+
+    def __init__(self, sdir: Path, secrets: tuple[str, ...] = (), lease: str = ""):
         self.path = sdir / FILE
         self.secrets = secrets
+        self.lease = lease
         self.items: list[dict[str, Any]] = []
+        self.tools: dict[str, str] = {}  # 工具调用 id → 工具名：只给 exec 的结果留 ArtifactId
+        self.anchored = 0
+        self.head = GENESIS  # 已入账的链头
+        self.segments: list[str] = []  # 已入账各段的 ArtifactId
         self.lock = threading.Lock()
 
-    def feed(self, ev: Mapping[str, Any], rnd: int) -> None:
+    def feed(self, ev: Mapping[str, Any], rnd: int) -> list[dict[str, Any]]:
         new = [_mask(x, self.secrets) for x in fold(ev, rnd)]
         if not new:
-            return
+            return []
         with self.lock:
             for x in new:
+                if x["kind"] == "call":
+                    self.tools[x["id"]] = x["tool"]
+                elif x["kind"] == "result" and "artifact" in x and self.tools.get(x["id"]) != "exec":
+                    del x["artifact"]
                 x["n"] = len(self.items) + 1
+                x["h"] = item_hash(self.items[-1]["h"] if self.items else GENESIS, x)
                 self.items.append(x)
             try:
                 with self.path.open("a", encoding="utf-8") as f:
                     f.writelines(json.dumps(x, ensure_ascii=False) + "\n" for x in new)
             except OSError:
                 pass  # 落盘失败不影响会话本身；在途时仍可从内存读
+        return new
 
     def snapshot(self) -> list[dict[str, Any]]:
         with self.lock:
             return list(self.items)
+
+    def segment(self) -> tuple[bytes, int] | None:
+        """自上一锚点以来的条目，规范化成一段；没有新条目返回 None。返回（字节，这一段的末尾序号）。"""
+        with self.lock:
+            fresh = self.items[self.anchored :]
+            if not fresh:
+                return None
+            doc = {
+                "v": 1,
+                "kind": "activity-segment",
+                "lease": self.lease,
+                "first": fresh[0]["n"],
+                "last": fresh[-1]["n"],
+                "prev": self.head,
+                "head": fresh[-1]["h"],
+                "items": fresh,
+            }
+            return canonicalize(doc), fresh[-1]["n"]
+
+    def mark(self, last: int, aid: str) -> None:
+        with self.lock:
+            self.anchored = last
+            self.head = self.items[last - 1]["h"]
+            self.segments.append(aid)
+
+
+class ChainBroken(ValueError):
+    """入账段对不上：顺序断了、链头不符，或某条条目被改过。"""
+
+
+def replay_segments(blobs: Iterable[bytes]) -> list[dict[str, Any]]:
+    """按入账顺序给出各段的原文，校验后拼回条目。任何一处对不上抛 ChainBroken，不给部分结果。"""
+    items: list[dict[str, Any]] = []
+    head = GENESIS
+    for raw in blobs:
+        try:
+            doc = json.loads(raw)
+        except ValueError:
+            raise ChainBroken("段不是 JSON") from None
+        if not isinstance(doc, dict) or doc.get("kind") != "activity-segment" or doc.get("prev") != head:
+            raise ChainBroken("段与上一段接不上")
+        if doc.get("first") != len(items) + 1:
+            raise ChainBroken("段的序号不连续")
+        for x in doc.get("items", []):
+            if not isinstance(x, dict) or x.get("n") != len(items) + 1 or item_hash(head, x) != x.get("h"):
+                raise ChainBroken(f"第 {len(items) + 1} 条与链不符")
+            head = x["h"]
+            items.append(x)
+        if doc.get("last") != len(items) or doc.get("head") != head:
+            raise ChainBroken("段尾与链头不符")
+    return items
 
 
 def read_items(sdir: Path) -> list[dict[str, Any]]:
@@ -172,7 +267,9 @@ def read_end(sdir: Path) -> dict[str, Any] | None:
     return doc if isinstance(doc, dict) else None
 
 
-def view(items: Iterable[Mapping[str, Any]], after: int, limit: int = 200) -> dict[str, Any]:
+def view(
+    items: Iterable[Mapping[str, Any]], after: int, limit: int = 200, anchored: int | None = None
+) -> dict[str, Any]:
     """游标之后的条目，外加“正在做”（最近一次还没回结果的工具调用）与“最近自述”。
     后两项按全部条目算，不受游标影响：轮询的人只拿增量，也总能看到这两样。"""
     xs = list(items)
@@ -188,4 +285,6 @@ def view(items: Iterable[Mapping[str, Any]], after: int, limit: int = 200) -> di
         "calls": sum(1 for x in xs if x.get("kind") == "call"),
         "now": dict(pending[-1]) if pending and not ended else None,
         "last_say": dict(says[-1]) if says else None,
+        # 已入账的最后一个序号；None 表示这个会话没有入账（焚决首炼之前的会话、严格道缺省）
+        "anchored_through": anchored,
     }

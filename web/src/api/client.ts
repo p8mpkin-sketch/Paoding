@@ -134,7 +134,8 @@ export function createApi(cfg: ApiConfig) {
       return accepted(await post<ProposalResponse>("/v1/problems", { id, idem_key: idemKey, ops }));
     },
     // ---- 记忆（通鉴，v5 第四期知识页）----
-    activity: (lease: string, after = 0) => get<SessionActivity>(`/v1/leases/${enc(lease)}/activity?after=${after}`),
+    activity: (lease: string, after = 0, asOf: number | null = null) =>
+      get<SessionActivity>(`/v1/leases/${enc(lease)}/activity?after=${after}${asOf !== null ? `&as_of=${asOf}` : ""}`),
     memory: () => get<{ items: MemRow[]; as_of: number }>("/v1/memory"),
     memoryCard: (id: string) => get<MemCard>(`/v1/memory/items/${enc(id)}`),
     /** 钉住或遗忘：须写理由；seen 取自刚看的卡，卡变了回 409 stale_view。 */
