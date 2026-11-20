@@ -12,6 +12,7 @@ members = [
     "paoding-adapter",
     "paoding-eval",
     "paoding-executor",
+    "paoding-fenjue",
     "paoding-graph",
     "paoding-judgebox",
     "paoding-pd",
@@ -396,6 +397,7 @@ dependencies = [
     { name = "paoding-adapter" },
     { name = "paoding-eval" },
     { name = "paoding-executor" },
+    { name = "paoding-fenjue" },
     { name = "paoding-graph" },
     { name = "paoding-judgebox" },
     { name = "paoding-pd" },
@@ -420,6 +422,7 @@ requires-dist = [
     { name = "paoding-adapter", editable = "adapter" },
     { name = "paoding-eval", editable = "eval" },
     { name = "paoding-executor", editable = "executor" },
+    { name = "paoding-fenjue", editable = "fenjue" },
     { name = "paoding-graph", editable = "graph" },
     { name = "paoding-judgebox", editable = "judgebox" },
     { name = "paoding-pd", editable = "pd" },
@@ -465,6 +468,11 @@ requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
 name = "paoding-executor"
 version = "0.0.0"
 source = { editable = "executor" }
+
+[[package]]
+name = "paoding-fenjue"
+version = "0.0.0"
+source = { editable = "fenjue" }
 
 [[package]]
 name = "paoding-graph"

@@ -1,0 +1,51 @@
+{
+ "jie": 2,
+ "fires": {
+  "H1": [
+   "h1.triad@1",
+   "h1.solo@1",
+   "h1.recall@1"
+  ],
+  "H2": [
+   "h2.sinan@1"
+  ],
+  "H3": [
+   "h3.base@1",
+   "h3.kb@1"
+  ],
+  "H4": [
+   "h4.views-notes@1"
+  ],
+  "H5": [
+   "h5.shuku@1",
+   "h5.tongjian-recall@1"
+  ],
+  "H6": [
+   "h6.workbench@1",
+   "h6.activity-ledger@1",
+   "h6.pd@1"
+  ],
+  "H7": [
+   "h7.result@1"
+  ],
+  "H8": [
+   "h8.kaiti@1"
+  ]
+ },
+ "history": [
+  {
+   "jie": 0,
+   "change": "旧法（焚决之前）"
+  },
+  {
+   "jie": 1,
+   "change": "八火位立名，零差迁移（F2）"
+  },
+  {
+   "jie": 2,
+   "change": "可回放的实时性（F4）",
+   "dossier": "001",
+   "replaces": "h6.activity@1"
+  }
+ ]
+}
