@@ -7,7 +7,18 @@ from pathlib import Path
 import pytest
 
 from paoding_fenjue import shapes
-from paoding_fenjue.contract import SEATS, SLOTS, check, fire, fire_digest, fire_ids, form, gongfa, gongfa_digest, params
+from paoding_fenjue.contract import (
+    SEATS,
+    SLOTS,
+    check,
+    fire,
+    fire_digest,
+    fire_ids,
+    form,
+    gongfa,
+    gongfa_digest,
+    params,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
