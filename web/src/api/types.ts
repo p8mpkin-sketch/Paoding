@@ -60,8 +60,10 @@ export type Authority = "local" | "external" | "human" | "self";
 export type AuthorityTally = { problems: number; solved: number; accepted: number; delivered: number; unsolved: number; open: number };
 export type AcceptCheck = { id: string; verdict: "pass" | "fail"; ref?: ArtifactId; note?: string };
 export type AcceptRecord = { seq: number; decision: "accept" | "reject"; checks: AcceptCheck[]; reason?: string };
-/** 任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名。 */
-export type TaskPrefs = { model?: string };
+/** 任务能查哪些资料（资料库第二期，K3）：auto 所有对全部任务可见的；pick 只这几份；off 不挂检索工具。 */
+export type KnowledgePref = { mode: "auto" | "pick" | "off"; pick?: string[] };
+/** 任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名；knowledge 见 KnowledgePref。 */
+export type TaskPrefs = { model?: string; knowledge?: KnowledgePref };
 /** 开放道的必做自检项（open-lane §4.2）：原文里的检查命令；会话交付前自己跑、如实报告，判官不重放。 */
 export type SelfCheckInput = { text: string; src: "span" | "human" };
 export type SelfCheckItem = SelfCheckInput & { id: string };
@@ -85,7 +87,9 @@ export type ProblemInput = {
   judges: string[];
   prefs?: TaskPrefs;
 };
-export type ArtifactClass = "exec" | "judge" | "input" | "authored";
+export type ArtifactClass = "exec" | "judge" | "input" | "authored" | "knowledge";
+/** knowledge 类的出处（资料库第二期）：书库里的资料、版本、段落与位置。登记人只能是书库的组件令牌。 */
+export type KnowledgeRef = { source: string; revision: number; chunk: string; locator: string };
 export type ExecRecord = {
   sandbox_id: string;
   base: string;
@@ -341,6 +345,7 @@ export type ArtifactView = Envelope & {
   src: string;
   register: RegisterName;
   exec: ExecRecord | null;
+  knowledge?: KnowledgeRef;
 };
 export type CardKind = "approval" | "closeout" | "extension" | "dispute" | "scope";
 export type CardResponse<F = Record<string, unknown>, D = Record<string, unknown>> = Envelope & {

@@ -52,7 +52,7 @@ def _who(actor: Actor, kind: str) -> bool:
     if kind == "open_problem":
         return k == "human"
     if kind == "register_artifact":
-        return k in ("executor", "adapter", "judge", "human")  # 类别与令牌的匹配另查
+        return k in ("executor", "adapter", "judge", "human", "graph")  # 类别与令牌的匹配另查（graph 只登记 knowledge）
     if kind == "add_fact":
         return k == "adapter" and role in ("bootstrap", "explore", "reason", "recall")  # recall 另有白名单
     if kind == "add_intent":

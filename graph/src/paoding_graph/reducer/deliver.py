@@ -1,8 +1,8 @@
 """交付族：deliver（开放道，docs/design/open-lane/ §3.4、§8）。
 
 开放道的题没有判官。求解会话（solve）做完了用 deliver 交出答案，附上它认为支撑答案的执行留档、自检和没验证的部分。
-内核对交付只做机械检查：引用的 Artifact 存在、属于本题、类别可采信（exec 或 input）。**内核检查“引用是真的”，
-不检查“结论是对的”。** 没有引用的主张允许存在，读端如实标成“无留档支撑”。
+内核对交付只做机械检查：引用的 Artifact 存在、属于本题、类别可采信（exec 或 input；主张另可引 knowledge）。
+**内核检查“引用是真的”，不检查“结论是对的”。** 没有引用的主张允许存在，读端如实标成“无留档支撑”。
 
 交付不关题：交付之后不再派新的求解会话，任务等人看（work 里的 human 项 why=delivered|blocked）。
 """
@@ -17,13 +17,16 @@ from .common import Config, Ok, Reject, _ref
 
 OUTCOMES = ("answered", "partial", "blocked")  # 完整回答 | 部分完成 | 受阻
 CHECK_RESULTS = ("pass", "fail", "skipped")
-ADMISSIBLE = ("exec", "input")  # 主张与自检的依据：执行层登记的输出，或人给的材料；模型写的 authored 不算证据
+ADMISSIBLE = ("exec", "input")  # 自检的依据：执行层登记的输出，或人给的材料；模型写的 authored 不算证据
+# 主张另可引 knowledge（K1，cz 2026-11-20）：人给的资料里的一段，由书库登记。读端与执行记录分开写，
+# 不算“有执行记录”；判定道不认它（参考模型的 ADMISSIBLE 里没有它，add_fact 与验收清单都拒）。
+CLAIM_ADMISSIBLE = (*ADMISSIBLE, "knowledge")
 ANSWER_CLASSES = ("authored", "exec", "input")  # 答案本身可以是会话写的文字
 CLAIMS_MAX, CHECKS_MAX, LIST_MAX, REFS_MAX = 64, 32, 32, 16
 TEXT_MAX = 1000
 
 
-def _refs(state: State, pid: str, o: Obj, key: str, where: str) -> list[str] | Reject:
+def _refs(state: State, pid: str, o: Obj, key: str, where: str, ok: tuple[str, ...] = ADMISSIBLE) -> list[str] | Reject:
     refs = o.strings(key, [])
     if len(refs) > REFS_MAX or len(set(refs)) != len(refs):
         return Reject("schema_error", f"{where} 的 {key} 至多 {REFS_MAX} 个、不重复")
@@ -32,9 +35,10 @@ def _refs(state: State, pid: str, o: Obj, key: str, where: str) -> list[str] | R
         if err:
             return err
         cls = state["artifacts"][r]["class"]
-        if cls not in ADMISSIBLE:
+        if cls not in ok:
+            also = "、knowledge（资料）" if "knowledge" in ok else ""
             return Reject(
-                "inadmissible_class", f"{where} 的依据 {r} 是 {cls} 类：只接受 exec（执行留档）或 input（材料）"
+                "inadmissible_class", f"{where} 的依据 {r} 是 {cls} 类：只接受 exec（执行留档）、input（材料）{also}"
             )
     return refs
 
@@ -87,7 +91,7 @@ def _v_deliver(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> 
         text = _text(c, "text", f"claims[{i}]")
         if isinstance(text, Reject):
             return text
-        refs = _refs(state, pid, c, "refs", f"claims[{i}]")
+        refs = _refs(state, pid, c, "refs", f"claims[{i}]", CLAIM_ADMISSIBLE)
         if isinstance(refs, Reject):
             return refs
         out["claims"].append({"text": text, "refs": refs})

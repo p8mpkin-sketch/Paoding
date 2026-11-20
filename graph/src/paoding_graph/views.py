@@ -51,6 +51,7 @@ REGISTER = {
     "hint": "人",
     "human_reason": "人",
     "statement": "人",
+    "artifact:knowledge": "人",  # 人导入的资料里的一段（资料库第二期）：是人的话，不是执行验证过的证据
     # 估：期望增益、预测、行情、存活计数
     "estimate": "估",
 }
@@ -606,6 +607,7 @@ def artifact(state: State, aid: str) -> View:
         "src": src,
         "register": REGISTER[src],
         "exec": a.get("exec"),
+        **({"knowledge": a["knowledge"]} if "knowledge" in a else {}),
     }
 
 
