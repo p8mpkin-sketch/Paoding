@@ -213,8 +213,11 @@ class Shuku:
             "note": self.embedder_note,
         }
 
-    def chunk(self, cid: str) -> dict[str, Any] | None:
+    def chunk(self, cid: str, revision: int | None = None) -> dict[str, Any] | None:
+        """一段的原文与位置。revision：取这一段在该版本里的那一份（同一段文字跨版本不变时 id 相同）；缺省取最新。"""
         c = self.index.chunk(cid)
+        if c is not None and revision is not None and c["revision"] != revision:
+            c = self.index.chunk_at(cid, c["source"], revision)
         if c is None:
             return None
         src = self.state["sources"].get(c["source"], {})

@@ -2,7 +2,7 @@
 
 设计稿：《庖丁知识库后端设计（v5 第四期）》。这一期做书库组件、文字类导入、混合检索、HTTP 端点与知识页的资料一栏；
 K1–K3 cz 2026-11-20 裁决：全部采纳推荐项（knowledge 类可作开放道依据、与执行记录分开写、判定道不认；默认 hash 向量器；新建任务知识默认“自动”）。
-执行中检索工具（kb_search / kb_read）、knowledge 类别与内核改动、引用进依据在第二期，pdf / docx、onnx / local_http、网址抓取在第三期。
+第二期（执行中检索、knowledge 类别与内核改动、引用进依据、新建任务的知识选项）见文末；pdf / docx、onnx / local_http、网址抓取在第三期。
 
 ## 组件
 
@@ -71,3 +71,27 @@ K1–K3 cz 2026-11-20 裁决：全部采纳推荐项（knowledge 类可作开放
   `test_knowledge_endpoints.py::test_canary_stays_out_of_index_logs_and_responses`（经 HTTP 全栈一轮，另查运行日志的每条记录）。
 - ② 切分确定性单独一轮：`uv run --frozen pytest -q shuku/tests/test_chunk_determinism.py`（重复调用、换进程换哈希种子、
   调用顺序打乱、重建索引与同字节再导入）。
+
+## 第二期：执行中检索与引用（cz 2026-11-20 开工）
+
+- 内核（`graph/src/paoding_graph/reducer/knowledge.py`）：
+  - `register_artifact` 认 `class = knowledge`，只由书库的组件令牌 `graph:shuku` 登记，体带
+    `knowledge: {source, revision, chunk, locator}`；别的类别带这个字段、别的令牌登记这一类都拒。
+  - `kb_query`（新事件，`graph:shuku`）：`{lease, query, hits: [段落 id]}`，不改状态；过程一栏显示为“查资料”。
+    查询词先遮盖凭据（原话里的与查询词里认得出的），命中只记段落 id。
+  - 能不能当依据：只有开放道交付的**主张**可以引用 knowledge；自检、判定道事实的 grounds、人工验收清单一律
+    `inadmissible_class`（cz 验收附加条件 2，`graph/tests/test_knowledge_class.py`）。
+  - `prefs.knowledge = {mode: auto | pick | off, pick?}`；缺省按 auto。
+- 读法：交付视图每条主张带 `supported`（有执行留档或材料）与 `cited`（引用了资料），分开算；
+  “N 条里 M 条有执行记录”的 M 不含只引资料的主张，另标“K 条引用了资料”（cz 验收附加条件 1）。pd 文本同一规则。
+- 会话工具（`paoding_adapter.tools`，经 `KnowledgePort` 注入，不 import 书库）：`kb_search(query, k ≤ 20)`、
+  `kb_read(chunk)`；每会话至多 40 / 200 次。任务没有可查的资料（选“不用”或范围里没有可用资料）不挂这两个工具。
+  判定道的会话也能查，但提示词与返回里写明资料段落不能当 grounds。
+- 端口实现（`scripts/knowledge_hub.py` 的 `SessionKnowledge`）：范围 auto = 所有 scope=all 的可用资料，
+  pick = 点名的几份（不论 scope）；`kb_read` 只读范围内当前可用版本的段落，原文进 Blob 后登记。资料列表多一个 `cited`（被几个任务引用过）。
+- 新建任务：起草校验的 `overrides.knowledge`；auto 不写进任务，pick / off 写进 `prefs.knowledge`，出处记“人”。
+- 网页：输入框旁“知识”（自动 / 指定 / 不用）；结果页分开标示；证据抽屉给资料名、位置、当时的原文、
+  “这是你给的资料里的话，没有在这次任务里验证”，资料之后有新版本时提示但不替换原文；文件一栏的“引用的资料”。
+- 测试：`graph/tests/test_knowledge_class.py`、`tests/integration/test_knowledge_session.py`（假 CLI 全栈：
+  kb_search → kb_read → deliver 引用）、`qicao/tests/test_qicao_service.py::test_knowledge_option_goes_into_prefs`、
+  web `task.test.tsx` / `kaiti.test.tsx` 与 e2e。

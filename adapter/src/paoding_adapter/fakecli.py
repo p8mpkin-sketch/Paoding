@@ -7,7 +7,8 @@
 - 按 stream-json 输出事件：首个 system/init，末行 result。
 
 脚本（JSON，路径由 PD_FAKE_SCRIPT 给出）：{"steps": [...], "resume_steps": [...]}。
-步骤：{"tool": 名, "input": {...}} | {"exit": 码} | {"hang": 秒}。
+步骤：{"tool": 名, "input": {...}, "say"?: 自述} | {"exit": 码} | {"hang": 秒}。
+say 是同一条 assistant 消息里工具调用前的文字块（自述）。
 input 里形如 "$r3.artifact" 的字符串替换为第 3 步工具结果的字段（步号从 0 起）；
 字段可以逐级取，例如 "$r0.items.0.id"。
 只用标准库；以 python -I 运行，不导入工作区里的任何东西。
@@ -171,7 +172,8 @@ def main() -> None:
                 "message": {
                     "usage": msg.get("usage", {}),
                     "content": [
-                        {"type": "tool_use", "id": f"t{turns}", "name": step["tool"], "input": step.get("input", {})}
+                        *([{"type": "text", "text": step["say"]}] if step.get("say") else []),
+                        {"type": "tool_use", "id": f"t{turns}", "name": step["tool"], "input": step.get("input", {})},
                     ],
                 },
             }

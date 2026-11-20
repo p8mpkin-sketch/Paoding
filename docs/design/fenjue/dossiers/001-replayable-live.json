@@ -1,0 +1,57 @@
+{
+  "dossier": "001",
+  "name": "replayable-live",
+  "title": "可回放的实时性",
+  "status": "readings_ready",
+  "identified": "2026-11-20",
+  "fire": {
+    "id": "h6.activity-ledger",
+    "ver": 1,
+    "slot": "H6",
+    "also_touches": ["H4"],
+    "ports": ["M1:register_artifact", "M4"],
+    "params": { "ledger_roles": ["solve"], "anchor_interval_s": 30, "anchor_cap": 200, "poll_ms": 3000 },
+    "assets": [],
+    "organ": {
+      "class": "感知官",
+      "retire_signal": "面板打开率低于 5%（占位）",
+      "enable_when": "开放道常开；严格道按开关，缺省关",
+      "control_arm": "h6.activity（#115 原样，ledger_roles=()）"
+    },
+    "lineage": { "dossier": "001", "from": ["h6.activity"] },
+    "switch": "AdapterConfig.ledger_roles（F2 之后为 fires.H6）"
+  },
+  "segment": {
+    "media_type": "application/vnd.paoding.activity-segment+json",
+    "class": "authored",
+    "shape": { "v": 1, "kind": "activity-segment", "lease": "l_<seq>", "first": "int", "last": "int", "prev": "sha256", "head": "sha256", "items": "条目（带 n 与 h）" },
+    "chain": "h_n = sha256(h_{n-1} || JCS(条目去掉 h))，h_0 = 64 个 0",
+    "anchors": ["exec 返回", "一轮结束", "距上次入账满 anchor_interval_s", "会话收尾（释放租约之前）"],
+    "cap_rule": "每题入账段数到 anchor_cap 后，只在一轮结束与收尾时入账"
+  },
+  "kernel_lines_changed": 0,
+  "preregistered": "docs/design/fenjue/05-cases.md#14-预登记读数草稿",
+  "arms": {
+    "B": "#115 之前，无实时性（构造）",
+    "A1": "#115 原样：同一测试台 ledger_roles=()",
+    "F": "本 PR 缺省配置",
+    "B1": "main 重跑；结构读数确定性，噪声底 0"
+  },
+  "readings": [
+    { "dim": "实时所见可回放率", "kind": "新生", "dir": "up", "B": 0, "A1": 0, "F": 1.0, "gate": 1.0, "n": 3, "test": "adapter/tests/test_activity_ledger.py::test_what_was_seen_live_replays_byte_for_byte" },
+    { "dim": "活动链校验", "kind": "新生", "dir": "up", "B": 0, "A1": 0, "F": 1.0, "gate": 1.0, "n": 4, "test": "adapter/tests/test_activity_ledger.py::test_tampering_is_always_caught" },
+    { "dim": "执行行可追率", "kind": "新生", "dir": "up", "B": 0, "A1": 0, "F": 1.0, "gate": 1.0, "n": 2, "test": "adapter/tests/test_activity_ledger.py::test_what_was_seen_live_replays_byte_for_byte" },
+    { "dim": "执行到可见的延迟", "kind": "异火", "dir": "down", "B": "会话结束", "A1": "约 3 秒", "F": "约 3 秒", "gate": "<= A1 + 噪声底" },
+    { "dim": "凭据泄漏数", "kind": "本火", "dir": "down", "B": 0, "A1": 0, "F": 0, "gate": 0 },
+    { "dim": "旧日志逐字节回放", "kind": "本火", "B": "过", "A1": "过", "F": "过", "gate": "过", "test": "tests/fenjue/test_t4_zhang.py" },
+    { "dim": "严格道事件日志不变", "kind": "本火", "F": "相同", "gate": "相同" },
+    { "dim": "每次交付花费、墙钟", "kind": "共有", "dir": "down", "F": "同 A1（入账不调模型）", "gate": "<= max(B, A1) + 噪声底", "note": "真模型运行读数待 cz 跑" },
+    { "dim": "每题新增事件数", "kind": "共有", "dir": "down", "B": 0, "A1": 11, "F": 14, "delta": 3, "gate": "入账段 <= 200" },
+    { "dim": "入账段 Blob 字节数", "kind": "共有", "dir": "down", "B": 0, "A1": 0, "F": 2543, "gate": "占位" }
+  ],
+  "outcome_proposed": "huolian",
+  "jie_proposed": 2,
+  "metrics": { "cycle_days": 0, "kernel_lines": 0, "slots": ["H6", "H4"], "trial_cost_usd_milli": 0, "reverts": 0 },
+  "verdict": null,
+  "reverts": []
+}

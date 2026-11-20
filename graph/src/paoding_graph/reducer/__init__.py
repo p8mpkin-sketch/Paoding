@@ -27,7 +27,7 @@ from .. import work as wk  # noqa: F401  —— 测试经 reducer.wk 替换内�
 from ..jcs import JCSError, canonicalize
 from ..parse import BadBody, Obj
 from ..state import Actor, Body, Event, State
-from . import close, curate, deliver, fact, grants, intent, judge, lease, problem, recall
+from . import close, curate, deliver, fact, grants, intent, judge, knowledge, lease, problem, recall
 from .common import Applier, Config, Ok, Reject, TimedValidator, Validator, empty_state
 from .fact import content_key
 
@@ -52,7 +52,7 @@ def _who(actor: Actor, kind: str) -> bool:
     if kind == "open_problem":
         return k == "human"
     if kind == "register_artifact":
-        return k in ("executor", "adapter", "judge", "human")  # 类别与令牌的匹配另查
+        return k in ("executor", "adapter", "judge", "human", "graph")  # 类别与令牌的匹配另查（graph 只登记 knowledge）
     if kind == "add_fact":
         return k == "adapter" and role in ("bootstrap", "explore", "reason", "recall")  # recall 另有白名单
     if kind == "add_intent":
@@ -89,6 +89,8 @@ def _who(actor: Actor, kind: str) -> bool:
         return k == "adapter" and role == "solve"
     if kind in ("follow_up", "halt"):  # 开放道的追问与叫停（地图 v0.9 Q20、Q31）：只有人
         return k == "human"
+    if kind == "kb_query":  # 会话查资料的记录（资料库第二期）：书库替会话记，令牌另查
+        return k == "graph"
     return False
 
 
@@ -119,6 +121,7 @@ KINDS = (
     "curate",
     "follow_up",
     "halt",
+    "kb_query",
 )
 AFTER_CLOSE = ("cost", "release", "curate")  # 关题后在途任务仍可交回用量与释放租约；人仍可整理
 
@@ -164,6 +167,7 @@ _VALIDATORS: dict[str, Validator] = {
     "deliver": deliver._v_deliver,
     "follow_up": deliver._v_follow_up,
     "halt": deliver._v_halt,
+    "kb_query": knowledge._v_kb_query,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -193,6 +197,7 @@ _APPLIERS: dict[str, Applier] = {
     "curate": curate._a_curate,
     "follow_up": deliver._a_follow_up,
     "halt": deliver._a_halt,
+    "kb_query": knowledge._a_kb_query,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 

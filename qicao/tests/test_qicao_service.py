@@ -158,6 +158,29 @@ def test_run_profile_override_goes_into_prefs():
             s.draft_view({**body, "overrides": {"model": bad}})
 
 
+def test_knowledge_option_goes_into_prefs():
+    """新建任务的知识选项（资料库第二期，K3）：自动是缺省、不写；指定与不用写进 prefs.knowledge，与执行模型并存。"""
+    import dataclasses
+
+    prof = [{"name": "default", "model": ""}, {"name": "light", "model": "light-1"}]
+    st = dataclasses.replace(SETTINGS, models={"profiles": prof, "routes": {}})
+    s = KaitiService(INTAKE, lambda: st, placeholder_priors(), heuristic_drafter, "heuristic")
+    first = s.draft_view({"text": T1})
+    body = {"text": T1, "draft": first["draft"], "nonce": first["nonce"]}
+    auto = s.draft_view({**body, "overrides": {"knowledge": {"mode": "auto"}}})
+    assert "prefs" not in auto["input"]
+    out = s.draft_view({**body, "overrides": {"knowledge": {"mode": "pick", "pick": ["s_abc123"]}, "model": "light"}})
+    assert out["input"]["prefs"] == {"model": "light", "knowledge": {"mode": "pick", "pick": ["s_abc123"]}}
+    row = next(r for r in out["derivation"] if r["field"] == "prefs.knowledge")
+    assert row["source"] == "human"
+    off = s.draft_view({**body, "overrides": {"knowledge": {"mode": "off"}}})
+    batch = next(o for o in off["ops"] if o["op"] == "open_problem")
+    assert batch["body"]["prefs"] == {"knowledge": {"mode": "off"}}
+    for bad in ({"mode": "all"}, {"mode": "pick"}, {"mode": "pick", "pick": [3]}, "auto", {"mode": "off", "x": 1}):
+        with pytest.raises(BadRequest):
+            s.draft_view({**body, "overrides": {"knowledge": bad}})
+
+
 @pytest.mark.parametrize(
     "ov",
     [

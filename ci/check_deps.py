@@ -3,6 +3,8 @@
 规则：
 1. 组件 A 只能 import 组件 B 的 `paoding_B.contract`（或其子模块），不得 import B 的内部模块。
 2. A → B 必须在 ALLOWED 表里。graph 不依赖任何组件。
+3. 功法组件（焚决 F2，docs/design/fenjue/02-lianhua.md §6.1“体质内部不可达”）另有一张禁止表：
+   不开网络套接字、不起子进程、不直接碰数据库文件。它只读清单、算摘要。
 """
 
 from __future__ import annotations
@@ -23,6 +25,14 @@ ALLOWED: dict[str, set[str]] = {
     "tongjian": {"graph"},
     "qicao": {"judgebox"},
     "shuku": {"graph"},
+    "fenjue": {"graph"},
+}
+ALLOWED["adapter"].add("fenjue")
+ALLOWED["sinan"].add("fenjue")
+
+# 功法组件不许 import 的标准库模块（顶层名）
+FORBIDDEN: dict[str, set[str]] = {
+    "fenjue": {"socket", "ssl", "http", "urllib", "subprocess", "sqlite3", "multiprocessing"},
 }
 
 
@@ -43,6 +53,9 @@ def check(root: pathlib.Path) -> list[str]:
         for f in sorted((root / comp).rglob("*.py")):
             for line, mod in imports(f):
                 head = mod.split(".")[0]
+                if head in FORBIDDEN.get(comp, ()):
+                    errors.append(f"{f.relative_to(root)}:{line}: {comp} 是功法，不许 import {head}（体质内部不可达）")
+                    continue
                 if not head.startswith("paoding_"):
                     continue
                 target = head.removeprefix("paoding_")

@@ -80,6 +80,10 @@ for (const theme of THEMES) {
     await expect(page.locator("[data-evidence] [data-artifact]")).toBeVisible();
     await scan("依据抽屉");
     await page.keyboard.press("Escape");
+    await page.locator('[data-ref-class="knowledge"]').click();
+    await expect(page.locator("[data-evidence] [data-knowledge]")).toContainText("团队约定");
+    await scan("引用的资料");
+    await page.keyboard.press("Escape");
     await page.locator('[data-action="adopt-delivery"]').click();
     await expect(page.locator("[data-four]").first()).toBeVisible();
     await scan("采纳确认");

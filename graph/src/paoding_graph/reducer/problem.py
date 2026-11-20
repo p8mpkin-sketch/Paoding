@@ -8,7 +8,7 @@ from .. import refmodel as rm
 from ..parse import Obj
 from ..practice import LANES, violations
 from ..state import Actor, Artifact, Body, Check, Event, JudgeEntry, Problem, Profile, ScopeRule, State
-from . import recall
+from . import knowledge, recall
 from .common import _HEX64, RISK_RANK, RISKS, WALL_MODES, Config, Ok, Reject, _check, _reason, _ref, _rule
 
 # ---------- 校验 ----------
@@ -145,10 +145,16 @@ def _deadline(state: State, pid: str, d: Obj) -> Body | Reject:
 
 
 def _prefs(pr: Obj, cfg: Config) -> Body | Reject:
-    """任务级偏好（宪章 03 §3.1）：现在只有 model，一个已登记的模型档案名。端点与密钥不能在任务里填。"""
-    if not pr.keys() <= {"model"}:
-        return Reject("schema_error", "prefs 只有 model 一项：端点、密钥等只能在设置页改")
+    """任务级偏好（宪章 03 §3.1）：model，一个已登记的模型档案名（端点与密钥不能在任务里填）；
+    knowledge 见 knowledge.prefs（资料库第二期，K3）。"""
+    if not pr.keys() <= {"model", "knowledge"}:
+        return Reject("schema_error", "prefs 只有 model 与 knowledge 两项：端点、密钥等只能在设置页改")
     out: Body = {}
+    if "knowledge" in pr:
+        kp = knowledge.prefs(pr.child("knowledge"))
+        if isinstance(kp, Reject):
+            return kp
+        out["knowledge"] = kp
     if "model" in pr:
         name = pr.text("model")
         if name not in cfg.model_profiles:
@@ -331,9 +337,17 @@ _EXEC_FIELDS = {
 
 def _v_register_artifact(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
     cls = body.string("class")
-    if cls not in rm.REGISTRAR:
+    kn: Body | None = None
+    if cls == "knowledge":
+        r = knowledge.artifact(actor, pid, body, state)
+        if isinstance(r, Reject):
+            return r
+        kn = r
+    elif "knowledge" in body:
+        return Reject("schema_error", "只有 knowledge 类带 knowledge 出处字段")
+    elif cls not in rm.REGISTRAR:
         return Reject("schema_error", f"未知类别 {cls}")
-    if rm.validate_register(actor["kind"], cls) != "ok":
+    elif rm.validate_register(actor["kind"], cls) != "ok":
         return Reject("forbidden_op", f"{actor['kind']} 的令牌不能登记 {cls} 类")
     if pid not in state["problems"] and actor["kind"] != "human":
         return Reject("unknown_ref", f"题目 {pid} 未开")
@@ -364,6 +378,7 @@ def _v_register_artifact(state: State, actor: Actor, pid: str, body: Obj, cfg: C
             "parents": parents,
             "producer": producer,
             **({"exec": ex} if ex is not None else {}),
+            **({"knowledge": kn} if kn is not None else {}),
         }
     )
 

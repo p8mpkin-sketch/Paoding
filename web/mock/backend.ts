@@ -10,11 +10,11 @@
 import { createHash } from "node:crypto";
 import type {
   AcceptanceItem, AcceptCheck, AcceptRecord, ApprovalDisplay, Authority, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
-  ExecRecord, ExtensionFields, FactNode, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, LeaseRow, Level,
+  ExecRecord, ExtensionFields, FactNode, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, KnowledgeRef, LeaseRow, Level,
   OpResult, Predicate, ProblemInput, ProblemItem, Profile, ProposalResponse, RegisterName, Risk, ScopeRule, StatusView,
   Tagged, Terminal, WorkItem,
 } from "../src/api/types";
-import { demoScript, staticScripts, type Script } from "./scenario";
+import { activityDemo, demoScript, staticScripts, type Script } from "./scenario";
 import { kaitiDraft, kaitiExtract, platformRoute } from "./kaiti";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
@@ -38,7 +38,7 @@ const EXTERNAL_RESOURCES = ["telemetry"];
 const RISK_RANK: Record<Risk, number> = { r0: 0, r1: 1, r2: 2 };
 const LEVEL_WORDS: Record<Level, string> = { E3: "判定通过", E3d: "相符", E2: "模型共识", E1: "单源复核", E0: "猜想", X: "已证伪" };
 const REGISTER: Record<string, RegisterName> = {
-  "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "artifact:authored": "叙述",
+  "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "artifact:authored": "叙述", "artifact:knowledge": "人",
   title: "叙述", summary: "叙述", hint: "人", human_reason: "人", statement: "人", estimate: "估",
   delivery: "叙述", follow_up: "人",
 };
@@ -60,7 +60,7 @@ const TEMPLATE_DATA = {
 const TEMPLATE_TEXT = JSON.stringify(TEMPLATE_DATA);
 export const TEMPLATES: Catalog = { items: [{ name: "service-practice", hash: sha256(TEMPLATE_TEXT), size: TEMPLATE_TEXT.length, signature: null, data: TEMPLATE_DATA, text: TEMPLATE_TEXT }] };
 
-type Art = { id: string; problem_id: string; hash: string; size: number; media_type: string; class: ArtifactClass; parents: string[]; producer: { actor: string; session?: string }; exec?: ExecRecord };
+type Art = { id: string; problem_id: string; hash: string; size: number; media_type: string; class: ArtifactClass; parents: string[]; producer: { actor: string; session?: string }; exec?: ExecRecord; knowledge?: KnowledgeRef };
 type Fact = { id: string; seq: number; session?: string; title: string; summary: string; claim_type: "observation" | "inference"; check?: { judge_id: string; spec_ref?: string; expect?: Record<string, unknown>; sealed?: { vault: string; digest: string }[] }; premises: string[]; grounds: string[] };
 type Intent = { id: string; seq: number; session?: string; abandoned_seq?: number; title: string; summary: string; premises: string[]; risk: Risk; budget: Budget; done?: Fact["check"] & { max_attempts: number }; needs_scope?: ScopeRule[]; expected_gain?: number; rollback?: { text: string } };
 type Hint = { id: string; seq: number; ts: number; author: string; text: string; about?: string; closed_seq?: number };
@@ -336,7 +336,8 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
       ...(p.goal.accept === "open" ? {
         deliveries: s.deliveries.map((d) => ({
           id: d.id, seq: d.seq, lease: d.lease, outcome: d.outcome, answer: d.answer ?? null,
-          claims: d.claims.map((c) => ({ text: tag("delivery", c.text), refs: c.refs.map(brief), supported: c.refs.length > 0 })),
+          // supported：有执行记录或材料；cited：引用了资料。两者分开算（与图服务 views._delivery 同一规则）
+          claims: d.claims.map((c) => ({ text: tag("delivery", c.text), refs: c.refs.map(brief), supported: c.refs.some((r) => brief(r).class !== "knowledge"), cited: c.refs.some((r) => brief(r).class === "knowledge") })),
           self_check: d.self_check.map((c) => ({ what: tag("delivery", c.what), result: c.result, refs: c.refs.map(brief), ...(c.item ? { item: c.item } : {}) })),
           unverified: d.unverified.map((x) => tag("delivery", x)), needs: d.needs.map((x) => tag("delivery", x)),
         })),
@@ -576,7 +577,11 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (!b.title || !Array.isArray(b.scope) || b.scope.length === 0) throw new Rejected("schema_error", "title、scope 必填");
       if (!(b.budget?.usd_milli > 0) || !(b.budget?.wall_s > 0)) throw new Rejected("schema_error", "预算为正");
       // 任务级模型偏好（宪章 03 §3.1）：只能取设置页登记过的档案名
-      if (b.prefs && (Object.keys(b.prefs).some((k) => k !== "model") || (b.prefs.model !== undefined && !settings.models.profiles.some((p) => p.name === b.prefs.model)))) throw new Rejected("unknown_ref", `模型档案 ${b.prefs?.model} 未登记`);
+      if (b.prefs && Object.keys(b.prefs).some((k) => k !== "model" && k !== "knowledge")) throw new Rejected("schema_error", "prefs 只有 model 与 knowledge 两项");
+      if (b.prefs?.model !== undefined && !settings.models.profiles.some((p) => p.name === b.prefs.model)) throw new Rejected("unknown_ref", `模型档案 ${b.prefs?.model} 未登记`);
+      // 知识选项（资料库第二期，K3）：{mode: auto|pick|off, pick?}；pick 只在 mode=pick 时出现
+      const kn = b.prefs?.knowledge;
+      if (kn !== undefined && (!["auto", "pick", "off"].includes(kn?.mode) || (kn.mode === "pick") !== Array.isArray(kn.pick) || (kn.mode === "pick" && !kn.pick.length))) throw new Rejected("schema_error", "prefs.knowledge 是 {mode, pick?}");
       if (b.goal?.accept === "open") {
         // 开放道（open-lane §8）：不登记判据、不启用判官；假后端只收题面，不模拟求解与交付（第二步的结果页再补）
         if ("check" in b.goal || "max_attempts" in b.goal || (b.judges ?? []).length) throw new Rejected("schema_error", "开放道不登记判据、不启用判官");
@@ -964,11 +969,21 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       else if (r.stage === "index") { r.stage = "ready"; r.ts = Date.now(); }
     }
   };
+  const knChunkId = (sid: string, i: number) => `k_${sha256(enc.encode(`${sid}:${i}`)).slice(0, 16)}`;
   const knSourcesView = () => ({ sources: [...knSources].sort((a, b) => b.created - a.created).map(knView), embedder: "hash-512-v1", note: "", as_of: knSeq });
   const knTerms = (t: string) => { const l = t.toLowerCase(); const out: string[] = [...(l.match(/[a-z0-9_]{2,}/g) ?? [])]; for (const run of l.match(/[\u3400-\u9fff]+/g) ?? []) for (let i = 0; i < Math.max(1, run.length - 1); i++) out.push(run.slice(i, i + 2)); return out; };
   function knowledgeRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
     if (method === "GET" && path === "/v1/knowledge/sources") return json(200, knSourcesView());
     if (method === "GET" && path === "/v1/knowledge/jobs") { const out = json(200, { jobs: knJobs(), as_of: knSeq }); knStep(); return out; }
+    const cm = method === "GET" ? path.match(/^\/v1\/knowledge\/chunks\/(k_[0-9a-f]{16})$/) : null;
+    if (cm) {
+      for (const s of knSources) for (const r of s.revs) for (const [i, para] of r.text.split(/\n\n+/).entries()) {
+        if (knChunkId(s.id, i) !== cm[1]) continue;
+        const latest = s.revs.at(-1)!;
+        return json(200, { id: cm[1], source: s.id, source_name: s.name, revision: r.n, doc: r.file.name, heading: r.file.name, start: 0, end: para.length, text: para, newer_revision: latest.n > r.n && latest.stage === "ready" });
+      }
+      return err(404, "unknown_ref", "没有这一段（资料可能已清掉，或索引在重建）");
+    }
     if (method !== "POST") return err(405, "schema_error", `${path} 不支持 ${method}`);
     const b = parse() ?? {};
     if (path === "/v1/knowledge/search") {
@@ -979,7 +994,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         const r = s.revs.find((x) => x.n === knLive(s))!;
         return r.text.split(/\n\n+/).map((para, i) => ({ s, r, para, i, score: knTerms(para).filter((t) => qt.has(t)).length }));
       }).filter((h) => h.score > 0).sort((a, b2) => b2.score - a.score).slice(0, k);
-      return json(200, { hits: hits.map((h, n) => ({ id: `k_${sha256(enc.encode(`${h.s.id}:${h.i}`)).slice(0, 16)}`, source: h.s.id, source_name: h.s.name, revision: h.r.n, doc: h.r.file.name, heading: h.r.file.name, start: 0, end: h.para.length, text: h.para, score: Math.round((1 / (61 + n)) * 61 * 1000) / 1000, via: ["lex", "vec"] })),
+      return json(200, { hits: hits.map((h, n) => ({ id: knChunkId(h.s.id, h.i), source: h.s.id, source_name: h.s.name, revision: h.r.n, doc: h.r.file.name, heading: h.r.file.name, start: 0, end: h.para.length, text: h.para, score: Math.round((1 / (61 + n)) * 61 * 1000) / 1000, via: ["lex", "vec"] })),
         via: "lexical+vector", embedder: "hash-512-v1", note: "" });
     }
     if (!auth.startsWith("Bearer ")) return err(401, "forbidden_op", "须带人的令牌");
@@ -1096,6 +1111,52 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (!bytes) return notFound("没有这个 Blob");
       return { status: 200, headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${m[1].slice(0, 16)}.bin"`, "x-content-type-options": "nosniff" }, body: bytes };
     }
+    if ((m = path.match(/^\/v1\/leases\/([^/]+)\/activity$/))) {
+      // 会话活动（scripts/stack.py 的同名端点）：假后端不跑 CLI，给固定的流水；耗时与花费取本题的 cost 事件
+      const lid = decodeURIComponent(m[1]);
+      for (const pid of pids()) {
+        const s = stateOf(pid, Infinity);
+        const l = s.leases.get(lid);
+        if (!l) continue;
+        const active = l.ended_seq === undefined && !closed(s);
+        // 可回放的实时性（炼档 001）：exec 的结果带那次执行的留档；入账点是每次 exec 返回（段紧跟留档登记）与会话收尾。
+        const execs = [...s.artifacts.values()].filter((a) => a.class === "exec" && a.producer?.session === lid);
+        const demo = l.kind === "solve" ? activityDemo(active, pid) : [];
+        const cmd = (id: unknown) => demo.find((y) => y.kind === "call" && y.tool === "exec" && y.id === id)?.gist;
+        const full = demo.map((x) => {
+          const a = x.kind === "result" ? execs.find((e) => e.exec?.command === cmd(x.id)) : undefined;
+          return a ? { ...x, artifact: a.id } : x;
+        });
+        const anchors = full.flatMap((x) => (x.artifact ? [{ n: Number(x.n), seq: Number(String(x.artifact).slice(2)) }] : []));
+        if (!active && full.length && l.ended_seq !== undefined) anchors.push({ n: full.length, seq: l.ended_seq });
+        const asOfQ = q.get("as_of");
+        const asOfN = asOfQ === null || asOfQ === "" ? null : Number(asOfQ);
+        if (asOfN !== null && !Number.isInteger(asOfN)) return err(400, "schema_error", "after、as_of 是整数");
+        const upto = (asOfN === null ? anchors : anchors.filter((x) => x.seq <= asOfN)).at(-1)?.n ?? null;
+        const all = asOfN === null ? full : full.slice(0, upto ?? 0);
+        const after = Number(q.get("after") ?? 0);
+        const items = all.filter((x) => Number(x.n) > after);
+        const done = new Set(all.filter((x) => x.kind === "result").map((x) => x.id));
+        const calls = all.filter((x) => x.kind === "call");
+        const pending = calls.filter((x) => !done.has(x.id)).at(-1);
+        const mine = s.costs.filter((c) => c.lease === lid);
+        if (asOfN !== null) {
+          return json(200, {
+            lease: lid, problem_id: pid, kind: l.kind, active: false, live: false, status: all.length ? "replay" : "none", as_of: asOfN,
+            rounds: 1, model: "model-a", elapsed_s: 0, spent_usd_milli: 0, closing: false, anchored_through: upto,
+            items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: all.filter((x) => x.kind === "call").length,
+            now: null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
+          });
+        }
+        return json(200, {
+          lease: lid, problem_id: pid, kind: l.kind, active, live: active, status: active ? "running" : all.length ? "released" : "none", anchored_through: upto,
+          rounds: 1, model: "model-a", elapsed_s: mine.reduce((a, c) => a + c.wall_s, 0), spent_usd_milli: mine.reduce((a, c) => a + c.usd_milli, 0), closing: false,
+          items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: calls.length,
+          now: active ? pending ?? null : null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
+        });
+      }
+      return notFound(`没有会话 ${lid}`);
+    }
     if ((m = path.match(/^\/v1\/problems\/([^/]+)\/events$/))) {
       const pid = decodeURIComponent(m[1]);
       if (!pids().includes(pid)) return notFound(`题目 ${pid} 不存在`);
@@ -1132,7 +1193,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       const a = pid && stateOf(pid, asOf).artifacts.get(m[1]);
       if (!a) return notFound(`没有 Artifact ${m[1]}`);
       const src = `artifact:${a.class}`;
-      const doc: Omit<ArtifactView, "as_of" | "head" | "view_hash"> = { id: a.id, problem_id: a.problem_id, hash: a.hash, size: a.size, media_type: a.media_type, class: a.class, parents: a.parents, producer: a.producer, seq: Number(a.id.split("_")[1]), src, register: REGISTER[src], exec: a.exec ?? null };
+      const doc: Omit<ArtifactView, "as_of" | "head" | "view_hash"> = { id: a.id, problem_id: a.problem_id, hash: a.hash, size: a.size, media_type: a.media_type, class: a.class, parents: a.parents, producer: a.producer, seq: Number(a.id.split("_")[1]), src, register: REGISTER[src], exec: a.exec ?? null, ...(a.knowledge ? { knowledge: a.knowledge } : {}) };
       return wrap(doc);
     }
     if ((m = path.match(/^\/v1\/nodes\/([^/]+)$/))) {

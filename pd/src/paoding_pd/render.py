@@ -150,8 +150,10 @@ def deliveries(o: Out, state: dict, pid: str) -> None:
         if d.get("answer"):
             o.add("structure", f"{d['id']} 答案：{d['answer']}（{state['artifacts'][d['answer']]['class']}）")
         n = len(d["claims"])
-        m = sum(1 for c in d["claims"] if c["refs"])
-        o.add("structure", f"{d['id']} 主张 {n} 条，有留档支撑 {m} 条")
+        kinds = [{state["artifacts"][r]["class"] for r in c["refs"]} for c in d["claims"]]
+        m = sum(1 for k in kinds if k - {"knowledge"})  # 引用资料不算留档支撑（cz 验收附加条件 1）
+        kn = sum(1 for k in kinds if "knowledge" in k)
+        o.add("structure", f"{d['id']} 主张 {n} 条，有留档支撑 {m} 条" + (f"；引用资料 {kn} 条" if kn else ""))
         for k, c in enumerate(d["claims"], 1):
             refs = ", ".join(f"{r}({state['artifacts'][r]['class']})" for r in c["refs"]) or "无留档支撑"
             o.add("delivery", f"{d['id']} 主张 {k}：{c['text']}")

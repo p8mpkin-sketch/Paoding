@@ -1,0 +1,31 @@
+{
+ "id": "h6.activity-ledger",
+ "ver": 1,
+ "slot": "H6",
+ "ports": [
+  "M1:register_artifact",
+  "M4"
+ ],
+ "params": {
+  "ledger_roles": [
+   "solve"
+  ],
+  "anchor_interval_s": 30,
+  "anchor_cap": 200,
+  "poll_ms": 3000
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开放道常开；严格道按开关，缺省关",
+  "control_arm": "h6.activity（#115 原样，ledger_roles 为空）",
+  "retire_signal": "面板打开率低于 5%（占位）"
+ },
+ "lineage": {
+  "dossier": "001",
+  "from": [
+   "h6.activity"
+  ]
+ },
+ "switch": "fires.H6"
+}

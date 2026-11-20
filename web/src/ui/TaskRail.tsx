@@ -9,7 +9,11 @@ import { LEASE_WORD, Sessions } from "./Sessions";
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 const KIND_WORD: Record<string, string> = { ...LEASE_WORD, solve: "求解", verify: "复核", recall: "回忆", other: "其他" };
 
-export function TaskRail({ vm, onSelect, onOpenHint }: { vm: ViewModel; onSelect: (id: string) => void; onOpenHint: (id: string) => void }) {
+export function TaskRail({ vm, onSelect, onOpenHint, onOpenLease, openLease }: {
+  vm: ViewModel; onSelect: (id: string) => void; onOpenHint: (id: string) => void;
+  /** 只有开放道传：会话行上出现“看活动”，点开工作区的会话活动面板。 */
+  onOpenLease?: (id: string) => void; openLease?: string | null;
+}) {
   const b = vm.budget;
   const reservedEnd = Math.min(1000, b.spentPermille + b.reservedPermille);
   const rows = b.byLease.length > 0
@@ -63,7 +67,7 @@ export function TaskRail({ vm, onSelect, onOpenHint }: { vm: ViewModel; onSelect
       </section>
       <section>
         <h3>会话<span className="ct">{live} 个在途</span></h3>
-        <Sessions leases={vm.leases} onSelect={onSelect} />
+        <Sessions leases={vm.leases} onSelect={onSelect} onOpen={onOpenLease} openId={openLease} />
       </section>
       <section>
         <h3>你的指导<span className="ct">{openHints.length} 条生效</span></h3>

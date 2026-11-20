@@ -66,6 +66,7 @@ from settings_hub import defaults as settings_defaults  # noqa: E402
 from paoding_adapter.contract import (  # noqa: E402
     FAKE_CLI,
     AdapterConfig,
+    ChainBroken,
     CliBinding,
     ContainerLauncher,
     EndpointProxy,
@@ -80,7 +81,17 @@ from paoding_adapter.contract import (  # noqa: E402
 )
 from paoding_adapter.purge import purge_workspaces  # noqa: E402
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry, load_policy  # noqa: E402
+from paoding_graph.contract import (  # noqa: E402
+    BadBody,
+    BlobStore,
+    Config,
+    GraphHttp,
+    GraphService,
+    HttpConfig,
+    MountError,
+    TokenRegistry,
+    load_policy,
+)
 from paoding_qicao.contract import catalog_of  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
@@ -329,7 +340,7 @@ class Stack:
         )
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
-        self.knowledge = KnowledgeHub(home, self.blobs, cfg.knowledge)
+        self.knowledge = KnowledgeHub(home, self.blobs, cfg.knowledge, self.graph, self.tokens)
         self.knowledge.mount(self.http)
         self.catalog = catalog_of(self.registry, self.connectors)  # 判据形态目录（注册表驱动，§5.8）
         self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog, key=self.keyring.get)
@@ -419,6 +430,7 @@ class Stack:
             grants_runtime=lambda: self.graph.cfg.grants_runtime,  # 设置层 grants.runtime（运行时扩权）
             # 会话的模型档案（宪章 03 §3.2）：任务的 prefs.model 优先，否则按设置层的角色路由
             resolve_model=lambda role, want: self.settings.store.resolve(role, want),
+            knowledge=self.knowledge.session,  # 执行中检索（资料库第二期）：kb_search / kb_read
         )
         self.runner = SessionRunner(
             self.adapter_cfg,
@@ -431,6 +443,9 @@ class Stack:
             self.executor,
             launcher=self.launcher,
         )
+
+        # 会话的实时活动（开放道进度可见性）：工作台的“会话活动”面板按游标轮询
+        self.http.mount("GET", r"/v1/leases/(?P<id>l_[0-9]+)/activity", self._activity)
 
         # 判官运行器、哮天犬
         self.judge = JudgeRunner(
@@ -459,6 +474,45 @@ class Stack:
             sweep=sweep_orphans if self.executor is not None else None,
         )
         self.url = ""
+
+    def _activity(self, q: dict, body: object) -> dict:
+        """GET /v1/leases/{id}/activity?after=N[&as_of=seq]：会话的工具调用、自述、耗时与花费。
+
+        as_of 是回放：只从事件账里那个 seq 及之前入账的活动段重建（焚决首炼“可回放的实时性”），链校验不过回 409。"""
+        try:
+            after = int(q.get("after") or 0)
+            as_of = int(q["as_of"]) if q.get("as_of") not in (None, "") else None
+        except ValueError:
+            raise BadBody("after、as_of 是整数") from None
+        lease = self.graph.state["leases"].get(q["id"])
+        if lease is None:
+            raise MountError(404, "unknown_ref", f"没有会话 {q['id']}")
+        try:
+            out = self.runner.activity(q["id"], after, as_of)
+        except ChainBroken as e:
+            raise MountError(409, "chain_broken", f"会话 {q['id']} 的入账活动校验不过：{e}") from None
+        if out is None:  # 会话还没起来、没留下活动，或工作区已按期清掉；回放时：那一刻还没有入账的活动
+            out = {
+                "lease": q["id"],
+                "role": lease["kind"],
+                "live": False,
+                "status": "none",
+                "rounds": 0,
+                "model": "",
+                "elapsed_s": 0,
+                "spent_usd_milli": 0,
+                "closing": False,
+                "items": [],
+                "next_after": after,
+                "total": 0,
+                "calls": 0,
+                "now": None,
+                "last_say": None,
+                "anchored_through": None,
+                **({"as_of": as_of} if as_of is not None else {}),
+            }
+        active = bool(lease["active"]) and as_of is None
+        return {**out, "problem_id": lease["problem_id"], "kind": lease["kind"], "active": active}
 
     # ---------- 起 ----------
 

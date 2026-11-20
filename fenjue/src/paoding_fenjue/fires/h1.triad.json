@@ -1,0 +1,111 @@
+{
+ "id": "h1.triad",
+ "ver": 1,
+ "slot": "H1",
+ "seats": [
+  "bootstrap",
+  "explore",
+  "reason"
+ ],
+ "ports": [
+  "M1:abandon_intent",
+  "M1:add_fact",
+  "M1:add_intent",
+  "M1:request_scope",
+  "M2",
+  "M3",
+  "M4",
+  "M5",
+  "M7"
+ ],
+ "params": {
+  "forms": {
+   "bootstrap": {
+    "tools": [
+     "exec",
+     "submit",
+     "show"
+    ],
+    "prompt": {
+     "files": [
+      "common.md",
+      "bootstrap.md"
+     ],
+     "insert_after": "- show："
+    },
+    "kb_cite": "grounds",
+    "focus": [],
+    "restate": "摸清材料与环境，提交直接观察到的事实。",
+    "relay": false,
+    "ends_on": "submit"
+   },
+   "reason": {
+    "tools": [
+     "submit",
+     "show"
+    ],
+    "prompt": {
+     "files": [
+      "common.md",
+      "reason.md"
+     ],
+     "insert_after": "- show："
+    },
+    "kb_cite": "grounds",
+    "focus": [],
+    "restate": "读图，提交推断与下一步 Intent。",
+    "relay": false,
+    "ends_on": "submit"
+   },
+   "explore": {
+    "tools": [
+     "exec",
+     "submit",
+     "show"
+    ],
+    "prompt": {
+     "files": [
+      "common.md",
+      "explore.md"
+     ],
+     "insert_after": "- show："
+    },
+    "kb_cite": "grounds",
+    "focus": [
+     "intent"
+    ],
+    "restate": "",
+    "relay": false,
+    "ends_on": "submit"
+   }
+  }
+ },
+ "assets": [
+  {
+   "name": "adapter/prompts/common.md",
+   "sha256": "7092cb5c27c3c5c8d938f7210663ce94af55f052079f6463e2d2979962fe6698"
+  },
+  {
+   "name": "adapter/prompts/bootstrap.md",
+   "sha256": "36d1b83459fe5c9e26c2a3d60024f38b7485cabf3c193a9710f372826f7c0150"
+  },
+  {
+   "name": "adapter/prompts/reason.md",
+   "sha256": "343a4a931d493a98e0a0a300919ccfd9afdf606313dd1d86aeb601e8e4f3397c"
+  },
+  {
+   "name": "adapter/prompts/explore.md",
+   "sha256": "26f0f396df522abedb16a43cb10681596ee7967a13ac2b6d64df67ff7487cb9f"
+  }
+ ],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "严格道",
+  "control_arm": "h1.solo（同一道题一个会话做到底）",
+  "retire_signal": "三段式与独行在严格道四臂上的读数落在噪声底内"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H1"
+}

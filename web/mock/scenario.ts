@@ -15,6 +15,7 @@ const SINAN: Actor = { kind: "sinan", id: "sinan" };
 const GRAPH: Actor = { kind: "graph", id: "graph" };
 const EXEC: Actor = { kind: "executor", id: "executor" };
 const JUDGE: Actor = { kind: "judge", id: "judgebox" };
+const SHUKU: Actor = { kind: "graph", id: "shuku" }; // 书库的组件令牌：登记 knowledge 类、记 kb_query
 const WATCHDOG: Actor = { kind: "watchdog", id: "watchdog" };
 /** 会话即租约 id；剧本里用租约的名字，运行时换成真正的 l_<seq>。 */
 const adapter = (lease: string, role: string) => (ids: Record<string, string>): Actor => ({ kind: "adapter", id: "adapter", session: ids[lease], role });
@@ -44,6 +45,16 @@ class Builder {
       hash: api.putBlob(output), size: output.length, media_type: "text/plain", class: "exec", producer: { actor: "executor", session: _i[session] },
       exec: { sandbox_id: `sb-${this.pid}`, base: "default", baseline_ref: "base@1", tool, command, cwd: "/work", exit_code: exit, touched: ["target:8080"], started_at: 0, ended_at: 0, truncated },
       parents: [],
+    }), name);
+  }
+  /** 会话查资料（资料库第二期）：kb_query 记查询词与命中；kb_read 读到的段落由书库登记为 knowledge 类。
+   * chunk 与假后端知识页的段落 id 同一算法（sha256(资料:段号) 前 16 位），证据抽屉能取到原文。 */
+  kb(name: string, session: string, query: string, source: string, para: number, text: string, locator: string) {
+    const chunk = (api: Api) => `k_${api.sha256(`${source}:${para}`).slice(0, 16)}`;
+    this.ev(SHUKU, "kb_query", (i, api) => ({ lease: i[session], query, hits: [chunk(api)] }));
+    return this.ev(SHUKU, "register_artifact", (_i, api) => ({
+      hash: api.putBlob(text), size: text.length, media_type: "text/plain; charset=utf-8", class: "knowledge", producer: { actor: "shuku" },
+      knowledge: { source, revision: 1, chunk: chunk(api), locator }, parents: [],
     }), name);
   }
   authored(name: string, session: string, text: string, media = "text/plain") {
@@ -231,6 +242,7 @@ export function staticScripts(): Script[] {
   o.authored("notes", "S1", "# 计划\n1. 读三家的持久化接口\n2. 各写一个中途杀进程的复现\n3. 按恢复粒度对比\n");
   o.exec("e_clone", "S1", "shell", "rg -l checkpoint langgraph/libs | head -2", "libs/checkpoint/langgraph/checkpoint/base/__init__.py\nlibs/checkpoint-sqlite/langgraph/checkpoint/sqlite/__init__.py\n");
   o.exec("e_lg", "S1", "shell", "python repro/crash_test.py --fw langgraph", "step1 done\nstep2 killed (SIGKILL)\n--- restart, same thread_id ---\nresume -> next=('step2',)\nstep2 done · step3 done\n");
+  o.kb("kb_team", "S1", "崩溃 恢复 回滚 约定", "s_team01", 0, "上线前先在 staging 跑全量测试。回滚用上一个标签重新发布，数据库迁移必须能反向执行。", "团队约定.md / 上线与回滚");
   o.exec("e_ag", "S1", "shell", "python repro/crash_test.py --fw autogen", "step1 done\nstep2 killed (SIGKILL)\n--- restart ---\nload_state: FileNotFoundError: state.json\n-> 从头开始\n");
   o.exec("e_ag2", "S1", "shell", "python repro/crash_test.py --fw autogen --save-each-step", "step1 done · state saved\nstep2 killed (SIGKILL)\n--- restart ---\nload_state ok -> 从 step2 继续\n");
   o.exec("e_cr", "S1", "shell", "python repro/crash_test.py --fw crewai", "flow.step1 done · persisted\ncrew task 1/3 done\ncrew task 2/3 killed (SIGKILL)\n--- restart ---\nflow resumes at step2 -> crew 从 task 1/3 重跑\n");
@@ -243,6 +255,7 @@ export function staticScripts(): Script[] {
       { text: "AutoGen 每步手动保存后，可以恢复到上一步", refs: [i.e_ag2] },
       { text: "CrewAI 的 @persist 只保存 Flow 级状态，Crew 里面的任务会整组重跑", refs: [i.e_cr] },
       { text: "三者里只有 LangGraph 支持回到任意历史检查点分叉", refs: [] },
+      { text: "按团队约定，上线前要在 staging 跑全量测试，选型后的迁移脚本要能反向执行", refs: [i.kb_team] },
     ],
     self_check: [
       { what: "三个复现脚本各重跑一次，结果和第一次一样", result: "pass", refs: [i.e_lg, i.e_cr] },
@@ -253,5 +266,51 @@ export function staticScripts(): Script[] {
     needs: [],
   }));
   o.release("S1", "solve", 1370);
-  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }];
+  // demo-7：开放道，求解会话在跑（会话活动面板的示例）。图台按设计是空的，进度只在会话活动里。
+  const r = new Builder("demo-7");
+  const ask = "把仓库里的单元测试跑起来，找出最近一次提交让哪些测试变红了，给出原因。";
+  r.input("statement", `${ask}\n`);
+  r.open("示例题：找出变红的测试", ask, {
+    goal: { statement: ask, accept: "open" },
+    scope: [{ resource: "workspace", pattern: "", actions: ["read", "write"], risk: "r0" }],
+    budget: { usd_milli: 2000, wall_s: 1800, verify_share: 0.2, bootstrap_share: 0.3 },
+    judges: [], profile: { info: "complete", judge: "none", reversibility: "r0" },
+  });
+  r.lease("S1", "solve");
+  r.exec("e_ls", "S1", "shell", "git log --oneline -3", "9c1d2e4 重构 parse_date\n71aa03b 加缓存\n5f2e9d0 初始化\n");
+  r.exec("e_t0", "S1", "shell", "python -m pytest -q", "..F.F......\n2 failed, 9 passed\n", 1);
+  r.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: 21000, tokens_cached: 0, tokens_out: 2600, usd_milli: 236, wall_s: 26, price_table: "prices@1" }));
+  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }, { pid: r.pid, steps: r.steps }];
+}
+
+/** 会话活动（GET /v1/leases/{id}/activity）的示例条目：假后端不跑 CLI，按会话种类与在途与否给一份固定的流水。 */
+export function activityDemo(live: boolean, pid = ""): Record<string, unknown>[] {
+  if (pid === "demo-6") {
+    return [
+      { round: 1, kind: "say", text: "先在三个仓库里找持久化相关的接口，再各写一个中途杀进程的复现脚本。" },
+      { round: 1, kind: "call", tool: "Write", gist: "NOTES.md", id: "t1" },
+      { round: 1, kind: "result", id: "t1", ok: true, gist: "Wrote NOTES.md" },
+      { round: 1, kind: "call", tool: "exec", gist: "rg -l checkpoint langgraph/libs | head -2", id: "t2" },
+      { round: 1, kind: "result", id: "t2", ok: true, gist: "libs/checkpoint/langgraph/checkpoint/base/__init__.py" },
+      { round: 1, kind: "call", tool: "exec", gist: "python repro/crash_test.py --fw autogen", id: "t3" },
+      { round: 1, kind: "result", id: "t3", ok: true, gist: "load_state: FileNotFoundError: state.json\n-> 从头开始" },
+      { round: 1, kind: "say", text: "AutoGen 不自动落盘。再试一次每步手动保存，看能不能恢复到上一步，然后交付。" },
+      { round: 1, kind: "call", tool: "deliver", gist: "answered", id: "t4" },
+      { round: 1, kind: "result", id: "t4", ok: true, gist: "{\"delivery\": \"d_1\"}" },
+      { round: 1, kind: "end", ok: true, turns: 9, gist: "success" },
+    ].map((x, i) => ({ n: i + 1, ...x }));
+  }
+  const xs: Record<string, unknown>[] = [
+    { round: 1, kind: "say", text: "先看看最近的提交，再把测试整体跑一遍，确认是哪几个变红。" },
+    { round: 1, kind: "call", tool: "exec", gist: "git log --oneline -3", id: "t1" },
+    { round: 1, kind: "result", id: "t1", ok: true, gist: "9c1d2e4 重构 parse_date\n71aa03b 加缓存\n5f2e9d0 初始化" },
+    { round: 1, kind: "call", tool: "exec", gist: "python -m pytest -q", id: "t2" },
+    { round: 1, kind: "result", id: "t2", ok: false, gist: "..F.F......\n2 failed, 9 passed" },
+    { round: 1, kind: "say", text: "两个失败都在 test_dates.py。最近一次提交重构了 parse_date，先对比这个函数在两次提交间的差别，再把旧版本代回去重跑确认。" },
+    { round: 1, kind: "call", tool: "Read", gist: "src/dates.py", id: "t3" },
+    { round: 1, kind: "result", id: "t3", ok: true, gist: "def parse_date(s):\n    return datetime.strptime(s, \"%Y-%m-%d\")" },
+    { round: 1, kind: "call", tool: "exec", gist: "git stash && git checkout 71aa03b -- src/dates.py && python -m pytest -q tests/test_dates.py", id: "t4" },
+  ];
+  if (!live) xs.push({ round: 1, kind: "result", id: "t4", ok: true, gist: "4 passed" }, { round: 1, kind: "end", ok: true, turns: 6, gist: "success" });
+  return xs.map((x, i) => ({ n: i + 1, ...x }));
 }

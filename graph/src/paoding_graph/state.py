@@ -229,10 +229,11 @@ Artifact = TypedDict(
         "hash": str,
         "size": int,
         "media_type": str,
-        "class": str,  # exec | judge | input | authored
+        "class": str,  # exec | judge | input | authored | knowledge
         "parents": list[str],
         "producer": Producer,
         "exec": NotRequired[Body],  # exec 与 judge 类的出处字段
+        "knowledge": NotRequired[Body],  # knowledge 类：{source, revision, chunk, locator}（资料库第二期）
     },
 )
 

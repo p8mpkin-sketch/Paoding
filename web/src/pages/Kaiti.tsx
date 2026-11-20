@@ -6,7 +6,8 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { newIdemKey } from "../api/client";
 import type { ProfilePreview, Risk, VaultRef } from "../api/types";
-import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiRow, KaitiVetted } from "../api/kaiti";
+import type { KaitiAcceptance, KaitiExtract, KaitiKnowledge, KaitiOverrides, KaitiRow, KaitiVetted } from "../api/kaiti";
+import type { KnSource } from "../api/knowledge-types";
 import type { Settings, SettingsSources } from "../api/settings-types";
 import { useServices } from "../app/context";
 import { saveDraft } from "../app/draft";
@@ -181,6 +182,38 @@ function ChipPop({ label, value, field, disabled, children }: { label: string; v
   );
 }
 
+const KN_WORD = { auto: "自动", pick: "指定", off: "不用" } as const;
+
+/** 知识选项（资料库第二期）：执行中可以查哪些资料。记忆照常自动用（开始前先复核），这里只管资料。 */
+function KnowledgePick({ kn, sources, onChange }: { kn: KaitiKnowledge; sources: KnSource[] | null; onChange: (k: KaitiKnowledge) => void }) {
+  const all = (sources ?? []).filter((x) => x.scope === "all").length;
+  const picked = kn.mode === "pick" ? kn.pick : [];
+  const toggle = (id: string) => {
+    const next = picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id];
+    onChange(next.length ? { mode: "pick", pick: next } : { mode: "auto" });
+  };
+  return (
+    <div data-knowledge-pick>
+      <p className="kt-pop-h">执行时能查的资料</p>
+      <div className="kt-tiers" role="radiogroup" aria-label="知识选项">
+        <button type="button" role="radio" aria-checked={kn.mode === "auto"} data-kn="auto" onClick={() => onChange({ mode: "auto" })}>自动<span className="t2">{sources ? `可见范围为“所有任务”的 ${all} 份` : "所有任务可见的资料"}</span></button>
+        <button type="button" role="radio" aria-checked={kn.mode === "pick"} data-kn="pick" disabled={!sources?.length}
+          onClick={() => { if (kn.mode !== "pick" && sources?.length) onChange({ mode: "pick", pick: [sources[0].id] }); }}>指定<span className="t2">只查勾选的几份</span></button>
+        <button type="button" role="radio" aria-checked={kn.mode === "off"} data-kn="off" onClick={() => onChange({ mode: "off" })}>不用<span className="t2">这个任务不查资料</span></button>
+      </div>
+      {kn.mode === "pick" && (
+        <ul className="kt-kn-list" aria-label="勾选资料">
+          {(sources ?? []).map((x) => (
+            <li key={x.id}><label><input type="checkbox" checked={picked.includes(x.id)} data-kn-source={x.id} onChange={() => toggle(x.id)} /><Plain text={x.name} />{x.scope === "pick" && <span className="t2"> · 点名才可见</span>}</label></li>
+          ))}
+        </ul>
+      )}
+      {sources !== null && sources.length === 0 && <p className="t2">还没有可用的资料。<Link to={{ page: "knowledge", tab: "sources" }} className="kt-pop-link">去知识页导入</Link></p>}
+      <p className="t2">查到的段落会进模型上下文；引用会标成“引用了资料”，不算执行记录。记忆照常自动用，开始前先复核。</p>
+    </div>
+  );
+}
+
 export function Kaiti({ home = false }: { home?: boolean } = {}) {
   const { api, cfg } = useServices();
   const writable = cfg.token !== null;
@@ -198,6 +231,9 @@ export function Kaiti({ home = false }: { home?: boolean } = {}) {
   const [prof, setProf] = useState<string | null>(null);
   // 输入框旁选的执行模型（前端 v5 第二期）：空即按角色路由；选了就在起草后作为 overrides.model 交回校验，写进 prefs.model
   const [runPick, setRunPick] = useState("");
+  // 知识选项（资料库第二期，K3）：缺省“自动”= 所有“所有任务”可见的资料；“指定”只查勾选的；“不用”不挂检索工具
+  const [kn, setKn] = useState<KaitiKnowledge>({ mode: "auto" });
+  const [sources, setSources] = useState<KnSource[] | null>(null);
   // 预算档位（v5 第三期）：档位表来自外部注入的先验表（/v1/settings/sources 的 priors；占位表时如实标出）；空即按服务端先验
   const [tiers, setTiers] = useState<SettingsSources["priors"] | null>(null);
   const [tier, setTier] = useState("");
@@ -223,6 +259,12 @@ export function Kaiti({ home = false }: { home?: boolean } = {}) {
     api.settings().then((d) => { if (live) setModels(d.settings.models); }, () => { if (live) setModels(null); });
     return () => { live = false; };
   }, [api, writable]);
+
+  useEffect(() => {
+    let live = true;
+    api.knSources().then((d) => { if (live) setSources(d.sources.filter((x) => x.live_revision !== null)); }, () => { if (live) setSources(null); });
+    return () => { live = false; };
+  }, [api]);
 
   useEffect(() => {
     let live = true;
@@ -257,7 +299,7 @@ export function Kaiti({ home = false }: { home?: boolean } = {}) {
     try {
       out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}), ...(strict ? { strict } : {}) });
       const t = tier ? tiers?.tiers[tier] : undefined;
-      const want: KaitiOverrides = { ...(runPick ? { model: runPick } : {}), ...(t ? { usd_milli: t.usd_milli, wall_s: t.wall_s } : {}) };
+      const want: KaitiOverrides = { ...(runPick ? { model: runPick } : {}), ...(t ? { usd_milli: t.usd_milli, wall_s: t.wall_s } : {}), ...(kn.mode !== "auto" ? { knowledge: kn } : {}) };
       let picked: KaitiOverrides = {};
       if (Object.keys(want).length && out.input && out.lane !== "refuse" && out.draft) {
         // 交回同一份草案（不再调模型），只加输入框下面选的执行模型与预算档位
@@ -412,9 +454,8 @@ export function Kaiti({ home = false }: { home?: boolean } = {}) {
               </div>
               {tiers?.placeholder && <p className="t2">档位数字是占位表，正式值由部署注入。</p>}
             </ChipPop>
-            <ChipPop label="知识" value="自动" field="knowledge" disabled={!writable}>
-              <p className="kt-pop-h">它会用到的知识</p>
-              <p className="t2">现在自动用以前任务沉淀下来的记忆（开始前先复核）。导入资料、执行时检索的资料库做好后，这里可以指定资料或不用。</p>
+            <ChipPop label="知识" value={KN_WORD[kn.mode] + (kn.mode === "pick" ? ` ${kn.pick.length} 份` : "")} field="knowledge" disabled={!writable || busy !== null}>
+              <KnowledgePick kn={kn} sources={sources} onChange={(x) => { setKn(x); if (v) setV(null); }} />
             </ChipPop>
             <span className="grow" />
             <button type="button" className="kt-switch" role="switch" aria-checked={strictOn} data-action="strict" disabled={!writable || busy !== null}

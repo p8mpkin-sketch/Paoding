@@ -1,0 +1,1070 @@
+{
+ "@surface": {
+  "events": "",
+  "n_events": 0,
+  "packages": "c8f3bddf9e8ec3ed68702cc142cc4666766bfe0860d05013bcb07398bab5e5a6",
+  "n_packages": 16
+ },
+ "adapter/tests/test_activity.py::test_solve_session_activity_is_readable_live_and_after_it_ends": {
+  "events": "99cba541bb9ac2e4c2ef7982df289503461c66338042342ceefa2eabe0f7035e",
+  "n_events": 13,
+  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "n_packages": 2
+ },
+ "adapter/tests/test_activity_ledger.py::test_cap_leaves_only_round_ends_and_the_closing_anchor": {
+  "events": "9b109131c82e5248710ac2b240e9e45363306ae1daa4d27f6010871ce5773fb0",
+  "n_events": 14,
+  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "n_packages": 2
+ },
+ "adapter/tests/test_activity_ledger.py::test_the_ledger_outlives_the_session_directory": {
+  "events": "66baef37d34c34d32ab9dbb36e0b081acaa198eaa43f030fbffe5e61774ca3e3",
+  "n_events": 16,
+  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "n_packages": 2
+ },
+ "adapter/tests/test_activity_ledger.py::test_what_was_seen_live_replays_byte_for_byte": {
+  "events": "66baef37d34c34d32ab9dbb36e0b081acaa198eaa43f030fbffe5e61774ca3e3",
+  "n_events": 16,
+  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "n_packages": 2
+ },
+ "adapter/tests/test_activity_ledger.py::test_without_the_ledger_nothing_is_registered": {
+  "events": "fc16cc15c5a1f0445120e86b4c68395694e342420681c18d550598a7bd26b6c0",
+  "n_events": 13,
+  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "n_packages": 2
+ },
+ "adapter/tests/test_keyring.py::test_legacy_api_key_moves_into_ring": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_keyring.py::test_proxy_without_key_returns_503": {
+  "events": "e4aabf17fb98b7118713237b1af3620b4bbaa9315ac0925cae4927de2dd64715",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_add_fact_carries_a_control_from_workspace_files": {
+  "events": "8528eeafe699af7281de6f1597cd4d671b7151291e0a4e9156916cb66a8fa375",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_malformed_tool_args_are_schema_errors_never_raise": {
+  "events": "2b27bb3a7f06e0f7f6a183599f8d4cfb05ff75f9d958934e2a9dde126ebff599",
+  "n_events": 17,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_protocol_roundtrip": {
+  "events": "37da607d47203d02e17b1d622ae9a89018f0a57269f4912666e713ce4b42d2b4",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_show_reads_artifact_range_same_problem_only": {
+  "events": "13f4a4253d467e1409ed6f05deb531cc947c7543ed6f6a4872c98ca1d97e2a89",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_show_refuses_judge_output_that_read_the_vault": {
+  "events": "40f64ca2b18b9d083eee3f7451dfe38bef19044f98672fb2f4c992dc5a712086",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_tool_host_defect_is_not_reported_as_schema_error": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_tool_not_granted_is_error": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_mcp.py::test_unknown_session_and_unmount": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_model_route.py::test_proxy_forwards_to_the_task_upstream_with_its_key_slot": {
+  "events": "e4aabf17fb98b7118713237b1af3620b4bbaa9315ac0925cae4927de2dd64715",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_concurrent_sessions_share_system_prefix": {
+  "events": "d860d608bfe7fc0a0a2acc776ea914dfc71e63a6ca70396d564e8c6ec27d59a3",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_golden_package_bytes": {
+  "events": "f13a7598640e4d25fcde9a633bff9af3a27988c2fc19ce215251ba55c2d60fa0",
+  "n_events": 8,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_memory_notes_go_into_section_three_only_when_present": {
+  "events": "455083329b853c7d20744f80f7aacd40c8f23159fd1b6f6fc37c74a81d3de1ef",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_no_timestamps_in_prefix": {
+  "events": "455083329b853c7d20744f80f7aacd40c8f23159fd1b6f6fc37c74a81d3de1ef",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_package_records_hints_shown": {
+  "events": "7b5ee5d844ff1a4d6531a146198308f7c981efbd338f41d3a2a23a3239c144bc",
+  "n_events": 6,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_prefix_stable_when_only_nodes_added[1]": {
+  "events": "f4849c8def1f5b6c8711438280f19e942a4b9d4d958bbbbe47aa05141f920f50",
+  "n_events": 10,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_prefix_stable_when_only_nodes_added[2]": {
+  "events": "f4849c8def1f5b6c8711438280f19e942a4b9d4d958bbbbe47aa05141f920f50",
+  "n_events": 10,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_package.py::test_prefix_stable_when_only_nodes_added[4]": {
+  "events": "f4849c8def1f5b6c8711438280f19e942a4b9d4d958bbbbe47aa05141f920f50",
+  "n_events": 10,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_global_cap_still_holds_after_restart": {
+  "events": "ea7a90cca4cc7c4e581bd2301866680799415184e85126c548a39906c7a64adb",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_key_swap_task_token_never_reaches_upstream": {
+  "events": "ea7a90cca4cc7c4e581bd2301866680799415184e85126c548a39906c7a64adb",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_metering_writes_cost_event[False]": {
+  "events": "e4aabf17fb98b7118713237b1af3620b4bbaa9315ac0925cae4927de2dd64715",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_metering_writes_cost_event[True]": {
+  "events": "e4aabf17fb98b7118713237b1af3620b4bbaa9315ac0925cae4927de2dd64715",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_problem_and_global_caps": {
+  "events": "e4aabf17fb98b7118713237b1af3620b4bbaa9315ac0925cae4927de2dd64715",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_problem_cap_still_holds_after_restart": {
+  "events": "e4aabf17fb98b7118713237b1af3620b4bbaa9315ac0925cae4927de2dd64715",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_proxy_ledger_reconciles_with_graph": {
+  "events": "6c9bb4152531c2bf37263636df5cdecc9621cea99fa81ad28dec890c3c528a39",
+  "n_events": 8,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_reserve_exhausted_429": {
+  "events": "ea7a90cca4cc7c4e581bd2301866680799415184e85126c548a39906c7a64adb",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_restart_restores_spend_from_ledger": {
+  "events": "c75a96aee1505321a878e5d758e177c532ddd43dc776607457206d97285b7c6a",
+  "n_events": 10,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_restore_counts_closed_problems_and_survives_log_replay": {
+  "events": "3e333ffb6788fd9813843ace68c0784520b53d2232d2292163220fd09711e7bd",
+  "n_events": 10,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy.py::test_revoked_and_unknown_token_401": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_no_usage_falls_back_to_estimate[False]": {
+  "events": "79a0de8c477def8a6a79cfce2f86f119798a8a0d679828f647244c4341c61b18",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_no_usage_falls_back_to_estimate[True]": {
+  "events": "a51966e2576907fc58d1d72072d4c4411ecc3150266a0b9606aca33f2d4d72b2",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[deepseek_crlf_delta-False]": {
+  "events": "2362121b9c2deaee370073f57ade749fdf7f523cc2964ab2bf1146efc8d89496",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[deepseek_crlf_delta-True]": {
+  "events": "2362121b9c2deaee370073f57ade749fdf7f523cc2964ab2bf1146efc8d89496",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[deepseek_field_names-False]": {
+  "events": "aa7ea5b78fbee66b52754f60ae80cc675d38292854934b99b749d58156162736",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[deepseek_field_names-True]": {
+  "events": "aa7ea5b78fbee66b52754f60ae80cc675d38292854934b99b749d58156162736",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[deepseek_names_crlf_gzip-False]": {
+  "events": "aa7ea5b78fbee66b52754f60ae80cc675d38292854934b99b749d58156162736",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[deepseek_names_crlf_gzip-True]": {
+  "events": "aa7ea5b78fbee66b52754f60ae80cc675d38292854934b99b749d58156162736",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[gzip_ignoring_accept_encoding-False]": {
+  "events": "2362121b9c2deaee370073f57ade749fdf7f523cc2964ab2bf1146efc8d89496",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_nonzero_reading_across_dialects[gzip_ignoring_accept_encoding-True]": {
+  "events": "2362121b9c2deaee370073f57ade749fdf7f523cc2964ab2bf1146efc8d89496",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_dialects.py::test_raw_usage_is_logged": {
+  "events": "aa7ea5b78fbee66b52754f60ae80cc675d38292854934b99b749d58156162736",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_forwarding.py::test_chunked_request_body_forwarded": {
+  "events": "ea7a90cca4cc7c4e581bd2301866680799415184e85126c548a39906c7a64adb",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_forwarding.py::test_cli_that_cannot_start_fails_the_lease_visibly": {
+  "events": "231f9deff2fca584907988cf6b64d743b402c0ca5c746b27e81276b7e8a61b9f",
+  "n_events": 6,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_proxy_forwarding.py::test_https_upstream_trusted_forwards": {
+  "events": "aa7ea5b78fbee66b52754f60ae80cc675d38292854934b99b749d58156162736",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_forwarding.py::test_https_upstream_untrusted_502_fast_and_logged": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_forwarding.py::test_metering_failure_still_finishes_response": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_forwarding.py::test_real_cli_through_proxy_to_deepseek_like_upstream": {
+  "events": "105b32418eb70c5ef79e54665ccf5cd9fca0db614006f986547fadba64b7c37a",
+  "n_events": 5,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_count_tokens_is_local_and_other_paths_refused": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_metered_in_openai_terms[False]": {
+  "events": "53f01f7a70aa0b87d093567f529a68b655979a380b8bd5a4b1afb8bf0ca0e7f3",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_metered_in_openai_terms[True]": {
+  "events": "53f01f7a70aa0b87d093567f529a68b655979a380b8bd5a4b1afb8bf0ca0e7f3",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_non_stream_reply_is_a_message_with_tool_use": {
+  "events": "53f01f7a70aa0b87d093567f529a68b655979a380b8bd5a4b1afb8bf0ca0e7f3",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_register_rejects_unknown_format": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_stream_reply_is_message_events": {
+  "events": "53f01f7a70aa0b87d093567f529a68b655979a380b8bd5a4b1afb8bf0ca0e7f3",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_upstream_error_becomes_message_error": {
+  "events": "0d7dcb28461a492c5a68e7c13a3cc6e6208d3ba8fb66c8512bd122302f22d42b",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_upstream_sees_chat_completions_with_bearer[False]": {
+  "events": "53f01f7a70aa0b87d093567f529a68b655979a380b8bd5a4b1afb8bf0ca0e7f3",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_proxy_openai.py::test_upstream_sees_chat_completions_with_bearer[True]": {
+  "events": "53f01f7a70aa0b87d093567f529a68b655979a380b8bd5a4b1afb8bf0ca0e7f3",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_above_ceiling_is_granted_but_not_opened_here": {
+  "events": "67fd94c822c78bab7079589f9656a39cb4c116fa1d7f6bde6ce09425695c9a8c",
+  "n_events": 6,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_bad_requests_are_rejected[args0]": {
+  "events": "75b059c6666643399ee317c8cc1e76666ece04cc401c0cfb0e5a6fea883dfda8",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_bad_requests_are_rejected[args1]": {
+  "events": "75b059c6666643399ee317c8cc1e76666ece04cc401c0cfb0e5a6fea883dfda8",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_bad_requests_are_rejected[args2]": {
+  "events": "75b059c6666643399ee317c8cc1e76666ece04cc401c0cfb0e5a6fea883dfda8",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_denied_is_reported_and_cannot_be_asked_again": {
+  "events": "bd7f120fefb6181aa49c357446e9c3df981cf5e050c9073789ac1bfb3a68d037",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_outside_whitelist_waits_for_human_then_exec_reports": {
+  "events": "2bd5d26fc94314f717965e11fd7dad5b8df45dcc3ff377a92adab78621143b6f",
+  "n_events": 9,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_practice_whitelist_is_granted_and_aligned_at_once": {
+  "events": "04d45950e1f0296185e86ca45127da9626ec67fbc5f505fd751091e7a5fc3004",
+  "n_events": 6,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_risk_is_not_self_reported": {
+  "events": "75b059c6666643399ee317c8cc1e76666ece04cc401c0cfb0e5a6fea883dfda8",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_runner_realigns_the_live_sandbox[False]": {
+  "events": "1371bc21869d7a371aa5d22dd0ee36f7b23ac6234f82074bdafe19eb47f3b52b",
+  "n_events": 6,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_runner_realigns_the_live_sandbox[True]": {
+  "events": "1371bc21869d7a371aa5d22dd0ee36f7b23ac6234f82074bdafe19eb47f3b52b",
+  "n_events": 6,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_request_access.py::test_runtime_off_means_not_enabled": {
+  "events": "75b059c6666643399ee317c8cc1e76666ece04cc401c0cfb0e5a6fea883dfda8",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "adapter/tests/test_session.py::test_authored_as_ground_is_inadmissible": {
+  "events": "4832e9d9ec7ef3c726622eadf5f4c54255e1cc033478756e27b8d0dec8df9477",
+  "n_events": 11,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_claim_done_registers_candidate_then_requests_judge": {
+  "events": "7e707e32bca418f641988b928737758d4f4d340a3d2cb5f943bb5b928a27de50",
+  "n_events": 13,
+  "packages": "f65d60144eb0f2091725d48517aa72dc13249a17a0ce5874817c3d1b08bb7da1",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_claim_done_takes_inline_candidate": {
+  "events": "98b37f0a69acafd812a4f9a7f429063680c2f259e0add72e3091a2411baff217",
+  "n_events": 9,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_closing_round_then_unsolved": {
+  "events": "78027ecea49732ea193ea16d2768edce90938f9b6c2ee7b55074cd896a11cedc",
+  "n_events": 8,
+  "packages": "b63777f8ec27d5217b28088540df2927620be49d93362dab2016f505260a91f9",
+  "n_packages": 3
+ },
+ "adapter/tests/test_session.py::test_default_max_turns_is_100": {
+  "events": "086bedbd33b13d33225b3604738bf1c6ab86956fda6deb9bb68d18fa28dbaea8",
+  "n_events": 52,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_failed_explore_reopens_intent": {
+  "events": "8fd1d29a9df7c7166c761b6224fa98d227efc162275c167724bf0684e32632ff",
+  "n_events": 9,
+  "packages": "a6d75982545086dfd9dc4a779bb38575fa4a88fffca2eda70e2d654ecac1ccaf",
+  "n_packages": 3
+ },
+ "adapter/tests/test_session.py::test_forged_observation_rejected": {
+  "events": "289b82bc484319ef81df926e129a56c7d70ec7f2b9d1c2a638854feae54a0cec",
+  "n_events": 13,
+  "packages": "2ea14fd23eb516706737bb4494a5900be216b71882a732e5a8340d5996b34db2",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_main_path_exec_registered_and_fact_enters_graph": {
+  "events": "34a9ec9ff51ce51d1cf3f7c066e969b5af2768974f9d7853fdbadd9dfe30b3b8",
+  "n_events": 10,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_malformed_submit_fixed_in_session": {
+  "events": "0752ad1f8101ebb0af8d670d8ad6471d3443b624a09b955ab3b44723e938eced",
+  "n_events": 11,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_no_command_tool_and_workspace_confined": {
+  "events": "4286a752d7f169973701c2e1ebc9d5e1e63347286a6b288af0d2c9bcdc389f0c",
+  "n_events": 12,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_no_output_after_closing_round": {
+  "events": "88655d66790e7ac18435d47264b7c6cf75d516bd3c1e44ec4870c3722346fb36",
+  "n_events": 7,
+  "packages": "b63777f8ec27d5217b28088540df2927620be49d93362dab2016f505260a91f9",
+  "n_packages": 3
+ },
+ "adapter/tests/test_session.py::test_problem_closed_mid_session_still_releases": {
+  "events": "ecf8e2bba8f038f1b8b86391dc04520a8ab20adf0dea8e2d2c989725aa21f968",
+  "n_events": 8,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_reason_session_has_no_exec": {
+  "events": "a67481603db3024fbf1f6691fab889398a58af17d203caec3028df43d6841355",
+  "n_events": 11,
+  "packages": "7159622bf797a8c13c90d8ba10ccbba58c430aa9afd8e4db446ea5cf44d8ab74",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_renews_while_alive": {
+  "events": "7c3c6023490a397f654fa92237b640b660d92ede4b056dc7abdd2d9f8e110670",
+  "n_events": 12,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_reserve_exhausted_kills_with_budget_outcome": {
+  "events": "d58ae0390bc06d56080698334908611674d9b6d228a2a2e707223198aade3f57",
+  "n_events": 7,
+  "packages": "8b4b7bb6bec0a7f04854f634278c9ff2da9fdb20745e37e34a9b37534e33ae2a",
+  "n_packages": 3
+ },
+ "adapter/tests/test_session.py::test_same_op_rejected_three_times_is_not_forwarded": {
+  "events": "65f270d69f820833b70d3a008495ef421feda456d8bb9fe8954e63bba6d5b432",
+  "n_events": 11,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_stalled_session_killed_and_failed": {
+  "events": "231f9deff2fca584907988cf6b64d743b402c0ca5c746b27e81276b7e8a61b9f",
+  "n_events": 6,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_session.py::test_tokens_revoked_after_release": {
+  "events": "29dfffd2093ba088ac3ba28543ee5a9cd903ce19550d5d344cda222ef514ff77",
+  "n_events": 7,
+  "packages": "00c2c2ace3349d47df64bf2a0303153ac7dbb82c329208a45e0de90f9262a50f",
+  "n_packages": 2
+ },
+ "adapter/tests/test_solve.py::test_blocked_must_say_what_it_needs": {
+  "events": "271f0f027208516a8a394fb26edb831fa646a89bbfd5dd2ff0bc406af5869681",
+  "n_events": 11,
+  "packages": "38e2fbd6292b0b315bcee82f7f0c63de1ca4b445454e21a9cbff7f0f1697cc2e",
+  "n_packages": 2
+ },
+ "adapter/tests/test_solve.py::test_closing_round_asks_for_a_delivery_before_relaying": {
+  "events": "bc6032b4d82b04dd995edbf9d9426c376f6d76f337a1070597dc266d81530a62",
+  "n_events": 12,
+  "packages": "9581c231273796e089d277c9182fccd88a49978e5d5b83d4bebccc3f2942cc63",
+  "n_packages": 3
+ },
+ "adapter/tests/test_solve.py::test_credential_never_reaches_the_card_or_the_delivery": {
+  "events": "8663924c394906678caf9c52b5d89a74f04999cc16249897a9e94eb5f805c122",
+  "n_events": 12,
+  "packages": "41a871e3f32667218c74ef0a2237e3e7922465cb440b06b4da0b3a3429265691",
+  "n_packages": 2
+ },
+ "adapter/tests/test_solve.py::test_own_writing_is_not_evidence": {
+  "events": "f7bc8d8b4d5b5ede54b95bc74d69f0f24f09c26d6c9754efb26bbd9cb2cf6927",
+  "n_events": 14,
+  "packages": "592ea0a88cad77b3f725a70273899c9aa3ee52f91cd4ba74a277871c445ba2ec",
+  "n_packages": 2
+ },
+ "adapter/tests/test_solve.py::test_relay_carries_the_workspace": {
+  "events": "7ec432ddd72fcf62a0c625982878f385a18a9d70d11a4c0a5ba2f4f8c1ad8c9d",
+  "n_events": 16,
+  "packages": "349531a9d1657de24663651c8910734d6456572d21849e1c3b7385057b244fb6",
+  "n_packages": 6
+ },
+ "adapter/tests/test_solve.py::test_solve_runs_to_a_delivery_with_exec_evidence": {
+  "events": "947937cb16500ff3886036f507ad1672ad2065da554211fe1a993324c7021638",
+  "n_events": 15,
+  "packages": "7e4c3d595242f83028579c1e9fc86ab4916c2c6a821b3e69247f217ca482456f",
+  "n_packages": 2
+ },
+ "sinan/tests/test_loop.py::test_bootstrap_reserve_is_thin": {
+  "events": "e140cd84f290345ca2ab94eaa67567d375d07f0f3c55ee917d7a80553761f856",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_budget_refusal_waits_while_others_hold_reserves": {
+  "events": "ea190761720442eaaeaee09b9ffec8c71fbf507f04e5470d56cb06c8aef30c15",
+  "n_events": 19,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_capacity_caps_sessions_in_flight": {
+  "events": "d4a92002107db39e07881e04a5a15a403407bf14cfbad2033059424f73632534",
+  "n_events": 24,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_closed_and_unknown_problems": {
+  "events": "798a828bd27e989730d4367f9ff51ffd63653eadc0e752789c80d914728cdf2f",
+  "n_events": 28,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_crashed_session_is_reported_not_raised": {
+  "events": "0777e370a43c66083b0bf2d362fb07fe6c8522b13eaf45647b07920ec83b4696",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_does_not_wait_when_switch_is_off": {
+  "events": "ef3132e03468f8d1cadaa31ecbac146b652d2e11b86885dacff9d4f677b57450",
+  "n_events": 11,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_explore_reserve_follows_the_intent_budget_up_to_a_cap": {
+  "events": "f2be1607393e1e47145b262ac3d598630ddb9d07ecd21897ceba2ca02ef9c9cd",
+  "n_events": 19,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_explores_highest_gain_first": {
+  "events": "f05b90ad42a105f34c21646615b7421f08a3b80e6b5d1211aabd75b6d4bfa86e",
+  "n_events": 19,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_finished_but_uncollected_session_still_blocks_its_intent": {
+  "events": "fe43bf4f817930eaa341ad31773a5b6c7c3603266f80caa184453e63726efa09",
+  "n_events": 23,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_first_step_is_bootstrap_with_the_statement": {
+  "events": "26232ae9dfc8e38ce520e64bdcf86d55f8851afd2dd545f95fd018ded070d995",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_lease_idem_keys_differ_at_the_same_seq": {
+  "events": "6339ea1f47aac26140b6842ad83081b9356ecfa25ffc1197c750c40b319a9510",
+  "n_events": 23,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_pick_is_read_only": {
+  "events": "fa93004319ab5866d5c90dff5732eba6296a8bc83e526392a86a1018758e0647",
+  "n_events": 2,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_reason_is_exclusive_per_problem_and_holds_back_new_explores": {
+  "events": "7058ab2401a7a023963492da93ccd69f198a9db9113ee81d36f5bfe67cb9988c",
+  "n_events": 25,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_run_drives_to_solved_with_a_judge_between_steps": {
+  "events": "798a828bd27e989730d4367f9ff51ffd63653eadc0e752789c80d914728cdf2f",
+  "n_events": 28,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_run_without_a_judge_hands_back": {
+  "events": "47e4412ab96bc9a18f1071f717fd4cc266c0a041442fd36d63b831dfcbe1a350",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_same_intent_never_gets_two_sessions": {
+  "events": "6339ea1f47aac26140b6842ad83081b9356ecfa25ffc1197c750c40b319a9510",
+  "n_events": 23,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_serial_when_max_sessions_is_one": {
+  "events": "23608a8559c16dc14d1e07ed6faa10ab938e0fb1961d03b992ccaf8aaa846401",
+  "n_events": 24,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_sinan_only_ever_submits_leases": {
+  "events": "798a828bd27e989730d4367f9ff51ffd63653eadc0e752789c80d914728cdf2f",
+  "n_events": 28,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_stops_when_the_lease_is_refused": {
+  "events": "5968007e5658f79a3ec4473ceae54add7578e5471dbf646a2c97d7ccfee9d85f",
+  "n_events": 11,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_thick_bootstrap_when_switch_is_off": {
+  "events": "61d52ec157716f5d2c1fc25126872c296550ce12bc24559926a6a729ef16172a",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_two_explores_on_different_intents_run_in_parallel": {
+  "events": "6339ea1f47aac26140b6842ad83081b9356ecfa25ffc1197c750c40b319a9510",
+  "n_events": 23,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_two_problems_do_not_interfere": {
+  "events": "350058fd317729636eca7b54926815a989f4e7030ef55da150c37a4de957d64b",
+  "n_events": 35,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_waits_while_a_judge_holds_the_request": {
+  "events": "7b821a235f5d6c20ebf8388e7e43984dac4b71a839128f75b30891be25235fd4",
+  "n_events": 17,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_waits_while_a_judgment_is_pending": {
+  "events": "9dc93a791d75fdd9ffef0b271b9439c8a16efe0fd3a6d9b524c1f737726dd1f3",
+  "n_events": 15,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_work_order_when_gain_ordering_is_off": {
+  "events": "f05b90ad42a105f34c21646615b7421f08a3b80e6b5d1211aabd75b6d4bfa86e",
+  "n_events": 19,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_loop.py::test_wrong_candidates_lead_back_to_reason": {
+  "events": "797430b19428a5e3d5b781bc20f6597a5fdca9dccab9e9f6b854d92c633449f4",
+  "n_events": 62,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_resource_queue.py::test_two_sessions_writing_the_same_rule_second_queues": {
+  "events": "3aabe7b84260537f8ab79a08a056e310778baa11dc77ea8f790e3f879611b1c2",
+  "n_events": 24,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_backup.py::test_falls_back_to_python_when_sqlite3_cli_is_missing": {
+  "events": "2de65629abdfab2b65759a903e92ae4de7eeb4346319b30ae550159de43b23d8",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_backup.py::test_online_backup_restores_to_the_same_state": {
+  "events": "ad5c1c59b5e07f1d3dc66df9f74d78bbfa5f7c19e6bf2d8d7c6e8999c96e9e54",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_backup.py::test_with_vault_and_argument_errors": {
+  "events": "2de65629abdfab2b65759a903e92ae4de7eeb4346319b30ae550159de43b23d8",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_e2e.py::test_e2e_fake_cli_with_stub_executor": {
+  "events": "e75702ce985dc794ac302188bfc621393ec7a526176489b1fc7d9e8d3695a95c",
+  "n_events": 82,
+  "packages": "5137cc489d79fea83c028a7423f75bb937f2e0e7bf64c48dfe9ad7b4faf36de3",
+  "n_packages": 6
+ },
+ "tests/integration/test_external_verdict_flip.py::test_connector_listing_and_tasks": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_flip.py::test_row1b_registered_submit_example_is_only_material": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_flip.py::test_row1b_unregistered_command_needs_explicit_ack_when_strict": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_repro.py::test_1_unregistered_platform_goes_open_lane": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_repro.py::test_1b_only_non_refusal_is_a_misbinding": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_repro.py::test_2_instance_address_only_exists_at_runtime": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_repro.py::test_3_accept_human_needs_an_acceptance_list": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_repro.py::test_4_external_time_limit_is_clipped_then_rejected": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_external_verdict_repro.py::test_5_judge_side_has_no_external_verdict_path": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_knowledge_endpoints.py::test_canary_stays_out_of_index_logs_and_responses": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_knowledge_endpoints.py::test_failed_job_retry_cancel_and_curate": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_knowledge_endpoints.py::test_file_import_and_new_revision": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_knowledge_endpoints.py::test_local_paths_and_urls_are_refused": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_knowledge_endpoints.py::test_text_import_search_and_chunk": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_knowledge_session.py::test_kb_query_is_logged_and_pick_scope_only_sees_the_named": {
+  "events": "c59167318bfd56726a0d5235f00b5d53d5281bd9075a6fd4074798b5bf7ef7ae",
+  "n_events": 14,
+  "packages": "52acb25320bab70cb70561fbe0485e6f76a31fd5456be5a5fd364b20d092ddf2",
+  "n_packages": 2
+ },
+ "tests/integration/test_ledger.py::test_duplicate_cost_report_counted_once": {
+  "events": "60598de076e2d9b48b981851af6f0da9690bbbe8fda458e3aa377bf3765225d4",
+  "n_events": 4,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_ledger.py::test_ledger_reconciles_and_replays": {
+  "events": "47fca08afe6ac33dc621ddfbb21ebb64342a92982a30f8264cd5bc6376bd2b32",
+  "n_events": 42,
+  "packages": "b9589b73341ee8e0ead5744450c7532562698b434943275a82479aed3e09d8c4",
+  "n_packages": 7
+ },
+ "tests/integration/test_memory_endpoints.py::test_card_pin_forget": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_model_probe.py::test_endpoint_needs_human_and_profile": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_open_lane_e2e.py::test_blocked_ends_honestly": {
+  "events": "a0ed28b32d78734a38f5808f4bd4b67b0a9107c136bfa8e7583d8b6034dabc1c",
+  "n_events": 14,
+  "packages": "eb98420fe7d1c8d8daf4b9eff8ae68b265d12d444ae7870f16e5f27f7bbd65f3",
+  "n_packages": 2
+ },
+ "tests/integration/test_open_lane_e2e.py::test_credential_in_the_prompt_stays_off_the_card": {
+  "events": "608ad0d37e2a3174192265dc8f6ca9fe9e9433170123a0a436aabb3b9c87ec9c",
+  "n_events": 12,
+  "packages": "4aaab9e4f9996e8bb10e808a6e340af714e6e1950e98d4a2ef974fa5a75d5090",
+  "n_packages": 2
+ },
+ "tests/integration/test_open_lane_e2e.py::test_refused_prompt_now_runs_to_an_answer_with_evidence": {
+  "events": "ea9c66f596ebedf6e38aea375c4af0f7ad15f84c850200a51d05fda7289ea76e",
+  "n_events": 17,
+  "packages": "b1a6e749bd5db8af3f3926530194a21a100c0819987a46382483e320d5e103d8",
+  "n_packages": 2
+ },
+ "tests/integration/test_parallel.py::test_serial_when_capped_at_one": {
+  "events": "895c9ae00e6a946ac950b8b5535906b147e1dae8c02cadecb453e594e1afa2fa",
+  "n_events": 27,
+  "packages": "ace1d6cd781a0e07ce634f390cdb8e15504d8c36e9680e1dcc16294b02916129",
+  "n_packages": 8
+ },
+ "tests/integration/test_parallel.py::test_two_explore_sessions_run_in_parallel": {
+  "events": "b6df44b533ea4556484573bfa4cf7a06c3dde719fc52b9e2a6a9eadea6e9adb8",
+  "n_events": 26,
+  "packages": "06e930e9463f6994106a7a02e4ba2a7e9038af578ee6fb455f25c590333aa471",
+  "n_packages": 8
+ },
+ "tests/integration/test_session_activity.py::test_activity_endpoint_reads_the_session_log": {
+  "events": "0e5ff9cea30019994bac0fd3222feff9c460b534d155011e1153dfdef436b789",
+  "n_events": 3,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_canary_key_never_leaves_the_keyring": {
+  "events": "e4325353cf35f6e0c5bb95ec8c2edf56c9acb6ff47fdea2c20c22c224be0a53f",
+  "n_events": 2,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_keys_endpoints": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_no_key_sinan_waits_then_restart_empties_keyring": {
+  "events": "fd8d9bf64f0051bfd0858f217c43fbb7b5d57ef761b464487266f9788d946f04",
+  "n_events": 12,
+  "packages": "1c1f2690535c1b180dc588903f132161c6c8c407f121856e4efd0e69e785a8b7",
+  "n_packages": 2
+ },
+ "tests/integration/test_settings_keys.py::test_open_cap_and_settings_digest_reach_open_problem": {
+  "events": "4ad150f9d333882cb7c13f1451216871c7953a09e4626b11bdc47381b52aa1bc",
+  "n_events": 2,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_pd_settings_and_keys": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_roundtrip_and_concurrency": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path0-600000-\\u8d85\\u8fc7\\u5168\\u5c40\\u786c\\u9876]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path1-600000-\\u8d85\\u8fc7\\u5355\\u9898\\u786c\\u9876]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path2-None-\\u6b63\\u6574\\u6570]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path3-20000-\\u8d85\\u8fc7\\u5355\\u9898\\u5899\\u949f\\u786c\\u9876]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path4--1-\\u6b63\\u6574\\u6570]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path5-nope-\\u4e0d\\u662f\\u5df2\\u767b\\u8bb0\\u7684\\u6863\\u6848]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_settings_validation[path6-sk-x-\\u8bbe\\u7f6e\\u91cc\\u4e0d\\u653e\\u5bc6\\u94a5]": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_kaiti.py::test_drafts_read_the_settings_store": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_kaiti.py::test_practice_caps_follow_settings": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_kaiti.py::test_settings_sources_are_read_only_and_follow_caps": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_real_config.py::test_env_key_wins_over_config_key": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_real_config.py::test_local_cli_resolved_on_host_path": {
+  "events": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_real_config.py::test_real_backend_takes_program_api_base_model_and_key": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_real_config.py::test_real_backend_without_any_key_starts_and_waits": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_scope_grants.py::test_approved_needs_scope_is_compiled_into_the_sandbox": {
+  "events": "f7b19c396c6bdbb3608d97607e7a609a91b095582787d02b50d7ee376ff3e346",
+  "n_events": 6,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_scope_grants.py::test_revoked_rule_leaves_the_sandbox": {
+  "events": "f2ee05a05684187d7828c280bbc431ee56236b29079686e24a25919353676414",
+  "n_events": 7,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_stack_scope_grants.py::test_settings_grants_reach_the_kernel": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_watchdog_session.py::test_hard_line_kills_and_saves_record": {
+  "events": "d58ae0390bc06d56080698334908611674d9b6d228a2a2e707223198aade3f57",
+  "n_events": 7,
+  "packages": "40f82d824626a7710bc2d86439f74ab94d0fac4582fa090e27fab9d233758ea2",
+  "n_packages": 2
+ },
+ "tests/integration/test_watchdog_session.py::test_soft_line_triggers_closing_round": {
+  "events": "d646ee1d301efed94cc2fdf4cb70657b19333e75cf65ae47615d943787aa4c5c",
+  "n_events": 26,
+  "packages": "499994f7cb31bd5307bddc40d6a47b202863644847435581a6ad047797439ae3",
+  "n_packages": 3
+ }
+}

@@ -54,6 +54,9 @@ JUNK = [
 ]
 
 
+SHUKU = {"kind": "graph", "id": "shuku"}  # 书库的组件令牌：knowledge 类与 kb_query
+
+
 def world():
     """一个各种对象都有的内核，以及每种操作的一条合法提议 (actor, pid, kind, body)。"""
     k = Kernel(dataclasses.replace(CFG, grants_runtime=True))
@@ -234,6 +237,19 @@ def world():
         (WATCHDOG, "p1", "expire_lease", {"lease": lid}),
         (HUMAN, "p1", "abandon_intent", {"intent": gated, "reason": "不做"}),
         (HUMAN, "p1", "curate", {"title": "改过的名字", "pinned": True}),
+        (SHUKU, "p5", "kb_query", {"lease": lid5, "query": "回滚怎么做", "hits": ["k_0123456789abcdef"]}),
+        (
+            SHUKU,
+            "p5",
+            "register_artifact",
+            {
+                "hash": "c" * 64,
+                "size": 3,
+                "media_type": "text/plain",
+                "class": "knowledge",
+                "knowledge": {"source": "s_abc123", "revision": 1, "chunk": "k_0123456789abcdef", "locator": "x"},
+            },
+        ),
         (
             solve5,
             "p5",

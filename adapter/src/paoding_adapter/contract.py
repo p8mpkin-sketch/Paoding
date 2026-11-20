@@ -2,6 +2,7 @@
 
 from typing import Any, Protocol
 
+from .activity import SEGMENT_MEDIA, ChainBroken, replay_segments  # noqa: F401
 from .backend import FAKE_CLI, CliBinding, fake_program  # noqa: F401
 from .container import (  # noqa: F401
     PROXY_PORT,
@@ -16,6 +17,7 @@ from .keyring import KeyRing  # noqa: F401
 from .mcp import ToolEndpoint  # noqa: F401
 from .proxy import EndpointProxy, PriceTable, ProxyConfig  # noqa: F401
 from .session import AdapterConfig, SessionRecord, SessionRunner, local_launcher  # noqa: F401
+from .tools import KB_READ_MAX, KB_SEARCH_MAX, KnowledgePort  # noqa: F401
 
 
 class SessionPort(Protocol):

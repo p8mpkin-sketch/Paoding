@@ -23,8 +23,8 @@ REJECT_CODES = frozenset(
         "bad_seal",
     }
 )
-ARTIFACT_CLASSES = frozenset({"exec", "judge", "input", "authored"})
-ADMISSIBLE_CLASSES = frozenset({"exec", "judge", "input"})  # authored 永不入 grounds（I2）
+ARTIFACT_CLASSES = frozenset({"exec", "judge", "input", "authored", "knowledge"})
+ADMISSIBLE_CLASSES = frozenset({"exec", "judge", "input"})  # authored 永不入 grounds（I2）；knowledge 也不入（K1）
 
 # ---------- 进程内端口（M0 单机；HTTP/Unix socket 绑定在其上，接口相同） ----------
 from typing import Protocol  # noqa: E402
@@ -45,6 +45,7 @@ from .reducer import (  # noqa: E402,F401
     apply,
     empty_state,
 )
+from .reducer.knowledge import REGISTRAR as KNOWLEDGE_REGISTRAR  # noqa: E402,F401  knowledge 类只由书库登记（K1）
 from .replay import replay, state_hash  # noqa: E402,F401
 from .service import GraphService  # noqa: E402,F401
 
