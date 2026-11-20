@@ -112,6 +112,26 @@ def test_registered_platform_is_external():
         batch(v, lambda b: __import__("hashlib").sha256(b).hexdigest(), None)
 
 
+@pytest.mark.parametrize("lanes_open", [True, False])
+@pytest.mark.parametrize("grants_runtime", [True, False])
+@pytest.mark.parametrize("strict", [False, True])
+def test_registered_platform_stays_strict_whatever_the_lane_switch(lanes_open, grants_runtime, strict):
+    """分支顺序的显式断言（cz 2026-11-19）：已登记平台的识别排在开放道之前。lanes.open 开着、运行时扩权开着、
+    没选严格判定，也照样走严格道（外部判官、authority external），不落进开放道。
+    将来重构若把开放道分支提前，这里先红。"""
+    import dataclasses
+
+    on = dataclasses.replace(SETTINGS, lanes_open=lanes_open, grants_runtime=grants_runtime)
+    ext = INTAKE.extract(TEXT)
+    d = parse_draft(heuristic_drafter(ext, False), ext, "h")
+    v = vet(ext, None, d, INTAKE, on, PRIORS, zero_confirm=False, nonce="n", catalog=CAT, strict=strict)
+    assert v.lane == "confirm" and v.lane != "open"
+    assert v.external == {"connector": "plat-a", "judge_id": "ext_receipt", "task": "T-17"}
+    assert v.input["goal"]["accept"] == "judge" and v.input["goal"]["check"]["judge_id"] == "ext_receipt"
+    assert v.input["judges"] == ["ext_receipt"]
+    assert not {"platform_unregistered", "open_needs_confirm", "command_self_check"} & set(codes(v))
+
+
 def test_submit_example_is_only_material():
     t = TEXT + "提交方式：`curl -X POST https://plat-a.test/api/tasks/T-17/submissions -d '{}'`"
     v = _vet(t)
