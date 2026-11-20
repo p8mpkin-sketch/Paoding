@@ -40,7 +40,7 @@ function TokenBox({ token, expiresAt, onSave }: { token: string | null; expiresA
   );
 }
 
-function Home() {
+function Today() {
   return <Dashboard now={useNow()} />;
 }
 
@@ -52,7 +52,8 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
   const { view, error } = useProblems(SHELL_POLL_MS);
   return (
     <AppShell route={route} problems={view} problemsError={error} canWrite={!!cfg.token} token={token}>
-      {route.page === "home" && <Home />}
+      {route.page === "home" && <Kaiti home />}
+      {route.page === "today" && <Today />}
       {route.page === "problems" && <Problems filter={{ q: route.q ?? "", terminal: route.terminal ?? "", judge: route.judge ?? "" }} />}
       {route.page === "new" && !route.advanced && <Kaiti />}
       {route.page === "new" && route.advanced && <Wizard key={route.from ?? ""} from={route.from} />}

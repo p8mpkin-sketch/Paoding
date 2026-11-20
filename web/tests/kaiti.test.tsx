@@ -200,7 +200,8 @@ describe("输入框与确认卡", () => {
   it("输入框旁先选执行模型：开放道回车即开，任务带着 prefs.model，不出确认卡", async () => {
     const r = rig();
     const { container } = renderWith(r, <Kaiti />);
-    const pick = await waitFor(() => { const el = container.querySelector<HTMLSelectElement>('[data-field="run-model"] select'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(await waitFor(() => { const b = container.querySelector<HTMLButtonElement>('button[data-field="run-model"]'); expect(b?.disabled).toBe(false); return b!; }));
+    const pick = await waitFor(() => { const el = document.querySelector<HTMLSelectElement>('[data-field="run-model-select"]'); expect(el?.options.length).toBe(3); return el!; });
     expect([...pick.options].map((o) => o.value)).toEqual(["", "default", "light"]);
     fireEvent.change(pick, { target: { value: "light" } });
     fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("open").text } });
@@ -306,7 +307,54 @@ describe("令牌", () => {
     expect((container.querySelector('[data-field="kaiti-text"]') as HTMLTextAreaElement).disabled).toBe(true);
     expect(container.textContent).toMatch(/人的令牌/);
     await until(() => true);
-    expect(r.fetch.calls.length).toBe(0);
+    expect(r.fetch.calls.filter((c) => c.method !== "GET")).toHaveLength(0); // 只读了模型与档位表
+  });
+});
+
+describe("首页输入框（v5 第三期）", () => {
+  it("预算档位：档位表来自注入的先验表，占位时如实写出；选“小”后开放道回车即开，任务带着这档预算", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti home />);
+    const chip = await waitFor(() => { const b = container.querySelector<HTMLButtonElement>('button[data-field="budget-tier"]'); expect(b?.disabled).toBe(false); return b!; });
+    expect(chip.textContent).toContain("自动");
+    fireEvent.click(chip);
+    const easy = await waitFor(() => { const b = document.querySelector<HTMLButtonElement>('[data-pop="budget-tier"] [data-tier="easy"]'); expect(b).not.toBeNull(); return b!; });
+    expect(document.querySelector('[data-pop="budget-tier"]')!.textContent).toContain("占位表");
+    fireEvent.click(easy);
+    await waitFor(() => expect(chip.textContent).toContain("小 · $0.50"));
+    fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("open").text } });
+    fireEvent.keyDown(container.querySelector('[data-field="kaiti-text"]')!, { key: "Enter" });
+    const pid = rec("open").out.pid;
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${pid}`));
+    const last = JSON.parse(String(r.fetch.calls.filter((c) => String(c.url).endsWith("/v1/drafts")).at(-1)!.body));
+    expect(last.overrides).toEqual({ usd_milli: 500, wall_s: 600 });
+    expect((await r.api.problems()).items.find((p) => p.id === pid)!.cap_usd_milli).toBe(500);
+  });
+
+  it("严格判定默认关：没有答案框；打开才出答案框与判定方式的入口，关掉清空答案", async () => {
+    const { container } = renderWith(rig(), <Kaiti home />);
+    const sw = container.querySelector<HTMLButtonElement>('[data-action="strict"]')!;
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(container.querySelector('[data-field="kaiti-answer"]')).toBeNull();
+    fireEvent.click(sw);
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    const ans = container.querySelector<HTMLInputElement>('[data-field="kaiti-answer"]')!;
+    expect(ans.type).toBe("password");
+    expect(container.querySelector('[data-action="to-platform"]')).not.toBeNull();
+    fireEvent.change(ans, { target: { value: "PD-XXXX" } });
+    fireEvent.click(sw);
+    fireEvent.click(sw);
+    expect(container.querySelector<HTMLInputElement>('[data-field="kaiti-answer"]')!.value).toBe("");
+  });
+
+  it("首页下面列最近的任务，回收站里的不出现", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti home />);
+    const items = await waitFor(() => { const xs = container.querySelectorAll("[data-recent-item]"); expect(xs.length).toBeGreaterThan(0); return [...xs]; });
+    expect(items.length).toBeLessThanOrEqual(4);
+    const shelves = (await r.api.problems()).items.filter((p) => items.some((x) => x.getAttribute("data-recent-item") === p.id)).map((p) => p.shelf);
+    expect(shelves.every((x) => x === "active")).toBe(true);
+    expect(container.querySelector('[data-action="all-tasks"]')!.textContent).toMatch(/全部 \d+ 个任务/);
   });
 });
 

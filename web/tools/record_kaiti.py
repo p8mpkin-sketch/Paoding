@@ -114,6 +114,13 @@ def main() -> None:
     op = out["drafts"]["open"]["out"]  # type: ignore[index]
     base = {"text": OPEN, "draft": op["draft"], "nonce": op["nonce"], "model": op["model"]}
     out["overrides"].append({"name": "open", "overrides": pick, "out": svc_om.draft_view({**base, "overrides": pick})})  # type: ignore[attr-defined]
+    # 输入框下面选了预算档位（v5 第三期）：档位数字来自注入的先验表（这里用占位表），交回同一份草案只加预算
+    for t in placeholder_priors().tiers.values():
+        tier = {"usd_milli": t.usd_milli, "wall_s": t.wall_s}
+        for ov in (tier, {**pick, **tier}):
+            out["overrides"].append(  # type: ignore[attr-defined]
+                {"name": "open", "overrides": ov, "out": svc_om.draft_view({**base, "overrides": ov})}
+            )
     ob = out["drafts"]["outbound"]["out"]  # type: ignore[index]
     ack = {"ack_command": True}
     base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"], "strict": True}

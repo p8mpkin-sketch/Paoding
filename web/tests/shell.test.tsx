@@ -13,7 +13,8 @@ afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); });
 
 describe("导航归属", () => {
   it("每个路由归到一个导航项；工作区不占导航项", () => {
-    expect(navOf({ page: "home" })).toMatchObject({ key: "home", crumbs: ["今日"] });
+    expect(navOf({ page: "home" })).toMatchObject({ key: null, crumbs: ["新建任务"] });
+    expect(navOf({ page: "today" })).toMatchObject({ key: "today", crumbs: ["今日"] });
     expect(navOf({ page: "new" }).key).toBe("tasks");
     expect(navOf({ page: "new", from: "x" }).crumbs).toEqual(["任务", "克隆"]);
     expect(navOf({ page: "import" }).key).toBe("tasks");
@@ -58,6 +59,6 @@ describe("外壳", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
     await waitFor(() => expect(document.querySelector('[data-nav="tasks"].on')).not.toBeNull());
     fireEvent.keyDown(document.body, { key: "c" });
-    await waitFor(() => expect(window.location.pathname).toBe("/new"));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
   });
 });

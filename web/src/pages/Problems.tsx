@@ -98,6 +98,29 @@ function StatusCell({ p }: { p: ProblemItem }) {
   return <span className={`tl-st${p.terminal === "delivered" ? " ok" : good ? " ok dim" : ""}`}><i aria-hidden="true" />{END_WORD[p.terminal ?? ""] ?? "已结束"}</span>;
 }
 
+/** 首页输入框下面的最近任务（最多 4 个，回收站与归档不出现）：只读，点进任务页。 */
+export function Recent() {
+  const { view } = useProblems(5000);
+  if (!view) return null;
+  const kept = view.items.filter((p) => shelfOf(p) === "active");
+  if (!kept.length) return null;
+  const xs = sortRows(kept, "recent").slice(0, 4);
+  return (
+    <section className="kt-recent" aria-labelledby="kt-recent-h" data-recent>
+      <div className="kt-recent-h"><h2 id="kt-recent-h">最近的任务</h2><Link to={{ page: "problems", ...NO_FILTER }} data-action="all-tasks">全部 {kept.length} 个任务</Link></div>
+      <ul>
+        {xs.map((p) => (
+          <li key={p.id} data-recent-item={p.id}>
+            <Link to={{ page: "problem", pid: p.id, asOf: null, node: null }} className="kt-recent-t"><Text t={p.title} block={false} /></Link>
+            <StatusCell p={p} />
+            <span className="k-mono r">{usd(p.spent_usd_milli)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 type Ask = { ids: string[] } | null;
 
 export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
@@ -174,7 +197,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
       ? <Empty title={`没有找到带“${q.trim()}”的任务`} action={<Button tone="line" size="sm" onClick={() => { setQ(""); set({ q: "" }); }} data-action="clear-q">清空搜索</Button>}>只搜标题和编号。</Empty>
       : v === "trash" ? <Empty title="回收站是空的">删除的任务在这里放 30 天，期间可以恢复。</Empty>
       : v === "archived" ? <Empty title="没有归档的任务">归档只是收起来，随时可以移回。</Empty>
-      : <Empty title={items.length ? "这一类里还没有任务" : "还没有任务"} action={items.length ? undefined : <Link to={{ page: "new" }} className={btnClass("ink", "sm")}>新建任务</Link>}>{items.length ? "换一个分类看看。" : "说一句要做的事，回车就开始。"}</Empty>;
+      : <Empty title={items.length ? "这一类里还没有任务" : "还没有任务"} action={items.length ? undefined : <Link to={{ page: "home" }} className={btnClass("ink", "sm")}>新建任务</Link>}>{items.length ? "换一个分类看看。" : "说一句要做的事，回车就开始。"}</Empty>;
   } else if (sort !== "group" || shelfView) {
     body = sorted.map(row);
   } else {

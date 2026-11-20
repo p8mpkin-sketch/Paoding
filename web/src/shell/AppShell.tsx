@@ -12,10 +12,10 @@ import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
 
-export type NavKey = "home" | "inbox" | "tasks" | "models" | "readings" | "settings";
+export type NavKey = "today" | "inbox" | "tasks" | "models" | "readings" | "settings";
 type NavItem = { key: NavKey; word: string; icon: LucideIcon; to: Route };
 export const NAV: NavItem[] = [
-  { key: "home", word: "今日", icon: Sun, to: { page: "home" } },
+  { key: "today", word: "今日", icon: Sun, to: { page: "today" } },
   { key: "tasks", word: "任务", icon: LayoutList, to: { page: "problems" } },
   { key: "inbox", word: "待你处理", icon: Inbox, to: { page: "inbox" } },
   { key: "models", word: "模型", icon: Boxes, to: { page: "models" } },
@@ -26,7 +26,8 @@ const SETTINGS: NavItem = { key: "settings", word: "设置", icon: Settings, to:
 /** 路由归哪个导航项，顶栏写什么位置。 */
 export function navOf(r: Route): { key: NavKey | null; crumbs: string[] } {
   switch (r.page) {
-    case "home": return { key: "home", crumbs: ["今日"] };
+    case "home": return { key: null, crumbs: ["新建任务"] };
+    case "today": return { key: "today", crumbs: ["今日"] };
     case "inbox": return { key: "inbox", crumbs: ["待你处理"] };
     case "problems": return { key: "tasks", crumbs: ["任务"] };
     case "new": return { key: "tasks", crumbs: ["任务", r.from ? "克隆" : r.advanced ? "高级模式" : "新建"] };
@@ -40,7 +41,7 @@ export function navOf(r: Route): { key: NavKey | null; crumbs: string[] } {
 }
 
 /** 顶栏放“导入任务集 / 新建任务”的页面；快捷键 C 也只在这些页面生效。 */
-export const hasNewButton = (r: Route) => r.page === "home" || r.page === "problems";
+export const hasNewButton = (r: Route) => r.page === "today" || r.page === "problems";
 
 /** 主题（本机偏好）：跟随系统、亮、暗、高对比。 */
 function ThemeSwitch() {
@@ -86,7 +87,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
       const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       // 只在顶栏有“新建任务”按钮的页面生效；工作区键盘操作多，不抢它的键
-      if ((e.key === "c" || e.key === "C") && hasNewButton(route)) { e.preventDefault(); navigate({ page: "new" }); }
+      if ((e.key === "c" || e.key === "C") && hasNewButton(route)) { e.preventDefault(); navigate({ page: "home" }); }
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
@@ -116,7 +117,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
         </div>
         {!narrow && (
           <>
-            <Link to={{ page: "new" }} className={btnClass("ink", "md", "shell-new")} data-action="side-new"><Plus aria-hidden="true" /><span className="grow">新任务</span><Kbd>C</Kbd></Link>
+            <Link to={{ page: "home" }} className={btnClass("ink", "md", "shell-new")} data-action="side-new"><Plus aria-hidden="true" /><span className="grow">新任务</span><Kbd>C</Kbd></Link>
             <button type="button" className="shell-find" onClick={() => setPalette(true)} data-action="open-palette">
               <Search aria-hidden="true" /><span>搜索或跳转</span><Kbd>⌘K</Kbd>
             </button>
@@ -158,7 +159,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
             {hasNewButton(route) && (
               <>
                 <Link to={{ page: "import" }} className={btnClass("line", "md")}><FileUp aria-hidden="true" />导入任务集</Link>
-                <Link to={{ page: "new" }} className={btnClass("ink", "md")}><Plus aria-hidden="true" />新建任务</Link>
+                <Link to={{ page: "home" }} className={btnClass("ink", "md")}><Plus aria-hidden="true" />新建任务</Link>
               </>
             )}
           </header>

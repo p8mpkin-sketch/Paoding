@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const TOKEN = "mock-human-token";
-const PAGES = ["/", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/models", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
+const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/models", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
 const THEMES = ["light", "dark", "contrast"];
 
 test.beforeEach(async ({ page, request }) => {
@@ -131,5 +131,26 @@ for (const theme of THEMES) {
     await page.locator('[data-action="select-mode"]').click();
     await page.locator("[data-pick]").first().check();
     await scan("批量栏");
+  });
+}
+
+// v5 第三期：首页输入框的预算选项展开、严格判定打开
+for (const theme of THEMES) {
+  test(`axe：首页输入框的选项与严格判定（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    await page.goto("/");
+    await expect(page.locator(".shell-status")).toContainText("已连接");
+    const scan = async (what: string) => {
+      await page.waitForTimeout(200);
+      const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+    };
+    await page.locator('button[data-field="budget-tier"]').click();
+    await expect(page.locator('[data-pop="budget-tier"]')).toBeVisible();
+    await scan("预算选项");
+    await page.keyboard.press("Escape");
+    await page.locator('[data-action="strict"]').click();
+    await expect(page.locator('[data-field="kaiti-answer"]')).toBeVisible();
+    await scan("严格判定");
   });
 }

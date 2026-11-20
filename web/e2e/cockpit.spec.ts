@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 async function openCockpit(page: Page, pid: string) {
-  await page.goto("/");
+  await page.goto("/today");
   await page.locator(`[data-problem="${pid}"] a`).first().click();
   await expect(page.locator(".cockpit")).toBeVisible();
   await expect(page.locator("[data-conn-label]")).toHaveText("实时");
@@ -153,7 +153,7 @@ test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) 
 });
 
 test("总览：进行中卡片、等你处理、主题切换；手机宽度只留待审批与进行中", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/today");
   await expect(page.locator(".run-card").first()).toBeVisible();
   await expect(page.locator("[data-waiting]")).toBeVisible();
   await expect(page.locator(".dash-stats")).toBeVisible();
