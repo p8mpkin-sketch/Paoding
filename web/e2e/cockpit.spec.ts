@@ -134,6 +134,12 @@ test("开放道任务页：结果一栏、依据抽屉、采纳要逐条确认�
   await expect(page.locator("[data-evidence]")).toContainText("python repro/crash_test.py");
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-evidence]")).toHaveCount(0);
+  // 引用的资料（资料库第二期）：与执行记录分开标示，抽屉里是资料名、位置与当时的原文
+  await expect(page.locator("[data-claims-count]")).toContainText("6 条里 4 条有执行记录；1 条引用了资料");
+  await page.locator('[data-claim][data-cited="true"] [data-ref-class="knowledge"]').click();
+  await expect(page.locator("[data-evidence] [data-knowledge]")).toContainText("回滚用上一个标签重新发布");
+  await expect(page.locator("[data-evidence] [data-kn-note]")).toHaveText("这是你给的资料里的话，没有在这次任务里验证。");
+  await page.keyboard.press("Escape");
   await page.locator('[data-action="adopt-delivery"]').click();
   const ok = page.locator('[data-action="confirm-feedback"]');
   await expect(ok).toBeDisabled();

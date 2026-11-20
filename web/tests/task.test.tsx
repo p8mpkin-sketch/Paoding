@@ -39,15 +39,34 @@ describe("开放道任务页（假后端 demo-6）", () => {
     expect($(container, '[data-flow-step="you"]')!.getAttribute("data-state")).toBe("cur");
     await waitFor(() => expect($(container, "[data-answer]")!.textContent).toContain("LangGraph"));
     expect($(container, '[data-verdict="self"]')!.textContent).toContain("没有经过独立判定");
-    expect(container.querySelectorAll("[data-claim]")).toHaveLength(5);
-    expect(container.querySelectorAll('[data-claim][data-supported="false"]')).toHaveLength(1);
-    expect($(container, "[data-claims] h2")!.textContent).toContain("5 条里 4 条有执行记录");
+    expect(container.querySelectorAll("[data-claim]")).toHaveLength(6);
+    // 只引资料的那条不算执行记录（cz 验收附加条件 1）：分子仍是 4，另标 1 条引用了资料
+    expect(container.querySelectorAll('[data-claim][data-supported="false"]')).toHaveLength(2);
+    expect($(container, "[data-claims] h2")!.textContent).toContain("6 条里 4 条有执行记录；1 条引用了资料");
     expect(container.querySelectorAll('[data-self-check] [data-check="fail"]')).toHaveLength(1);
     expect(container.querySelectorAll("[data-unverified] li")).toHaveLength(2);
     fireEvent.click($(container, "[data-claim] [data-ref]")!);
     await waitFor(() => expect(document.querySelector('[data-evidence] [data-class="exec"]')).not.toBeNull());
     expect(document.querySelector("[data-evidence]")!.textContent).toContain("python repro/crash_test.py --fw langgraph");
     expect(container.querySelectorAll("[data-split]").length).toBeGreaterThan(0); // 右栏按会话的花费
+  });
+
+  it("引用的资料与执行记录分开标示；抽屉给出资料名、位置、当时的原文，写明没有在这次任务里验证", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Cockpit pid={PID} asOf={null} node={null} />);
+    await waitFor(() => expect($(container, '[data-claim][data-cited="true"]')).not.toBeNull());
+    const li = $(container, '[data-claim][data-cited="true"]')!;
+    expect(li.getAttribute("data-supported")).toBe("false");
+    expect(li.textContent).toContain("只有资料，没有执行记录");
+    expect(container.querySelectorAll('[data-claim][data-cited="true"]')).toHaveLength(1);
+    fireEvent.click(li.querySelector('[data-ref-class="knowledge"]')!);
+    await waitFor(() => expect(document.querySelector("[data-evidence] [data-knowledge]")).not.toBeNull());
+    const d = document.querySelector("[data-evidence]")!;
+    expect(d.textContent).toContain("引用的资料");
+    await waitFor(() => expect(d.textContent).toContain("团队约定.md"));
+    await waitFor(() => expect(d.querySelector(".tk-kn-text")!.textContent).toContain("回滚用上一个标签重新发布"));
+    expect(d.querySelector("[data-kn-note]")!.textContent).toBe("这是你给的资料里的话，没有在这次任务里验证。");
+    expect(d.querySelector("[data-kn-newer]")).toBeNull();
   });
 
   it("采纳：确认框里逐条确认四顾，关闭任务并记反馈 adopted，终态 delivered", async () => {
@@ -111,7 +130,8 @@ describe("开放道任务页（假后端 demo-6）", () => {
     fireEvent.click($(container, '[data-task-tab="steps"]')!);
     await waitFor(() => expect(container.querySelectorAll("[data-step]").length).toBeGreaterThan(5));
     expect($(container, "[data-steps]")!.textContent).toContain("python repro/crash_test.py --fw crewai");
-    expect($(container, "[data-steps]")!.textContent).toContain("交出结果（完整回答），附 5 条主张");
+    expect($(container, "[data-steps]")!.textContent).toContain("交出结果（完整回答），附 6 条主张");
+    expect($(container, "[data-steps]")!.textContent).toContain("查了“崩溃 恢复 回滚 约定”，命中 1 段");
     fireEvent.click($(container, '[data-task-tab="files"]')!);
     await waitFor(() => expect(container.querySelectorAll("[data-file]").length).toBeGreaterThan(5));
     fireEvent.click($(container, '[data-file] [data-action="open-file"]')!);

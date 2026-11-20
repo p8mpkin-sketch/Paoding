@@ -288,7 +288,7 @@ export type Delivery = {
   lease: string;
   outcome: "answered" | "partial" | "blocked";
   answer: ArtifactId | null;
-  claims: { text: Tagged; refs: GroundBrief[]; supported: boolean }[];
+  claims: { text: Tagged; refs: GroundBrief[]; supported: boolean; cited: boolean }[];
   self_check: { what: Tagged; result: "pass" | "fail" | "skipped"; refs: GroundBrief[]; item?: string }[];
   unverified: Tagged[];
   needs: Tagged[];

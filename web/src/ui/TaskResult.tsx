@@ -4,6 +4,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { KnChunk } from "../api/knowledge-types";
 import type { ArtifactView, Delivery, GroundBrief } from "../api/types";
 import { useServices } from "../app/context";
 import { btnClass } from "../kit";
@@ -13,6 +14,34 @@ import { ResultReport } from "./ResultReport";
 
 const OUTCOME_WORD: Record<Delivery["outcome"], string> = { answered: "完整回答", partial: "部分完成", blocked: "受阻" };
 const CHECK_WORD = { pass: "通过", fail: "没做到", skipped: "没做" } as const;
+
+/** 引用的资料（资料库第二期）：资料名、位置、当时的原文（登记时进 Blob 的那一份，不随资料更新而换）。
+ * 资料之后有了新的可用版本时只提示，不替换原文。 */
+function KnowledgeCard({ a }: { a: ArtifactView }) {
+  const { api } = useServices();
+  const [text, setText] = useState<string | null>(null);
+  const [now, setNow] = useState<KnChunk | null>(null);
+  const [gone, setGone] = useState(false);
+  const kn = a.knowledge;
+  useEffect(() => {
+    let live = true;
+    api.blob(a.hash).then((b) => live && setText(new TextDecoder("utf-8", { fatal: false }).decode(b)), () => live && setText(""));
+    if (kn) api.knChunk(kn.chunk).then((c) => live && setNow(c), () => live && setGone(true));
+    return () => { live = false; };
+  }, [api, a.hash, kn]);
+  return (
+    <div className="tk-kn reg-human" data-register="human" data-knowledge={kn?.chunk ?? ""}>
+      <dl className="tk-kn-meta">
+        <div><dt>资料</dt><dd><Plain text={now?.source_name ?? kn?.source ?? ""} /><span className="t2 k-mono"> · 第 {kn?.revision} 版</span></dd></div>
+        {kn?.locator && <div><dt>位置</dt><dd><Plain text={kn.locator} /></dd></div>}
+      </dl>
+      <blockquote className="tk-kn-text">{text === null ? <span className="t2">读取原文…</span> : <Plain text={text} />}</blockquote>
+      <p className="tk-kn-note" data-kn-note>这是你给的资料里的话，没有在这次任务里验证。</p>
+      {now?.newer_revision && <p className="tk-tag need" data-kn-newer>这份资料之后更新过；这里是引用时的原文。</p>}
+      {gone && <p className="t2" data-kn-gone>资料已不在知识页（可能已删掉或清掉）；这里是引用时的原文。</p>}
+    </div>
+  );
+}
 
 /** 证据下钻：点一条依据，右侧抽屉里给出那次执行的命令、输出与哈希（ArtifactCard，与检视同一张卡）。 */
 export function EvidenceDrawer({ id, seq, onClose }: { id: string | null; seq: number; onClose: () => void }) {
@@ -32,11 +61,11 @@ export function EvidenceDrawer({ id, seq, onClose }: { id: string | null; seq: n
         <Dialog.Overlay className="k-overlay" />
         <Dialog.Content className="tk-drawer" data-evidence={id ?? ""} aria-describedby={undefined}>
           <header>
-            <Dialog.Title className="tk-drawer-h">{a?.class === "exec" ? "执行记录" : "登记的内容"}<span className="tk-ref on">{id}</span></Dialog.Title>
+            <Dialog.Title className="tk-drawer-h">{a?.class === "exec" ? "执行记录" : a?.class === "knowledge" ? "引用的资料" : "登记的内容"}<span className="tk-ref on">{id}</span></Dialog.Title>
             <Dialog.Close className={btnClass("bare", "sm")} aria-label="关闭"><X aria-hidden="true" /></Dialog.Close>
           </header>
           <div className="tk-drawer-b">
-            {a ? <ArtifactCard a={a} /> : <p className="t2">{err ? <>取不到登记记录：<Plain text={err} /></> : "读取中…"}</p>}
+            {a?.class === "knowledge" ? <KnowledgeCard a={a} /> : a ? <ArtifactCard a={a} /> : <p className="t2">{err ? <>取不到登记记录：<Plain text={err} /></> : "读取中…"}</p>}
             {a?.class === "exec" && <p className="t2">这条记录由执行层自动登记，模型改不了它。</p>}
           </div>
         </Dialog.Content>
@@ -46,7 +75,7 @@ export function EvidenceDrawer({ id, seq, onClose }: { id: string | null; seq: n
 }
 
 function Refs({ refs, onRef }: { refs: GroundBrief[]; onRef: (id: string) => void }) {
-  return <span className="tk-refs">{refs.map((r) => <button key={r.id} type="button" className="tk-ref" data-ref={r.id} onClick={() => onRef(r.id)}>{r.id}</button>)}</span>;
+  return <span className="tk-refs">{refs.map((r) => <button key={r.id} type="button" className={`tk-ref${r.class === "knowledge" ? " kn" : ""}`} data-ref={r.id} data-ref-class={r.class} onClick={() => onRef(r.id)}>{r.class === "knowledge" ? `资料 ${r.id}` : r.id}</button>)}</span>;
 }
 
 /** 极小的 Markdown 排版：段落、标题、列表、竖线表格。只为让会话写的答案读起来像文章；内容一律按纯文本放进节点。 */
@@ -96,7 +125,9 @@ function Answer({ id, seq }: { id: string; seq: number }) {
 }
 
 function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id: string) => void }) {
+  // “N 条里 M 条有执行记录”只数执行记录与材料；引用资料另计“K 条引用了资料”，不进 M（cz 验收附加条件 1）
   const backed = d.claims.filter((c) => c.supported).length;
+  const cited = d.claims.filter((c) => c.cited).length;
   return (
     <div className="tk-delivery" data-delivery={d.id} data-outcome={d.outcome}>
       {d.answer && <Answer id={d.answer} seq={seq} />}
@@ -109,12 +140,12 @@ function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id:
       )}
       {d.claims.length > 0 && (
         <section className="tk-sec" data-claims>
-          <h2>依据<small>{d.claims.length} 条里 {backed} 条有执行记录</small></h2>
+          <h2>依据<small data-claims-count>{d.claims.length} 条里 {backed} 条有执行记录{cited > 0 && <span data-cited-count>；{cited} 条引用了资料</span>}</small></h2>
           <ul className="tk-li">
             {d.claims.map((c, i) => (
-              <li key={i} data-claim={i} data-supported={c.supported}>
-                <span className="tk-mk">{i + 1}</span><span className="grow"><Text t={c.text} block={false} /></span>
-                {c.supported ? <Refs refs={c.refs} onRef={onRef} /> : <span className="tk-tag need">没有执行记录</span>}
+              <li key={i} data-claim={i} data-supported={c.supported} data-cited={c.cited}>
+                <span className="tk-mk">{i + 1}</span><span className="grow"><Text t={c.text} block={false} />{c.cited && !c.supported && <span className="tk-tag kn">只有资料，没有执行记录</span>}</span>
+                {c.refs.length > 0 ? <Refs refs={c.refs} onRef={onRef} /> : <span className="tk-tag need">没有执行记录</span>}
               </li>
             ))}
           </ul>

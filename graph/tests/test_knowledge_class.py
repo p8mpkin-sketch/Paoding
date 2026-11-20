@@ -147,3 +147,20 @@ def test_knowledge_prefs():
         "auto",
     ):
         assert k.submit(HUMAN, "p1", "open_problem", open_body(k, prefs={"knowledge": bad})) == "schema_error", bad
+
+
+def test_kb_query_is_recorded_by_shuku_for_a_lease_of_this_problem():
+    k = Kernel()
+    open_lane(k)
+    lid = lease_solve(k)
+    q = {"lease": lid, "query": "回滚怎么做", "hits": ["k_0123456789abcdef"]}
+    before = k.state["problems"]
+    assert k.submit(SHUKU, "p1", "kb_query", q) == "ok"
+    assert k.state["problems"] is before  # 只进日志，不改状态
+    assert k.events[-1]["body"] == q
+    assert k.submit(solver(lid), "p1", "kb_query", q) == "forbidden_op"
+    assert k.submit({"kind": "graph", "id": "graph"}, "p1", "kb_query", q) == "forbidden_op"
+    assert k.submit(SHUKU, "p1", "kb_query", {**q, "lease": "l_404"}) == "unknown_ref"
+    assert k.submit(SHUKU, "p1", "kb_query", {**q, "query": " "}) == "schema_error"
+    assert k.submit(SHUKU, "p1", "kb_query", {**q, "hits": ["k"] * 21}) == "schema_error"
+    assert k.submit(SHUKU, "p1", "kb_query", {**q, "text": "原文"}) == "schema_error"

@@ -3,7 +3,7 @@
 // 都带人的令牌，与 pd 是同一条提议通道。设置层（宪章 03 §7）另有 PUT /v1/settings 与 /v1/keys 的 PUT/DELETE，
 // 也只认人的令牌；密钥只经 PUT 发出一次，没有任何读端点能把它读回来。一句话开题多三个：PUT /v1/vault（答案只写不读）
 // 与起草服务的 POST /v1/drafts、/v1/drafts/extract（组装根挂在图服务上，同源；只算不写，模型调用在服务端，前端不碰模型）。
-import type { KnJob, KnPut, KnSearch, KnSourceVerb, KnSources } from "./knowledge-types";
+import type { KnChunk, KnJob, KnPut, KnSearch, KnSourceVerb, KnSources } from "./knowledge-types";
 import type { MemCard, MemDecision, MemRow, MemSeen } from "./memory-types";
 import type {
   ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
@@ -149,6 +149,8 @@ export function createApi(cfg: ApiConfig) {
       post<{ ok: true; jobs: KnJob[] }>(`/v1/knowledge/jobs/${enc(id)}/${revision}/${verb}`, mask ? { mask: true } : {}),
     /** “试一下”：与执行中的检索同一个函数，不登记引用。 */
     knSearch: (q: string, k = 8) => post<KnSearch>("/v1/knowledge/search", { q, k }),
+    /** 一段的原文与位置（证据抽屉里引用的资料）。 */
+    knChunk: (id: string) => get<KnChunk>(`/v1/knowledge/chunks/${enc(id)}`),
     // ---- 设置层 ----
     settings: () => get<SettingsDoc>("/v1/settings"),
     settingsLog: () => get<{ items: SettingsLogEntry[] }>("/v1/settings/log"),

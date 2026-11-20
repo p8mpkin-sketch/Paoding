@@ -15,6 +15,7 @@ const SINAN: Actor = { kind: "sinan", id: "sinan" };
 const GRAPH: Actor = { kind: "graph", id: "graph" };
 const EXEC: Actor = { kind: "executor", id: "executor" };
 const JUDGE: Actor = { kind: "judge", id: "judgebox" };
+const SHUKU: Actor = { kind: "graph", id: "shuku" }; // 书库的组件令牌：登记 knowledge 类、记 kb_query
 const WATCHDOG: Actor = { kind: "watchdog", id: "watchdog" };
 /** 会话即租约 id；剧本里用租约的名字，运行时换成真正的 l_<seq>。 */
 const adapter = (lease: string, role: string) => (ids: Record<string, string>): Actor => ({ kind: "adapter", id: "adapter", session: ids[lease], role });
@@ -44,6 +45,16 @@ class Builder {
       hash: api.putBlob(output), size: output.length, media_type: "text/plain", class: "exec", producer: { actor: "executor", session: _i[session] },
       exec: { sandbox_id: `sb-${this.pid}`, base: "default", baseline_ref: "base@1", tool, command, cwd: "/work", exit_code: exit, touched: ["target:8080"], started_at: 0, ended_at: 0, truncated },
       parents: [],
+    }), name);
+  }
+  /** 会话查资料（资料库第二期）：kb_query 记查询词与命中；kb_read 读到的段落由书库登记为 knowledge 类。
+   * chunk 与假后端知识页的段落 id 同一算法（sha256(资料:段号) 前 16 位），证据抽屉能取到原文。 */
+  kb(name: string, session: string, query: string, source: string, para: number, text: string, locator: string) {
+    const chunk = (api: Api) => `k_${api.sha256(`${source}:${para}`).slice(0, 16)}`;
+    this.ev(SHUKU, "kb_query", (i, api) => ({ lease: i[session], query, hits: [chunk(api)] }));
+    return this.ev(SHUKU, "register_artifact", (_i, api) => ({
+      hash: api.putBlob(text), size: text.length, media_type: "text/plain; charset=utf-8", class: "knowledge", producer: { actor: "shuku" },
+      knowledge: { source, revision: 1, chunk: chunk(api), locator }, parents: [],
     }), name);
   }
   authored(name: string, session: string, text: string, media = "text/plain") {
@@ -231,6 +242,7 @@ export function staticScripts(): Script[] {
   o.authored("notes", "S1", "# 计划\n1. 读三家的持久化接口\n2. 各写一个中途杀进程的复现\n3. 按恢复粒度对比\n");
   o.exec("e_clone", "S1", "shell", "rg -l checkpoint langgraph/libs | head -2", "libs/checkpoint/langgraph/checkpoint/base/__init__.py\nlibs/checkpoint-sqlite/langgraph/checkpoint/sqlite/__init__.py\n");
   o.exec("e_lg", "S1", "shell", "python repro/crash_test.py --fw langgraph", "step1 done\nstep2 killed (SIGKILL)\n--- restart, same thread_id ---\nresume -> next=('step2',)\nstep2 done · step3 done\n");
+  o.kb("kb_team", "S1", "崩溃 恢复 回滚 约定", "s_team01", 0, "上线前先在 staging 跑全量测试。回滚用上一个标签重新发布，数据库迁移必须能反向执行。", "团队约定.md / 上线与回滚");
   o.exec("e_ag", "S1", "shell", "python repro/crash_test.py --fw autogen", "step1 done\nstep2 killed (SIGKILL)\n--- restart ---\nload_state: FileNotFoundError: state.json\n-> 从头开始\n");
   o.exec("e_ag2", "S1", "shell", "python repro/crash_test.py --fw autogen --save-each-step", "step1 done · state saved\nstep2 killed (SIGKILL)\n--- restart ---\nload_state ok -> 从 step2 继续\n");
   o.exec("e_cr", "S1", "shell", "python repro/crash_test.py --fw crewai", "flow.step1 done · persisted\ncrew task 1/3 done\ncrew task 2/3 killed (SIGKILL)\n--- restart ---\nflow resumes at step2 -> crew 从 task 1/3 重跑\n");
@@ -243,6 +255,7 @@ export function staticScripts(): Script[] {
       { text: "AutoGen 每步手动保存后，可以恢复到上一步", refs: [i.e_ag2] },
       { text: "CrewAI 的 @persist 只保存 Flow 级状态，Crew 里面的任务会整组重跑", refs: [i.e_cr] },
       { text: "三者里只有 LangGraph 支持回到任意历史检查点分叉", refs: [] },
+      { text: "按团队约定，上线前要在 staging 跑全量测试，选型后的迁移脚本要能反向执行", refs: [i.kb_team] },
     ],
     self_check: [
       { what: "三个复现脚本各重跑一次，结果和第一次一样", result: "pass", refs: [i.e_lg, i.e_cr] },

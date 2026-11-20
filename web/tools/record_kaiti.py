@@ -121,6 +121,12 @@ def main() -> None:
             out["overrides"].append(  # type: ignore[attr-defined]
                 {"name": "open", "overrides": ov, "out": svc_om.draft_view({**base, "overrides": ov})}
             )
+    # 知识选项（资料库第二期，K3）：不用、指定一份；与执行模型一起选的也录一份
+    for ov in ({"knowledge": {"mode": "off"}}, {"knowledge": {"mode": "pick", "pick": ["s_team01"]}}):
+        for o2 in (ov, {**pick, **ov}):
+            out["overrides"].append(  # type: ignore[attr-defined]
+                {"name": "open", "overrides": o2, "out": svc_om.draft_view({**base, "overrides": o2})}
+            )
     ob = out["drafts"]["outbound"]["out"]  # type: ignore[index]
     ack = {"ack_command": True}
     base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"], "strict": True}

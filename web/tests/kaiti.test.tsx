@@ -212,6 +212,39 @@ describe("输入框与确认卡", () => {
     expect((await r.api.status(pid)).problem.prefs).toEqual({ model: "light" });
   });
 
+  it("知识选项：缺省自动（不写进任务）；选“不用”或勾选资料，任务带着 prefs.knowledge", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti />);
+    const chip = await waitFor(() => { const b = container.querySelector<HTMLButtonElement>('button[data-field="knowledge"]'); expect(b?.disabled).toBe(false); return b!; });
+    expect(chip.textContent).toContain("自动");
+    fireEvent.click(chip);
+    await waitFor(() => expect(document.querySelector('[data-knowledge-pick] [data-kn="pick"]:not(:disabled)')).not.toBeNull());
+    expect(document.querySelector('[data-kn="auto"]')!.textContent).toContain("“所有任务”的 2 份"); // 停用的、导入中的不算
+    fireEvent.click(document.querySelector('[data-kn="pick"]')!);
+    const boxes = await waitFor(() => { const l = document.querySelectorAll<HTMLInputElement>("[data-kn-source]"); expect(l.length).toBeGreaterThan(0); return l; });
+    expect([...boxes].filter((b) => b.checked).map((b) => b.getAttribute("data-kn-source"))).toEqual(["s_team01"]);
+    expect(chip.textContent).toContain("指定 1 份");
+    fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("open").text } });
+    fireEvent.keyDown(container.querySelector('[data-field="kaiti-text"]')!, { key: "Enter" });
+    const pid = rec("open").out.pid;
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${pid}`));
+    const vet = r.fetch.calls.filter((c) => c.url === "/v1/drafts").map((c) => JSON.parse(String(c.body)));
+    expect(vet.at(-1).overrides).toEqual({ knowledge: { mode: "pick", pick: ["s_team01"] } });
+    expect((await r.api.status(pid)).problem.prefs).toEqual({ knowledge: { mode: "pick", pick: ["s_team01"] } });
+  });
+
+  it("知识选项“不用”：任务不查资料", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti />);
+    fireEvent.click(await waitFor(() => { const b = container.querySelector<HTMLButtonElement>('button[data-field="knowledge"]'); expect(b?.disabled).toBe(false); return b!; }));
+    fireEvent.click(await waitFor(() => document.querySelector('[data-kn="off"]')!));
+    fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("open").text } });
+    fireEvent.keyDown(container.querySelector('[data-field="kaiti-text"]')!, { key: "Enter" });
+    const pid = rec("open").out.pid;
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${pid}`));
+    expect((await r.api.status(pid)).problem.prefs).toEqual({ knowledge: { mode: "off" } });
+  });
+
   it("超过单题硬顶：写在字段下面，数字框回到原值", async () => {
     const { container } = await drafted(rec("command").text);
     const usd = () => container.querySelector('[data-field="usd"]') as HTMLInputElement;

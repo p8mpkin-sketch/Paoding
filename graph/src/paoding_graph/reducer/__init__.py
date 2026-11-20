@@ -27,7 +27,7 @@ from .. import work as wk  # noqa: F401  —— 测试经 reducer.wk 替换内�
 from ..jcs import JCSError, canonicalize
 from ..parse import BadBody, Obj
 from ..state import Actor, Body, Event, State
-from . import close, curate, deliver, fact, grants, intent, judge, lease, problem, recall
+from . import close, curate, deliver, fact, grants, intent, judge, knowledge, lease, problem, recall
 from .common import Applier, Config, Ok, Reject, TimedValidator, Validator, empty_state
 from .fact import content_key
 
@@ -87,6 +87,8 @@ def _who(actor: Actor, kind: str) -> bool:
         return k == "human"
     if kind == "deliver":  # 开放道的交付（docs/design/open-lane/ §3.4）：只由求解会话提交，在途与归属另查
         return k == "adapter" and role == "solve"
+    if kind == "kb_query":  # 会话查资料的记录（资料库第二期）：书库替会话记，令牌另查
+        return k == "graph"
     return False
 
 
@@ -115,6 +117,7 @@ KINDS = (
     "accept",
     "deliver",
     "curate",
+    "kb_query",
 )
 AFTER_CLOSE = ("cost", "release", "curate")  # 关题后在途任务仍可交回用量与释放租约；人仍可整理
 
@@ -158,6 +161,7 @@ _VALIDATORS: dict[str, Validator] = {
     "bind_deadline": problem._v_bind_deadline,
     "accept": close._v_accept,
     "deliver": deliver._v_deliver,
+    "kb_query": knowledge._v_kb_query,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -185,6 +189,7 @@ _APPLIERS: dict[str, Applier] = {
     "accept": close._a_accept,
     "deliver": deliver._a_deliver,
     "curate": curate._a_curate,
+    "kb_query": knowledge._a_kb_query,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 

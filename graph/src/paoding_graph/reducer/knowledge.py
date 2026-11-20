@@ -3,14 +3,15 @@
 - knowledge 类：会话查到的一段人给的资料。只由书库的组件令牌（graph:shuku）登记，模型不能伪造“资料原文”。
   参考模型的登记表里没有这一类，它也不入任何 grounds：判定道的事实、验收清单、开放道的自检都不认，
   只有开放道交付的主张可以引用（deliver.CLAIM_ADMISSIBLE）。
+- kb_query：会话每查一次资料，书库替它记一条（查询词与命中的段落 id），不改状态。
 - prefs.knowledge：{mode: auto | pick | off, pick?: [资料 id]}，开题后不变。资料是否存在由书库认，内核不查。
 """
 
 from __future__ import annotations
 
 from ..parse import Obj
-from ..state import Actor, Body, State
-from .common import Reject
+from ..state import Actor, Body, Event, State
+from .common import Config, Ok, Reject
 
 REGISTRAR = {"kind": "graph", "id": "shuku"}  # 书库的组件令牌
 FIELDS = {"source", "revision", "chunk", "locator"}
@@ -51,3 +52,31 @@ def prefs(k: Obj) -> Body | Reject:
     if len(pick) > PICK_MAX or len(set(pick)) != len(pick) or any(not x for x in pick):
         return Reject("schema_error", f"pick 至多 {PICK_MAX} 份、不重复、非空")
     return {"mode": mode, **({"pick": pick} if pick else {})}
+
+
+QUERY_MAX = 500
+HITS_MAX = 20
+
+
+def _v_kb_query(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
+    """kb_query：会话查了一次资料（设计“执行中检索”；过程一栏显示为“查资料”）。书库替会话记，不改任何状态。
+
+    body = {lease, query, hits: [段落 id]}。查询词由书库先遮盖凭据再写；命中只记段落 id，不记原文。"""
+    if actor["kind"] != REGISTRAR["kind"] or actor["id"] != REGISTRAR["id"]:
+        return Reject("forbidden_op", "kb_query 只由书库的组件令牌记")
+    if not body.keys() <= {"lease", "query", "hits"}:
+        return Reject("schema_error", "kb_query 是 {lease, query, hits}")
+    lease = state["leases"].get(body.string("lease"))
+    if lease is None or lease["problem_id"] != pid:
+        return Reject("unknown_ref", "lease 不是本题的会话")
+    query = body.text("query").strip()
+    hits = body.strings("hits", [])
+    if not query or len(query) > QUERY_MAX:
+        return Reject("schema_error", f"query 非空，至多 {QUERY_MAX} 字")
+    if len(hits) > HITS_MAX or any(not h for h in hits):
+        return Reject("schema_error", f"hits 至多 {HITS_MAX} 个非空段落 id")
+    return Ok({"lease": body.string("lease"), "query": query, "hits": hits})
+
+
+def _a_kb_query(s: State, ev: Event) -> None:
+    """只留在日志里：过程一栏读事件本身。"""

@@ -34,7 +34,7 @@ from . import creds
 from .mcp import ToolEndpoint
 from .package import MEDIA_TYPE, render
 from .proxy import EndpointProxy
-from .tools import Session, ToolHost, solve_ceiling
+from .tools import KnowledgePort, Session, ToolHost, solve_ceiling
 
 LOG = logging.getLogger("adapter")
 CLI_STDERR = "cli.stderr.log"  # 会话目录里：CLI 的 stderr（两轮追加写）。CLI 出错时只在这里留话
@@ -70,6 +70,8 @@ class AdapterConfig:
     # 模型档案解析（宪章 03 §3.2）：(角色, 任务的 prefs.model) → 档案 {model, endpoint, key_slot}，或 None 用缺省。
     # 会话开起时解析一次，中途不变；组装根给出读设置存储的函数
     resolve_model: Callable[[str, str | None], Mapping[str, Any] | None] | None = None
+    # 查资料的端口（资料库第二期）：任务有可查的资料时给会话 kb_search / kb_read；组装根接上书库
+    knowledge: KnowledgePort | None = None
 
 
 @dataclass
@@ -172,12 +174,23 @@ class SessionRunner:
             tools = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
         if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
             tools += ("request_access",)
+        kb = self.cfg.knowledge
+        if kb is not None and kb.available(pid):  # 知识选项不是“不用”、范围里有可检索的资料
+            tools += ("kb_search", "kb_read")
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
         if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
         s.secrets = creds.found(statement)  # 原话里的凭据：写进扩权申请与交付之前逐字遮盖（creds.py）
-        host = ToolHost(s, self.graph, self.reader, self.blobs, self.executor, access=lambda: self.reconcile(lease_id))
+        host = ToolHost(
+            s,
+            self.graph,
+            self.reader,
+            self.blobs,
+            self.executor,
+            access=lambda: self.reconcile(lease_id),
+            knowledge=kb if "kb_search" in tools else None,
+        )
         url = self.endpoint.mount(host)
         lv = self.live[lease_id] = {
             "proc": None,

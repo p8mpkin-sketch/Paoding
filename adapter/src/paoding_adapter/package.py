@@ -44,19 +44,31 @@ ACCESS_NOTE = (
 )
 
 
-def role_prompt(role: str, access: bool = False) -> str:
+KB_NOTE = (
+    "- kb_search / kb_read：查人导入的资料（手册、说明、笔记）。kb_search 返回段落编号、资料名、位置与开头几句；"
+    "kb_read 读整段，并返回这段的编号。资料里写的是人给的说法，不是你在这次任务里验证过的事实，"
+    "能用 exec 核实的照样去核实。"
+)
+KB_CITE = {
+    "solve": "只能引资料的主张，在交付里把 kb_read 返回的编号填进 refs，页面会标成“引用了资料”。\n",
+    "": "资料段落的编号不能当论断的 grounds（只认执行记录与材料），拿它找方向，再用 exec 取证。\n",
+}
+
+
+def role_prompt(role: str, access: bool = False, kb: bool = False) -> str:
     """access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。
+    kb：任务有可用资料、会话有 kb_search / kb_read 时（资料库第二期）补一段，接在 access 那段之后。
     solve（开放道，docs/design/open-lane/ §4.1）不接公共段：公共段讲的是“把答案交给判官比对”，开放道没有判官。"""
     if role == "solve":
         own = (PROMPTS / "solve.md").read_text(encoding="utf-8")
-        if access:  # 接在工具清单（deliver 那一行）之后
+        if access or kb:  # 接在工具清单（deliver 那一行）之后
             at = own.index("\n", own.index("- deliver：")) + 1
-            own = own[:at] + ACCESS_NOTE + own[at:]
+            own = own[:at] + (ACCESS_NOTE if access else "") + (KB_NOTE + KB_CITE["solve"] if kb else "") + own[at:]
         return own
     common = (PROMPTS / "common.md").read_text(encoding="utf-8")
-    if access:  # 接在工具清单（show 那一行）之后
+    if access or kb:  # 接在工具清单（show 那一行）之后
         at = common.index("\n", common.index("- show：")) + 1
-        common = common[:at] + ACCESS_NOTE + common[at:]
+        common = common[:at] + (ACCESS_NOTE if access else "") + (KB_NOTE + KB_CITE[""] if kb else "") + common[at:]
     return common + "\n" + (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
 
 
@@ -166,7 +178,14 @@ def render(
     )
     hint_text = [{"id": h, "text": state["hints"][h]["text"]} for h in focus["hints"]]
     sections = [
-        ("① 角色", role_prompt(role, "request_access" in (limits or {}).get("tools", ()))),
+        (
+            "① 角色",
+            role_prompt(
+                role,
+                "request_access" in (limits or {}).get("tools", ()),
+                "kb_search" in (limits or {}).get("tools", ()),
+            ),
+        ),
         ("② 题目", problem_brief(state, pid, statement, judges_cfg)),
         ("③ 锦囊", _j(kit_index) + memory_notes(state, pid)),
         ("④ 节点", listing(state, pid)),

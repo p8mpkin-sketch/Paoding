@@ -551,7 +551,9 @@ define(
             "lease": STR,
             "outcome": lit("answered", "partial", "blocked"),
             "answer": null(ref("ArtifactId")),
-            "claims": arr(obj({"text": ref("Tagged"), "refs": arr(ref("GroundBrief")), "supported": BOOL})),
+            "claims": arr(
+                obj({"text": ref("Tagged"), "refs": arr(ref("GroundBrief")), "supported": BOOL, "cited": BOOL})
+            ),
             "self_check": arr(
                 obj(
                     {"what": ref("Tagged"), "result": lit("pass", "fail", "skipped"), "refs": arr(ref("GroundBrief"))},

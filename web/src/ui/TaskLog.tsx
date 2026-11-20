@@ -56,6 +56,7 @@ function stepOf(e: Event): Omit<Step, "seq" | "ts"> | null {
       if (b.class === "exec" && exec) return { k: "执行", body: <><code className="tk-cmd">$ <Plain text={exec.command ?? ""} /></code>{exec.exit_code ? <span className="tk-tag need">退出码 {exec.exit_code}</span> : null}</>, art: id };
       if (b.class === "judge") return { k: "判定", body: <>判定器跑完，留了输出</>, art: id };
       if (b.class === "input") return { k: "材料", body: <>登记了一份材料（{Number(b.size ?? 0)} 字节）</>, art: id, tone: "you" };
+      if (b.class === "knowledge") return { k: "查资料", body: <>读了一段你给的资料：<Plain text={str((b.knowledge as B | undefined)?.locator)} /></>, art: id };
       return { k: "写", body: <>写了一份 <Plain text={str(b.media_type)} />（{Number(b.size ?? 0)} 字节）</>, art: id };
     }
     case "add_fact": return { k: "得出", body: <Text t={tagged("title", str(b.title))} block={false} /> };
@@ -66,6 +67,7 @@ function stepOf(e: Event): Omit<Step, "seq" | "ts"> | null {
     case "grant_scope": return { k: "授权", body: <>{b.via === "auto" ? "按白名单自动" : "你"}{b.decision === "approve" ? "允许" : "拒绝"}了访问申请 <span className="k-mono">{str(b.request)}</span></>, tone: b.via === "auto" ? undefined : "you" };
     case "revoke_scope": return { k: "授权", body: <>你撤销了一条授权</>, tone: "you" };
     case "judge_verdict": return { k: "判定", body: <>判定结果：{b.result === "pass" ? "通过" : b.result === "fail" ? "不通过" : "无结论"}</>, tone: b.result === "pass" ? "ok" : b.result === "fail" ? "bad" : undefined };
+    case "kb_query": return { k: "查资料", body: <>查了“<Plain text={str(b.query)} />”，命中 {((b.hits as unknown[]) ?? []).length} 段</> };
     case "deliver": return { k: "交付", body: <>交出结果（{b.outcome === "answered" ? "完整回答" : b.outcome === "partial" ? "部分完成" : "受阻"}），附 {((b.claims as unknown[]) ?? []).length} 条主张</>, tone: "ok" };
     case "follow_up": return { k: "追问", body: <><Text t={human(str(b.text))} block={false} />{b.budget_add_usd_milli ? <span className="t2"> · 追加 {usd(Number(b.budget_add_usd_milli))}</span> : null}</>, tone: "you" };
     case "halt": return { k: "叫停", body: <>你叫停了，它会把已有结果交出来</>, tone: "you" };
@@ -100,7 +102,7 @@ export function TaskSteps({ pid, seq, live }: { pid: string; seq: number; live: 
   );
 }
 
-const CLASS_WORD: Record<string, string> = { exec: "执行输出", authored: "会话写的", input: "你给的材料", judge: "判定输出" };
+const CLASS_WORD: Record<string, string> = { exec: "执行输出", authored: "会话写的", input: "你给的材料", judge: "判定输出", knowledge: "引用的资料" };
 
 export function TaskFiles({ pid, seq }: { pid: string; seq: number }) {
   const { events, error } = useEvents(pid, seq, true);
@@ -119,7 +121,7 @@ export function TaskFiles({ pid, seq }: { pid: string; seq: number }) {
           const id = `a_${e.seq}`;
           return (
             <div key={id} className="tk-frow" role="row" data-file={id}>
-              <span role="cell" className="tk-fname"><span className="k-mono">{id}</span>{exec?.command ? <span className="t2 k-mono tk-fsub"><Plain text={exec.command} /></span> : <span className="t2 tk-fsub"><Plain text={str(b.media_type)} /></span>}</span>
+              <span role="cell" className="tk-fname"><span className="k-mono">{id}</span>{exec?.command ? <span className="t2 k-mono tk-fsub"><Plain text={exec.command} /></span> : b.class === "knowledge" ? <span className="t2 tk-fsub"><Plain text={str((b.knowledge as B | undefined)?.locator)} /></span> : <span className="t2 tk-fsub"><Plain text={str(b.media_type)} /></span>}</span>
               <span role="cell">{CLASS_WORD[str(b.class)] ?? str(b.class)}</span>
               <span role="cell" className="r k-mono">{Number(b.size ?? 0)} B</span>
               <span role="cell" className="t2">{mmss(e.ts - t0)}</span>
