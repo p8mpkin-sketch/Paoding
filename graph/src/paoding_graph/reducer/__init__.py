@@ -13,7 +13,7 @@ JCSError）转成 schema_error。校验函数里其余的异常是内核自己�
 按事件族分成子模块，每个子模块里校验（`_v_*`）与应用（`_a_*`）分开写：
 `problem`（开题、登记、画像覆盖、外部时限的 bind_deadline）、`fact`（论断）、`intent`（Intent、审批、Hint）、
 `judge`（判官请求与裁决）、`lease`（租约四操作与用量）、`close`（关题与预算标记）、`grants`（运行时扩权）、
-`deliver`（开放道的交付）、`curate`（人整理任务：归档、回收站、改名、置顶）；
+`deliver`（开放道的交付、追问与叫停）、`curate`（人整理任务：归档、回收站、改名、置顶）；
 共用的结果类型、配置与解析在 `common`。
 本模块只做分派：谁能提交什么、题目与令牌的前置检查、异常到 schema_error 的转换。
 IO 前置条件不在这里：Blob 是否存在、哈希是否相符由服务层在调用 validate 之前检查。
@@ -87,6 +87,8 @@ def _who(actor: Actor, kind: str) -> bool:
         return k == "human"
     if kind == "deliver":  # 开放道的交付（docs/design/open-lane/ §3.4）：只由求解会话提交，在途与归属另查
         return k == "adapter" and role == "solve"
+    if kind in ("follow_up", "halt"):  # 开放道的追问与叫停（地图 v0.9 Q20、Q31）：只有人
+        return k == "human"
     return False
 
 
@@ -115,6 +117,8 @@ KINDS = (
     "accept",
     "deliver",
     "curate",
+    "follow_up",
+    "halt",
 )
 AFTER_CLOSE = ("cost", "release", "curate")  # 关题后在途任务仍可交回用量与释放租约；人仍可整理
 
@@ -158,6 +162,8 @@ _VALIDATORS: dict[str, Validator] = {
     "bind_deadline": problem._v_bind_deadline,
     "accept": close._v_accept,
     "deliver": deliver._v_deliver,
+    "follow_up": deliver._v_follow_up,
+    "halt": deliver._v_halt,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -185,6 +191,8 @@ _APPLIERS: dict[str, Applier] = {
     "accept": close._a_accept,
     "deliver": deliver._a_deliver,
     "curate": curate._a_curate,
+    "follow_up": deliver._a_follow_up,
+    "halt": deliver._a_halt,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 

@@ -145,3 +145,49 @@ def test_close_feedback_only_for_open_lane(tmp_path):
     (pid,) = Local(tmp_path, {"kind": "human", "id": "cz"}).graph.state["problems"]
     code, out = pd(tmp_path, "close", pid, "--feedback", "adopted", "--yes")
     assert code == 2 and "只用于开放道" in out
+
+
+def test_follow_up_and_halt_on_the_open_lane(tmp_path):
+    """地图 Q31、Q20：交付之后 pd follow-up 追问，pd status 列出追问；pd halt 叫停；严格道的题两者都被拒。"""
+    text = "帮我调研一下主流的智能体框架，写一份对比。"
+    pd(tmp_path, "kaiti", text, model=Model(_draft_for(text, "none")))
+    local = Local(tmp_path, {"kind": "human", "id": "cz"})
+    (pid,) = local.graph.state["problems"]
+    code, out = pd(tmp_path, "follow-up", pid, "再加一个框架")
+    assert code == 1 and "conflict" in out  # 还没交付
+    g = local.graph
+    g.tokens.issue({"kind": "sinan", "id": "sn1"}, "tok-sn")
+    lease = {"kind": "solve", "holder": "sn1", "reserve": {"usd_milli": 100, "wall_s": 60}, "ttl_s": 60}
+    lid = g.submit("tok-sn", pid, "l1", [{"op": "lease", "body": lease}])["results"][0]["id"]
+    g.tokens.issue({"kind": "adapter", "id": "ad1", "session": lid, "role": "solve"}, "tok-s")
+    data = b"LangGraph vs AutoGen ..."
+    ans = {"hash": local.blobs.put(data), "size": len(data), "media_type": "text/plain", "class": "authored"}
+    cost = {"task_id": lid, "source": "proxy", "usd_milli": 40, "wall_s": 0, "price_table": "t"}
+    out = g.submit(
+        "tok-s",
+        pid,
+        "d1",
+        [
+            {"op": "register_artifact", "body": ans},
+            {"op": "deliver", "body": {"outcome": "answered", "answer": "$0"}},
+            {"op": "cost", "body": cost},
+            {"op": "release", "body": {"lease": lid, "outcome": "done"}},
+        ],
+    )
+    assert out["ok"], out
+    code, out = pd(tmp_path, "follow-up", pid, "再加一个框架")
+    assert code == 0 and "已追问" in out, out
+    code, out = pd(tmp_path, "status", pid)
+    assert "追问 u_" in out and "再加一个框架" in out and f"会话 {lid} solve 花 40 毫美元" in out, out
+    code, out = pd(tmp_path, "halt", pid, "--reason", "先这样")
+    assert code == 0 and "已叫停" in out
+    code, out = pd(tmp_path, "halt", pid)
+    assert code == 1 and "conflict" in out
+
+
+def test_follow_up_and_halt_refused_on_the_strict_lane(tmp_path):
+    pd(tmp_path, "kaiti", T1, "--yes", model=Model(_draft_for(T1)))
+    (pid,) = Local(tmp_path, {"kind": "human", "id": "cz"}).graph.state["problems"]
+    assert pd(tmp_path, "halt", pid)[0] == 1
+    code, out = pd(tmp_path, "follow-up", pid, "再看看")
+    assert code == 1 and "forbidden_op" in out

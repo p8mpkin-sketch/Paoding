@@ -501,6 +501,18 @@ def status(state: State, pid: str) -> View:
                     "self_checks": [dict(c) for c in p["goal"].get("self_checks", [])],
                     "deliveries": [_delivery(state, d) for d in p.get("deliveries", [])],
                     **({"feedback": p["feedback"]} if "feedback" in p else {}),
+                    # 地图 v0.9 Q31、Q20、Q33：追问是人写的；叫停只给 seq；等人时给出闲置自动关的时刻
+                    "follow_ups": [
+                        {
+                            "id": u["id"],
+                            "seq": u["seq"],
+                            "text": tag("hint", u["text"]),
+                            "after_delivery": u["after_delivery"],
+                        }
+                        for u in p.get("follow_ups", [])
+                    ],
+                    **({"halted": {"seq": p["halted"]["seq"]}} if wk.halted(state, pid) else {}),
+                    "idle_close_at": wk.idle_close_at(state, pid),
                 }
                 if p["goal"]["accept"] == "open"
                 else {}
@@ -635,7 +647,27 @@ def budget(state: State, pid: str) -> View:
     end = state["now"]
     b["wall"] = {"cap_s": p["budget"]["wall_s"], "elapsed_s": max(0, end - p["opened_ts"]) // 1000}
     b["review"] = wk.in_review(state, pid)
+    b["by_lease"] = _by_lease(state, pid)
     return b
+
+
+def _by_lease(state: State, pid: str) -> list[View]:
+    """按会话的花费（地图 Q15、工作台设计 C1）：每条租约一行，各行之和等于 spent。模型取这条租约最后一次计量的。"""
+    rows: dict[str, View] = {}
+    for c in state["costs"]:
+        if c["problem_id"] != pid:
+            continue
+        r = rows.setdefault(c["task_id"], {"lease": c["task_id"], "kind": c["lease_kind"], "usd_milli": 0, "tokens": 0})
+        r["usd_milli"] += c["usd_milli"]
+        r["tokens"] += c["tokens_in"] + c["tokens_cached"] + c["tokens_out"]
+        if "model" in c:
+            r["model"] = c["model"]
+    for r in rows.values():
+        lease = state["leases"].get(r["lease"])
+        r["active"] = bool(lease and lease["active"])
+        if lease is not None:
+            r["role"] = lease["kind"]
+    return sorted(rows.values(), key=lambda r: r["lease"])
 
 
 def work(state: State, pid: str) -> View:

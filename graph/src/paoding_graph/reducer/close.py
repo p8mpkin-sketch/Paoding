@@ -26,6 +26,28 @@ def _v_close_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
             return Reject("schema_error", "feedback 只用于人关开放道的题")
         if feedback not in FEEDBACK:
             return Reject("schema_error", f"feedback 取 {FEEDBACK}")
+    closeout: list[str] | None = None
+    if actor["kind"] == "human" and p["goal"]["accept"] == "open":
+        # 开放道人关题（采纳、不采纳，或不给反馈）同人工验收（地图 v0.9 P7、Q32）：四顾清单非空时，所见的收尾卡
+        # 与逐条确认的名单都要带上，缺一不可
+        want = [str(i["item"]) for i in wk.closeout_items(state, pid)]
+        got = body.get("closeout")
+        if got is not None and not (isinstance(got, list) and all(isinstance(x, str) for x in got)):
+            return Reject("schema_error", "closeout 是已确认的四顾项名单")
+        if want:
+            if "seen" not in body:
+                return Reject("schema_error", "四顾清单非空：关题要带所见的收尾卡 seen {seq, card_hash}")
+            missing = [x for x in want if x not in (got or [])]
+            if missing:
+                return Reject("schema_error", f"四顾清单有未确认项（{'、'.join(missing)}）：逐条确认之后才能关题")
+            extra = sorted(set(got or []) - set(want))
+            if extra:
+                return Reject("schema_error", f"四顾清单里没有 {'、'.join(extra)}")
+            closeout = want
+        elif got:
+            return Reject("schema_error", "四顾清单是空的：不用带 closeout")
+    elif "closeout" in body:
+        return Reject("schema_error", "closeout 只用于人关开放道的题；人工验收的题在 accept 里确认")
     if actor["kind"] == "human":
         if "card_hash" in body:
             return Reject("schema_error", "card_hash 不单独接受：所见的收尾清单经 seen {seq, card_hash} 给出并校验")
@@ -42,6 +64,7 @@ def _v_close_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
             **({"seen": seen} if seen else {}),
             **({"reason": body.text("reason")} if "reason" in body else {}),
             **({"feedback": feedback} if feedback is not None else {}),
+            **({"closeout": closeout} if closeout else {}),
         }
     )
 

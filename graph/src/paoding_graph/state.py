@@ -196,6 +196,9 @@ class Problem(TypedDict):
         list[Body]
     ]  # 每次 accept 操作（验收或拒收）：{seq, decision, checks, reason?}；拒收之后要等新的 Goal 通过
     deliveries: NotRequired[list[Body]]  # 开放道的交付（deliver 操作，open-lane §3.4），按 seq 递增
+    follow_ups: NotRequired[list[Body]]  # 开放道的追问（follow_up，地图 Q31）：{id, seq, ts, text, after_delivery}
+    halted: NotRequired[Body]  # 开放道的叫停（halt，地图 Q20）：{seq, ts, reason?}；之后的追问解除它
+    idle_close_s: NotRequired[int]  # 开放道交付后闲置多久自动关（地图 Q33），开题时由设置抄进事件体
     feedback: NotRequired[str]  # 开放道关题时人的反馈 adopted | rejected | none；不是终态（裁决 §12 第 6 条）
     marks: NotRequired[list[int]]
     mark_seqs: NotRequired[list[int]]

@@ -163,6 +163,13 @@ def deliveries(o: Out, state: dict, pid: str) -> None:
             o.add("delivery", f"{d['id']} 未验证：{x}")
         for x in d["needs"]:
             o.add("delivery", f"{d['id']} 需要人提供：{x}")
+        for u in p.get("follow_ups", []):  # 追问（地图 Q31）：人看过这一份交付之后写的
+            if u["after_delivery"] == d["id"]:
+                o.add("hint", f"追问 {u['id']}（seq {u['seq']}）：{u['text']}")
+    h = p.get("halted")
+    ups = p.get("follow_ups", [])
+    if h is not None and (not ups or h["seq"] > ups[-1]["seq"]):
+        o.add("status", f"已叫停（seq {h['seq']}）：不再派新的求解会话")
 
 
 # ---------- 视图 ----------
@@ -193,6 +200,8 @@ def status(state: dict, pid: str, budget: dict) -> str:
     )
     o.add("structure", f"判定来源 {AUTHORITY_WORDS[authority(p)]}")
     o.add("budget", _budget_line(budget))
+    for lid, kind, usd in _by_lease(state, pid):  # 按会话的花费（地图 Q15），与 /budget 的 by_lease 同一口径
+        o.add("budget", f"会话 {lid} {kind} 花 {usd} 毫美元")
     acceptance(o, state, pid)
     if p["goal"].get("accept") == "open":
         deliveries(o, state, pid)
@@ -217,6 +226,15 @@ def status(state: dict, pid: str, budget: dict) -> str:
             f"预留 {l['reserve']['usd_milli']} 毫美元",
         )
     return o.text()
+
+
+def _by_lease(state: dict, pid: str) -> list[tuple[str, str, int]]:
+    rows: dict[str, list] = {}
+    for c in state["costs"]:
+        if c["problem_id"] == pid:
+            r = rows.setdefault(c["task_id"], [c["task_id"], c["lease_kind"], 0])
+            r[2] += c["usd_milli"]
+    return [(r[0], r[1], r[2]) for _, r in sorted(rows.items())]
 
 
 def _budget_line(b: dict) -> str:

@@ -101,3 +101,63 @@ def test_time_up_closes_with_the_delivery_counted(tmp_path):
     dog.tick()
     p = g.state["problems"]["p1"]
     assert p["closed"] and p["terminal"] == "delivered"
+
+
+# ---------------------------------------------------------------- 地图 v0.9：叫停、闲置自动关、按轮计的墙钟
+
+
+def deliver_and_release(g, lid):
+    g.tokens.issue({"kind": "adapter", "id": "ad1", "session": lid, "role": "solve"}, "a")
+    data = b"X is 42"
+    ans = {"hash": hashlib.sha256(data).hexdigest(), "size": len(data), "media_type": "text/plain", "class": "authored"}
+    out = g.submit(
+        "a",
+        "p1",
+        "d",
+        [
+            {"op": "register_artifact", "body": ans},
+            {"op": "deliver", "body": {"outcome": "answered", "answer": "$0"}},
+            {"op": "release", "body": {"lease": lid, "outcome": "done"}},
+        ],
+    )
+    assert out["ok"], out
+
+
+def test_halt_asks_for_a_closing_delivery_then_stops_the_session(tmp_path):
+    g, dog, rec, clock, lid = stand_up(tmp_path)
+    assert g.submit("h", "p1", "halt", [{"op": "halt", "body": {}}])["ok"]
+    assert dog.tick().soft == [lid] and rec.kills == []
+    clock.t += 59_000
+    dog.tick()
+    assert rec.kills == []
+    clock.t += 2_000  # 叫停满 60 秒仍没交付：终止
+    dog.tick()
+    assert rec.kills == [(lid, "halted")]
+
+
+def test_waiting_for_a_person_is_not_wall_clock_and_idle_closes_after_seven_days(tmp_path):
+    g, dog, rec, clock, lid = stand_up(tmp_path)
+    deliver_and_release(g, lid)
+    p = g.state["problems"]["p1"]
+    clock.t = p["opened_ts"] + 101_000  # 墙钟早就过了，但交付之后在等人：不关
+    dog.tick()
+    assert not g.state["problems"]["p1"].get("closed")
+    clock.t = p["deliveries"][-1]["ts"] + 7 * 86400 * 1000
+    dog.tick()
+    p = g.state["problems"]["p1"]
+    assert p["closed"] and p["terminal"] == "delivered" and "feedback" not in p
+
+
+def test_follow_up_starts_a_fresh_wall_clock(tmp_path):
+    g, dog, rec, clock, lid = stand_up(tmp_path)
+    deliver_and_release(g, lid)
+    clock.t += 500_000
+    seen = {"seq": g.state["seq"]}
+    assert g.submit("h", "p1", "f", [{"op": "follow_up", "body": {"text": "再查一个来源", "seen": seen}}])["ok"]
+    start = g.state["problems"]["p1"]["follow_ups"][-1]["ts"]
+    clock.t = start + 50_000  # 这一轮才用了一半
+    dog.tick()
+    assert not g.state["problems"]["p1"].get("closed")
+    clock.t = start + 101_000
+    dog.tick()
+    assert g.state["problems"]["p1"]["closed"]
