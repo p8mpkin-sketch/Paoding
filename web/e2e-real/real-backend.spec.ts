@@ -68,8 +68,8 @@ test("真实图服务：开题后驾驶舱渲染，人写入的 Intent 经 SSE �
   page.on("request", (r) => { if (r.url().includes("/stream")) streams.push(r.url()); });
   page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
 
-  // 总览里列着这道题（数据来自真图服务的 /v1/problems）
-  await page.goto("/");
+  // 今日看板里列着这道题（数据来自真图服务的 /v1/problems）
+  await page.goto("/today");
   await expect(page.locator(`[data-problem="${PID}"]`).first()).toBeVisible();
 
   await page.goto(`/p/${PID}`);
