@@ -3,7 +3,7 @@
  "fires": {
   "H1": [
    "h1.triad@1",
-   "h1.solo@1",
+   "h1.solo@2",
    "h1.recall@1"
   ],
   "H2": [
@@ -46,6 +46,13 @@
    "change": "可回放的实时性（F4）",
    "dossier": "001",
    "replaces": "h6.activity@1"
+  }
+ ],
+ "revisions": [
+  {
+   "fire": "h1.solo@2",
+   "from": "h1.solo@1",
+   "change": "本火修订，不升品阶：solve.md 加追问一句（#111 地图 Q31）"
   }
  ]
 }

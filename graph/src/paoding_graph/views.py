@@ -513,17 +513,24 @@ def status(state: State, pid: str) -> View:
                     "deliveries": [_delivery(state, d) for d in p.get("deliveries", [])],
                     **({"feedback": p["feedback"]} if "feedback" in p else {}),
                     # 地图 v0.9 Q31、Q20、Q33：追问是人写的；叫停只给 seq；等人时给出闲置自动关的时刻
-                    "follow_ups": [
+                    # 三项都只在有的时候给：更早的日志重放出的视图逐字节不变（焚决 R1）
+                    **(
                         {
-                            "id": u["id"],
-                            "seq": u["seq"],
-                            "text": tag("hint", u["text"]),
-                            "after_delivery": u["after_delivery"],
+                            "follow_ups": [
+                                {
+                                    "id": u["id"],
+                                    "seq": u["seq"],
+                                    "text": tag("hint", u["text"]),
+                                    "after_delivery": u["after_delivery"],
+                                }
+                                for u in p["follow_ups"]
+                            ]
                         }
-                        for u in p.get("follow_ups", [])
-                    ],
+                        if p.get("follow_ups")
+                        else {}
+                    ),
                     **({"halted": {"seq": p["halted"]["seq"]}} if wk.halted(state, pid) else {}),
-                    "idle_close_at": wk.idle_close_at(state, pid),
+                    **({"idle_close_at": wk.idle_close_at(state, pid)} if "idle_close_s" in p else {}),
                 }
                 if p["goal"]["accept"] == "open"
                 else {}

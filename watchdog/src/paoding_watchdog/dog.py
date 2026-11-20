@@ -30,7 +30,7 @@ from .contract import TaskControl
 
 SOFT_LINE = 0.9
 HALT_GRACE_S = 60  # 与 graph reducer.deliver.HALT_GRACE_S 相同（D12）；哮天犬只依赖 contract，这里抄一份
-IDLE_CLOSE_S = 7 * 86400  # 与 graph work.IDLE_CLOSE_S 相同：开题时没抄入时用它
+
 FAIL_OUTCOMES = ("failed", "expired")
 
 
@@ -225,7 +225,7 @@ class Watchdog:
         since = _open_waiting_since(p, bool(solves))
         if since is None:
             return False
-        if now - since >= int(p.get("idle_close_s", IDLE_CLOSE_S)) * 1000:
+        if "idle_close_s" in p and now - since >= int(p["idle_close_s"]) * 1000:  # 没抄入的（更早的）题不闲置关
             out = self.graph.submit(
                 self.cfg.token, pid, f"close:{pid}:idle", [{"op": "close_problem", "body": {"reason": "idle"}}]
             )

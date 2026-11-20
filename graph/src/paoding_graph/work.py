@@ -321,14 +321,16 @@ def waiting_since(state: State, pid: str) -> int | None:
     return int(ds[-1].get("ts", p["opened_ts"]))
 
 
-IDLE_CLOSE_S = 7 * 86400  # 开放道交付后闲置自动关的缺省（open-lane §12 第 8 条）；开题时抄进事件体的值优先
+IDLE_CLOSE_S = 7 * 86400  # 开放道交付后闲置自动关的缺省（open-lane §12 第 8 条），由 Config 在开题时抄进事件体
 
 
 def idle_close_at(state: State, pid: str) -> int | None:
+    """开题时没抄入 idle_close_s 的题（这项之前的日志）不闲置自动关。"""
+    p = state["problems"][pid]
     since = waiting_since(state, pid)
-    if since is None:
+    if since is None or "idle_close_s" not in p:
         return None
-    return since + int(state["problems"][pid].get("idle_close_s", IDLE_CLOSE_S)) * 1000
+    return since + int(p["idle_close_s"]) * 1000
 
 
 def open_work(state: State, pid: str) -> list[dict[str, Any]]:

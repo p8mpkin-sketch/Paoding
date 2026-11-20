@@ -233,5 +233,7 @@ def _a_halt(s: State, ev: Event) -> None:
 def _a_deliver(s: State, ev: Event) -> None:
     pid = ev["problem_id"]
     p = s["problems"][pid]
-    entry = {"id": f"d_{ev['seq']}", "seq": ev["seq"], "ts": ev["ts"], **ev["body"]}
+    # 交付时刻只记在开题时抄入了 idle_close_s 的题上：闲置自动关从它起算；更早的日志重放出的状态逐字节不变（焚决 R1）
+    ts = {"ts": ev["ts"]} if "idle_close_s" in p else {}
+    entry = {"id": f"d_{ev['seq']}", "seq": ev["seq"], **ts, **ev["body"]}
     s["problems"] = {**s["problems"], pid: cast(Problem, {**p, "deliveries": [*p.get("deliveries", []), entry]})}

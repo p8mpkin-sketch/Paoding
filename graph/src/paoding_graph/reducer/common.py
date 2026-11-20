@@ -65,8 +65,8 @@ class Config:
     # 设置层已登记的模型档案名（宪章 03 §3.1）：开题的 prefs.model 只能取其中之一；空即本部署不接受任务级模型偏好
     model_profiles: frozenset[str] = frozenset()
     # 开放道交付后闲置多久自动关（地图 Q33，设置 lanes.idle_close_days）：开放道开题时抄进事件体；None 即不抄，
-    # 读端与哮天犬用缺省 7 天（work.IDLE_CLOSE_S）
-    idle_close_s: int | None = None
+    # 开放道开题时抄进事件体；没抄入的题（更早的日志）不闲置自动关
+    idle_close_s: int | None = 7 * 86400
 
 
 def empty_state() -> State:
