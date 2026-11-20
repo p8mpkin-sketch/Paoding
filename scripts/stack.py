@@ -80,7 +80,17 @@ from paoding_adapter.contract import (  # noqa: E402
 )
 from paoding_adapter.purge import purge_workspaces  # noqa: E402
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry, load_policy  # noqa: E402
+from paoding_graph.contract import (  # noqa: E402
+    BadBody,
+    BlobStore,
+    Config,
+    GraphHttp,
+    GraphService,
+    HttpConfig,
+    MountError,
+    TokenRegistry,
+    load_policy,
+)
 from paoding_qicao.contract import catalog_of  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
@@ -432,6 +442,9 @@ class Stack:
             launcher=self.launcher,
         )
 
+        # 会话的实时活动（开放道进度可见性）：工作台的“会话活动”面板按游标轮询
+        self.http.mount("GET", r"/v1/leases/(?P<id>l_[0-9]+)/activity", self._activity)
+
         # 判官运行器、哮天犬
         self.judge = JudgeRunner(
             JudgeConfig(
@@ -459,6 +472,36 @@ class Stack:
             sweep=sweep_orphans if self.executor is not None else None,
         )
         self.url = ""
+
+    def _activity(self, q: dict, body: object) -> dict:
+        """GET /v1/leases/{id}/activity?after=N：会话的工具调用、自述、耗时与花费（adapter 的 activity.jsonl）。"""
+        try:
+            after = int(q.get("after") or 0)
+        except ValueError:
+            raise BadBody("after 是整数") from None
+        lease = self.graph.state["leases"].get(q["id"])
+        if lease is None:
+            raise MountError(404, "unknown_ref", f"没有会话 {q['id']}")
+        out = self.runner.activity(q["id"], after)
+        if out is None:  # 会话还没起来、没留下活动，或工作区已按期清掉
+            out = {
+                "lease": q["id"],
+                "role": lease["kind"],
+                "live": False,
+                "status": "none",
+                "rounds": 0,
+                "model": "",
+                "elapsed_s": 0,
+                "spent_usd_milli": 0,
+                "closing": False,
+                "items": [],
+                "next_after": after,
+                "total": 0,
+                "calls": 0,
+                "now": None,
+                "last_say": None,
+            }
+        return {**out, "problem_id": lease["problem_id"], "kind": lease["kind"], "active": bool(lease["active"])}
 
     # ---------- 起 ----------
 

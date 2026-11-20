@@ -14,7 +14,7 @@ import type {
   OpResult, Predicate, ProblemInput, ProblemItem, Profile, ProposalResponse, RegisterName, Risk, ScopeRule, StatusView,
   Tagged, Terminal, WorkItem,
 } from "../src/api/types";
-import { demoScript, staticScripts, type Script } from "./scenario";
+import { activityDemo, demoScript, staticScripts, type Script } from "./scenario";
 import { kaitiDraft, kaitiExtract, platformRoute } from "./kaiti";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
@@ -1095,6 +1095,30 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       const bytes = blobs.get(m[1]);
       if (!bytes) return notFound("没有这个 Blob");
       return { status: 200, headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${m[1].slice(0, 16)}.bin"`, "x-content-type-options": "nosniff" }, body: bytes };
+    }
+    if ((m = path.match(/^\/v1\/leases\/([^/]+)\/activity$/))) {
+      // 会话活动（scripts/stack.py 的同名端点）：假后端不跑 CLI，给固定的流水；耗时与花费取本题的 cost 事件
+      const lid = decodeURIComponent(m[1]);
+      for (const pid of pids()) {
+        const s = stateOf(pid, Infinity);
+        const l = s.leases.get(lid);
+        if (!l) continue;
+        const active = l.ended_seq === undefined && !closed(s);
+        const all = l.kind === "solve" ? activityDemo(active, pid) : [];
+        const after = Number(q.get("after") ?? 0);
+        const items = all.filter((x) => Number(x.n) > after);
+        const done = new Set(all.filter((x) => x.kind === "result").map((x) => x.id));
+        const calls = all.filter((x) => x.kind === "call");
+        const pending = calls.filter((x) => !done.has(x.id)).at(-1);
+        const mine = s.costs.filter((c) => c.lease === lid);
+        return json(200, {
+          lease: lid, problem_id: pid, kind: l.kind, active, live: active, status: active ? "running" : all.length ? "released" : "none",
+          rounds: 1, model: "model-a", elapsed_s: mine.reduce((a, c) => a + c.wall_s, 0), spent_usd_milli: mine.reduce((a, c) => a + c.usd_milli, 0), closing: false,
+          items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: calls.length,
+          now: active ? pending ?? null : null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
+        });
+      }
+      return notFound(`没有会话 ${lid}`);
     }
     if ((m = path.match(/^\/v1\/problems\/([^/]+)\/events$/))) {
       const pid = decodeURIComponent(m[1]);

@@ -160,3 +160,27 @@
   .tk-frow > :nth-child(2), .tk-frow > :nth-child(3), .tk-frow > :nth-child(4) { display: none; }
   .tk-li > li { flex-wrap: wrap; }
 }
+
+/* 会话活动（开放道进度可见性） */
+.tk-act { margin: 4px 32px 14px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--paper-2); display: grid; gap: 8px; min-width: 0; }
+.tk-act .act-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.tk-act .act-head .ws-h { margin: 0; }
+.tk-act .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--zhu); box-shadow: 0 0 0 3px var(--zhu-soft); }
+.tk-act .pulse.off { background: var(--ink-3); box-shadow: none; }
+.tk-act .act-nums { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.tk-act .act-now { display: flex; gap: 10px; align-items: baseline; font-size: var(--fs-sm); min-width: 0; }
+.tk-act .act-now > .t2:first-child { flex: none; white-space: nowrap; }
+.tk-act .act-now code, .tk-act .act-gist { overflow-wrap: anywhere; font-family: var(--mono); font-size: var(--fs-xs); }
+.tk-act .act-said { margin: 0; max-height: 9.5em; overflow: auto; white-space: pre-wrap; }
+.act-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: var(--fs-sm); }
+.act-call { display: grid; grid-template-columns: 1.2em auto 1fr; gap: 2px 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px dashed var(--rule); min-width: 0; }
+.act-call .act-out { grid-column: 2 / -1; }
+.act-call .act-out pre { margin: 4px 0 0; max-height: 12em; overflow: auto; white-space: pre-wrap; font-size: var(--fs-xs); }
+.act-call.bad .act-mark { color: var(--zhu); }
+.act-call.ok .act-mark { color: var(--qing); }
+.act-call.now { background: var(--zhu-soft); }
+.act-say { padding: 4px 0 4px 10px; border-left: 2px solid var(--rule-2); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.act-end { padding: 2px 0; font-size: var(--fs-xs); }
+.sess.picked .sess-head b { text-decoration: underline; text-underline-offset: 3px; }
+.tk-col > .tk-act-show { width: auto; margin: 0 32px 12px; }
+@media (max-width: 720px) { .tk-act, .tk-col > .tk-act-show { margin-left: 16px; margin-right: 16px; } }

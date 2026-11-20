@@ -3,6 +3,7 @@
 // 都带人的令牌，与 pd 是同一条提议通道。设置层（宪章 03 §7）另有 PUT /v1/settings 与 /v1/keys 的 PUT/DELETE，
 // 也只认人的令牌；密钥只经 PUT 发出一次，没有任何读端点能把它读回来。一句话开题多三个：PUT /v1/vault（答案只写不读）
 // 与起草服务的 POST /v1/drafts、/v1/drafts/extract（组装根挂在图服务上，同源；只算不写，模型调用在服务端，前端不碰模型）。
+import type { SessionActivity } from "./activity-types";
 import type { KnJob, KnPut, KnSearch, KnSourceVerb, KnSources } from "./knowledge-types";
 import type { MemCard, MemDecision, MemRow, MemSeen } from "./memory-types";
 import type {
@@ -133,6 +134,7 @@ export function createApi(cfg: ApiConfig) {
       return accepted(await post<ProposalResponse>("/v1/problems", { id, idem_key: idemKey, ops }));
     },
     // ---- 记忆（通鉴，v5 第四期知识页）----
+    activity: (lease: string, after = 0) => get<SessionActivity>(`/v1/leases/${enc(lease)}/activity?after=${after}`),
     memory: () => get<{ items: MemRow[]; as_of: number }>("/v1/memory"),
     memoryCard: (id: string) => get<MemCard>(`/v1/memory/items/${enc(id)}`),
     /** 钉住或遗忘：须写理由；seen 取自刚看的卡，卡变了回 409 stale_view。 */
