@@ -7,7 +7,7 @@ import { btnClass } from "../kit";
 import { usd } from "../model/text";
 import { Plain, Text } from "./registers";
 import { LEASE_WORD } from "./Sessions";
-import { EvidenceDrawer } from "./TaskResult";
+import { ArtifactPreview, EvidenceDrawer } from "./TaskResult";
 
 const PAGE_LIMIT = 10; // 至多读 10 页（每页 1000 条）；更长的日志用时间轴与 pd log
 
@@ -39,12 +39,12 @@ const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); ret
 const tagged = (src: string, value: string) => ({ src, register: "叙述" as const, value });
 const human = (value: string) => ({ src: "hint", register: "人" as const, value });
 
-type Step = { seq: number; ts: number; k: string; body: React.ReactNode; tone?: "you" | "need" | "ok" | "bad"; art?: string };
+export type Step = { seq: number; ts: number; k: string; body: React.ReactNode; tone?: "you" | "need" | "ok" | "bad"; art?: string };
 type B = Record<string, unknown>;
 const str = (x: unknown) => (typeof x === "string" ? x : "");
 
 /** 一条事件怎么说；不值得单列的（花费、刻度、整理）返回 null。 */
-function stepOf(e: Event): Omit<Step, "seq" | "ts"> | null {
+export function stepOf(e: Event): Omit<Step, "seq" | "ts"> | null {
   const b = e.body as B;
   const exec = b.exec as { command?: string; exit_code?: number | null } | undefined;
   switch (e.kind) {
@@ -103,34 +103,84 @@ export function TaskSteps({ pid, seq, live }: { pid: string; seq: number; live: 
 }
 
 const CLASS_WORD: Record<string, string> = { exec: "执行输出", authored: "会话写的", input: "你给的材料", judge: "判定输出", knowledge: "引用的资料" };
+const CLASS_ORDER = ["exec", "authored", "input", "judge", "knowledge"];
+const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
+/** 文件（任务详情 v6 §2.5）：左边按来源分组的列表，写明产出它的会话与命令；右边是预览。可搜、可只看一个会话、可按时间或大小排。 */
 export function TaskFiles({ pid, seq }: { pid: string; seq: number }) {
   const { events, error } = useEvents(pid, seq, true);
   const [ref, setRef] = useState<string | null>(null);
+  const [pick, setPick] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [lease, setLease] = useState("");
+  const [sort, setSort] = useState<"time" | "size">("time");
   if (!events) return <p className="t2">{error ? <>读不到文件：<Plain text={error} /></> : "读取文件…"}</p>;
   const t0 = events[0]?.ts ?? 0;
-  const arts = events.filter((e) => e.kind === "register_artifact");
+  const arts = events.filter((e) => e.kind === "register_artifact").map((e) => {
+    const b = e.body as B;
+    const exec = b.exec as { command?: string; exit_code?: number | null } | undefined;
+    const producer = b.producer as { actor?: string; session?: string } | undefined;
+    const sub = exec?.command ?? (b.class === "knowledge" ? str((b.knowledge as B | undefined)?.locator) : str(b.media_type));
+    return { id: `a_${e.seq}`, e, cls: str(b.class), size: Number(b.size ?? 0), sub, exit: exec?.exit_code ?? null, session: producer?.session ?? "", actor: producer?.actor ?? e.actor.kind, hash: str(b.hash) };
+  });
   if (arts.length === 0) return <p className="t2">还没有登记任何文件。</p>;
+  const sessions = [...new Set(arts.map((a) => a.session).filter(Boolean))];
+  const needle = q.trim().toLowerCase();
+  const shown = arts.filter((a) => (!lease || a.session === lease) && (!needle || `${a.id} ${a.sub} ${a.cls}`.toLowerCase().includes(needle)));
+  const sorted = [...shown].sort((a, b) => (sort === "size" ? b.size - a.size : a.e.seq - b.e.seq));
+  const groups = CLASS_ORDER.concat([...new Set(arts.map((a) => a.cls))].filter((c) => !CLASS_ORDER.includes(c))).map((c) => ({ c, xs: sorted.filter((a) => a.cls === c) })).filter((g) => g.xs.length > 0);
+  const cur = pick && arts.some((a) => a.id === pick) ? pick : groups[0]?.xs[0]?.id ?? null;
+  const curA = arts.find((a) => a.id === cur);
   return (
-    <>
-      <div className="tk-files" role="table" aria-label="登记的文件" data-files>
-        <div className="tk-frow tk-fhead" role="row"><span role="columnheader">文件</span><span role="columnheader">类别</span><span role="columnheader" className="r">大小</span><span role="columnheader">什么时候</span><span role="columnheader"><span className="sr-only">操作</span></span></div>
-        {arts.map((e) => {
-          const b = e.body as B;
-          const exec = b.exec as { command?: string } | undefined;
-          const id = `a_${e.seq}`;
-          return (
-            <div key={id} className="tk-frow" role="row" data-file={id}>
-              <span role="cell" className="tk-fname"><span className="k-mono">{id}</span>{exec?.command ? <span className="t2 k-mono tk-fsub"><Plain text={exec.command} /></span> : b.class === "knowledge" ? <span className="t2 tk-fsub"><Plain text={str((b.knowledge as B | undefined)?.locator)} /></span> : <span className="t2 tk-fsub"><Plain text={str(b.media_type)} /></span>}</span>
-              <span role="cell">{CLASS_WORD[str(b.class)] ?? str(b.class)}</span>
-              <span role="cell" className="r k-mono">{Number(b.size ?? 0)} B</span>
-              <span role="cell" className="t2">{mmss(e.ts - t0)}</span>
-              <span role="cell"><button type="button" className={btnClass("bare", "sm")} data-action="open-file" onClick={() => setRef(id)}>打开</button></span>
+    <div className="tk-fx" data-files-two>
+      <div className="tk-fx-l">
+        <div className="tk-fx-bar">
+          <input type="search" placeholder="搜文件名、命令" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜文件名、命令" data-file-search />
+          {sessions.length > 1 && (
+            <select value={lease} onChange={(e) => setLease(e.target.value)} aria-label="只看一个会话" data-file-lease>
+              <option value="">全部会话</option>
+              {sessions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+          <select value={sort} onChange={(e) => setSort(e.target.value as "time" | "size")} aria-label="排序" data-file-sort>
+            <option value="time">按时间</option><option value="size">按大小</option>
+          </select>
+        </div>
+        <p className="t2 tk-fx-count">{shown.length} / {arts.length} 个文件 · 合计 {size(shown.reduce((a, x) => a + x.size, 0))}</p>
+        <div className="tk-files" role="table" aria-label="登记的文件" data-files>
+          {groups.map((g) => (
+            <div key={g.c} role="rowgroup" className="tk-fgroup" data-file-group={g.c}>
+              <div className="tk-fgh" role="row"><span role="columnheader">{CLASS_WORD[g.c] ?? g.c}</span><span className="t2 k-mono">{g.xs.length}</span></div>
+              {g.xs.map((a) => (
+                <div key={a.id} className={`tk-frow${cur === a.id ? " on" : ""}`} role="row" data-file={a.id} data-selected={cur === a.id} onClick={() => setPick(a.id)}>
+                  <span role="cell" className="tk-fname">
+                    <span className="k-mono">{a.id}{a.exit ? <span className="tk-tag need"> 退出码 {a.exit}</span> : null}</span>
+                    <span className={`t2 tk-fsub${a.cls === "exec" ? " k-mono" : ""}`}><Plain text={a.sub} /></span>
+                    <span className="t2 tk-fprov">{a.session ? <>会话 <span className="k-mono">{a.session}</span> · </> : null}{a.actor === "executor" ? "执行层登记" : a.actor === "adapter" ? "会话写入" : a.actor === "judgebox" ? "判定箱登记" : a.actor === "shuku" ? "书库登记" : a.actor === "local" ? "你上传的" : a.actor}</span>
+                  </span>
+                  <span role="cell" className="r k-mono">{size(a.size)}</span>
+                  <span role="cell" className="t2 k-mono">{mmss(a.e.ts - t0)}</span>
+                  <span role="cell"><button type="button" className={btnClass("bare", "sm")} data-action="open-file" onClick={(ev) => { ev.stopPropagation(); setRef(a.id); }}>打开</button></span>
+                </div>
+              ))}
             </div>
-          );
-        })}
+          ))}
+          {shown.length === 0 && <p className="t2">没有符合的文件。</p>}
+        </div>
       </div>
+      <section className="tk-fx-r" aria-label="预览" data-file-preview={cur ?? ""}>
+        {curA ? (
+          <>
+            <header className="tk-fx-rh">
+              <b className="k-mono">{curA.id}</b>
+              <span className="t2">{CLASS_WORD[curA.cls] ?? curA.cls} · {size(curA.size)} · seq {curA.e.seq}</span>
+              {curA.hash && <span className="t2 k-mono">sha256 {curA.hash.slice(0, 12)}…</span>}
+            </header>
+            <ArtifactPreview key={curA.id} id={curA.id} seq={seq} />
+          </>
+        ) : <p className="t2">选一个文件看内容。</p>}
+      </section>
       <EvidenceDrawer id={ref} seq={seq} onClose={() => setRef(null)} />
-    </>
+    </div>
   );
 }

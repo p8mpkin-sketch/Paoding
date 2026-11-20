@@ -63,7 +63,7 @@ describe("会话活动", () => {
     expect(calls.map((c) => c.getAttribute("data-anchored"))).toEqual(["yes", "yes", "no", "no"]);
     expect($(panel, '[data-act="say"][data-anchored="no"] [data-act-pending]')).not.toBeNull();
     expect(panel.querySelector('[data-act="say"] button')).toBeNull();
-    expect($(panel, "[data-act-ledger]")!.textContent).toContain("已入账 5 / 9");
+    expect($(panel, "[data-act-ledger]")!.textContent).toContain("已入账 8 / 15");
     fireEvent.click(chips[1]);
     const id = chips[1].getAttribute("data-artifact-ref")!;
     await waitFor(() => expect(document.querySelector(`[data-evidence="${id}"]`)).not.toBeNull());
@@ -89,12 +89,14 @@ describe("会话活动", () => {
     expect(early.status).toBe("none");
   });
 
-  it("严格道（demo-1）：没有会话活动面板，右栏会话行上也没有“看活动”", async () => {
+  it("严格道（demo-1）：没有会话活动面板，右栏会话行上也没有“看活动”；过程追踪仍读各会话的活动（判定会话除外）", async () => {
     const r = rig();
     const { container } = renderWith(r, <Cockpit pid="demo-1" asOf={null} node={null} />);
     await waitFor(() => expect(container.querySelectorAll("[data-lease]").length).toBeGreaterThan(0));
     expect($(container, "[data-activity]")).toBeNull();
     expect($(container, '[data-action="lease-activity"]')).toBeNull();
-    expect(r.fetch.calls.some((c) => c.url.includes("/activity"))).toBe(false);
+    // 判定会话在判定箱里跑，没有 CLI 活动，不去读
+    const judges = (await r.api.status("demo-1")).leases.filter((l) => l.kind === "judge" || l.kind === "rejudge").map((l) => l.id);
+    expect(r.fetch.calls.filter((c) => judges.some((j) => c.url.includes(`/leases/${j}/activity`)))).toEqual([]);
   });
 });

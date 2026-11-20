@@ -26,7 +26,10 @@ import { flowLive, flowOf, type FlowStep } from "../model/flow";
 import { terminalWord } from "../model/levels";
 import type { ViewModel } from "../model/viewmodel";
 import { FeedbackButtons, HaltButton, TaskDock } from "../ui/TaskActions";
-import { TaskFiles, TaskSteps } from "../ui/TaskLog";
+import { TaskFiles } from "../ui/TaskLog";
+import { TaskTrace, TraceSummary, useTrace } from "../ui/TaskTrace";
+import { ExecGraph } from "../ui/ExecGraph";
+import type { Filter } from "../model/trace";
 import { TaskRail } from "../ui/TaskRail";
 import { SessionActivity } from "../ui/SessionActivity";
 import { TaskResult } from "../ui/TaskResult";
@@ -86,6 +89,10 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const [pickLease, setPickLease] = useState<string | null>(null);
   const [actOpen, setActOpen] = useState<boolean | null>(null); // null：按有没有在途的求解会话自动展开
   const actRef = useRef<HTMLDivElement>(null);
+  // 过程的筛选（概要条的数字点过来会套上）与执行图“在过程里定位”的条目
+  const [filter, setFilter] = useState<Filter>("all");
+  const [focus, setFocus] = useState<string | null>(null);
+  const [structView, setStructView] = useState<"exec" | "reason" | null>(node ? "reason" : null);
 
   // H 打开“给出指导”，Esc 收起卡片；焦点在输入框里时不抢键
   useEffect(() => {
@@ -99,10 +106,11 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const vm = s.vm;
+  const tr = useTrace(pid, vm, asOf);
   const writable = canWrite(s) && cfg.token !== null;
   const go = (patch: { asOf?: number | null; node?: string | null }) =>
     navigate({ page: "problem", pid, asOf: patch.asOf !== undefined ? patch.asOf : asOf, node: patch.node !== undefined ? patch.node : node });
-  const select = (id: string) => { countUsage("inspect"); setTab("struct"); go({ node: id }); };
+  const select = (id: string) => { countUsage("inspect"); setTab("struct"); setStructView("reason"); go({ node: id }); };
 
   if (!vm) return <p className={s.error ? "error" : "muted"}>{s.error ? <>读不到任务 <Plain text={pid} />：<Plain text={s.error} /></> : "读取中…"}</p>;
 
@@ -132,6 +140,9 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const actHidden = !(actOpen ?? solves.some((l) => l.active));
   const openLease = (id: string) => { setPickLease(id); setActOpen(true); requestAnimationFrame(() => actRef.current?.scrollIntoView?.({ block: "nearest" })); };
   const elapsed = vm.budget.wallSpent;
+  // 结构：开放道只有执行图；严格判定缺省推理图（原来的前沿与图），可切到执行图
+  const sview = open ? "exec" : structView ?? "reason";
+  const openScope = (rid: string) => { const t = vm.todo.find((x) => x.why === "scope_request" && x.target === rid); if (t) { countUsage("todo"); setSheet({ kind: "todo", key: todoKey(t) }); } };
   const meta = vm.closed ? `用了 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒` : `已跑 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`;
 
   return (
@@ -177,6 +188,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           </div>
           <Flow steps={flowOf(flowIn)} live={flowLive(flowIn)} />
           <p className="tk-said" data-said><span className="t2">你说的：</span><Plain text={vm.goal.statement.value} /></p>
+          <TraceSummary trace={tr.trace} spent={vm.budget.spent} onPick={(f) => { setFilter(f); setFocus(null); setTab("steps"); }} />
         </header>
 
         {cards.length > 0 && (
@@ -219,13 +231,22 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
             <button key={k} type="button" role="tab" aria-selected={cur === k} data-task-tab={k} onClick={() => setTab(k)}>{TAB_WORD[k]}</button>
           ))}
           <span className="grow" />
-          {live && cur === "steps" && <span className="tl-live t2"><span className="tl-dot" aria-hidden="true" />实时，跟到最新一步</span>}
+          {live && asOf === null && <span className="tl-live t2"><span className="tl-dot" aria-hidden="true" />实时更新</span>}
         </div>
         <div className="tk-pane" role="tabpanel" aria-label={TAB_WORD[cur]}>
           {cur === "result" && <TaskResult vm={vm} />}
-          {cur === "steps" && <TaskSteps pid={pid} seq={vm.seq} live={live && asOf === null} />}
+          {cur === "steps" && <TaskTrace data={tr} vm={vm} seq={vm.seq} live={live && asOf === null} filter={filter} onFilter={setFilter} focus={focus} onScope={openScope} />}
           {cur === "files" && <TaskFiles pid={pid} seq={vm.seq} />}
           {cur === "struct" && (
+            <nav className="tabs ws-tabs tk-structnav" aria-label="结构">
+              <button type="button" aria-pressed={sview === "exec"} data-action="struct-exec" onClick={() => setStructView("exec")}>执行图</button>
+              {!open && <button type="button" aria-pressed={sview === "reason"} data-action="struct-reason" onClick={() => setStructView("reason")}>推理图</button>}
+              <span className="grow" />
+              <span className="t2">{sview === "exec" ? "会话、模型调用、工具调用与留档，按时间从左到右；在做的节点闪动" : "事实、计划与前沿：严格判定任务的推理结构"}</span>
+            </nav>
+          )}
+          {cur === "struct" && sview === "exec" && <ExecGraph data={tr} vm={vm} seq={vm.seq} live={live && asOf === null} onLocate={(k) => { setFocus(k); setFilter("all"); setTab("steps"); }} />}
+          {cur === "struct" && sview === "reason" && (
             <div className="tk-struct">
               <div className="main">
                 <nav className="tabs ws-tabs" aria-label="结构视图">
@@ -257,7 +278,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           <TaskDock pid={pid} head={s.head} mode={waitingLook ? "follow" : "hint"} disabled={!writable} />
         )}
       </div>
-      <TaskRail vm={vm} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })}
+      <TaskRail vm={vm} trace={tr.trace} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })}
         {...(open && asOf === null ? { onOpenLease: openLease, openLease: actHidden ? null : actLease } : {})} />
     </div>
   );

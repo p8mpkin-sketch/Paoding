@@ -1,6 +1,7 @@
 // 任务页右栏（v5 第三期）：花费、用时、钱花在哪（按会话，地图 Q15）、模型、可以访问、会话、你的指导。
 // 量具只显示，不驱动任何按钮的默认值；数字都取 /budget 与 /status 的原样字段。
 import type { ViewModel } from "../model/viewmodel";
+import { tok, type Trace } from "../model/trace";
 import { usd } from "../model/text";
 import { Plain } from "./registers";
 import { HintRowView } from "./Frontier";
@@ -9,8 +10,8 @@ import { LEASE_WORD, Sessions } from "./Sessions";
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 const KIND_WORD: Record<string, string> = { ...LEASE_WORD, solve: "求解", verify: "复核", recall: "回忆", other: "其他" };
 
-export function TaskRail({ vm, onSelect, onOpenHint, onOpenLease, openLease }: {
-  vm: ViewModel; onSelect: (id: string) => void; onOpenHint: (id: string) => void;
+export function TaskRail({ vm, trace = null, onSelect, onOpenHint, onOpenLease, openLease }: {
+  vm: ViewModel; trace?: Trace | null; onSelect: (id: string) => void; onOpenHint: (id: string) => void;
   /** 只有开放道传：会话行上出现“看活动”，点开工作区的会话活动面板。 */
   onOpenLease?: (id: string) => void; openLease?: string | null;
 }) {
@@ -55,8 +56,28 @@ export function TaskRail({ vm, onSelect, onOpenHint, onOpenLease, openLease }: {
       )}
       <section data-rail-model>
         <h3>模型</h3>
-        <p>{vm.prefs?.model ? <>执行用 <b><Plain text={vm.prefs.model} /></b></> : "按默认分配"}</p>
+        <p>{vm.prefs?.model ? <>执行用 <b><Plain text={vm.prefs.model} /></b></> : "按默认分配"}{trace && trace.totals.models.length > 0 && <span className="t2"> · 实际用到 <span className="k-mono">{trace.totals.models.join("、")}</span></span>}</p>
       </section>
+      {trace && trace.totals.turns > 0 && (
+        <section data-rail-calls>
+          <h3>模型调用<span className="ct">{trace.totals.turns} 次</span></h3>
+          <dl className="tk-kv">
+            <dt>输入 token</dt><dd className="k-mono" data-rail-tokens-in>{tok(trace.totals.tokensIn)}</dd>
+            <dt>输出 token</dt><dd className="k-mono" data-rail-tokens-out>{tok(trace.totals.tokensOut)}</dd>
+            <dt>缓存命中</dt><dd className="k-mono" data-rail-cache>{trace.totals.tokensIn + trace.totals.cacheRead ? `${Math.round((trace.totals.cacheRead * 100) / (trace.totals.tokensIn + trace.totals.cacheRead))}%` : "—"}</dd>
+            <dt>工具调用</dt><dd className="k-mono">{trace.totals.calls}{trace.totals.failed ? <span className="t2">（失败 {trace.totals.failed}）</span> : null}</dd>
+          </dl>
+          <ul className="tk-split tk-calls">
+            {trace.sessions.filter((g) => g.turns || g.calls).map((g) => (
+              <li key={g.lease} data-rail-session={g.lease}>
+                <span className="w">{KIND_WORD[g.kind] ?? g.kind}{g.active ? "（在做）" : ""}<span className="t2 k-mono"> {g.lease}</span></span>
+                <span className="k-mono r t2">模型 {g.turns} · 工具 {g.calls}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="t2">token 取会话里每次模型调用自带的用量；花费以端点代理的计量为准。</p>
+        </section>
+      )}
       <section data-rail-scope>
         <h3>可以访问</h3>
         {reach.length === 0 ? <p className="t2">不联网，只在自己的工作区里做。</p> : (
