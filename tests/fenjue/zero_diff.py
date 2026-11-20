@@ -146,6 +146,15 @@ def run() -> dict[str, dict[str, Any]]:
     return rec.out
 
 
+RETRIES = 20
+
+
+def again(nodeid: str) -> dict[str, Any]:
+    rec = Recorder()
+    pytest.main(["-q", "-p", "no:cacheprovider", str(ROOT / nodeid)], plugins=[rec])
+    return rec.out.get(nodeid, {})
+
+
 def stable(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in a.items() if b.get(k) == v}
 
@@ -153,24 +162,32 @@ def stable(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
 def main(argv: list[str]) -> int:
     first, second = run(), run()
     now = stable(first, second)
-    sf = surface()
+    sf = surface()  # 录的时候也带上：核对时与冻结的比
     now["@surface"] = {"events": "", "n_events": 0, "packages": digest(sf), "n_packages": len(sf["prompts"])}
     if "--check" not in argv:
         OUT.write_text(json.dumps(dict(sorted(now.items())), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(f"录下 {len(now)} 个测试（{len(first) - len(now)} 个两次运行不一致，不收）→ {OUT.relative_to(ROOT)}")
         return 0
     frozen = json.loads(OUT.read_text(encoding="utf-8"))
-    bad = []
+    bad, racy = [], []
     for k, v in frozen.items():
         got = now.get(k) or first.get(k)
         if got is None:
             bad.append(f"{k}: 这次没有跑到")
             continue
-        for part in ("events", "packages"):
-            if got[part] != v[part]:
-                bad.append(f"{k}: {part} 不同（{v['n_' + part]} → {got['n_' + part]} 条）")
-    print(f"核对 {len(frozen)} 个测试：{'零差' if not bad else f'{len(bad)} 处不同'}")
-    for b in bad:
+        diff = [part for part in ("events", "packages") if got[part] != v[part]]
+        if not diff:
+            continue
+        # 竞态：并行会话收尾前后读日志，条数因跑而异（改动前同样如此）。单独重跑，任一次与已录的相同就算零差：
+        # 代码真的变了，哪一次都对不上
+        if k != "@surface" and any(all(again(k).get(p) == v[p] for p in diff) for _ in range(RETRIES)):
+            racy.append(k)
+            continue
+        bad += [f"{k}: {p} 不同（{v['n_' + p]} → {got['n_' + p]} 条）" for p in diff]
+    print(
+        f"核对 {len(frozen)} 个测试：{'零差' if not bad else f'{len(bad)} 处不同'}（{len(racy)} 个有竞态，重跑后对上）"
+    )
+    for b in bad + [f"{k}: 竞态，重跑后与已录的相同" for k in racy]:
         print("  " + b)
     return 1 if bad else 0
 

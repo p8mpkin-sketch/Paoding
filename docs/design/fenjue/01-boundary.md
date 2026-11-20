@@ -123,7 +123,7 @@ type Fire = {
   id: string,                  // 例 "h1.solo"：火位号 + 短名
   ver: number,                 // 同一团火的修订号
   slot: "H1"|"H2"|"H3"|"H4"|"H5"|"H6"|"H7"|"H8",
-  seat?: Seat,                 // 仅 H1：绑定的内核席位（权能上限，见 §6）
+  seats?: Seat[],              // 仅 H1：绑定的内核席位（权能上限，见 §6）；每个席位一个形态，写在 params.forms
   ports: Port[],               // 申请的经脉，例 ["M1:deliver","M1:request_scope","M2","M3","M4","M7"]
   params: object,              // 本火的参数（接力上限、收尾保留比例、轮询间隔……），不含任何密钥或预算数字
   assets: { name: string, sha256: string }[],   // 提示词、模板、规则表，内容寻址
@@ -142,11 +142,13 @@ type Fire = {
 
 type Gongfa = {                // 功法：此刻生效的整套火
   jie: number,                 // 品阶
-  fires: Record<Slot, string>, // 火位 → "id@ver"
+  fires: Record<Slot, string[]>, // 火位 → ["id@ver", …]：同一火位可并存几团火（07 §3），H1 按席位分
   holdout?: Record<Slot, string>,  // 常设留出：同一火位上保留的上一团火（见 04 §5）
   digest: string,              // sha256(JCS(本对象除 digest 外的部分 + 各火清单摘要))
 }
 ```
+
+**F2 的两处修订（2026-11-20）。** 原稿 `seat` 是单个席位、`fires` 每个火位一团火。落到第 0 阶的清单上，三段式一团火绑定三个席位，H3、H5、H6 本来就并存几团火（[07 §3](./07-naming.md#3-本火的拟名)），所以改成 `seats` 列表与每个火位一个列表。实现见 `fenjue/src/paoding_fenjue/`（`shapes.py` 的装载与摘要，`fires/*.json` 的清单，`gongfa.json` 的功法与品阶史）。
 
 **预算数字不进火的清单。** 一团火可以声明“收尾保留取预算的 10%”这类比例，但任何默认预算的绝对值都来自设置层的预算先验数据源（可插拔，外部注入“档位 → 默认预算”表；设计里一律用〔占位〕表）。这条与[一句话开题](../kaiti/README.md)的约定相同。
 

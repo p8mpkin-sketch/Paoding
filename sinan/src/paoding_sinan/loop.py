@@ -17,9 +17,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from paoding_adapter.contract import SessionPort
+from paoding_fenjue.contract import params
 from paoding_graph.contract import BlobError, BlobPort, GraphPort, GraphReader
 
-TASK_ORDER = ("bootstrap", "reason", "explore", "solve")  # solve：开放道的求解会话（docs/design/open-lane/）
+# 编排（功法 H2 的清单 h2.sinan）：先做哪类事项、每类怎么预留。solve 是开放道的求解会话（docs/design/open-lane/）
+ORCH = params("H2")
+TASK_ORDER: tuple[str, ...] = tuple(ORCH["order"])
+RESERVE: dict[str, str] = dict(ORCH["reserve"])  # 事项种类 → 预留规则：remainder | intent_capped | fixed
 
 
 @dataclass
@@ -108,13 +112,14 @@ class Sinan:
         return (TASK_ORDER.index(w["kind"]), -gain, tasks.index(w))
 
     def _reserve(self, st: dict, pid: str, w: dict) -> dict:
-        if w["kind"] == "solve":
+        rule = RESERVE[w["kind"]]
+        if rule == "remainder":
             # 开放道（open-lane §3.3）：一个会话做到底，预留题里剩下的全部金额；哮天犬在预留的 90% 处叫它收尾交付，
             # 所以最后 10% 是收尾保留。接力的下一个会话拿到的是上一个用剩的
             b = self.reader.budget(pid)
             left = b["cap"].get("usd_milli", 0) - b["spent"]["usd_milli"] - b["reserved"]["usd_milli"]
             return {"usd_milli": max(1, int(left)), "wall_s": int(st["problems"][pid]["budget"]["wall_s"])}
-        if w["kind"] == "explore":
+        if rule == "intent_capped":
             want = st["intents"][w["target"]].get("budget") or self.cfg.explore_cap
             return {k: min(int(want.get(k, v)), v) for k, v in self.cfg.explore_cap.items()}
         r = dict(self.cfg.reserve[w["kind"]])

@@ -71,10 +71,14 @@ def test_reverse_direction_caught(tmp_path):
 
 def test_fire_code_cannot_open_sockets(tmp_path):
     root = _tree(tmp_path)
-    (root / "fenjue" / "src" / "paoding_fenjue" / "x.py").write_text("import socket\nfrom urllib.request import urlopen\n")
+    (root / "fenjue" / "src" / "paoding_fenjue" / "x.py").write_text(
+        "import socket\nfrom urllib.request import urlopen\n"
+    )
     errs = check_deps.check(root)
     assert sum("体质内部不可达" in e for e in errs) == 2
-    (root / "fenjue" / "src" / "paoding_fenjue" / "x.py").write_text("from paoding_graph.contract import canonicalize\n")
+    (root / "fenjue" / "src" / "paoding_fenjue" / "x.py").write_text(
+        "from paoding_graph.contract import canonicalize\n"
+    )
     assert check_deps.check(root) == []
 
 
