@@ -42,6 +42,7 @@ from .levels import compute as compute_levels  # noqa: E402,F401
 # 组装根（pd、测试台）构造服务用。组件之间仍只经下面的端口协议交互。
 from .reducer import (  # noqa: E402,F401
     Config,  # noqa: E402,F401
+    ReadonlyAllow,
     apply,
     empty_state,
 )

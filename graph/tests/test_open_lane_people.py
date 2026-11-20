@@ -225,3 +225,17 @@ def test_budget_by_lease_adds_up_to_spent():
         )
         == []
     )
+
+
+def test_budget_series_widens_its_step_past_the_point_cap(monkeypatch):
+    monkeypatch.setattr(views, "SERIES_MAX", 2)
+    k = Kernel()
+    assert open_lane(k) == "ok"
+    a = lease_solve(k)
+    for usd in (10, 20, 30, 40, 50):
+        spend(k, a, usd)
+    s = views.budget_series(k.state, "p1")
+    assert s["step"] == 3 and [p["usd_milli"] for p in s["points"]] == [60, 150]  # 第 3 条与最后一条
+    assert s["points"][-1]["by_lease"] == {a: 150} and s["points"][0]["ts"] is None
+    env = {"as_of": k.state["seq"], "head": k.state["seq"], "view_hash": "0" * 64}
+    assert wire_schema.validate("BudgetSeriesResponse", {**env, **s}) == []

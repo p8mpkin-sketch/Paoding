@@ -799,7 +799,8 @@ define(
             "risk_choices": arr(ref("Risk")),
             "approve_enabled": BOOL,
             "decision": null(ref("ScopeDecision")),
-        }
+        },
+        {"readonly": doc(obj({"version": INT, "digest": STR}), "命中只读白名单（地图 Q36）时的白名单戳；没命中不出现")},
     ),
 )
 define(
@@ -935,6 +936,21 @@ define(
     obj(
         {"lease": STR, "kind": STR, "usd_milli": INT, "tokens": INT, "active": BOOL},
         {"role": STR, "model": STR},
+    ),
+)
+define(
+    "BudgetPoint",
+    obj(
+        {"seq": INT, "ts": null(INT), "usd_milli": INT, "tokens": INT, "by_lease": rec(INT)},
+        doc="花费序列的一点：到这条计量为止的累计花费、累计令牌与各会话的累计（毫美元）。",
+    ),
+)
+define(
+    "BudgetSeriesResponse",
+    env(
+        obj({"step": INT, "n_costs": INT, "points": arr(ref("BudgetPoint"))}),
+        doc="GET /v1/problems/{pid}/budget/series?step=（地图 Q15、工作台设计 C2）：每 step 条计量一个点，"
+        "末点等于 /budget 的 spent；点数上限 500，超出时 step 自动放大。",
     ),
 )
 define("ViewFrame", obj({"as_of": INT, "parts_hash": ref("PartsHash")}, doc="事件流里一批事件之后的具名帧。"))

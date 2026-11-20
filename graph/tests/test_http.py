@@ -244,6 +244,25 @@ def test_budget_view_matches_ledger(api):
     assert {k: b[k] for k in ("cap", "spent", "reserved", "by_kind", "verify_spent", "marks")} == api.svc.budget("p1")
 
 
+def test_budget_series_ends_at_spent_and_carries_event_times(api):
+    """地图 Q15、工作台设计 C2：花费序列的末点等于 /budget 的 spent；点上的 ts 是那条计量事件的时刻。"""
+    drive(api)
+    b = api.get("/v1/problems/p1/budget")
+    s = api.get("/v1/problems/p1/budget/series")
+    assert s["step"] == 1 and s["n_costs"] == len(s["points"]) > 1
+    last = s["points"][-1]
+    assert last["usd_milli"] == b["spent"]["usd_milli"] and sum(last["by_lease"].values()) == last["usd_milli"]
+    assert last["by_lease"] == {r["lease"]: r["usd_milli"] for r in b["by_lease"]}
+    usd = [p["usd_milli"] for p in s["points"]]
+    assert usd == sorted(usd) and [p["seq"] for p in s["points"]] == sorted(p["seq"] for p in s["points"])
+    evs = {e["seq"]: e for e in api.get("/v1/problems/p1/events?after=0")["events"]}
+    assert all(evs[p["seq"]]["kind"] == "cost" and evs[p["seq"]]["ts"] == p["ts"] for p in s["points"])
+    coarse = api.get("/v1/problems/p1/budget/series?step=100")
+    assert coarse["step"] == 100 and coarse["points"] == [{**last}]  # 最后一条总在
+    st, body, _ = api.req("GET", "/v1/problems/p1/budget/series?step=0")
+    assert st == 400 and body["code"] == "schema_error"
+
+
 def test_budget_marks_appear(api):
     api.open(usd_milli=100)
     st, b = api.lease("p1", "bootstrap", reserve={"usd_milli": 30, "wall_s": 60})

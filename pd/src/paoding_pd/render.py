@@ -367,7 +367,7 @@ def scope_card(state: dict, pid: str, rid: str) -> str:
     via = (
         "随 Intent " + x["intent"] + " 的审批"
         if x.get("intent")
-        else ("练习道白名单自动批准" if x["auto"] else "等人批")
+        else ("练习道白名单自动批准" if x["auto"] else "图服务按只读白名单批准" if x.get("readonly") else "等人批")
     )
     o.add(
         "status",

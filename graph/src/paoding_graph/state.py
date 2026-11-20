@@ -88,8 +88,9 @@ class ScopeRequest(TypedDict):
     intent: NotRequired[str]  # 随 needs_scope 而来的申请
     decided_seq: NotRequired[int]
     decided_by: NotRequired[str]
-    via: NotRequired[str]  # 图服务批准时：auto（练习道白名单）| approval（随 Intent 的审批）
+    via: NotRequired[str]  # 图服务批准时：auto（练习道白名单）| readonly（只读白名单）| approval（随 Intent 的审批）
     policy: NotRequired[dict[str, Any]]  # via=auto 时的信封戳 {version, digest}
+    readonly: NotRequired[dict[str, Any]]  # 写入时命中只读白名单（地图 Q36）：白名单戳 {version, digest}
     reason: NotRequired[str]
 
 

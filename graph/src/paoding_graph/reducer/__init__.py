@@ -28,7 +28,7 @@ from ..jcs import JCSError, canonicalize
 from ..parse import BadBody, Obj
 from ..state import Actor, Body, Event, State
 from . import close, curate, deliver, fact, grants, intent, judge, knowledge, lease, problem, recall
-from .common import Applier, Config, Ok, Reject, TimedValidator, Validator, empty_state
+from .common import Applier, Config, Ok, ReadonlyAllow, Reject, TimedValidator, Validator, empty_state
 from .fact import content_key
 
 __all__ = [
@@ -36,6 +36,7 @@ __all__ = [
     "KINDS",
     "Config",
     "Ok",
+    "ReadonlyAllow",
     "Reject",
     "apply",
     "content_key",

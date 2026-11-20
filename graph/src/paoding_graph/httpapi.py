@@ -152,6 +152,7 @@ class GraphHttp:
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/status"), g(lambda st, m, q: views.status(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/view"), g(self.v_view)),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget"), g(lambda st, m, q: views.budget(st, m["pid"]))),
+            ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget/series"), g(self.v_budget_series)),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/work"), g(lambda st, m, q: views.work(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/snapshot"), self.r_snapshot),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/ticks"), self.r_ticks),
@@ -398,6 +399,12 @@ class GraphHttp:
         """某题第 seq 条事件的 ts（题目列表的 closed_ts 用；状态里不存关题时刻）。"""
         evs = self.svc.events(pid, seq - 1, limit=1, upto=seq)
         return evs[0]["ts"] if evs and evs[0]["seq"] == seq else None
+
+    def v_budget_series(self, st: State, m: Params, q: Params) -> Doc:
+        """GET /v1/problems/{pid}/budget/series?step=：花费序列（地图 Q15、工作台设计 C2）。"""
+        pid = m["pid"]
+        step = _int(q, "step", 1, lo=1) or 1
+        return views.budget_series(st, pid, step, lambda seq: self._ts_of(pid, seq))
 
     def v_view(self, st: State, m: Params, q: Params) -> Doc:
         return views.view(

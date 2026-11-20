@@ -1,6 +1,7 @@
 """运行时扩权族：request_scope、grant_scope、revoke_scope（设计 docs/design/runtime-grants/ §4）。
 
-开题时的授权只是起点；执行中要访问新的外部资源，先申请，再由人或确定性的练习道白名单批准。
+开题时的授权只是起点；执行中要访问新的外部资源，先申请，再由人或确定性的白名单批准：练习道信封的白名单，
+或开放道上人维护的只读白名单（地图 Q36）。
 批准把规则追加进 Problem.scope（只追加，下标不变），画像随之重算并写进事件体；执行层只编译已批未撤的规则。
 
 - 申请不是授权：谁都可以申请（任务会话、人；图服务替带 needs_scope 的 Intent 申请），批准只有两种来源。
@@ -16,7 +17,7 @@ from typing import Any, cast
 
 from ..parse import BadBody, Obj
 from ..practice import rule_violations
-from ..resources import RESOURCE_REQUESTABLE
+from ..resources import READONLY_ACTIONS, RESOURCE_REQUESTABLE
 from ..state import Actor, Body, Event, Problem, Profile, ScopeRequest, ScopeRule, State
 from ..work import active, requests
 from .common import RISK_RANK, RISKS, Config, Ok, Reject, RiskRow, _reason, _seen
@@ -65,6 +66,32 @@ def auto_blockers(state: State, pid: str, rules: list[ScopeRule], cfg: Config) -
     out = rule_violations(pol, list(rules))
     if p["budget"]["usd_milli"] > pol.usd_milli_max or p["budget"]["wall_s"] > pol.wall_s_max:
         out.append("任务预算超过练习上限")
+    return out
+
+
+READONLY_LANES = ("open", "human")  # 开放道与带清单的开放道（O、O+）；严格道不认只读白名单
+READONLY_RISK = "r1"  # 命中只读白名单而风险表未命中的规则：人在白名单里登记，即标注它为只读，按 r1
+
+
+def readonly_blockers(state: State, pid: str, rules: list[ScopeRule], cfg: Config) -> list[str]:
+    """只读白名单的确定性判定（地图 Q36）：返回不能自动批准的每条原因，空即可以。纯函数。
+    风险看风险表本身（不看规则上已改写的风险）：表给 r2 的地址，白名单盖不过。"""
+    p = state["problems"][pid]
+    if p["goal"]["accept"] not in READONLY_LANES:
+        return ["不是开放道的任务"]
+    allow = cfg.readonly_allow
+    if allow is None or not allow.rows:
+        return ["只读白名单是空的"]
+    out: list[str] = []
+    for i, r in enumerate(rules):
+        ro = READONLY_ACTIONS.get(r["resource"], frozenset())
+        if not set(r["actions"]) <= ro:
+            out.append(f"rules[{i}] 的动作 {sorted(set(r['actions']) - ro)} 不是只读")
+        if not any(res == r["resource"] and fnmatchcase(r["pattern"], g) for res, g in allow.rows):
+            out.append(f"rules[{i}] 的地址 {r['pattern']} 不在只读白名单里")
+        hit = table_risk(cfg.risk_table, r["resource"], r["pattern"], list(r["actions"]))
+        if hit is not None and RISK_RANK[hit] > RISK_RANK[READONLY_RISK]:
+            out.append(f"rules[{i}] 的风险表给 {hit}")
     return out
 
 
@@ -138,6 +165,17 @@ def _v_request_scope(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
         return Reject("quota_exceeded", f"本会话已申请 {cfg.scope_request_quota} 次")
     blockers = auto_blockers(state, pid, rules, cfg)
     rows = [table_hit(cfg.risk_table, r["resource"], r["pattern"], r["actions"]) for r in rules]
+    readonly: dict[str, Any] | None = None
+    if blockers and cfg.readonly_allow is not None and cfg.readonly_allow.rows:
+        # 只读白名单（地图 Q36）：白名单空着时事件体与之前逐字节相同
+        ro = readonly_blockers(state, pid, rules, cfg)
+        if ro:
+            blockers = [*blockers, *ro]
+        else:
+            readonly = cfg.readonly_allow.stamp()
+            for r, row in zip(rules, rows, strict=True):
+                if row is None:
+                    r["risk"] = READONLY_RISK
     out: Body = {
         "rules": rules,
         # 风险从哪来（扩权卡照写，runtime-grants §7.1）：风险表第几行（从 0 起），未命中为 null，按缺省 r2
@@ -145,7 +183,8 @@ def _v_request_scope(state: State, actor: Actor, pid: str, body: Obj, cfg: Confi
         "why": why,
         **({"intent": iid} if iid is not None else {}),
         "auto": not blockers,
-        **({"blockers": blockers} if blockers else {}),
+        **({"blockers": blockers} if blockers and readonly is None else {}),
+        **({"readonly": readonly} if readonly is not None else {}),
     }
     if not blockers and cfg.practice is not None:
         out["policy"] = cfg.practice.stamp()
@@ -161,11 +200,23 @@ def _reprofile(p: Problem, scope: list[ScopeRule], cfg: Config) -> Profile:
 
 
 def _graph_decision(state: State, req: ScopeRequest, via: str, cfg: Config) -> tuple[str, str] | Reject:
-    """图服务的批或拒必须由判定推出：练习道白名单（auto），或所随 Intent 的人工审批（approval）。"""
+    """图服务的批或拒必须由判定推出：练习道白名单（auto）、只读白名单（readonly），
+    或所随 Intent 的人工审批（approval）。"""
     if via == "auto":
         bad = auto_blockers(state, req["problem_id"], req["rules"], cfg)
         if not req["auto"] or bad:
             return Reject("forbidden_op", "练习道白名单不许：" + "；".join(bad or ["申请时未判为自动批准"]))
+        return "approve", ""
+    if via == "readonly":
+        stamp = req.get("readonly")
+        allow = cfg.readonly_allow
+        if stamp is None:
+            return Reject("forbidden_op", "只读白名单不许：申请时未命中只读白名单")
+        if allow is None or allow.digest != stamp["digest"]:
+            return Reject("forbidden_op", "只读白名单不许：白名单已不是申请时的那一份")
+        bad = readonly_blockers(state, req["problem_id"], req["rules"], cfg)
+        if bad:
+            return Reject("forbidden_op", "只读白名单不许：" + "；".join(bad))
         return "approve", ""
     if via == "approval":
         iid = req.get("intent")
@@ -176,7 +227,7 @@ def _graph_decision(state: State, req: ScopeRequest, via: str, cfg: Config) -> t
         if iid in state["abandoned"]:
             return "deny", f"Intent {iid} 未获批准"
         return Reject("forbidden_op", f"Intent {iid} 还没有审批结果")
-    return Reject("schema_error", "via 只取 auto、approval")
+    return Reject("schema_error", "via 只取 auto、readonly、approval")
 
 
 def _v_grant_scope(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
@@ -201,6 +252,8 @@ def _v_grant_scope(state: State, actor: Actor, pid: str, body: Obj, cfg: Config)
         out.update(via=via, decision=decision, **({"reason": reason} if reason else {}))
         if via == "auto" and cfg.practice is not None:
             out["policy"] = cfg.practice.stamp()
+        if via == "readonly" and cfg.readonly_allow is not None:
+            out["readonly"] = cfg.readonly_allow.stamp()
         if via == "approval" and decision == "approve":
             # 人在审批卡上看到并批准的是 Intent 申报的风险，这就是"授权的人逐条标注"；
             # 风险表命中时取两者的较高者（表是人事先写下的下限），未命中时以人批的为准
@@ -285,6 +338,7 @@ def _a_request_scope(s: State, ev: Event) -> None:
         **({"risk_from": b["risk_from"]} if "risk_from" in b else {}),
         **({"intent": b["intent"]} if "intent" in b else {}),
         **({"blockers": b["blockers"]} if "blockers" in b else {}),
+        **({"readonly": b["readonly"]} if "readonly" in b else {}),
     }
     s["scope_requests"] = {**requests(s), rid: cast(ScopeRequest, rec)}
 
@@ -333,6 +387,8 @@ def followups(state: State, pid: str) -> list[tuple[str, dict[str, Any]]]:
             continue
         if x["auto"]:
             out.append(("grant_scope", {"request": x["id"], "via": "auto"}))
+        elif "readonly" in x:
+            out.append(("grant_scope", {"request": x["id"], "via": "readonly"}))
         elif "intent" in x and (state["approvals"].get(x["intent"]) or x["intent"] in state["abandoned"]):
             out.append(("grant_scope", {"request": x["id"], "via": "approval"}))
     return out
