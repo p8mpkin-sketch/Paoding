@@ -16,7 +16,7 @@ import os
 import pathlib
 import sys
 
-ORDER = ("graph", "adapter", "executor", "judgebox", "sinan", "watchdog", "pd", "eval", "tongjian", "qicao", "shuku", "scripts")
+ORDER = ("graph", "adapter", "executor", "judgebox", "sinan", "watchdog", "pd", "eval", "tongjian", "qicao", "scripts")
 
 
 def by_component(report: dict) -> dict[str, dict]:

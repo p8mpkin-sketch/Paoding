@@ -1,9 +1,9 @@
 // 知识页（前端重新设计 v5 第四期）：资料与记忆两栏。
 // 记忆是通鉴从关闭的任务里派生出来的条目（环境事实、走不通的路、花费画像），人只能钉住或遗忘，不能手写；
 // 状态（在用 / 闲置 / 核对没过 / 已退役）是服务端算的派生量，页面只排版。钉住与遗忘都要写理由，并交回所看的那张卡的 seen。
-// 资料一栏在 KnowledgeSources.tsx（书库：五阶段导入、检索）。
+// 资料（导入、切分、建索引、执行中检索）的后端按设计稿另做；做好之前这一栏只说明它会做什么。
 import * as Dialog from "@radix-ui/react-dialog";
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import type { MemCard, MemRow, MemState } from "../api/memory-types";
@@ -12,7 +12,6 @@ import { navigate } from "../app/router";
 import { Button, Empty, Mast } from "../kit";
 import { pending, recorded, rejected } from "../ui/feedback";
 import { Plain } from "../ui/registers";
-import { Sources } from "./KnowledgeSources";
 import { Link } from "./Problems";
 
 const KIND_WORD: Record<string, string> = { env_fact: "环境", excluded: "走不通", spend_profile: "花费" };
@@ -39,16 +38,25 @@ function stateNote(m: MemRow): string {
   return parts.join(" · ");
 }
 
-function Tabs({ tab, memCount, srcCount }: { tab: "sources" | "memory"; memCount: number | null; srcCount: number | null }) {
+function Tabs({ tab, memCount }: { tab: "sources" | "memory"; memCount: number | null }) {
   return (
     <div className="tk-tabs kn-tabs" role="tablist" aria-label="知识">
-      <button type="button" role="tab" aria-selected={tab === "sources"} data-kn-tab="sources" onClick={() => navigate({ page: "knowledge", tab: "sources" })}>
-        资料{srcCount !== null && <span className="ct">{srcCount}</span>}
-      </button>
+      <button type="button" role="tab" aria-selected={tab === "sources"} data-kn-tab="sources" onClick={() => navigate({ page: "knowledge", tab: "sources" })}>资料</button>
       <button type="button" role="tab" aria-selected={tab === "memory"} data-kn-tab="memory" onClick={() => navigate({ page: "knowledge", tab: "memory" })}>
         记忆{memCount !== null && <span className="ct">{memCount}</span>}
       </button>
     </div>
+  );
+}
+
+function Sources() {
+  return (
+    <section className="kn-pane" data-sources>
+      <Empty title="资料库还在做">
+        做好后在这里导入文件、文件夹、网址或一段文字，每份资料经过上传、解析、切分、建索引四步后可用；任务执行时按需检索，用到的段落会列进依据。
+        索引在本机建，资料不发给模型服务商。
+      </Empty>
+    </section>
   );
 }
 
@@ -183,7 +191,7 @@ function Memory({ rows, error, reload }: { rows: MemRow[] | null; error: string 
 }
 
 export function Knowledge({ tab }: { tab: "sources" | "memory" }) {
-  const { api, cfg } = useServices();
+  const { api } = useServices();
   const [rows, setRows] = useState<MemRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -193,14 +201,11 @@ export function Knowledge({ tab }: { tab: "sources" | "memory" }) {
     return () => { live = false; };
   }, [api, tick]);
   const count = rows ? rows.filter((m) => m.state !== "retired").length : null;
-  const [srcCount, setSrcCount] = useState<number | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
   return (
     <div className="knowledge" data-page="knowledge" data-tab={tab}>
-      <Mast title="知识" dek="庖丁不训练模型。这里放的是它干活时能查的资料，和它从做过的任务里记下的事。"
-        actions={tab === "sources" ? <Button tone="ink" disabled={!cfg.token} onClick={() => setImportOpen(true)} data-action="kn-import"><Plus aria-hidden="true" />导入资料</Button> : undefined} />
-      <Tabs tab={tab} memCount={count} srcCount={srcCount} />
-      {tab === "sources" ? <Sources importOpen={importOpen} setImportOpen={setImportOpen} onCount={setSrcCount} /> : <Memory rows={rows} error={error} reload={() => setTick((n) => n + 1)} />}
+      <Mast title="知识" dek="庖丁不训练模型。这里放的是它干活时能查的资料，和它从做过的任务里记下的事。" />
+      <Tabs tab={tab} memCount={count} />
+      {tab === "sources" ? <Sources /> : <Memory rows={rows} error={error} reload={() => setTick((n) => n + 1)} />}
     </div>
   );
 }

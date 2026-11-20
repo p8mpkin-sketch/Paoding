@@ -1,5 +1,4 @@
-// 知识页（v5 第四期）：记忆一栏列出通鉴条目与派生状态；钉住、忘掉都要写理由并交回所见的卡；
-// 资料一栏列出导入作业与五段进度、已有资料、“试一下”，导入抽屉收文件或粘贴的文字。
+// 知识页（v5 第四期）：记忆一栏列出通鉴条目与派生状态；钉住、忘掉都要写理由并交回所见的卡；资料一栏在后端做好前只作说明。
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Knowledge } from "../src/pages/Knowledge";
@@ -75,95 +74,10 @@ describe("知识页：记忆", () => {
   });
 });
 
-async function sourcesPage(token?: string | null) {
-  const r = token === undefined ? rig() : rig(token);
-  renderWith(r, <Knowledge tab="sources" />);
-  await waitFor(() => expect($("[data-source]")).not.toBeNull());
-  return r;
-}
-
 describe("知识页：资料", () => {
-  it("正在导入：五段进度、失败的写原因可重试；已有资料按状态排；页签带数目", async () => {
-    await sourcesPage();
-    const run = $('[data-job="s_runbk01"]')!;
-    expect(run.querySelector('[data-at="now"]')!.textContent).toBe("切分");
-    expect(run.querySelectorAll('[data-at="done"]')).toHaveLength(2);
-    const bad = $('[data-job="s_scan01"]')!;
-    expect(bad.getAttribute("data-failed")).toBe("true");
-    expect(bad.querySelector('[data-at="failed"]')!.textContent).toBe("解析");
-    expect(bad.textContent).toContain("第三期");
-    expect(bad.querySelector('[data-action="kn-retry"]')).not.toBeNull();
-    expect($('[data-source="s_team01"]')!.textContent).toContain("可用");
-    expect($('[data-source="s_team01"]')!.textContent).toContain("28 KB");
-    expect($('[data-source="s_olddep1"]')!.textContent).toContain("已停用");
-    expect($('[data-kn-tab="sources"]')!.textContent).toContain("5");
-  });
-
-  it("取消导入：作业消失", async () => {
-    const r = await sourcesPage();
-    fireEvent.click($('[data-job="s_scan01"] [data-action="kn-cancel"]')!);
-    await waitFor(() => expect($('[data-job="s_scan01"]')).toBeNull());
-    expect(r.fetch.calls.some((c) => c.url === "/v1/knowledge/jobs/s_scan01/1/cancel")).toBe(true);
-  });
-
-  it("停用、删除进回收站、恢复", async () => {
-    await sourcesPage();
-    fireEvent.click($('[data-source="s_team01"] [data-action="kn-disable"]')!);
-    await waitFor(() => expect($('[data-source="s_team01"]')!.getAttribute("data-disabled")).toBe("true"));
-    fireEvent.click($('[data-source="s_team01"] [data-action="kn-delete"]')!);
-    await waitFor(() => expect($('[data-trash] [data-source="s_team01"]')).not.toBeNull());
-    fireEvent.click($('[data-trash] [data-source="s_team01"] [data-action="kn-restore"]')!);
-    await waitFor(() => expect($("[data-trash]")).toBeNull());
-  });
-
-  it("试一下：查到的段落带资料名与得分", async () => {
-    await sourcesPage();
-    fireEvent.change($('[data-field="kn-query"]')!, { target: { value: "回滚怎么做" } });
-    fireEvent.click($('[data-action="kn-search"]')!);
-    await waitFor(() => expect($("[data-hit]")).not.toBeNull());
-    expect($("[data-hit]")!.textContent).toContain("团队约定.md");
-    expect($(".kn-via")!.textContent).toContain("hash-512-v1");
-  });
-
-  it("导入粘贴的文字：要名称与内容；提交后出现新作业", async () => {
-    const r = await sourcesPage();
-    fireEvent.click($('[data-action="kn-import"]')!);
-    await waitFor(() => expect($("[data-kn-import]")).not.toBeNull());
-    fireEvent.click($('[data-mode="url"]')!);
-    expect($("[data-kn-import]")!.textContent).toContain("下一期");
-    fireEvent.click($('[data-mode="text"]')!);
-    const go = $('[data-action="kn-start"]') as HTMLButtonElement;
-    expect(go.disabled).toBe(true);
-    fireEvent.change($('[data-field="kn-name"]')!, { target: { value: "值班约定" } });
-    fireEvent.change($('[data-field="kn-text"]')!, { target: { value: "交接时写清楚未关的告警。" } });
-    fireEvent.click($('[data-scope="pick"]')!);
-    expect(go.disabled).toBe(false);
-    fireEvent.click(go);
-    await waitFor(() => expect($("[data-kn-import]")).toBeNull());
-    const call = r.fetch.calls.filter((c) => c.url === "/v1/knowledge/sources" && c.method === "POST").at(-1)!;
-    expect(JSON.parse(String(call.body))).toMatchObject({ name: "值班约定", scope: "pick", text: "交接时写清楚未关的告警。" });
-    await waitFor(() => expect(document.querySelector('[data-job] b')?.textContent ?? "").toBeTruthy());
-    expect([...document.querySelectorAll("[data-job]")].some((e) => e.textContent!.includes("值班约定"))).toBe(true);
-  });
-
-  it("导入文件：先传 Blob，再交 file", async () => {
-    const r = await sourcesPage();
-    fireEvent.click($('[data-action="kn-import"]')!);
-    await waitFor(() => expect($("[data-kn-import]")).not.toBeNull());
-    const f = new File(["# 告警\n\n延迟超过 300ms 报警。"], "告警规则.md", { type: "text/markdown" });
-    fireEvent.change($('[data-field="kn-files"]')!, { target: { files: [f] } });
-    expect($('[data-picked="告警规则.md"]')).not.toBeNull();
-    fireEvent.click($('[data-action="kn-start"]')!);
-    await waitFor(() => expect($("[data-kn-import]")).toBeNull());
-    expect(r.fetch.calls.some((c) => c.url === "/v1/blobs" && c.method === "PUT")).toBe(true);
-    const call = r.fetch.calls.filter((c) => c.url === "/v1/knowledge/sources" && c.method === "POST").at(-1)!;
-    expect(JSON.parse(String(call.body)).file).toMatchObject({ name: "告警规则.md", media_type: "text/markdown" });
-  });
-
-  it("没有人的令牌：只读，导入与行操作都不能点", async () => {
-    await sourcesPage(null);
-    expect($("[data-sources] .md-tip")!.textContent).toContain("只读");
-    expect(($('[data-action="kn-import"]') as HTMLButtonElement).disabled).toBe(true);
-    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-source] button, [data-job] button')) expect(b.disabled).toBe(true);
+  it("后端做好之前只作说明", async () => {
+    renderWith(rig(), <Knowledge tab="sources" />);
+    await waitFor(() => expect($("[data-sources]")).not.toBeNull());
+    expect($("[data-sources]")!.textContent).toContain("资料库还在做");
   });
 });

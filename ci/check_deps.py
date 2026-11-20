@@ -22,7 +22,6 @@ ALLOWED: dict[str, set[str]] = {
     "sinan": {"graph", "adapter"},
     "tongjian": {"graph"},
     "qicao": {"judgebox"},
-    "shuku": {"graph"},
 }
 
 

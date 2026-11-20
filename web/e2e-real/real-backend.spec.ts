@@ -211,23 +211,3 @@ test("真实全栈：人工验收的任务交付后由结构检查给读数，�
   expect(tot.by_authority.human.accepted).toBe(1);
   expect(tot.solved).toBe(tot.by_authority.local.solved);
 });
-
-test("真实全栈：知识页导入一段文字，书库推进到可用后“试一下”能查到", async ({ page, request }) => {
-  await page.addInitScript((t) => {
-    sessionStorage.setItem("paoding.human_token", JSON.stringify({ token: t, expires_at: Date.now() + 3600_000 }));
-  }, token());
-  await page.goto("/knowledge");
-  await expect(page.locator("[data-sources]")).toBeVisible();
-  await page.locator('[data-action="kn-import"]').click();
-  await page.locator('[data-mode="text"]').click();
-  await page.locator('[data-field="kn-name"]').fill("值班约定");
-  await page.locator('[data-field="kn-text"]').fill("# 交接\n\n交接时写清楚未关的告警和正在做的变更。");
-  await page.locator('[data-action="kn-start"]').click();
-  const row = page.locator("[data-source]", { hasText: "值班约定" });
-  await expect(row).toHaveAttribute("data-live", "1", { timeout: 20_000 });
-  await page.locator('[data-field="kn-query"]').fill("未关的告警");
-  await page.locator('[data-action="kn-search"]').click();
-  await expect(page.locator("[data-hit]", { hasText: "值班约定" }).first()).toBeVisible();
-  const r = await request.post("/v1/knowledge/sources", { headers: auth(), data: { name: "题库", path: "~/paoding-bank" } });
-  expect(r.status()).toBe(400); // 硬规则：不读本机目录
-});

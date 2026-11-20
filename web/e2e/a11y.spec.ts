@@ -103,28 +103,6 @@ for (const theme of THEMES) {
   });
 }
 
-// 知识页的资料一栏：导入抽屉与“试一下”的结果（v5 第四期）
-for (const theme of THEMES) {
-  test(`axe：资料的导入抽屉与检索结果（${theme}）`, async ({ page }) => {
-    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
-    await page.goto("/knowledge");
-    await page.locator('[data-field="kn-query"]').fill("回滚怎么做");
-    await page.locator('[data-action="kn-search"]').click();
-    await expect(page.locator("[data-hit]").first()).toBeVisible();
-    const scan = async () => {
-      await page.waitForTimeout(200);
-      const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
-    };
-    await scan();
-    await page.locator('[data-action="kn-import"]').click();
-    await expect(page.locator("[data-kn-import]")).toBeVisible();
-    await scan();
-    await page.locator('[data-mode="text"]').click();
-    await scan();
-  });
-}
-
 // L2：读数页“按判定来源分列”表、人工验收卡（demo-5，逐条判到一半）、关闭任务的结果页（demo-3）
 for (const theme of THEMES) {
   test(`axe：判定来源分列、人工验收卡与结果页（${theme}）`, async ({ page }) => {
