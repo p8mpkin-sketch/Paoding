@@ -23,6 +23,8 @@ export type KnSource = {
   updated: number;
   importing: boolean;
   failed: KnFailed | null;
+  /** 被多少个任务引用过（资料库第二期）。 */
+  cited?: number;
 };
 export type KnJob = {
   source: string;
@@ -52,3 +54,5 @@ export type KnSearch = { hits: KnHit[]; via: "lexical+vector" | "lexical" | "non
 export type KnSources = { sources: KnSource[]; embedder: string; note: string; as_of: number };
 export type KnPut = { name: string; scope: KnScope } & ({ text: string; file_name?: string } | { origin: KnOrigin; file: KnFile });
 export type KnSourceVerb = "disable" | "enable" | "delete" | "restore";
+/** GET /v1/knowledge/chunks/{id}：一段的原文与位置；newer_revision 是这份资料之后有没有更新过的可用版本。 */
+export type KnChunk = { id: string; source: string; source_name: string; revision: number; doc: string; heading: string; start: number; end: number; text: string; newer_revision: boolean };

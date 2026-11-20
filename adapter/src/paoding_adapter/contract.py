@@ -16,6 +16,7 @@ from .keyring import KeyRing  # noqa: F401
 from .mcp import ToolEndpoint  # noqa: F401
 from .proxy import EndpointProxy, PriceTable, ProxyConfig  # noqa: F401
 from .session import AdapterConfig, SessionRecord, SessionRunner, local_launcher  # noqa: F401
+from .tools import KB_READ_MAX, KB_SEARCH_MAX, KnowledgePort  # noqa: F401
 
 
 class SessionPort(Protocol):

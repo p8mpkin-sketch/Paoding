@@ -13,14 +13,28 @@
 硬规则（cz 2026-11-19）：只收网页或 pd 命令交来的字节。请求体里带本机路径（path、dir）一律拒绝，网址抓取在第三期。
 
 配置（StackConfig.knowledge）：embedder（{kind: hash|onnx|local_http, ...}，缺省 hash）。
+
+执行中检索（资料库第二期）：SessionKnowledge 是会话运行器的 KnowledgePort。范围按任务的 prefs.knowledge：
+缺省与 auto 是所有“所有任务”可见的资料，pick 是点名的几份，off 不挂工具。kb_read 把段落文字放进 Blob，
+用书库的组件令牌（graph:shuku）登记为本题的 knowledge 类；每次 kb_search 记一条 kb_query（查询词与命中的段落 id）。
 """
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 from typing import Any
 
-from paoding_graph.contract import BadBody, BlobError, BlobStore, GraphHttp, MountError
+from paoding_graph.contract import (
+    KNOWLEDGE_REGISTRAR,
+    BadBody,
+    BlobError,
+    BlobStore,
+    GraphHttp,
+    GraphService,
+    MountError,
+    TokenRegistry,
+)
 from paoding_shuku.contract import EMBEDDERS, MAX_BYTES, Rejected, Shuku, ShukuConfig
 
 DEFAULTS: dict[str, Any] = {"embedder": {"kind": "hash"}}
@@ -40,9 +54,19 @@ def knowledge_config(raw: object) -> dict[str, Any]:
 
 
 class KnowledgeHub:
-    def __init__(self, home: Path, blobs: BlobStore, cfg: dict[str, Any]):
-        self.blobs = blobs
+    def __init__(
+        self,
+        home: Path,
+        blobs: BlobStore,
+        cfg: dict[str, Any],
+        graph: GraphService | None = None,
+        tokens: TokenRegistry | None = None,
+    ):
+        self.blobs, self.graph = blobs, graph
         self.sk = Shuku(home / "shuku", blobs, ShukuConfig(embedder=cfg["embedder"]))
+        self.session: SessionKnowledge | None = None
+        if graph is not None and tokens is not None:  # 书库的组件令牌只在本进程：登记 knowledge 类、记 kb_query
+            self.session = SessionKnowledge(self.sk, blobs, graph, tokens.issue(dict(KNOWLEDGE_REGISTRAR)))
 
     def mount(self, http: GraphHttp) -> None:
         base = r"/v1/knowledge"
@@ -60,7 +84,20 @@ class KnowledgeHub:
 
     def _list(self) -> dict[str, Any]:
         e = self.sk
-        return {"sources": e.sources(), "embedder": e.embedder.id, "note": e.embedder_note, "as_of": e.state["seq"]}
+        cited = self.cited()
+        sources = [{**s, "cited": cited.get(s["id"], 0)} for s in e.sources()]
+        return {"sources": sources, "embedder": e.embedder.id, "note": e.embedder_note, "as_of": e.state["seq"]}
+
+    def cited(self) -> dict[str, int]:
+        """每份资料被多少个任务引用过（图服务里 knowledge 类登记所在的题数）。"""
+        if self.graph is None:
+            return {}
+        seen: dict[str, set[str]] = {}
+        for a in self.graph.state["artifacts"].values():
+            kn = a.get("knowledge")
+            if a["class"] == "knowledge" and kn:
+                seen.setdefault(str(kn["source"]), set()).add(a["problem_id"])
+        return {k: len(v) for k, v in seen.items()}
 
     def _search(self, q: dict[str, str], body: dict[str, Any] | None) -> dict[str, Any]:
         if not isinstance(body, dict) or not isinstance(body.get("q"), str):
@@ -170,3 +207,81 @@ class KnowledgeHub:
 
     def close(self) -> None:
         self.sk.close()
+
+
+class SessionKnowledge:
+    """会话运行器的 KnowledgePort（paoding_adapter.contract.KnowledgePort 的结构实现）。"""
+
+    def __init__(self, sk: Shuku, blobs: BlobStore, graph: GraphService, token: str):
+        self.sk, self.blobs, self.graph, self.token = sk, blobs, graph, token
+
+    def _pick(self, pid: str) -> list[str] | None | bool:
+        """None：auto（所有“所有任务”可见的资料）；列表：点名的几份；False：不用。"""
+        p = self.graph.state["problems"].get(pid)
+        pref = ((p or {}).get("prefs") or {}).get("knowledge") or {"mode": "auto"}
+        if p is None or pref["mode"] == "off":
+            return False
+        return list(pref.get("pick") or []) if pref["mode"] == "pick" else None
+
+    def _live(self, pid: str) -> list[tuple[str, int]]:
+        pick = self._pick(pid)
+        return [] if pick is False else self.sk.live(pick if isinstance(pick, list) else None)
+
+    def available(self, pid: str) -> bool:
+        return bool(self._live(pid))
+
+    def _submit(self, pid: str, what: str, op: dict[str, Any]) -> dict[str, Any]:
+        return self.graph.submit(self.token, pid, f"shuku:{what}:{secrets.token_hex(8)}", [op])
+
+    def search(self, pid: str, lease: str, query: str, k: int) -> dict[str, Any]:
+        pick = self._pick(pid)
+        if pick is False:
+            return {"ok": False, "code": "forbidden_op", "detail": "本任务的知识选项是“不用”"}
+        res = self.sk.search(query, k, pick if isinstance(pick, list) else None)
+        hits = [
+            {
+                "chunk": h["id"],
+                "source_name": h["source_name"],
+                "locator": _locator(h),
+                "snippet": h["text"][:200],
+                "score": h["score"],
+            }
+            for h in res["hits"]
+        ]
+        body = {"lease": lease, "query": query, "hits": [h["chunk"] for h in hits]}
+        self._submit(pid, "kb_query", {"op": "kb_query", "body": body})  # 记不上（题已关）不影响这次检索
+        return {"hits": hits, "via": res["via"]}
+
+    def read(self, pid: str, lease: str, chunk: str) -> dict[str, Any]:
+        live = dict(self._live(pid))
+        c = self.sk.chunk(chunk)
+        if c is not None and live.get(c["source"]) not in (None, c["revision"]):
+            c = self.sk.chunk(chunk, live[c["source"]]) or c  # 同一段在当前可检索的版本里也在
+        if c is None or live.get(c["source"]) != c["revision"]:
+            return {"ok": False, "code": "unknown_ref", "detail": f"{chunk} 不在本任务能查的资料里（先 kb_search）"}
+        data = c["text"].encode("utf-8")
+        names = {sid: s["name"] for sid, s in self.sk.state["sources"].items()}
+        loc = _locator(c)
+        body = {
+            "hash": self.blobs.put(data),
+            "size": len(data),
+            "media_type": "text/plain; charset=utf-8",
+            "class": "knowledge",
+            "knowledge": {"source": c["source"], "revision": c["revision"], "chunk": c["id"], "locator": loc},
+        }
+        out = self._submit(pid, "read", {"op": "register_artifact", "body": body})
+        if not out["ok"]:
+            r = out["results"][0]
+            return {"ok": False, "code": r.get("code", "schema_error"), "detail": r.get("detail", "")}
+        return {
+            "artifact": out["results"][0]["id"],
+            "text": c["text"],
+            "source_name": names.get(c["source"], c["source"]),
+            "locator": loc,
+            "revision": c["revision"],
+        }
+
+
+def _locator(c: dict[str, Any]) -> str:
+    """资料里的位置：文件名 / 标题路径。"""
+    return " / ".join(str(x) for x in (c.get("doc"), c.get("heading")) if x)[:300]

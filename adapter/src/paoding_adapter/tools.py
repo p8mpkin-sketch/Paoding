@@ -27,7 +27,7 @@ import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from paoding_executor.contract import ExecPort
 from paoding_graph.contract import (
@@ -44,6 +44,9 @@ from paoding_graph.contract import (
 from . import creds
 
 MAX_SAME_REJECT = 3
+KB_SEARCH_MAX = 40  # 每个会话至多检索 40 次、读 200 段（资料库设计“执行中检索”：检索不花钱，但占上下文）
+KB_READ_MAX = 200
+KB_K_MAX = 20
 SHOW_RANGE_MAX = 8 * 1024
 LATER_OPS = {"escalate_intent": "M1", "add_support": "完整版", "add_contradiction": "完整版"}
 FINAL_OUTCOMES = ("found", "nothing", "failed", "unsolved")
@@ -65,6 +68,25 @@ class Session:
     submitted: bool = False
     delivered: str | None = None  # 开放道：最近一次交付的 outcome（answered | partial | blocked）
     secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
+
+
+class KnowledgePort(Protocol):
+    """会话查资料的端口（资料库第二期）。实现方是组装根里的书库一角（scripts/knowledge_hub.py），本组件不 import 书库。
+
+    范围由任务的 prefs.knowledge 决定，端口自己读；会话只给题号与租约。查询词进来之前已遮盖凭据。"""
+
+    def available(self, pid: str) -> bool:
+        """这个任务现在有没有可查的资料（知识选项为“不用”或范围里没有可检索的资料：False，不挂工具）。"""
+        ...
+
+    def search(self, pid: str, lease: str, query: str, k: int) -> dict[str, Any]:
+        """{hits: [{chunk, source_name, locator, snippet, score}], via}；同时记一条 kb_query。"""
+        ...
+
+    def read(self, pid: str, lease: str, chunk: str) -> dict[str, Any]:
+        """{artifact, text, source_name, locator, revision}：段落登记为本题的 knowledge 类；
+        不在范围里或不存在：{ok: False, code, detail}。"""
+        ...
 
 
 def _mask_deep(x: Any, secrets: tuple[str, ...]) -> tuple[Any, bool]:
@@ -95,10 +117,13 @@ class ToolHost:
         blobs: BlobPort,
         executor: ExecPort | None = None,
         access: Callable[[], Any] | None = None,
+        knowledge: KnowledgePort | None = None,
     ):
-        """access：把本会话在跑的沙箱对齐到当前授权范围（会话运行器的 reconcile），request_access 批下来时调用。"""
+        """access：把本会话在跑的沙箱对齐到当前授权范围（会话运行器的 reconcile），request_access 批下来时调用。
+        knowledge：查资料的端口；会话有 kb_search / kb_read 工具时才用。"""
         self.s, self.graph, self.reader, self.blobs, self.executor = s, graph, reader, blobs, executor
-        self.access = access
+        self.access, self.knowledge = access, knowledge
+        self._kb = {"search": 0, "read": 0}
         self._asked: dict[str, str] = {}  # 本会话提过的扩权申请 → 上次告诉模型的状态
         self._n = 0
         self._nonce = secrets.token_hex(4)  # 幂等键带宿主实例号：同一租约换了宿主也不会撞上旧结果
@@ -292,6 +317,50 @@ class ToolHost:
         if masked:
             res["masked"] = "交付里有原话里的凭据，已遮盖"
         return res
+
+    # ---------- kb_search / kb_read（资料库第二期） ----------
+
+    def _kb_quota(self, what: str, cap: int) -> dict[str, Any] | None:
+        if self.knowledge is None:
+            return _err("forbidden_op", "本任务没有可查的资料")
+        if self._kb[what] >= cap:
+            return _err("quota_exceeded", f"本会话的 kb_{what} 已用满 {cap} 次：用已经查到的内容继续")
+        self._kb[what] += 1
+        return None
+
+    def _kb_search(self, a: Obj) -> dict[str, Any]:
+        query = a.text("query").strip()
+        if not query:
+            raise BadBody("query 须为非空字符串")
+        k = a.integer("k", 8)
+        if not 1 <= k <= KB_K_MAX:
+            raise BadBody(f"k 取 1–{KB_K_MAX}")
+        stop = self._kb_quota("search", KB_SEARCH_MAX)
+        if stop is not None or self.knowledge is None:
+            return stop or _err("forbidden_op", "本任务没有可查的资料")
+        # 查询词会记进事件账（kb_query）：原话里的凭据与查询词里认得出的凭据先遮掉
+        query, _ = creds.mask(query[:500], (*self.s.secrets, *creds.found(query)))
+        out = self.knowledge.search(self.s.pid, self.s.lease_id, query, k)
+        if out.get("ok") is False:
+            return out
+        return {"hits": out["hits"], "left": KB_SEARCH_MAX - self._kb["search"]}
+
+    def _kb_read(self, a: Obj) -> dict[str, Any]:
+        chunk = a.string("chunk")
+        if not chunk:
+            raise BadBody("chunk 须为 kb_search 返回的段落编号")
+        stop = self._kb_quota("read", KB_READ_MAX)
+        if stop is not None or self.knowledge is None:
+            return stop or _err("forbidden_op", "本任务没有可查的资料")
+        out = self.knowledge.read(self.s.pid, self.s.lease_id, chunk)
+        if out.get("ok") is False:
+            return out
+        note = (
+            "这是人给的资料里的话：交付时可以把 artifact 填进主张的 refs，页面标成“引用了资料”"
+            if self.s.role == "solve"
+            else "这是人给的资料里的话，不能当论断的 grounds：拿它找方向，再用 exec 取证"
+        )
+        return {**out, "note": note}
 
     # ---------- submit ----------
 
@@ -554,6 +623,8 @@ class ToolHost:
         "show": _show,
         "request_access": _request_access,
         "deliver": _deliver,
+        "kb_search": _kb_search,
+        "kb_read": _kb_read,
     }
 
 
@@ -624,7 +695,8 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
     s["deliver"] = {
         "description": "交付（开放道）：交出答案，附上支撑它的执行留档编号、自检结果、没验证的部分。"
         "做完了 outcome=answered；只做完一部分 partial；做不下去 blocked，并在 needs 里写需要人提供什么。"
-        "refs 只填 exec 返回的 artifact 编号或题目材料的编号；没有依据的主张 refs 留空。",
+        "refs 只填 exec 返回的 artifact 编号或题目材料的编号（主张另可填 kb_read 返回的资料编号，自检不行）；"
+        "没有依据的主张 refs 留空。",
         "inputSchema": {
             "type": "object",
             "required": ["outcome"],
@@ -661,7 +733,27 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
             },
         },
     }
-    order = ("exec", "submit", "show", "request_access", "deliver")
+    s["kb_search"] = {
+        "description": "查人导入的资料（手册、说明、笔记）。返回段落编号、资料名、位置、开头约 200 字与得分；"
+        f"k 缺省 8、至多 {KB_K_MAX}。本会话至多 {KB_SEARCH_MAX} 次。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["query"],
+            "additionalProperties": False,
+            "properties": {"query": {"type": "string"}, "k": {"type": "integer", "minimum": 1, "maximum": KB_K_MAX}},
+        },
+    }
+    s["kb_read"] = {
+        "description": "读一段资料的全文，并把它登记为本任务的一条资料引用，返回 artifact 编号。"
+        f"资料是人给的说法，不是这次任务里验证过的事实。本会话至多 {KB_READ_MAX} 次。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["chunk"],
+            "additionalProperties": False,
+            "properties": {"chunk": {"type": "string", "description": "kb_search 返回的段落编号，形如 k_…"}},
+        },
+    }
+    order = ("exec", "submit", "show", "request_access", "deliver", "kb_search", "kb_read")
     return [{"name": n, **s[n]} for n in order if n in tools]
 
 

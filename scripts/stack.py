@@ -329,7 +329,7 @@ class Stack:
         )
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
-        self.knowledge = KnowledgeHub(home, self.blobs, cfg.knowledge)
+        self.knowledge = KnowledgeHub(home, self.blobs, cfg.knowledge, self.graph, self.tokens)
         self.knowledge.mount(self.http)
         self.catalog = catalog_of(self.registry, self.connectors)  # 判据形态目录（注册表驱动，§5.8）
         self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog, key=self.keyring.get)
@@ -419,6 +419,7 @@ class Stack:
             grants_runtime=lambda: self.graph.cfg.grants_runtime,  # 设置层 grants.runtime（运行时扩权）
             # 会话的模型档案（宪章 03 §3.2）：任务的 prefs.model 优先，否则按设置层的角色路由
             resolve_model=lambda role, want: self.settings.store.resolve(role, want),
+            knowledge=self.knowledge.session,  # 执行中检索（资料库第二期）：kb_search / kb_read
         )
         self.runner = SessionRunner(
             self.adapter_cfg,

@@ -203,7 +203,22 @@ define(
     "AcceptRecord",
     obj({"seq": INT, "decision": lit("accept", "reject"), "checks": arr(ref("AcceptCheck"))}, {"reason": STR}),
 )
-define("TaskPrefs", obj({}, {"model": STR}, doc="任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名。"))
+define(
+    "KnowledgePref",
+    obj(
+        {"mode": lit("auto", "pick", "off")},
+        {"pick": arr(STR)},
+        doc="任务能查哪些资料（资料库第二期，K3）：auto 所有对全部任务可见的；pick 只这几份；off 不挂检索工具。",
+    ),
+)
+define(
+    "TaskPrefs",
+    obj(
+        {},
+        {"model": STR, "knowledge": ref("KnowledgePref")},
+        doc="任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名；knowledge 见 KnowledgePref。",
+    ),
+)
 define(
     "SelfCheckInput",
     obj(
@@ -237,7 +252,14 @@ define(
         "题目 id 在批次外层。",
     ),
 )
-define("ArtifactClass", lit("exec", "judge", "input", "authored"))
+define("ArtifactClass", lit("exec", "judge", "input", "authored", "knowledge"))
+define(
+    "KnowledgeRef",
+    obj(
+        {"source": STR, "revision": INT, "chunk": STR, "locator": STR},
+        doc="knowledge 类的出处（资料库第二期）：书库里的资料、版本、段落与位置。登记人只能是书库的组件令牌。",
+    ),
+)
 define(
     "ExecRecord",
     obj(
@@ -529,7 +551,9 @@ define(
             "lease": STR,
             "outcome": lit("answered", "partial", "blocked"),
             "answer": null(ref("ArtifactId")),
-            "claims": arr(obj({"text": ref("Tagged"), "refs": arr(ref("GroundBrief")), "supported": BOOL})),
+            "claims": arr(
+                obj({"text": ref("Tagged"), "refs": arr(ref("GroundBrief")), "supported": BOOL, "cited": BOOL})
+            ),
             "self_check": arr(
                 obj(
                     {"what": ref("Tagged"), "result": lit("pass", "fail", "skipped"), "refs": arr(ref("GroundBrief"))},
@@ -629,7 +653,8 @@ define(
                 "src": STR,
                 "register": ref("RegisterName"),
                 "exec": null(ref("ExecRecord")),
-            }
+            },
+            {"knowledge": ref("KnowledgeRef")},
         )
     ),
 )

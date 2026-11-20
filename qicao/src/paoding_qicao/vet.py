@@ -545,19 +545,42 @@ def derivation_bytes(v: Vetted) -> bytes:
     return json.dumps({"pid": v.pid, **v.public()}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 
 
+KNOWLEDGE_MODES = ("auto", "pick", "off")
+
+
+def _knowledge_pref(raw: Any) -> dict[str, Any] | None:
+    """知识选项 → prefs.knowledge；auto（缺省）返回 None，不写。资料 id 是否存在由书库在检索时认。"""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping) or set(raw) - {"mode", "pick"} or raw.get("mode") not in KNOWLEDGE_MODES:
+        raise ValueError(f"knowledge 是 {{mode, pick?}}，mode 取 {'、'.join(KNOWLEDGE_MODES)}")
+    pick = raw.get("pick") or []
+    if not isinstance(pick, list) or not all(isinstance(x, str) and x for x in pick):
+        raise ValueError("knowledge.pick 是资料 id 的列表")
+    if raw["mode"] == "pick" and not pick:
+        raise ValueError("选“指定”时至少勾一份资料")
+    if raw["mode"] == "auto":
+        return None
+    return {"mode": "pick", "pick": list(dict.fromkeys(pick))} if raw["mode"] == "pick" else {"mode": "off"}
+
+
 def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
     """确认卡上人能改的两类（设计 §7.3）：每条授权规则的风险（三选一）与预算的金额、时限。纯函数。
 
-    ov = {"risk": {"<规则下标>": "r0|r1|r2"}, "usd_milli": int, "wall_s": int, "model": 档案名}，都可省。
+    ov = {"risk": {"<规则下标>": "r0|r1|r2"}, "usd_milli": int, "wall_s": int, "model": 档案名,
+          "knowledge": {mode: auto|pick|off, pick?: [资料 id]}}，都可省。
     model 是任务级模型偏好（宪章 03 §3.1），只能取设置页已登记的档案名，写进 open_problem 的 prefs.model。
+    knowledge 是任务的知识选项（资料库第二期，K3）：auto 是缺省，不写进事件；pick / off 写进 prefs.knowledge。
     改过的字段出处记"人"；只要改过一项，这道题就不再是练习道候选（零确认只给没人碰过的草案）。
     超过单题硬顶、风险取值不合法、下标越界一律 ValueError，不裁剪：人写的数不替人改。
     """
     if v.input is None or v.lane == "refuse":
         raise ValueError("拒绝道没有可改的字段")
-    keys = {"risk", "usd_milli", "wall_s", "ack_command", "model"}
+    keys = {"risk", "usd_milli", "wall_s", "ack_command", "model", "knowledge"}
     if set(ov) - keys:
-        raise ValueError(f"只能改 risk、usd_milli、wall_s、ack_command、model，不能改 {sorted(set(ov) - keys)}")
+        raise ValueError(
+            f"只能改 risk、usd_milli、wall_s、ack_command、model、knowledge，不能改 {sorted(set(ov) - keys)}"
+        )
     inp = json.loads(json.dumps(v.input))
     der = [dict(x) for x in v.derivation]
     touched: list[str] = []
@@ -605,10 +628,16 @@ def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
                 f"模型档案 {model!r} 未登记：只能从设置页的档案里选（{'、'.join(map(str, names)) or '无'}）"
             )
         if (inp.get("prefs") or {}).get("model") != model:
-            inp["prefs"] = {"model": model}
+            inp["prefs"] = {**(inp.get("prefs") or {}), "model": model}
             der = [r for r in der if r["field"] != "prefs.model"]
             der.append(_src("prefs.model", model, "human", note="人在确认卡上选的执行模型档案"))
             touched.append("prefs.model")
+    kn = _knowledge_pref(ov.get("knowledge"))
+    if kn is not None and (inp.get("prefs") or {}).get("knowledge") != kn:
+        inp["prefs"] = {**(inp.get("prefs") or {}), "knowledge": kn}
+        der = [r for r in der if r["field"] != "prefs.knowledge"]
+        der.append(_src("prefs.knowledge", kn, "human", note="人在新建时选的知识选项"))
+        touched.append("prefs.knowledge")
     ack = ov.get("ack_command")
     if ack is not None and not isinstance(ack, bool):
         raise ValueError("ack_command 须是 true 或 false")

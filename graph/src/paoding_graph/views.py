@@ -51,6 +51,7 @@ REGISTER = {
     "hint": "人",
     "human_reason": "人",
     "statement": "人",
+    "artifact:knowledge": "人",  # 人导入的资料里的一段（资料库第二期）：是人的话，不是执行验证过的证据
     # 估：期望增益、预测、行情、存活计数
     "estimate": "估",
 }
@@ -136,10 +137,15 @@ def _goal_predicate(state: State, pid: str, p: Problem, level: str | None) -> Vi
 
 
 def _delivery(state: State, d: Mapping[str, Any]) -> View:
-    """一次交付的投影。主张的依据逐个标出类别：执行留档（exec）或材料（input）；没有依据的主张 supported=false。"""
+    """一次交付的投影。主张的依据逐个标出类别：执行留档（exec）、材料（input）或资料（knowledge）。
+    supported：有执行留档或材料（“N 条里 M 条有执行记录”的分子）；cited：引用了资料（“K 条引用了资料”）。
+    两者分开算：只引资料的主张 supported=false（cz 2026-11-20 验收附加条件 1）。"""
 
     def grounds(refs: Sequence[str]) -> list[View]:
         return [{"id": r, "class": state["artifacts"][r]["class"]} for r in refs]
+
+    def cls(refs: Sequence[str]) -> set[str]:
+        return {state["artifacts"][r]["class"] for r in refs}
 
     return {
         "id": d["id"],
@@ -148,7 +154,12 @@ def _delivery(state: State, d: Mapping[str, Any]) -> View:
         "outcome": d["outcome"],
         "answer": d.get("answer"),
         "claims": [
-            {"text": tag("delivery", c["text"]), "refs": grounds(c["refs"]), "supported": bool(c["refs"])}
+            {
+                "text": tag("delivery", c["text"]),
+                "refs": grounds(c["refs"]),
+                "supported": bool(cls(c["refs"]) - {"knowledge"}),
+                "cited": "knowledge" in cls(c["refs"]),
+            }
             for c in d["claims"]
         ],
         "self_check": [
@@ -606,6 +617,7 @@ def artifact(state: State, aid: str) -> View:
         "src": src,
         "register": REGISTER[src],
         "exec": a.get("exec"),
+        **({"knowledge": a["knowledge"]} if "knowledge" in a else {}),
     }
 
 

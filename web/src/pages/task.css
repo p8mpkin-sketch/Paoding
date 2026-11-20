@@ -76,6 +76,16 @@
 .tk-ref:hover, .tk-ref.on { border-color: var(--ink); }
 .tk-tag { flex: none; font-size: var(--fs-xs); padding: 2px 6px; border-radius: var(--r-sm); background: var(--paper-2); color: var(--ink-2); }
 .tk-tag.need { background: var(--zhu-soft); color: var(--zhu-ink); }
+/* 引用的资料（资料库第二期）：人给的话，按“人”的语域排；与执行记录分开标示 */
+.tk-ref.kn { border-style: dashed; }
+.tk-tag.kn { margin-left: 6px; border: 1px dashed var(--rule-2); background: transparent; }
+.tk-kn { display: grid; gap: 10px; }
+.tk-kn-meta { display: grid; gap: 4px; margin: 0; }
+.tk-kn-meta div { display: flex; gap: 8px; font-size: var(--fs-sm); }
+.tk-kn-meta dt { flex: none; width: 3em; color: var(--ink-2); }
+.tk-kn-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.tk-kn-text { margin: 0; padding: 8px 12px; border-left: 2px solid var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.tk-kn-note { margin: 0; font-size: var(--fs-sm); color: var(--ink-2); }
 .tk-res { flex: none; min-width: 48px; font-size: var(--fs-xs); font-weight: 600; }
 .tk-res.pass { color: var(--qing); } .tk-res.fail { color: var(--zhu-ink); } .tk-res.skipped { color: var(--ink-3); }
 .tk-delivery { display: grid; gap: 18px; }
