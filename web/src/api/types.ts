@@ -264,6 +264,9 @@ export type StatusView = Envelope & {
     self_checks?: SelfCheckItem[];
     deliveries?: Delivery[];
     feedback?: "adopted" | "rejected" | "none";
+    follow_ups?: FollowUp[];
+    halted?: { seq: number };
+    idle_close_at?: number | null;
   };
   facts: FactNode[];
   intents: IntentNode[];
@@ -286,6 +289,8 @@ export type Delivery = {
   unverified: Tagged[];
   needs: Tagged[];
 };
+/** 人在交付之后的追问（地图 Q31）：回到求解，带着工作区与上一轮交付。 */
+export type FollowUp = { id: string; seq: number; text: Tagged; after_delivery: string | null };
 /** why：needs_human（待审批的 Intent）、stalled（停滞，target 为题目 id）；开放道另有 delivered、blocked（交付了，等人看）；M1 起还有续期门等。 */
 export type HumanWorkItem = { kind: "human"; target: string; why: string };
 export type WorkItem =
@@ -320,6 +325,8 @@ export type BudgetResponse = Envelope & {
   bootstrap_share: number;
   wall: { cap_s: number; elapsed_s: number };
   review: boolean;
+  /** 按会话的花费（地图 Q15）；各行之和等于 spent */
+  by_lease?: LeaseCost[];
 };
 export type ArtifactView = Envelope & {
   id: ArtifactId;
@@ -487,6 +494,15 @@ export type WireTick = {
   policy_version?: number;
 };
 export type TicksResponse = { as_of: number; head: number; ticks: WireTick[]; last_seq: number; head_hash: string | null };
+export type LeaseCost = {
+  lease: string;
+  kind: string;
+  usd_milli: number;
+  tokens: number;
+  active: boolean;
+  role?: string;
+  model?: string;
+};
 /** 事件流里一批事件之后的具名帧。 */
 export type ViewFrame = { as_of: number; parts_hash: PartsHash };
 
@@ -512,7 +528,9 @@ export type HumanOpKind =
   | "intent_done"
   | "grant_scope"
   | "revoke_scope"
-  | "curate";
+  | "curate"
+  | "follow_up"
+  | "halt";
 export type Op = { op: HumanOpKind; body: Record<string, unknown> };
 export type Seen = { seq: number; card_hash: string };
 export type OpResult = { ok: true; id: string | null; seq: number } | { ok: false; code: string; detail?: string; card?: unknown; as_of?: number };

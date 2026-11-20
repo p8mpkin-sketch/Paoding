@@ -2,8 +2,8 @@
 // 入参全部是图服务对同一序号给出的投影；这里只做排版前的整理：
 // 不读本机时钟（时间取事件的 ts），排序只用 seq 与 id，不算等级，不解释事件体的语义。
 import type {
-  AcceptanceItem, AcceptRecord, Authority, Badge, BudgetResponse, GraphView, IntentState, LeaseRow, Level, Predicate, Profile, ProfileOverride, Risk, ScopeRule,
-  StatusView, Tagged, Terminal, WireTick, WorkItem, WorkView,
+  AcceptanceItem, AcceptRecord, Authority, Badge, BudgetResponse, Delivery, FollowUp, GraphView, IntentState, LeaseCost, LeaseRow, Level, Predicate, Profile, ProfileOverride, Risk, ScopeRule,
+  SelfCheckItem, StatusView, Tagged, TaskPrefs, Terminal, WireTick, WorkItem, WorkView,
 } from "../api/types";
 import { layout, type Layout } from "./layout";
 import { levelWord } from "./levels";
@@ -43,6 +43,17 @@ export type BudgetVM = {
   marks: number[];
   markLines: number[];
   review: boolean;
+  /** 按会话的花费（地图 Q15）；服务端没给时为空。 */
+  byLease: LeaseCost[];
+};
+/** 开放道（open-lane §3.4–§3.5）：交付、追问、叫停、人的反馈。字段原样取自 status.goal。 */
+export type OpenLaneVM = {
+  deliveries: Delivery[];
+  followUps: FollowUp[];
+  halted: { seq: number } | null;
+  feedback: "adopted" | "rejected" | "none" | null;
+  selfChecks: SelfCheckItem[];
+  idleCloseAt: number | null;
 };
 export type ViewModel = {
   pid: string;
@@ -72,6 +83,8 @@ export type ViewModel = {
   /** 会话（租约）原样取自 status.leases：在途与已结束都由服务端标明，前端不推断。 */
   leases: LeaseRow[];
   budget: BudgetVM;
+  open: OpenLaneVM;
+  prefs: TaskPrefs | null;
   ticks: Tick[];
   layout: Layout;
 };
@@ -153,6 +166,7 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     marks: [...budget.marks].sort((a, b) => a - b),
     markLines: [...budget.mark_lines].sort((a, b) => a - b),
     review: budget.review,
+    byLease: [...(budget.by_lease ?? [])].sort((a, b) => cmp(a.lease, b.lease)),
   };
 
   const g = status.goal;
@@ -166,6 +180,12 @@ export function buildViewModel(pid: string, p: Projections, ticks: readonly Wire
     goal: { predicate: g.predicate, badge: status.problem.terminal_badge, levelWord: levelWord(g.predicate.level, g.predicate.level_word, g.predicate), statement: g.statement, accept: g.accept,
       authority: g.authority ?? "local", acceptance: g.acceptance ?? [], acceptLog: g.accept_log ?? [] },
     rows, hints, frontier, todo, budget: budgetVM,
+    open: {
+      deliveries: [...(g.deliveries ?? [])].sort((a, b) => a.seq - b.seq),
+      followUps: [...(g.follow_ups ?? [])].sort((a, b) => a.seq - b.seq),
+      halted: g.halted ?? null, feedback: g.feedback ?? null, selfChecks: g.self_checks ?? [], idleCloseAt: g.idle_close_at ?? null,
+    },
+    prefs: status.problem.prefs ?? null,
     ticks: ticksOf(ticks, seq),
     layout: layout({
       nodes: rows.map((r) => ({ id: r.id, kind: r.kind, created_seq: r.created_seq, premises: r.premises })),

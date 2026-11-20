@@ -216,5 +216,42 @@ export function staticScripts(): Script[] {
   e.exec("x_report", "Q1", "shell", "cat report.md", "# 框架对比\n\n| 框架 | 编排 | 工具调用 |\n| --- | --- | --- |\n| A | 图 | 有 |\n| B | 链 | 有 |\n| C | 角色 | 有 |\n");
   e.release("Q1", "bootstrap", 900);
   e.judge("k_struct", "goal", "structure_check", "pass", "format: text\nsize: 212\nproblems: []\n", "x_report");
-  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }];
+  // demo-6：开放道（open-lane §3.4）。一句话开题，会话做完交付：答案、主张与依据、自检、没验证的；等人看。
+  const o = new Builder("demo-6");
+  const said = "对比 LangGraph、AutoGen、CrewAI 三个框架的状态持久化方式，各自崩溃后能恢复到哪一步，给出选型建议。";
+  o.input("statement", `${said}\n`);
+  o.open("示例题：三个框架的状态持久化", said, {
+    goal: { statement: said, accept: "open", self_checks: [{ text: "对照原话：三个框架、恢复粒度、选型建议都答到", src: "human" }] },
+    scope: [{ resource: "workspace", pattern: "", actions: ["read", "write"], risk: "r0" }, { resource: "net", pattern: "github.com:443", actions: ["connect"], risk: "r0" }],
+    budget: { usd_milli: 2000, wall_s: 1800, verify_share: 0.2, bootstrap_share: 0.3 },
+    judges: [], profile: { info: "complete", judge: "none", reversibility: "r0" },
+    prefs: { model: "default" },
+  });
+  o.lease("S1", "solve");
+  o.authored("notes", "S1", "# 计划\n1. 读三家的持久化接口\n2. 各写一个中途杀进程的复现\n3. 按恢复粒度对比\n");
+  o.exec("e_clone", "S1", "shell", "rg -l checkpoint langgraph/libs | head -2", "libs/checkpoint/langgraph/checkpoint/base/__init__.py\nlibs/checkpoint-sqlite/langgraph/checkpoint/sqlite/__init__.py\n");
+  o.exec("e_lg", "S1", "shell", "python repro/crash_test.py --fw langgraph", "step1 done\nstep2 killed (SIGKILL)\n--- restart, same thread_id ---\nresume -> next=('step2',)\nstep2 done · step3 done\n");
+  o.exec("e_ag", "S1", "shell", "python repro/crash_test.py --fw autogen", "step1 done\nstep2 killed (SIGKILL)\n--- restart ---\nload_state: FileNotFoundError: state.json\n-> 从头开始\n");
+  o.exec("e_ag2", "S1", "shell", "python repro/crash_test.py --fw autogen --save-each-step", "step1 done · state saved\nstep2 killed (SIGKILL)\n--- restart ---\nload_state ok -> 从 step2 继续\n");
+  o.exec("e_cr", "S1", "shell", "python repro/crash_test.py --fw crewai", "flow.step1 done · persisted\ncrew task 1/3 done\ncrew task 2/3 killed (SIGKILL)\n--- restart ---\nflow resumes at step2 -> crew 从 task 1/3 重跑\n");
+  o.authored("answer", "S1", "需要崩溃后自动续跑，选 LangGraph：三者里只有它默认按步落盘，杀进程后从没做完的那一步接着跑。\n\n| 框架 | 什么时候落盘 | 崩溃后恢复到哪 |\n| --- | --- | --- |\n| LangGraph | 每步结束，自动 | 没做完的那一步 |\n| AutoGen | 手动调 save_state | 上次手动保存的地方；没存就从头 |\n| CrewAI | Flow 的步骤结束 | Flow 的当前步；步里的 Crew 整组重跑 |\n\n已经在用 AutoGen 的话，每个回合后加一次保存能做到差不多的效果，代价是自己管状态文件。\n", "text/markdown");
+  o.ev(adapter("S1", "solve"), "deliver", (i) => ({
+    outcome: "answered", answer: i.answer,
+    claims: [
+      { text: "LangGraph 每个 super-step 结束自动写检查点，崩溃后从没做完的那一步重跑", refs: [i.e_lg, i.e_clone] },
+      { text: "AutoGen 不自动落盘，不主动调 save_state 的话崩溃就从头开始", refs: [i.e_ag] },
+      { text: "AutoGen 每步手动保存后，可以恢复到上一步", refs: [i.e_ag2] },
+      { text: "CrewAI 的 @persist 只保存 Flow 级状态，Crew 里面的任务会整组重跑", refs: [i.e_cr] },
+      { text: "三者里只有 LangGraph 支持回到任意历史检查点分叉", refs: [] },
+    ],
+    self_check: [
+      { what: "三个复现脚本各重跑一次，结果和第一次一样", result: "pass", refs: [i.e_lg, i.e_cr] },
+      { what: "对照原话：三个框架、恢复粒度、选型建议都答到", result: "pass", refs: [], item: "c1" },
+      { what: "“回到任意检查点分叉”只读了 LangGraph 的文档，另外两家没试", result: "fail", refs: [] },
+    ],
+    unverified: ["只测了 SQLite 后端；Postgres 和 Redis 的行为是按文档推的", "用的是各仓库今天的主分支，没测已发布的旧版本"],
+    needs: [],
+  }));
+  o.release("S1", "solve", 1370);
+  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }];
 }

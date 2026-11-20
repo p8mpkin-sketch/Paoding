@@ -53,7 +53,7 @@ for (const theme of THEMES) {
       expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
     };
     await page.locator("[data-todo-item] button").first().click();
-    await expect(page.locator(".main > .sheet")).toBeVisible();
+    await expect(page.locator(".tk-col > .sheet")).toBeVisible();
     await scan("卡片");
     await page.locator('[data-action="tab-graph"]').click();
     await expect(page.locator(".graph-wrap")).toBeVisible();
@@ -61,6 +61,32 @@ for (const theme of THEMES) {
     await page.locator('[data-action="open-inject"]').click();
     await expect(page.locator('[data-card="hint-inject"]')).toBeVisible();
     await scan("指导");
+  });
+}
+
+// 开放道任务页（v5 第三期）：结果一栏、依据抽屉、采纳确认框、过程一栏
+for (const theme of THEMES) {
+  test(`axe：开放道任务页（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    const scan = async (what: string) => {
+      await page.waitForTimeout(200);
+      const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+    };
+    await page.goto("/p/demo-6");
+    await expect(page.locator("[data-answer]")).toContainText("LangGraph");
+    await scan("结果");
+    await page.locator("[data-claim] [data-ref]").first().click();
+    await expect(page.locator("[data-evidence] [data-artifact]")).toBeVisible();
+    await scan("依据抽屉");
+    await page.keyboard.press("Escape");
+    await page.locator('[data-action="adopt-delivery"]').click();
+    await expect(page.locator("[data-four]").first()).toBeVisible();
+    await scan("采纳确认");
+    await page.keyboard.press("Escape");
+    await page.locator('[data-task-tab="steps"]').click();
+    await expect(page.locator("[data-step]").first()).toBeVisible();
+    await scan("过程");
   });
 }
 

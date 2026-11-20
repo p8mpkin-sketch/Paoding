@@ -40,6 +40,7 @@ const LEVEL_WORDS: Record<Level, string> = { E3: "判定通过", E3d: "相符", 
 const REGISTER: Record<string, RegisterName> = {
   "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "artifact:authored": "叙述",
   title: "叙述", summary: "叙述", hint: "人", human_reason: "人", statement: "人", estimate: "估",
+  delivery: "叙述", follow_up: "人",
 };
 const tag = <T>(src: string, value: T): Tagged<T> => ({ src, register: REGISTER[src], value });
 
@@ -83,17 +84,21 @@ type State = {
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
   leases: Map<string, Lease>; requests: Map<string, Req>; verdicts: Verdict[];
   decisions: Map<string, { decision: "approve" | "deny"; by: string; seq: number; reason: string }>;
-  costs: { kind: string; usd_milli: number; tokens: number; wall_s: number }[];
+  costs: { kind: string; lease: string; model?: string; usd_milli: number; tokens: number; wall_s: number }[];
   capAdd: number; marks: { pct: number; seq: number }[]; extendedSeq: number;
   scopeReqs: Map<string, ScopeReq>;
   acceptLog: AcceptRecord[]; accepted: boolean;
+  /** 开放道（open-lane §3.4–§3.5；地图 v0.9 §3.2 ③ 草案）：与图服务同形 */
+  deliveries: { id: string; seq: number; lease: string; outcome: "answered" | "partial" | "blocked"; answer?: string; claims: { text: string; refs: string[] }[]; self_check: { what: string; result: "pass" | "fail" | "skipped"; refs: string[]; item?: string }[]; unverified: string[]; needs: string[] }[];
+  followUps: { id: string; seq: number; text: string; after_delivery: string | null }[];
+  halted: { seq: number } | null; feedback: "adopted" | "rejected" | "none" | null;
 };
 
 function project(events: Event[], pid: string, asOf: number): State {
   const s: State = {
     seq: asOf, now: 0, overrides: [], artifacts: new Map(), facts: new Map(), intents: new Map(), hints: new Map(), leases: new Map(),
     requests: new Map(), verdicts: [], decisions: new Map(), costs: [], capAdd: 0, marks: [], extendedSeq: 0, scopeReqs: new Map(),
-    acceptLog: [], accepted: false,
+    acceptLog: [], accepted: false, deliveries: [], followUps: [], halted: null, feedback: null,
   };
   for (const ev of events) {
     if (ev.seq > asOf) break;
@@ -119,7 +124,7 @@ function project(events: Event[], pid: string, asOf: number): State {
         break;
       }
       case "approve": s.decisions.set(b.intent, { decision: b.decision, by: ev.actor.id, seq: ev.seq, reason: b.reason ?? "" }); break;
-      case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
+      case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", lease: b.task_id, ...(b.model ? { model: b.model } : {}), usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
       case "budget_mark": s.marks.push({ pct: b.mark, seq: ev.seq }); break;
       case "budget_add": s.capAdd += b.usd_milli; break;
       case "extend": s.extendedSeq = ev.seq; break;
@@ -155,7 +160,10 @@ function project(events: Event[], pid: string, asOf: number): State {
         s.acceptLog.push({ seq: ev.seq, decision: b.decision, checks: b.checks, ...(b.reason ? { reason: b.reason } : {}) });
         if (b.decision === "accept") s.accepted = true;
         break;
-      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
+      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; if (b.feedback) s.feedback = b.feedback; } break;
+      case "deliver": s.deliveries.push({ id: `d_${ev.seq}`, seq: ev.seq, ...b }); break;
+      case "follow_up": s.followUps.push({ id: `u_${ev.seq}`, seq: ev.seq, text: b.text, after_delivery: s.deliveries.at(-1)?.id ?? null }); s.capAdd += b.budget_add_usd_milli ?? 0; break;
+      case "halt": s.halted = { seq: ev.seq }; break;
       case "curate":
         if (s.problem) {
           const p = { ...s.problem };
@@ -271,12 +279,18 @@ function work(s: State, pid: string): WorkItem[] {
   if (!s.problem || closed(s)) return [];
   const items: WorkItem[] = [];
   if (s.leases.size === 0) items.push({ kind: "bootstrap" });
+  if (s.problem.goal.accept === "open" && !s.halted && s.leases.size > 0 && ![...s.leases.values()].some((l) => l.ended_seq === undefined)) {
+    const last = s.deliveries.at(-1);
+    if (!last || (s.followUps.at(-1)?.seq ?? 0) > last.seq) items.push({ kind: "solve" });
+  }
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "open") items.push({ kind: "explore", target: i.id });
   for (const r of bySeq(s.requests)) if (r.verdict_seq === undefined) items.push({ kind: "judge", target: r.id });
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "needs_human") items.push({ kind: "human", target: i.id, why: "needs_human" });
   if (extensionPending(s)) items.push({ kind: "human", target: pid, why: "extension" });
   for (const r of bySeq(s.scopeReqs)) if (r.status === "pending" && !r.auto && !r.intent) items.push({ kind: "human", target: r.id, why: "scope_request" });
   if (acceptanceReady(s) !== null) items.push({ kind: "human", target: pid, why: "acceptance" });
+  const last = s.deliveries.at(-1);
+  if (s.problem.goal.accept === "open" && last && (s.followUps.at(-1)?.seq ?? 0) < last.seq) items.push({ kind: "human", target: pid, why: last.outcome === "blocked" ? "blocked" : "delivered" });
   return items;
 }
 
@@ -310,6 +324,7 @@ function head(s: State, pid: string, now = s.now): ProblemItem {
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
+  const brief = (id: string) => ({ id, class: s.artifacts.get(id)?.class ?? "exec" });
   const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, shelf: _sh, pinned: _pn, trash_until: _tu, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
@@ -318,6 +333,17 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
       statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check ?? NO_CHECK, levelOf(s, "goal"), p.goal.max_attempts ?? null),
       ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
       ...(p.goal.acceptance ? { acceptance: p.goal.acceptance as AcceptanceItem[], acceptance_ready: acceptanceReady(s), accept_log: s.acceptLog } : {}),
+      ...(p.goal.accept === "open" ? {
+        deliveries: s.deliveries.map((d) => ({
+          id: d.id, seq: d.seq, lease: d.lease, outcome: d.outcome, answer: d.answer ?? null,
+          claims: d.claims.map((c) => ({ text: tag("delivery", c.text), refs: c.refs.map(brief), supported: c.refs.length > 0 })),
+          self_check: d.self_check.map((c) => ({ what: tag("delivery", c.what), result: c.result, refs: c.refs.map(brief), ...(c.item ? { item: c.item } : {}) })),
+          unverified: d.unverified.map((x) => tag("delivery", x)), needs: d.needs.map((x) => tag("delivery", x)),
+        })),
+        follow_ups: s.followUps.map((u) => ({ ...u, text: tag("follow_up", u.text) })),
+        ...(s.halted ? { halted: s.halted } : {}), ...(s.feedback ? { feedback: s.feedback } : {}),
+        self_checks: (p.goal.self_checks ?? []).map((c, k) => ({ ...c, id: `c${k + 1}` })),
+      } : {}),
     },
     facts: bySeq(s.facts).map((f) => factNode(s, f)), intents: bySeq(s.intents).map((i) => intentNode(s, i)), hints: bySeq(s.hints).map(hintNode),
     leases, requests: bySeq(s.requests).map((r) => ({ id: r.id, seq: r.seq, target: r.target, judge_id: r.judge_id, candidate: r.candidate ?? null, verdict_seq: r.verdict_seq ?? null })),
@@ -354,7 +380,21 @@ function budgetView(s: State): Omit<BudgetResponse, "as_of" | "head" | "view_has
     percent: { spent: Math.floor((spent.usd_milli * 100) / cap), committed: Math.floor(((spent.usd_milli + reserved.usd_milli) * 100) / cap) },
     mark_lines: [50, 80], mark_seqs: s.marks.map((m) => m.seq), verify_share: p.budget.verify_share, bootstrap_share: p.budget.bootstrap_share,
     wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor((s.now - p.opened_ts) / 1000)) }, review: false,
+    by_lease: byLease(s),
   };
+}
+
+/** 按会话的花费（地图 Q15，v0.9 §3.2 ③ 草案）：各行之和等于 spent */
+function byLease(s: State): NonNullable<BudgetResponse["by_lease"]> {
+  const rows = new Map<string, { lease: string; kind: string; usd_milli: number; tokens: number; active: boolean; model?: string }>();
+  for (const c of s.costs) {
+    const l = s.leases.get(c.lease);
+    const r = rows.get(c.lease) ?? { lease: c.lease, kind: l?.kind ?? c.kind, usd_milli: 0, tokens: 0, active: !!l && l.ended_seq === undefined && !closed(s) };
+    r.usd_milli += c.usd_milli; r.tokens += c.tokens;
+    if (c.model) r.model = c.model;
+    rows.set(c.lease, r);
+  }
+  return [...rows.values()].sort((a, b) => (a.lease < b.lease ? -1 : 1));
 }
 
 /** 时间轴的扩权刻度：与真图服务的 /ticks 同形。 */
@@ -605,9 +645,30 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if (!String(b.reason ?? "").trim()) throw new Rejected("schema_error", "覆盖须写理由");
         return { axis: b.axis, value: b.value, reason: String(b.reason).trim(), derived: s.problem.derived_profile[b.axis as keyof Profile] };
       }
-      case "close_problem":
+      case "close_problem": {
         if ("terminal" in b) throw new Rejected("schema_error", "terminal 是派生量，由图服务按三值算出");
-        return { terminal: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}) };
+        const open = s.problem.goal.accept === "open";
+        if (b.feedback !== undefined && (!open || !["adopted", "rejected", "none"].includes(b.feedback))) throw new Rejected("schema_error", "feedback 只用于人关开放道的题，取 adopted、rejected、none");
+        const terminal = open ? (s.deliveries.some((d) => d.outcome !== "blocked") ? "delivered" : "unsolved") : levelOf(s, "goal") === "E3" ? "solved" : "unsolved";
+        return { terminal, by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}), ...(b.feedback ? { feedback: b.feedback } : {}) };
+      }
+      case "follow_up": {
+        // 地图 v0.9 §3.2 ③ 草案：剩余低于收尾保留（这里取上限的一成）而没附追加、或追加后超单题硬顶 → over_budget
+        if (s.problem.goal.accept !== "open") throw new Rejected("conflict", "只有开放道的任务可以追问");
+        const text = String(b.text ?? "").trim();
+        if (!text || text.length > 2000) throw new Rejected("schema_error", "追问须非空、不超过 2000 字");
+        const add = b.budget_add_usd_milli;
+        if (add !== undefined && !(Number.isInteger(add) && add > 0)) throw new Rejected("schema_error", "追加预算为正整数");
+        const cap = s.problem.budget.usd_milli + s.capAdd + (add ?? 0);
+        const spent = s.costs.reduce((a, c) => a + c.usd_milli, 0);
+        if (cap > settings.caps.open_usd_milli) throw new Rejected("over_budget", `追加后超过单题硬顶 $${(settings.caps.open_usd_milli / 1000).toFixed(2)}`);
+        if (cap - spent < Math.ceil(cap / 10)) throw new Rejected("over_budget", "剩余预算不够再跑一轮：追问时请附追加预算");
+        return { text, ...(add ? { budget_add_usd_milli: add } : {}), seen: b.seen };
+      }
+      case "halt":
+        if (s.problem.goal.accept !== "open") throw new Rejected("conflict", "叫停只用于开放道的任务");
+        if (s.halted) throw new Rejected("conflict", "已经叫停过了");
+        return b.reason ? { reason: String(b.reason) } : {};
       case "extend": if (!extensionPending(s)) throw new Rejected("schema_error", "续期门未触发"); return {};
       case "grant_scope": {
         const r = s.scopeReqs.get(b.request);

@@ -1,0 +1,162 @@
+/* 任务页（v5 第三期）：左边一栏读（状态、标题、流程条、四栏视图、底部输入条），右边一栏量（花费、用时、会话）。
+   行与发丝线，不堆卡片；颜色只三义：蓝 = 在做，琥珀 = 等你，绿 = 交付。 */
+.cockpit.task { display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: none; height: auto; min-height: 100%; align-items: start; }
+.tk-col { min-width: 0; display: flex; flex-direction: column; min-height: 100%; }
+.tk-head.topbar { display: block; padding: 18px 32px 16px; border-bottom: 0; }
+.tk-l1 { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; font-size: var(--fs-sm); }
+.tk-l1 .grow { display: block; flex: 1; }
+.tk-l1 .k-btn svg { width: 14px; height: 14px; }
+.tk-head .ws-title { margin: 10px 0 0; font-size: var(--fs-xl); white-space: normal; }
+.tk-head .ws-title .plain { white-space: normal; }
+.tk-l3 { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: var(--fs-xs); }
+.tk-l3 .topbar-secondary[open] { flex-basis: 100%; }
+.tk-st { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--ink); }
+.tk-st i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-4); }
+.tk-st.live i { background: var(--dai); box-shadow: 0 0 0 3px var(--dai-soft); }
+.tk-st.need { color: var(--zhu-ink); } .tk-st.need i { background: var(--zhu); }
+.tk-st.look i { background: var(--qing); }
+.tk-st.end i { background: var(--ink-3); }
+
+/* 执行流程条：做完的墨色、当前的蓝底、没到的灰、未开启的划掉 */
+.tk-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; list-style: none; padding: 0; margin: 14px 0 0; font-size: var(--fs-xs); color: var(--ink-3); }
+.tk-flow li { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; }
+.tk-flow li + li::before { content: "›"; color: var(--ink-4); margin: 0 8px 0 -4px; }
+.tk-flow li.done { color: var(--ink); }
+.tk-flow li.cur { background: var(--dai-soft); color: var(--dai); font-weight: 600; }
+.tk-flow li.cur.live::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-left: 6px; animation: tk-pulse 1.4s ease-in-out infinite; }
+.tk-flow li.off { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--ink-4); }
+@keyframes tk-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .tk-flow li.cur.live::after { animation: none; } }
+.tk-said { margin: 12px 0 0; padding-left: 12px; border-left: 2px solid var(--rule-2); font-size: var(--fs-sm); color: var(--ink-2); max-width: 72ch; }
+.tk-said q.reg-narrative, .tk-said .reg { display: inline; margin: 0; padding: 0; border: 0; quotes: none; font: inherit; }
+
+.tk-todo { margin: 4px 32px 12px; padding: 10px 14px; border: 1px solid var(--zhu-line); border-radius: var(--r); background: var(--zhu-soft); }
+.tk-todo .ws-h { margin: 0 0 6px; }
+.tk-ro { margin: 0 32px 10px; }
+.tk-col > .ws-banner { margin: 0 32px 12px; }
+.tk-col > .sheet { margin: 0 32px 16px; border: 1px solid var(--rule); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 18px 20px; }
+
+/* 四栏 */
+.tk-tabs { display: flex; align-items: center; gap: 2px; padding: 0 32px; border-bottom: 1px solid var(--rule); }
+.tk-tabs [role="tab"] { height: 36px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--ink-3); font: 500 var(--fs-sm) var(--sans); cursor: pointer; }
+.tk-tabs [role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.tk-tabs [role="tab"]:hover { color: var(--ink); }
+.tk-tabs .grow { flex: 1; }
+.tk-pane { padding: 18px 32px 24px; flex: 1; min-width: 0; }
+.tk-col > .bottom { padding: 10px 32px 12px; }
+
+/* 结果 */
+.tk-result { display: grid; gap: 18px; max-width: 820px; }
+.tk-ans { padding: 14px 18px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); font-size: var(--fs-md); line-height: 1.75; }
+.tk-ans .reg-label { float: right; margin: 0 0 6px 10px; }
+.tk-ans p { margin: 0 0 10px; white-space: pre-wrap; }
+.tk-ans p:first-of-type { font-size: var(--fs-lg); font-weight: 500; }
+.tk-ans p:last-child { margin-bottom: 0; }
+.tk-ph { font-size: var(--fs-md); margin: 8px 0 6px; }
+.tk-tbl-wrap { overflow-x: auto; margin: 6px 0 12px; }
+.tk-tbl { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); line-height: 1.5; }
+.tk-tbl th, .tk-tbl td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.tk-tbl th { font-weight: 600; color: var(--ink-2); border-bottom-color: var(--rule-2); }
+.tk-verdict { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 10px 14px; border-left: 3px solid var(--rule-3); background: var(--paper-2); font-size: var(--fs-sm); color: var(--ink-2); }
+.tk-verdict b { color: var(--ink); }
+.tk-fb { margin: 0; padding: 8px 12px; border-radius: var(--r); background: var(--paper-2); font-size: var(--fs-sm); }
+.tk-sec h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; font-size: var(--fs-sm); font-weight: 600; }
+.tk-sec h2 small { font-weight: 400; color: var(--ink-3); font-size: var(--fs-xs); }
+.tk-li { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.tk-li > li { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: var(--fs-sm); line-height: 1.6; }
+.tk-li > li .grow { flex: 1; min-width: 0; }
+.tk-li q.reg-narrative, .tk-li .reg { display: inline; margin: 0; padding: 0; border: 0; quotes: none; font: inherit; background: none; }
+.tk-li .reg-label { display: none; }
+.tk-li details { flex: 1; } .tk-li summary { cursor: pointer; color: var(--ink-2); }
+.tk-mk { flex: none; width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 50%; background: var(--paper-2); font: 600 var(--fs-xs)/1 var(--mono); color: var(--ink-2); }
+.tk-mk.need { background: var(--zhu-soft); color: var(--zhu-ink); }
+.tk-mk.you { background: var(--dai-soft); color: var(--dai); }
+.tk-refs { display: inline-flex; flex-wrap: wrap; gap: 4px; flex: none; }
+.tk-ref { font: 500 var(--fs-xs)/1 var(--mono); padding: 4px 6px; border: 1px solid var(--rule-2); border-radius: var(--r-sm); background: var(--sheet); color: var(--ink); cursor: pointer; }
+.tk-ref:hover, .tk-ref.on { border-color: var(--ink); }
+.tk-tag { flex: none; font-size: var(--fs-xs); padding: 2px 6px; border-radius: var(--r-sm); background: var(--paper-2); color: var(--ink-2); }
+.tk-tag.need { background: var(--zhu-soft); color: var(--zhu-ink); }
+.tk-res { flex: none; min-width: 48px; font-size: var(--fs-xs); font-weight: 600; }
+.tk-res.pass { color: var(--qing); } .tk-res.fail { color: var(--zhu-ink); } .tk-res.skipped { color: var(--ink-3); }
+.tk-delivery { display: grid; gap: 18px; }
+
+/* 过程 */
+.tk-steps { list-style: none; margin: 0; padding: 0; max-width: 880px; }
+.tk-step { display: grid; grid-template-columns: 52px 56px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: var(--fs-sm); line-height: 1.6; }
+.tk-step .tm { color: var(--ink-3); font-size: var(--fs-xs); }
+.tk-step .k { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; }
+.tk-step .b { min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.tk-step .b q.reg-narrative, .tk-step .b .reg { display: inline; margin: 0; padding: 0; border: 0; quotes: none; font: inherit; background: none; }
+.tk-step .b .reg-label { display: none; }
+.tk-step.you .k { color: var(--dai); }
+.tk-step.need .k { color: var(--zhu-ink); }
+.tk-step.ok .k { color: var(--qing); }
+.tk-step.bad .k { color: var(--zhu-ink); }
+.tk-step.live { background: linear-gradient(90deg, var(--dai-soft), transparent 70%); }
+.tk-cmd { font: var(--fs-xs)/1.5 var(--mono); background: var(--paper-2); padding: 2px 6px; border-radius: var(--r-sm); overflow-wrap: anywhere; }
+
+/* 结构 */
+.tk-struct { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 38%); gap: 0; border: 1px solid var(--rule); border-radius: var(--r); min-height: 360px; }
+.tk-struct .main { padding: 12px 16px; background: none; overflow: visible; }
+.tk-struct .right { padding: 12px 16px; border-left: 1px solid var(--rule); overflow: visible; }
+.cockpit.task[data-inspect="none"] .tk-struct { grid-template-columns: minmax(0, 1fr) 220px; }
+
+/* 文件 */
+.tk-files { border-top: 1px solid var(--rule); max-width: 960px; }
+.tk-frow { display: grid; grid-template-columns: minmax(0, 1.6fr) 90px 72px 60px 64px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: var(--fs-sm); }
+.tk-fhead { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; }
+.tk-fname { display: grid; min-width: 0; }
+.tk-fsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-frow .r { text-align: right; }
+
+/* 底部输入条 */
+.tk-dock { position: sticky; bottom: 0; padding: 12px 32px 16px; background: linear-gradient(transparent, var(--paper) 30%); }
+.tk-follow { display: flex; gap: 8px; align-items: center; padding: 6px 6px 6px 14px; border: 1px solid var(--rule-2); border-radius: var(--r-lg); background: var(--sheet); box-shadow: var(--shadow); max-width: 820px; }
+.tk-follow input#tk-dock-in { flex: 1; min-width: 0; border: 0; background: none; height: 32px; font-size: var(--fs-sm); }
+.tk-follow input#tk-dock-in:focus-visible { outline: none; }
+.tk-follow:focus-within { border-color: var(--ink-3); }
+.tk-add { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--ink-2); }
+.tk-add input { width: 64px; height: 28px; font-family: var(--mono); }
+.tk-dock .error { margin: 6px 0 0; }
+
+/* 证据抽屉 */
+.tk-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 60; background: var(--sheet); border-left: 1px solid var(--rule-2); box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.tk-drawer header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--rule); }
+.tk-drawer-h { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-md); }
+.tk-drawer-b { padding: 16px; overflow: auto; display: grid; gap: 12px; align-content: start; }
+.tk-four { display: grid; gap: 6px; border: 1px solid var(--rule); border-radius: var(--r); padding: 8px 12px; margin: 8px 0; font-size: var(--fs-sm); }
+
+/* 右栏 */
+.tk-rail { position: sticky; top: 0; align-self: stretch; min-height: 100%; max-height: 100vh; overflow: auto; padding: 18px 20px 24px; border-left: 1px solid var(--rule); background: var(--paper-2); display: grid; gap: 18px; font-size: var(--fs-sm); }
+.tk-rail h3 { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+.tk-rail h3 .ct { font-weight: 400; }
+.tk-rail p { margin: 0; }
+.tk-rail .cost { min-width: 0; font-size: var(--fs-sm); }
+.tk-big { font: 600 var(--fs-xl)/1.2 var(--mono); color: var(--ink); }
+.tk-big small { font-size: var(--fs-sm); font-weight: 400; color: var(--ink-3); }
+.tk-split { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tk-split li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: var(--fs-xs); }
+.tk-split .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-splitbar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.tk-splitbar b { display: block; height: 100%; background: var(--ink-3); }
+.tk-reach { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: var(--fs-xs); }
+.tk-reach li.off { text-decoration: line-through; color: var(--ink-3); }
+.tk-rail .sess-list { padding: 0; }
+
+@media (max-width: 1100px) {
+  .cockpit.task { grid-template-columns: minmax(0, 1fr); }
+  .tk-rail { position: static; max-height: none; border-left: 0; border-top: 1px solid var(--rule); }
+}
+@media (max-width: 720px) {
+  .tk-head.topbar, .tk-pane, .tk-dock, .tk-col > .bottom { padding-left: 16px; padding-right: 16px; }
+  .tk-tabs { padding: 0 8px; overflow-x: auto; }
+  .tk-todo, .tk-ro, .tk-col > .ws-banner, .tk-col > .sheet { margin-left: 16px; margin-right: 16px; }
+  .tk-struct { grid-template-columns: minmax(0, 1fr); }
+  .tk-struct .right { border-left: 0; border-top: 1px solid var(--rule); }
+  .cockpit.task[data-inspect="none"] .tk-struct { grid-template-columns: minmax(0, 1fr); }
+  .tk-step { grid-template-columns: 44px minmax(0, 1fr); }
+  .tk-step .k { display: none; }
+  .tk-frow { grid-template-columns: minmax(0, 1fr) 64px; }
+  .tk-frow > :nth-child(2), .tk-frow > :nth-child(3), .tk-frow > :nth-child(4) { display: none; }
+  .tk-li > li { flex-wrap: wrap; }
+}
