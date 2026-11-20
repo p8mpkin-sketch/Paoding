@@ -1,7 +1,7 @@
 // 模型页（前端重新设计 v5 第二期）：设置层的模型档案与默认分配单独成页。
 // 一张表看全部档案：接口、模型 ID、密钥槽有没有密钥、上次测试的结果；添加与编辑在右侧抽屉里，测通才能存。
 // 档案与路由仍是设置存储里的同一份（PUT /v1/settings，带 base_digest 做乐观并发）；密钥走 /v1/keys，页面不留它。
-// 接口格式现在只有 Anthropic 兼容一种：端点代理只按这种格式转发（OpenAI 兼容待定）。
+// 接口格式两种：Anthropic 兼容原样转发；OpenAI 兼容由端点代理改写（adapter/openai_compat.py）。
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, X } from "lucide-react";

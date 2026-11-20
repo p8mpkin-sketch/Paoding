@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const TOKEN = "mock-human-token";
-const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/models", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
+const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/models", "/knowledge", "/knowledge/memory", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
 const THEMES = ["light", "dark", "contrast"];
 
 test.beforeEach(async ({ page, request }) => {
@@ -87,6 +87,19 @@ for (const theme of THEMES) {
     await page.locator('[data-task-tab="steps"]').click();
     await expect(page.locator("[data-step]").first()).toBeVisible();
     await scan("过程");
+  });
+}
+
+// 知识页的记忆一栏：钉住 / 忘掉的确认弹层（v5 第四期）
+for (const theme of THEMES) {
+  test(`axe：记忆的确认弹层（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    await page.goto("/knowledge/memory");
+    await page.locator('[data-mem="m-ex-1"] [data-action="mem-forget"]').click();
+    await expect(page.locator('[data-mem-card="m-ex-1"]')).toBeVisible();
+    await page.waitForTimeout(200);
+    const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
   });
 }
 

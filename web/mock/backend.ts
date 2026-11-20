@@ -873,6 +873,53 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return err(405, "schema_error", `${path} 不支持 ${method}`);
   }
 
+  // ---- 记忆（通鉴；与 scripts/memory_hub.py 同形）：条目由关题封存派生，人只能钉住或遗忘 ----
+  type MemRec = { seq: number; problem: string; verdict: string; on_chain: boolean; derived?: boolean };
+  const memItems: Record<string, Record<string, unknown>> = {
+    "m-env-1": { id: "m-env-1", kind: "env_fact", title: "q1:8080 的登录页把答案串放在 /flag 的响应头里", scope: { env_key: "e-q1" }, source: { case: "c-demo-3", problem: "demo-3", node: "f_12" }, cases: ["demo-3"] },
+    "m-ex-1": { id: "m-ex-1", kind: "excluded", title: "直接猜默认口令：三次都被锁，走不通", scope: { env_key: "e-q1" }, source: { case: "c-demo-3", problem: "demo-3", node: "i_5" }, cases: ["demo-3"] },
+    "m-sp-1": { id: "m-sp-1", kind: "spend_profile", title: "花费画像：示例题：取得登录后显示的答案", scope: { sig_key: "s-1" }, source: { case: "c-demo-3", problem: "demo-3" }, cases: ["demo-3"], body: { usd_milli: 420 } },
+    "m-env-2": { id: "m-env-2", kind: "env_fact", title: "构建缓存目录在 /mnt/cache/pip", scope: { env_key: "e-ci" }, source: { case: "c-old", problem: "demo-1" }, cases: ["demo-1"] },
+  };
+  let memSeq = 40;
+  const memRecalls: Record<string, MemRec[]> = {
+    "m-env-1": [{ seq: 12, problem: "demo-3", verdict: "pass", on_chain: true, derived: true }],
+    "m-env-2": [{ seq: 20, problem: "demo-2", verdict: "pass", on_chain: false }, { seq: 31, problem: "demo-4", verdict: "fail", on_chain: false }],
+  };
+  const memPins: Record<string, boolean> = {};
+  const memForgotten: Record<string, boolean> = {};
+  const memState = (id: string) => {
+    if (memForgotten[id]) return "retired";
+    const judged = (memRecalls[id] ?? []).filter((h) => ["pass", "fail", "flaky"].includes(h.verdict));
+    if (judged.length >= 2 && judged.slice(-2).every((h) => h.verdict !== "pass")) return "retired";
+    if (judged.length && judged.at(-1)!.verdict !== "pass") return "stale";
+    return "active";
+  };
+  const memCard = (id: string) => ({ item: memItems[id], state: memState(id), pinned: !!memPins[id], recalls: memRecalls[id] ?? [] });
+  const memSeen = (id: string) => ({ seq: memSeq, card_hash: sha256(canonical(memCard(id))) });
+  function memoryRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
+    if (method === "GET" && path === "/v1/memory") {
+      return json(200, { items: Object.keys(memItems).sort().map((id) => ({ ...memItems[id], state: memState(id), pinned: !!memPins[id], recalls: memRecalls[id] ?? [] })), as_of: memSeq });
+    }
+    const m = path.match(/^\/v1\/memory\/items\/([^/]+)(?:\/(pin|forget))?$/);
+    if (!m) return err(404, "unknown_ref", `没有端点 ${path}`);
+    const id = decodeURIComponent(m[1]);
+    if (!memItems[id]) return err(404, "unknown_ref", "记忆条目不存在");
+    if (method === "GET" && !m[2]) return json(200, { ...memCard(id), seen: memSeen(id) });
+    if (method !== "POST" || !m[2]) return err(405, "schema_error", `${path} 不支持 ${method}`);
+    if (!auth.startsWith("Bearer ")) return err(401, "forbidden_op", "须带人的令牌");
+    if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "只接受人的令牌");
+    const b = parse();
+    if (!b || typeof b.reason !== "string" || typeof b.seen !== "object") return err(400, "schema_error", "请求体是 {reason, seen: {seq, card_hash}}");
+    if (!b.reason.trim()) return err(400, "schema_error", "须写理由");
+    if (b.seen?.card_hash !== memSeen(id).card_hash) return err(409, "stale_view", "所见的卡片已变，先看最新的");
+    if (memForgotten[id]) return err(400, "schema_error", "条目已遗忘");
+    if (m[2] === "pin" && ["stale", "retired"].includes(memState(id))) return err(400, "schema_error", "钉不住已过期的事实");
+    memSeq += 1;
+    if (m[2] === "pin") memPins[id] = true; else memForgotten[id] = true;
+    return json(200, { ok: true, results: [{ ok: true, seq: memSeq }], card: { ...memCard(id), seen: memSeen(id) } });
+  }
+
   // ---- 路由 ----
   function handle(req: MockRequest): MockResponse {
     const u = new URL(req.url, "http://mock");
@@ -883,6 +930,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     let m: RegExpMatchArray | null;
 
     if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/memory" || path.startsWith("/v1/memory/items/")) return memoryRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");

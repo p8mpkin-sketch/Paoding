@@ -153,6 +153,13 @@
 - 待办与收件箱多两种：`delivered`（做完了，等你看）、`blocked`（受阻，要你补）；它们不进卡片，在结果一栏处理。站点条认 `delivered`。
 - `follow_ups`、`halted`、`idle_close_at`、`by_lease` 与 `follow_up` / `halt` 两种操作按 L3 第三步的草案加进 `wire_schema.py`；真实后端接上之前，这几样只在假后端上能用。
 
+## 知识页（前端重新设计 v5 第四期）
+
+- `/knowledge`（资料）与 `/knowledge/memory`（记忆），导航“知识”。
+- 记忆一栏读 `GET /v1/memory`：通鉴从关闭的任务里派生的条目（环境、走不通、花费），状态（在用 / 闲置 / 核对没过 / 已退役）是服务端的派生量，页面只排版；已退役的收在下面。
+- 钉住 / 忘掉：先 `GET /v1/memory/items/{id}` 看卡，写理由，`POST /v1/memory/items/{id}/pin|forget` 带 `{reason, seen}`；卡变了回 409 `stale_view`，弹层换成最新的卡。核对没过的钉不住；忘掉撤不回来。只认人的令牌。
+- 资料一栏：资料库后端（导入、切分、建索引、执行中检索）按设计稿另做，做好之前只作说明。
+
 ## 检查
 
 `npm run lint`（先 `npm ci --prefix lint`）、`npm run typecheck`、`npm test`、`npm run build`、`npm run e2e`（构建后跑 Playwright；本机已有浏览器时直接用，CI 里先 `npx playwright install --with-deps chromium`）、`npm run e2e:real`（连真实图服务，需要 uv）。
