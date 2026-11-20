@@ -4,14 +4,21 @@
 
     uv run python tests/fenjue/trials.py            # 跑全部五项
     uv run python tests/fenjue/trials.py T2 T5      # 只跑其中几项
+    uv run python tests/fenjue/trials.py --gongfa 某套功法.json   # 换一套功法（例如换上新炼的火）再跑一遍
+    uv run python tests/fenjue/trials.py --holdout  # 每道题都分给常设留出的火（上一团火）再跑一遍
 
 CI 照旧跑全量测试，这张表不替代它；test_trials.py 核对表里的每一项都还存在（改名、删测试会让它变红）。
-F2 起这张表以“一套功法”为参数：换一团火，同一组试炼再跑一遍。需要 Docker 的测试没有 Docker 时照旧自动跳过。
+这张表以“一套功法”为参数（F5）：--gongfa 指一份功法文件，经环境变量 PAODING_FENJUE_GONGFA 交给功法组件，
+测试起的子进程一并继承；--holdout 把留出比例拉满，等于把每个有留出的火位换回上一团火。需要 Docker 的测试没有
+Docker 时照旧自动跳过。
 """
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -106,13 +113,49 @@ def targets(names: list[str]) -> list[str]:
     return out
 
 
+GONGFA_ENV = "PAODING_FENJUE_GONGFA"
+
+
+def with_gongfa(argv: list[str]) -> tuple[list[str], str | None]:
+    """拆出 --gongfa 文件与 --holdout；返回体质项与要用的功法文件（None 即包里的那套）。"""
+    names, path, holdout = [], None, False
+    it = iter(argv)
+    for a in it:
+        if a == "--gongfa":
+            path = next(it, None)
+            if path is None:
+                raise SystemExit("--gongfa 后面要跟一份功法文件")
+        elif a == "--holdout":
+            holdout = True
+        else:
+            names.append(a)
+    if holdout:
+        g = json.loads(Path(path).read_text(encoding="utf-8")) if path else _packaged()
+        g["holdout_permille"] = 1000
+        fd, tmp = tempfile.mkstemp(prefix="gongfa-holdout-", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(g, f, ensure_ascii=False)
+        path = tmp
+    return names, path
+
+
+def _packaged() -> dict:
+    from importlib import resources
+
+    return dict(json.loads(resources.files("paoding_fenjue").joinpath("gongfa.json").read_text(encoding="utf-8")))
+
+
 def main(argv: list[str]) -> int:
     import pytest
 
-    for n in argv or list(TRIALS):
+    names, path = with_gongfa(argv)
+    if path:
+        os.environ[GONGFA_ENV] = str(Path(path).resolve())
+        print(f"功法：{path}")
+    for n in names or list(TRIALS):
         name, what, _ = TRIALS[n]
         print(f"{n} {name}：{what}")
-    return int(pytest.main(["-q", *[str(ROOT / t) for t in targets(argv)]]))
+    return int(pytest.main(["-q", *[str(ROOT / t) for t in targets(names)]]))
 
 
 if __name__ == "__main__":

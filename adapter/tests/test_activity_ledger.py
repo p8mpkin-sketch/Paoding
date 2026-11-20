@@ -197,3 +197,28 @@ def test_cap_leaves_only_round_ends_and_the_closing_anchor(tmp_path, graph, upst
         assert rig.runner.activity(lid)["anchored_through"] == rig.runner.activity(lid)["total"]
     finally:
         rig.close()
+
+
+def test_a_problem_in_the_standing_holdout_runs_the_previous_fire(tmp_path, graph, upstream, monkeypatch):  # noqa: F811
+    """常设留出（焚决 F5，04 §5）：分到留出的题在 H6 上用上一团火 h6.activity（#115 原样），不入账；
+    部署的开关照旧开着。分到哪边由题号的确定性哈希定（fenjue/tests/test_holdout.py），这里把比例拉满。"""
+    import json
+
+    from paoding_fenjue.contract import GONGFA_ENV, gongfa
+
+    g = {k: v for k, v in gongfa().items() if k != "digest"}
+    (tmp_path / "gongfa.json").write_text(json.dumps({**g, "holdout_permille": 1000}), encoding="utf-8")
+    monkeypatch.setenv(GONGFA_ENV, str(tmp_path / "gongfa.json"))
+    gongfa.cache_clear()
+    rig = make(tmp_path, graph, upstream)
+    assert "solve" in rig.cfg.ledger_roles
+    try:
+        lid = lease_solve(graph)
+        rig.script(SCRIPT)
+        assert rig.run(lid).release["outcome"] == "done"
+        assert segments(graph, lid) == []
+        assert rig.runner.activity(lid)["anchored_through"] is None
+    finally:
+        rig.close()
+        monkeypatch.delenv(GONGFA_ENV)
+        gongfa.cache_clear()
