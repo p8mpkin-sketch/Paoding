@@ -6,7 +6,8 @@ export type KnOrigin = "file" | "folder" | "url" | "text";
 export type KnFile = { hash: string; size: number; media_type: string; name: string };
 /** 导入卡在哪一步；上传在提交时已完成，ready 即可用。 */
 export type KnStage = "parse" | "chunk" | "index" | "ready" | "cancelled";
-export type KnFailed = { stage: KnStage; reason: string; seq: number };
+/** code：secrets 是认出了像密钥的串（原因里只写处数），可以遮盖后导入；unsupported、empty、error 只能重试或取消。 */
+export type KnFailed = { stage: KnStage; reason: string; seq: number; code?: "secrets" | "unsupported" | "empty" | "error" | string; count?: number };
 export type KnSource = {
   id: string;
   name: string;

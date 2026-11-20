@@ -160,6 +160,20 @@ describe("知识页：资料", () => {
     expect(JSON.parse(String(call.body)).file).toMatchObject({ name: "告警规则.md", media_type: "text/markdown" });
   });
 
+  it("资料里有像密钥的串：停在解析，只写处数；遮盖后导入接着走", async () => {
+    const r = await sourcesPage();
+    await r.api.knPut({ name: "接口说明", scope: "all", text: "调接口用 sk-canary7Qm2Zx9Lw4Rt8Yp，超时 30 秒。" });
+    await r.api.knJobs(); // 假后端每读一次作业推进一步
+    fireEvent.click($('[aria-label="刷新"]')!);
+    await waitFor(() => expect(document.querySelector('[data-job][data-failed="true"] [data-action="kn-mask"]')).not.toBeNull());
+    const job = [...document.querySelectorAll<HTMLElement>("[data-job]")].find((e) => e.textContent!.includes("接口说明"))!;
+    expect(job.textContent).toContain("1 处像密钥");
+    expect(job.textContent).not.toContain("sk-canary");
+    expect(job.querySelector('[data-action="kn-retry"]')).toBeNull();
+    fireEvent.click(job.querySelector('[data-action="kn-mask"]')!);
+    await waitFor(() => expect(r.fetch.calls.some((c) => /\/retry$/.test(c.url) && JSON.parse(String(c.body)).mask === true)).toBe(true));
+  });
+
   it("没有人的令牌：只读，导入与行操作都不能点", async () => {
     await sourcesPage(null);
     expect($("[data-sources] .md-tip")!.textContent).toContain("只读");

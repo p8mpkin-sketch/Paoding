@@ -20,6 +20,7 @@ from typing import Any, Protocol
 
 from paoding_graph.contract import BlobError, EventLog, replay
 
+from . import creds
 from . import reducer as rd
 from .chunk import CHUNKER, chunk
 from .embed import make_embedder
@@ -129,8 +130,8 @@ class Shuku:
                     done.append(f"{sid}:purged")
         return done
 
-    def _fail(self, sid: str, rev: Mapping[str, Any], reason: str) -> None:
-        body = {"source": sid, "revision": rev["n"], "stage": rev["stage"], "reason": reason}
+    def _fail(self, sid: str, rev: Mapping[str, Any], reason: str, code: str = "error", **extra: Any) -> None:
+        body = {"source": sid, "revision": rev["n"], "stage": rev["stage"], "reason": reason, "code": code, **extra}
         self._commit(f"fail:{sid}:{rev['n']}:{rev['stage']}:{len(self.log_tail(sid))}", SERVICE, "stage_failed", body)
 
     def log_tail(self, sid: str) -> list[Any]:
@@ -143,9 +144,18 @@ class Shuku:
             if stage == "parse":
                 p = parse(self.blobs.get(f["hash"]), f["media_type"], f["name"])
                 if not p.text.strip():
-                    return self._fail(sid, rev, "解析出来是空的：这份文件里没有文字")
-                th = self.blobs.put(p.text.encode("utf-8"))
-                info = {"text": th, "chars": len(p.text), "kind": p.kind, "warnings": p.warnings}
+                    return self._fail(sid, rev, "解析出来是空的：这份文件里没有文字", "empty")
+                text, warnings = p.text, list(p.warnings)
+                hits = creds.found(text)
+                if hits and not rev.get("mask"):
+                    # 原因里只写处数，不写串本身：日志、页面、会话都看不到它
+                    why = f"发现 {len(hits)} 处像密钥或口令的串。可以遮盖后导入，或取消这次导入"
+                    return self._fail(sid, rev, why, "secrets", count=len(hits))
+                if hits:
+                    text = creds.mask(text, hits)
+                    warnings.append(f"已遮盖 {len(hits)} 处像密钥或口令的串")
+                th = self.blobs.put(text.encode("utf-8"))
+                info = {"text": th, "chars": len(text), "kind": p.kind, "warnings": warnings}
                 self._commit(idem, SERVICE, "stage_done", {"source": sid, "revision": n, "stage": stage, "info": info})
             elif stage == "chunk":
                 text = self.blobs.get(rev["info"]["text"]).decode("utf-8")
@@ -160,7 +170,7 @@ class Shuku:
                 body = {"source": sid, "revision": n, "chunks": len(cs), "embedder": self.embedder.id}
                 self._commit(idem, SERVICE, "revision_ready", body)
         except Unsupported as e:
-            self._fail(sid, rev, str(e))
+            self._fail(sid, rev, str(e), "unsupported")
         except (BlobError, OSError, KeyError, UnicodeDecodeError) as e:
             self._fail(sid, rev, f"{type(e).__name__}: {e}")
 

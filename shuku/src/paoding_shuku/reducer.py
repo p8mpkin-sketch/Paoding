@@ -6,8 +6,8 @@
     revision_put   人    {source, file}                               旧资料的新版本，进入解析
     stage_done     书库  {source, revision, stage, info}              解析、切分做完一步
     revision_ready 书库  {source, revision, chunks, embedder}         建好索引，可检索
-    stage_failed   书库  {source, revision, stage, reason}            停在这一步，等人重试或取消
-    job_retry      人    {source, revision}                           从失败的那一步重来
+    stage_failed   书库  {source, revision, stage, reason, code?, count?} 停在这一步，等人重试或取消
+    job_retry      人    {source, revision, mask?}                    从失败的那一步重来；mask：遮盖认出的凭据再往下走
     job_cancel     人    {source, revision}                           取消导入，建到一半的索引清掉
     source_set     人    {source, disabled}                           停用 / 启用（停用的不参与检索）
     source_curate  人    {source, action: delete|restore}             软删进回收站 30 天 / 恢复
@@ -165,12 +165,20 @@ def validate(st: Mapping[str, Any], actor: Mapping[str, Any], kind: str, body: M
             info = body.get("info")
             return Ok({**base, "stage": stage, "info": dict(info) if isinstance(info, dict) else {}})
         if kind == "stage_failed":
-            return Ok({**base, "stage": stage, "reason": str(body.get("reason") or "")[:500]})
+            code = str(body.get("code") or "error")[:40]
+            count = body.get("count")
+            extra = {"count": count} if isinstance(count, int) and not isinstance(count, bool) else {}
+            return Ok({**base, "stage": stage, "reason": str(body.get("reason") or "")[:500], "code": code, **extra})
         return Ok({**base, "chunks": int(body.get("chunks") or 0), "embedder": str(body.get("embedder") or "")})
     if kind == "job_retry":
         if not rev.get("failed"):
             return Reject("conflict", "这一步没有失败")
-        return Ok(base)
+        mask = body.get("mask", False)
+        if not isinstance(mask, bool):
+            return Reject("schema_error", "mask 取 true 或 false")
+        if mask and rev["failed"].get("code") != "secrets":
+            return Reject("conflict", "这一步不是因为凭据停下的")
+        return Ok({**base, "mask": True} if mask else base)
     # job_cancel
     if rev["stage"] not in STAGES:
         return Reject("conflict", "这个版本已经导入完或取消了")
@@ -202,9 +210,14 @@ def apply(st: SState, ev: Mapping[str, Any]) -> SState:
         elif kind == "revision_ready" and cur is not None:
             cur.update(stage="ready", chunks=b["chunks"], embedder=b["embedder"], ready_at=ev["ts"])
         elif kind == "stage_failed" and cur is not None:
-            cur["failed"] = {"stage": b["stage"], "reason": b["reason"], "seq": ev["seq"]}
+            code = b.get("code", "error")
+            cur["failed"] = {"stage": b["stage"], "reason": b["reason"], "code": code, "seq": ev["seq"]}
+            if "count" in b:
+                cur["failed"]["count"] = b["count"]
         elif kind == "job_retry" and cur is not None:
             cur["failed"] = None
+            if b.get("mask"):
+                cur["mask"] = True
         elif kind == "job_cancel" and cur is not None:
             cur.update(stage="cancelled", failed=None)
         elif kind == "source_set":

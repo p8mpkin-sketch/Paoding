@@ -54,7 +54,7 @@ function Steps({ job }: { job: KnJob }) {
   );
 }
 
-function Jobs({ jobs, writable, onAct }: { jobs: KnJob[]; writable: boolean; onAct: (j: KnJob, verb: "retry" | "cancel") => void }) {
+function Jobs({ jobs, writable, onAct }: { jobs: KnJob[]; writable: boolean; onAct: (j: KnJob, verb: "retry" | "cancel" | "mask") => void }) {
   return (
     <div className="kn-jobs">
       {jobs.map((j) => (
@@ -70,7 +70,9 @@ function Jobs({ jobs, writable, onAct }: { jobs: KnJob[]; writable: boolean; onA
             {j.warnings.length > 0 && <p className="t2 kn-job-note">{j.warnings.join("；")}</p>}
           </div>
           <div className="kn-job-acts">
-            {j.failed && <Button tone="line" size="sm" disabled={!writable} onClick={() => onAct(j, "retry")} data-action="kn-retry">重试</Button>}
+            {j.failed?.code === "secrets"
+              ? <Button tone="line" size="sm" disabled={!writable} onClick={() => onAct(j, "mask")} data-action="kn-mask" title="把认出的串换成占位符后接着导入；原文件不改">遮盖后导入</Button>
+              : j.failed && <Button tone="line" size="sm" disabled={!writable} onClick={() => onAct(j, "retry")} data-action="kn-retry">重试</Button>}
             <Button tone="bare" size="sm" disabled={!writable} onClick={() => onAct(j, "cancel")} data-action="kn-cancel">取消</Button>
           </div>
         </div>
@@ -302,7 +304,7 @@ export function Sources({ importOpen, setImportOpen, onCount }: { importOpen: bo
         <section data-jobs>
           <SectionHead title="正在导入" note="关掉页面也会继续"
             right={<span className="kn-poll t2">{busy && <><i aria-hidden="true" />每 2 秒更新</>}<Button tone="bare" size="sm" aria-label="刷新" onClick={() => void load()}><RefreshCw aria-hidden="true" /></Button></span>} />
-          <Jobs jobs={jobs} writable={writable} onAct={(j, verb) => void act(verb === "retry" ? "重试导入" : "取消导入", () => api.knJob(j.source, j.revision, verb))} />
+          <Jobs jobs={jobs} writable={writable} onAct={(j, verb) => void act(verb === "mask" ? "遮盖后导入" : verb === "retry" ? "重试导入" : "取消导入", () => api.knJob(j.source, j.revision, verb === "mask" ? "retry" : verb, verb === "mask"))} />
         </section>
       )}
       <section>

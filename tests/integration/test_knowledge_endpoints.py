@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time
 import urllib.request
@@ -142,3 +143,34 @@ def test_knowledge_config():
         knowledge_config({"embedder": {"kind": "cloud"}})
     with pytest.raises(ValueError):
         knowledge_config({"other": 1})
+
+
+CANARY = "sk-canaryStack5Vb8Nq2Lk7"
+
+
+def test_canary_stays_out_of_index_logs_and_responses(stack, caplog):
+    """验收①的全栈一轮：经 HTTP 导入带金丝雀的资料，停在解析，遮盖后导入；之后栈的日志文件、书库目录、
+    所有读端点的应答里都没有它。"""
+    caplog.set_level(logging.DEBUG)
+    url, tok = stack.url, stack.human_token
+    text = f"# 接口\n\n调接口用 {CANARY}，超时 30 秒。\n\n## 回滚\n\n回滚用上一个标签。\n"
+    sid = req(url, "POST", "/v1/knowledge/sources", {"name": "接口说明", "text": text}, tok)[1]["source"]
+    src = wait_ready(url, sid)
+    assert src["failed"]["code"] == "secrets" and src["failed"]["count"] == 1
+    assert req(url, "POST", f"/v1/knowledge/jobs/{sid}/1/retry", {"mask": "yes"}, tok)[0] == 400
+    assert req(url, "POST", f"/v1/knowledge/jobs/{sid}/1/retry", {"mask": True}, tok)[0] == 200
+    src = wait_ready(url, sid)
+    assert src["live_revision"] == 1
+    bodies = [req(url, "GET", "/v1/knowledge/sources")[1], req(url, "GET", "/v1/knowledge/jobs")[1]]
+    for q in ("调接口", "sk-canaryStack5Vb8Nq2Lk7", "回滚"):
+        res = req(url, "POST", "/v1/knowledge/search", {"q": q, "k": 20}, tok)[1]
+        bodies.append(res)
+        bodies += [req(url, "GET", f"/v1/knowledge/chunks/{h['id']}")[1] for h in res["hits"]]
+    dump = json.dumps(bodies, ensure_ascii=False)
+    assert "‹资料里的凭据，已遮盖›" in dump and CANARY not in dump
+    # 运行日志：栈在测试里不写文件（run.py 才配文件），所以直接查这段时间里发出的每一条日志记录
+    assert any("资料导入" in r.getMessage() for r in caplog.records), "书库循环应当打过日志，才算查过"
+    for r in caplog.records:
+        assert CANARY not in r.getMessage() and CANARY not in str(r.__dict__), r.name
+    for f in (stack.cfg.home / "shuku").iterdir():
+        assert CANARY.encode() not in f.read_bytes(), f.name

@@ -921,7 +921,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
   }
 
   // ---- 资料（书库；与 scripts/knowledge_hub.py 同形）：每读一次作业列表，在导入的版本推进一步 ----
-  type KnRev = { n: number; file: { hash: string; size: number; media_type: string; name: string }; stage: string; failed: { stage: string; reason: string; seq: number } | null; chunks: number; ts: number; text: string };
+  type KnRev = { n: number; file: { hash: string; size: number; media_type: string; name: string }; stage: string; failed: { stage: string; reason: string; seq: number; code?: string; count?: number } | null; chunks: number; ts: number; text: string; mask?: boolean };
   type KnSrc = { id: string; name: string; origin: string; scope: string; disabled: boolean; deleted_at: number | null; created: number; revs: KnRev[] };
   const T0 = Date.now();
   const DAY = 86_400_000;
@@ -939,7 +939,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     { id: "s_runbk01", name: "运维手册 2026.md", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 60_000,
       revs: [knRev("运维手册 2026.md", 190_000, "chunk", T0 - 60_000, "订单服务超时先看 sweeper 的延迟，再看数据库连接池是否耗尽。", 0)] },
     { id: "s_scan01", name: "2025-08 支付超时复盘.pdf", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 120_000,
-      revs: [knRev("2025-08 支付超时复盘.pdf", 2_400_000, "parse", T0 - 120_000, "", 0, { stage: "parse", reason: "pdf 要到资料库第三期才能解析；现在可以把文字另存为 txt 或 md 再导入", seq: 9 })] },
+      revs: [knRev("2025-08 支付超时复盘.pdf", 2_400_000, "parse", T0 - 120_000, "", 0, { stage: "parse", reason: "pdf 要到资料库第三期才能解析；现在可以把文字另存为 txt 或 md 再导入", code: "unsupported", seq: 9 })] },
   ];
   const knLive = (s: KnSrc) => (s.disabled || s.deleted_at !== null ? null : [...s.revs].reverse().find((r) => r.stage === "ready")?.n ?? null);
   const knView = (s: KnSrc) => {
@@ -954,7 +954,12 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
   const knStep = () => {
     for (const s of knSources) for (const r of s.revs) {
       if (r.failed) continue;
-      if (r.stage === "parse") { if (/\.(pdf|docx)$/i.test(r.file.name)) r.failed = { stage: "parse", reason: "pdf / docx 要到资料库第三期才能解析", seq: ++knSeq }; else r.stage = "chunk"; }
+      if (r.stage === "parse") {
+        const hits = r.text.match(/(?<![A-Za-z0-9])(?:sk-|ghp_|AKIA)[A-Za-z0-9_-]{8,}/g) ?? [];
+        if (/\.(pdf|docx)$/i.test(r.file.name)) r.failed = { stage: "parse", reason: "pdf / docx 要到资料库第三期才能解析", code: "unsupported", seq: ++knSeq };
+        else if (hits.length && !r.mask) r.failed = { stage: "parse", reason: `发现 ${hits.length} 处像密钥或口令的串。可以遮盖后导入，或取消这次导入`, code: "secrets", count: hits.length, seq: ++knSeq };
+        else { if (hits.length) for (const h of hits) r.text = r.text.split(h).join("‹资料里的凭据，已遮盖›"); r.stage = "chunk"; }
+      }
       else if (r.stage === "chunk") { r.stage = "index"; r.chunks = Math.max(1, Math.ceil(r.text.length / 500)); }
       else if (r.stage === "index") { r.stage = "ready"; r.ts = Date.now(); }
     }
@@ -1005,7 +1010,13 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     if (m) {
       const r = knSources.find((x) => x.id === m![1])?.revs.find((x) => x.n === Number(m![2]));
       if (!r) return err(404, "unknown_ref", "没有这个版本");
-      if (m[3] === "retry") { if (!r.failed) return err(409, "conflict", "这一步没有失败"); r.failed = null; }
+      if (m[3] === "retry") {
+        if (!r.failed) return err(409, "conflict", "这一步没有失败");
+        if (b.mask !== undefined && typeof b.mask !== "boolean") return err(400, "schema_error", "mask 取 true 或 false");
+        if (b.mask && r.failed.code !== "secrets") return err(409, "conflict", "这一步不是因为凭据停下的");
+        if (b.mask) r.mask = true;
+        r.failed = null;
+      }
       else { if (!["parse", "chunk", "index"].includes(r.stage)) return err(409, "conflict", "这个版本已经导入完或取消了"); r.stage = "cancelled"; r.failed = null; }
       knSeq += 1;
       return json(200, { ok: true, jobs: knJobs() });

@@ -5,7 +5,7 @@
     POST /v1/knowledge/sources/{id}/revisions               新版本：{text} 或 {file}
     POST /v1/knowledge/sources/{id}/disable|enable|delete|restore
     GET  /v1/knowledge/jobs                                 正在导入的版本与五阶段进度
-    POST /v1/knowledge/jobs/{id}/{rev}/retry|cancel
+    POST /v1/knowledge/jobs/{id}/{rev}/retry|cancel        retry 可带 {mask: true}：遮盖认出的凭据后导入
     POST /v1/knowledge/search                               “试一下”：{q, k?, pick?}，与会话检索同一个函数
     GET  /v1/knowledge/chunks/{id}                          一段的原文与位置
 
@@ -141,7 +141,10 @@ class KnowledgeHub:
 
     def _job(self, q: dict[str, str], body: dict[str, Any] | None) -> dict[str, Any]:
         kind = "job_retry" if q["verb"] == "retry" else "job_cancel"
-        self._do(lambda: self.sk.act(kind, {"source": q["id"], "revision": int(q["rev"])}))
+        act: dict[str, Any] = {"source": q["id"], "revision": int(q["rev"])}
+        if kind == "job_retry" and isinstance(body, dict) and "mask" in body:
+            act["mask"] = body["mask"]  # 遮盖认出的凭据再导入；校验在书库的 reducer 里
+        self._do(lambda: self.sk.act(kind, act))
         return {"ok": True, "jobs": self.sk.jobs()}
 
     @staticmethod

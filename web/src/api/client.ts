@@ -144,8 +144,9 @@ export function createApi(cfg: ApiConfig) {
     /** 新建一份资料：粘贴的文字，或先 putBlob 再交 file。只收网页交来的字节。 */
     knPut: (body: KnPut) => post<{ source: string; revision: number; jobs: KnJob[] }>("/v1/knowledge/sources", body),
     knSource: (id: string, verb: KnSourceVerb) => post<{ ok: true }>(`/v1/knowledge/sources/${enc(id)}/${verb}`, {}),
-    knJob: (id: string, revision: number, verb: "retry" | "cancel") =>
-      post<{ ok: true; jobs: KnJob[] }>(`/v1/knowledge/jobs/${enc(id)}/${revision}/${verb}`, {}),
+    /** mask：只对因凭据停下的版本有效，遮盖认出的串后再导入。 */
+    knJob: (id: string, revision: number, verb: "retry" | "cancel", mask = false) =>
+      post<{ ok: true; jobs: KnJob[] }>(`/v1/knowledge/jobs/${enc(id)}/${revision}/${verb}`, mask ? { mask: true } : {}),
     /** “试一下”：与执行中的检索同一个函数，不登记引用。 */
     knSearch: (q: string, k = 8) => post<KnSearch>("/v1/knowledge/search", { q, k }),
     // ---- 设置层 ----
