@@ -65,6 +65,7 @@ M0 进度见 [docs/m0/status.md](docs/m0/status.md)，实现中发现的规格�
 | 文档 | 说明 |
 | --- | --- |
 | [docs/design/core-innovations.md](docs/design/core-innovations.md) | **核心创新与架构总览（项目名片 / 定盘星）**：信条、骨架一张图、创新账（出处+状态）、方法论出身、未证明清单、动工检查单 |
+| [docs/design/fenjue/](docs/design/fenjue/README.md) | **焚决：进化架构设计 v0.1（已裁决，FJ1–FJ15 全采纳推荐）**：体质（信任内核五项）、功法（八个可替换火位）、药鼎（量具）三分；吞噬协议六步、火莲判据、进化度量、迁移路线与命名方案 |
 | [docs/research/agent-architecture-survey.md](docs/research/agent-architecture-survey.md) | 调研 v1（Claude 会话产出：六场景基准、高星生态、厂商观点、A/B/C 分级制度） |
 | [docs/research/agent-architecture-survey-zcode.md](docs/research/agent-architecture-survey-zcode.md) | 调研 v1（ZCode 会话产出：国内攻防黑板谱系、通用框架演化、五层共识） |
 | [docs/research/agent-architecture-survey-v2.md](docs/research/agent-architecture-survey-v2.md) | **调研 v2：两路合并版**（两范式 × 五层交叉表与四条张力） |
