@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
+from paoding_fenjue.contract import form, params
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import activity as act
@@ -48,6 +49,9 @@ def stderr_file(cwd: Path) -> IO[bytes]:
 
 TTL_S = 120
 OUTCOME = {"found": "done", "nothing": "nothing", "unsolved": "nothing", "failed": "failed"}
+
+
+_LEDGER = params("H6", "h6.activity-ledger")  # 观察面上那团入账的火（炼档 001）
 
 
 @dataclass
@@ -75,9 +79,10 @@ class AdapterConfig:
     knowledge: KnowledgePort | None = None
     # 活动入账（焚决首炼“可回放的实时性”，炼档 001）：哪些席位的会话把活动分段登记进事件账。
     # 缺省只有开放道的 solve；严格道缺省不入账，事件日志与今天逐字节相同。
-    ledger_roles: tuple[str, ...] = ("solve",)
-    anchor_interval_s: float = 30.0  # 两次入账至多隔这么久（cz 2026-11-20 定）
-    anchor_cap: int = 200  # 每题因入账新增的事件上限（cz 2026-11-20 定）；到了之后只在每轮结束与会话收尾时入账
+    # 缺省值取功法 H6 上 h6.activity-ledger 的清单；散火（指回 h6.activity）即 ledger_roles=()。
+    ledger_roles: tuple[str, ...] = field(default_factory=lambda: tuple(_LEDGER["ledger_roles"]))
+    anchor_interval_s: float = float(_LEDGER["anchor_interval_s"])  # 两次入账至多隔这么久（cz 2026-11-20 定）
+    anchor_cap: int = int(_LEDGER["anchor_cap"])  # 每题因入账新增的事件上限（cz 2026-11-20 定）；到了只在轮末与收尾入账
 
 
 @dataclass
@@ -173,20 +178,23 @@ class SessionRunner:
         ws = sdir / "workspace"
         ws.mkdir(parents=True, exist_ok=True)
         (sdir / "home").mkdir(exist_ok=True)
-        if role == "solve":  # 开放道（open-lane §3.2）：一个会话做到底，交付即结束；不写论断，不交判官
-            tools: tuple[str, ...] = ("exec", "show", "deliver")
+        # 会话形态（功法 H1 的清单，paoding_fenjue）：带哪些工具、要不要接力、以什么收尾。
+        # 独行（开放道，open-lane §3.2）一个会话做到底，交付即结束，接力时拷上一个会话的工作区；三段式写论断、交判官
+        shape = form(role)
+        tools: tuple[str, ...] = tuple(shape["tools"])
+        if shape["relay"]:
             self._relay(pid, lease_id, ws)
-        else:
-            tools = ("submit", "show") if role == "reason" else ("exec", "submit", "show")
+        face = params("H3", "h3.base")
         if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
-            tools += ("request_access",)
+            tools += (face["grant_tool"],)
         kb = self.cfg.knowledge
         if kb is not None and kb.available(pid):  # 知识选项不是“不用”、范围里有可检索的资料
-            tools += ("kb_search", "kb_read")
+            tools += tuple(params("H3", "h3.kb")["tools"])
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
         if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
+        s.kb_cite = shape["kb_cite"]
         s.secrets = creds.found(statement)  # 原话里的凭据：写进扩权申请与交付之前逐字遮盖（creds.py）
         host = ToolHost(
             s,
@@ -267,7 +275,8 @@ class SessionRunner:
             )
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
-            if role == "solve":
+            delivers = shape["ends_on"] == "deliver"
+            if delivers:
                 # 开放道的收尾轮（open-lane §3.3）：软线（预算或墙钟到 90%）→ 立即交付；没交付就结束 → 交付或留笔记接力
                 if exit_status is None and not lv["killed"] and (lv["closing"] or not s.delivered):
                     plan.resume = True
@@ -288,7 +297,7 @@ class SessionRunner:
                 outcome = "failed"
             elif t and t.spent_usd_milli >= t.reserve_usd_milli:
                 exit_status, outcome = "killed(budget)", "budget_exhausted"
-            elif role == "solve":  # 交付了即 done；没交付即 nothing，司南按接力上限再派下一个求解会话
+            elif delivers:  # 交付了即 done；没交付即 nothing，司南按接力上限再派下一个求解会话
                 outcome = "done" if s.delivered else "nothing"
             elif not s.submitted:
                 exit_status, outcome = "failed(no_output)", "failed"  # 容错第三级
@@ -304,7 +313,7 @@ class SessionRunner:
                 "events": rec.events,
                 "tool_calls": s.calls,
                 "final": s.final,
-                **({"delivered": s.delivered} if role == "solve" else {}),
+                **({"delivered": s.delivered} if delivers else {}),
                 "package_ref": rec.package_ref,
                 "proxy": {"requests": t.requests if t else 0, "usd_milli": t.spent_usd_milli if t else 0},
             }
@@ -492,11 +501,12 @@ class SessionRunner:
     def _relay(self, pid: str, lease_id: str, ws: Path) -> None:
         """开放道的接力（open-lane §3.2）：把本题上一个求解会话的工作区（含它的 NOTES.md）拷进新会话的工作区。
         每个会话仍有自己的会话目录与工作区（容器启动器按目录名认租约），接力只是拷贝，不共用目录。"""
+        kind = self.reader.state["leases"][lease_id]["kind"]  # 同一席位的上一个会话
         prev = sorted(
             (
                 l
                 for l in self.reader.state["leases"].values()
-                if l["problem_id"] == pid and l["kind"] == "solve" and l["id"] != lease_id and not l["active"]
+                if l["problem_id"] == pid and l["kind"] == kind and l["id"] != lease_id and not l["active"]
             ),
             key=lambda l: l["ended_seq"],
         )

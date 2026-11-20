@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from paoding_executor.contract import ExecPort
+from paoding_fenjue.contract import params
 from paoding_graph.contract import (
     BadBody,
     BlobPort,
@@ -68,6 +69,7 @@ class Session:
     submitted: bool = False
     delivered: str | None = None  # 开放道：最近一次交付的 outcome（answered | partial | blocked）
     secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
+    kb_cite: str = "grounds"  # 会话形态（功法 H1）：资料段落能进交付的 refs（refs），还是只能拿来找方向（grounds）
 
 
 class KnowledgePort(Protocol):
@@ -357,7 +359,7 @@ class ToolHost:
             return out
         note = (
             "这是人给的资料里的话：交付时可以把 artifact 填进主张的 refs，页面标成“引用了资料”"
-            if self.s.role == "solve"
+            if self.s.kb_cite == "refs"
             else "这是人给的资料里的话，不能当论断的 grounds：拿它找方向，再用 exec 取证"
         )
         return {**out, "note": note}
@@ -753,7 +755,7 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
             "properties": {"chunk": {"type": "string", "description": "kb_search 返回的段落编号，形如 k_…"}},
         },
     }
-    order = ("exec", "submit", "show", "request_access", "deliver", "kb_search", "kb_read")
+    order = (*params("H3", "h3.base")["order"], *params("H3", "h3.kb")["tools"])  # 工具面（功法 H3）
     return [{"name": n, **s[n]} for n in order if n in tools]
 
 

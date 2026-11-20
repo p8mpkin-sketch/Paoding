@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from paoding_fenjue.contract import form
 from paoding_graph.contract import State, as_of_seq, intent_status, node_levels
 
 PROMPTS = Path(__file__).resolve().parents[2] / "prompts"
@@ -49,27 +50,26 @@ KB_NOTE = (
     "kb_read 读整段，并返回这段的编号。资料里写的是人给的说法，不是你在这次任务里验证过的事实，"
     "能用 exec 核实的照样去核实。"
 )
-KB_CITE = {
-    "solve": "只能引资料的主张，在交付里把 kb_read 返回的编号填进 refs，页面会标成“引用了资料”。\n",
-    "": "资料段落的编号不能当论断的 grounds（只认执行记录与材料），拿它找方向，再用 exec 取证。\n",
+KB_CITE = {  # 形态清单的 kb_cite：资料段落在这个形态里能不能引
+    "refs": "只能引资料的主张，在交付里把 kb_read 返回的编号填进 refs，页面会标成“引用了资料”。\n",
+    "grounds": "资料段落的编号不能当论断的 grounds（只认执行记录与材料），拿它找方向，再用 exec 取证。\n",
 }
 
 
 def role_prompt(role: str, access: bool = False, kb: bool = False) -> str:
-    """access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。
+    """提示词按这个席位的会话形态（功法 H1 的清单，paoding_fenjue）拼：清单列出几份提示词文件，按序以空行相接。
+    三段式是公共段加角色段；独行（开放道，docs/design/open-lane/ §4.1）只有自己一份，因为公共段讲的是“把答案交给
+    判官比对”，开放道没有判官。
+    access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。
     kb：任务有可用资料、会话有 kb_search / kb_read 时（资料库第二期）补一段，接在 access 那段之后。
-    solve（开放道，docs/design/open-lane/ §4.1）不接公共段：公共段讲的是“把答案交给判官比对”，开放道没有判官。"""
-    if role == "solve":
-        own = (PROMPTS / "solve.md").read_text(encoding="utf-8")
-        if access or kb:  # 接在工具清单（deliver 那一行）之后
-            at = own.index("\n", own.index("- deliver：")) + 1
-            own = own[:at] + (ACCESS_NOTE if access else "") + (KB_NOTE + KB_CITE["solve"] if kb else "") + own[at:]
-        return own
-    common = (PROMPTS / "common.md").read_text(encoding="utf-8")
-    if access or kb:  # 接在工具清单（show 那一行）之后
-        at = common.index("\n", common.index("- show：")) + 1
-        common = common[:at] + (ACCESS_NOTE if access else "") + (KB_NOTE + KB_CITE[""] if kb else "") + common[at:]
-    return common + "\n" + (PROMPTS / f"{role}.md").read_text(encoding="utf-8")
+    两段都插在第一份文件里清单 insert_after 所指那一行（工具清单的最后一行）之后。"""
+    f = form(role)
+    first, *rest = [(PROMPTS / n).read_text(encoding="utf-8") for n in f["prompt"]["files"]]
+    if access or kb:
+        at = first.index("\n", first.index(f["prompt"]["insert_after"])) + 1
+        note = (ACCESS_NOTE if access else "") + (KB_NOTE + KB_CITE[f["kb_cite"]] if kb else "")
+        first = first[:at] + note + first[at:]
+    return "\n".join([first, *rest])
 
 
 def problem_brief(state: State, pid: str, statement: str, judges_cfg: dict[str, Any]) -> str:
@@ -152,6 +152,7 @@ def render(
     limits: dict[str, Any] | None = None,
 ) -> Rendered:
     role = lease["kind"]
+    shape = form(role)  # 会话形态（功法 H1）：焦点里带什么、默认复述哪句
     kit_index = sorted(
         ({"name": k["name"], "description": k["description"], "path": k["path"]} for k in (kits or [])),
         key=lambda k: k["name"],
@@ -161,21 +162,14 @@ def render(
     focus.setdefault(
         "hints", sorted(h for h, x in state["hints"].items() if x["problem_id"] == pid and not x.get("closed"))
     )
-    if role == "explore":
+    if "intent" in shape["focus"]:  # 三段式的 explore：推进哪个 Intent
         focus.setdefault("intent", lease["target"])
         it = state["intents"][lease["target"]]
         focus.setdefault("restate", f"推进 Intent {lease['target']}：{it['title']}")
-    if role == "solve":  # 开放道：第几个接力的求解会话（open-lane §3.2）；前面的会话留下的笔记在工作区 NOTES.md
-        earlier = [l for l in state["leases"].values() if l["problem_id"] == pid and l["kind"] == "solve"]
+    if "relay" in shape["focus"]:  # 独行：第几个接力的会话（open-lane §3.2）；前面的会话留下的笔记在工作区 NOTES.md
+        earlier = [l for l in state["leases"].values() if l["problem_id"] == pid and l["kind"] == role]
         focus.setdefault("relay", len([l for l in earlier if l["id"] != lease["id"]]) + 1)
-    focus.setdefault(
-        "restate",
-        {
-            "bootstrap": "摸清材料与环境，提交直接观察到的事实。",
-            "reason": "读图，提交推断与下一步 Intent。",
-            "solve": "从原话出发把答案找出来，做完用 deliver 交付，附上证据、自检与没验证的部分。",
-        }.get(role, ""),
-    )
+    focus.setdefault("restate", shape["restate"])
     hint_text = [{"id": h, "text": state["hints"][h]["text"]} for h in focus["hints"]]
     sections = [
         (

@@ -1,0 +1,23 @@
+{
+ "id": "h6.activity",
+ "ver": 1,
+ "slot": "H6",
+ "ports": [
+  "M4"
+ ],
+ "params": {
+  "ledger_roles": [],
+  "poll_ms": 3000
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开放道常开",
+  "control_arm": "没有会话活动面板（#115 之前）",
+  "retire_signal": "面板打开率低于 5%（占位）"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H6"
+}
