@@ -2,6 +2,7 @@
 
 from typing import Any, Protocol
 
+from .activity import SEGMENT_MEDIA, ChainBroken, replay_segments  # noqa: F401
 from .backend import FAKE_CLI, CliBinding, fake_program  # noqa: F401
 from .container import (  # noqa: F401
     PROXY_PORT,

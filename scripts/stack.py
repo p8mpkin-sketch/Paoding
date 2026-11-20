@@ -66,6 +66,7 @@ from settings_hub import defaults as settings_defaults  # noqa: E402
 from paoding_adapter.contract import (  # noqa: E402
     FAKE_CLI,
     AdapterConfig,
+    ChainBroken,
     CliBinding,
     ContainerLauncher,
     EndpointProxy,
@@ -475,16 +476,22 @@ class Stack:
         self.url = ""
 
     def _activity(self, q: dict, body: object) -> dict:
-        """GET /v1/leases/{id}/activity?after=N：会话的工具调用、自述、耗时与花费（adapter 的 activity.jsonl）。"""
+        """GET /v1/leases/{id}/activity?after=N[&as_of=seq]：会话的工具调用、自述、耗时与花费。
+
+        as_of 是回放：只从事件账里那个 seq 及之前入账的活动段重建（焚决首炼“可回放的实时性”），链校验不过回 409。"""
         try:
             after = int(q.get("after") or 0)
+            as_of = int(q["as_of"]) if q.get("as_of") not in (None, "") else None
         except ValueError:
-            raise BadBody("after 是整数") from None
+            raise BadBody("after、as_of 是整数") from None
         lease = self.graph.state["leases"].get(q["id"])
         if lease is None:
             raise MountError(404, "unknown_ref", f"没有会话 {q['id']}")
-        out = self.runner.activity(q["id"], after)
-        if out is None:  # 会话还没起来、没留下活动，或工作区已按期清掉
+        try:
+            out = self.runner.activity(q["id"], after, as_of)
+        except ChainBroken as e:
+            raise MountError(409, "chain_broken", f"会话 {q['id']} 的入账活动校验不过：{e}") from None
+        if out is None:  # 会话还没起来、没留下活动，或工作区已按期清掉；回放时：那一刻还没有入账的活动
             out = {
                 "lease": q["id"],
                 "role": lease["kind"],
@@ -501,8 +508,11 @@ class Stack:
                 "calls": 0,
                 "now": None,
                 "last_say": None,
+                "anchored_through": None,
+                **({"as_of": as_of} if as_of is not None else {}),
             }
-        return {**out, "problem_id": lease["problem_id"], "kind": lease["kind"], "active": bool(lease["active"])}
+        active = bool(lease["active"]) and as_of is None
+        return {**out, "problem_id": lease["problem_id"], "kind": lease["kind"], "active": active}
 
     # ---------- 起 ----------
 

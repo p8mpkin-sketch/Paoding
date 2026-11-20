@@ -126,7 +126,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
     lastFollowUpSeq: vm.open.followUps.at(-1)?.seq ?? 0, judged: vm.goal.predicate.verdicts.length > 0,
   };
   const solves = vm.leases.filter((l) => l.kind === "solve");
-  const actLease = open && asOf === null ? (pickLease ?? (solves.filter((l) => l.active).at(-1) ?? solves.at(-1))?.id ?? null) : null;
+  // 回放时也给面板（可回放的实时性）：只排那一刻已入账的活动
+  const actLease = open ? (pickLease ?? (solves.filter((l) => l.active).at(-1) ?? solves.at(-1))?.id ?? null) : null;
   const actKind = vm.leases.find((l) => l.id === actLease)?.kind ?? "solve";
   const actHidden = !(actOpen ?? solves.some((l) => l.active));
   const openLease = (id: string) => { setPickLease(id); setActOpen(true); requestAnimationFrame(() => actRef.current?.scrollIntoView?.({ block: "nearest" })); };
@@ -205,8 +206,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
 
         {actLease && !actHidden && (
           <div ref={actRef} className="tk-act-wrap">
-            <SessionActivity key={actLease} lease={actLease} kind={actKind} spent={vm.budget.byLease.find((l) => l.lease === actLease)?.usd_milli}
-              onClose={() => setActOpen(false)} />
+            <SessionActivity key={`${actLease}@${asOf ?? "live"}`} lease={actLease} kind={actKind} spent={vm.budget.byLease.find((l) => l.lease === actLease)?.usd_milli}
+              asOf={asOf} seq={vm.seq} onClose={() => setActOpen(false)} />
           </div>
         )}
         {actLease && actHidden && (

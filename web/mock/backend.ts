@@ -1119,15 +1119,37 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         const l = s.leases.get(lid);
         if (!l) continue;
         const active = l.ended_seq === undefined && !closed(s);
-        const all = l.kind === "solve" ? activityDemo(active, pid) : [];
+        // 可回放的实时性（炼档 001）：exec 的结果带那次执行的留档；入账点是每次 exec 返回（段紧跟留档登记）与会话收尾。
+        const execs = [...s.artifacts.values()].filter((a) => a.class === "exec" && a.producer?.session === lid);
+        const demo = l.kind === "solve" ? activityDemo(active, pid) : [];
+        const cmd = (id: unknown) => demo.find((y) => y.kind === "call" && y.tool === "exec" && y.id === id)?.gist;
+        const full = demo.map((x) => {
+          const a = x.kind === "result" ? execs.find((e) => e.exec?.command === cmd(x.id)) : undefined;
+          return a ? { ...x, artifact: a.id } : x;
+        });
+        const anchors = full.flatMap((x) => (x.artifact ? [{ n: Number(x.n), seq: Number(String(x.artifact).slice(2)) }] : []));
+        if (!active && full.length && l.ended_seq !== undefined) anchors.push({ n: full.length, seq: l.ended_seq });
+        const asOfQ = q.get("as_of");
+        const asOfN = asOfQ === null || asOfQ === "" ? null : Number(asOfQ);
+        if (asOfN !== null && !Number.isInteger(asOfN)) return err(400, "schema_error", "after、as_of 是整数");
+        const upto = (asOfN === null ? anchors : anchors.filter((x) => x.seq <= asOfN)).at(-1)?.n ?? null;
+        const all = asOfN === null ? full : full.slice(0, upto ?? 0);
         const after = Number(q.get("after") ?? 0);
         const items = all.filter((x) => Number(x.n) > after);
         const done = new Set(all.filter((x) => x.kind === "result").map((x) => x.id));
         const calls = all.filter((x) => x.kind === "call");
         const pending = calls.filter((x) => !done.has(x.id)).at(-1);
         const mine = s.costs.filter((c) => c.lease === lid);
+        if (asOfN !== null) {
+          return json(200, {
+            lease: lid, problem_id: pid, kind: l.kind, active: false, live: false, status: all.length ? "replay" : "none", as_of: asOfN,
+            rounds: 1, model: "model-a", elapsed_s: 0, spent_usd_milli: 0, closing: false, anchored_through: upto,
+            items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: all.filter((x) => x.kind === "call").length,
+            now: null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
+          });
+        }
         return json(200, {
-          lease: lid, problem_id: pid, kind: l.kind, active, live: active, status: active ? "running" : all.length ? "released" : "none",
+          lease: lid, problem_id: pid, kind: l.kind, active, live: active, status: active ? "running" : all.length ? "released" : "none", anchored_through: upto,
           rounds: 1, model: "model-a", elapsed_s: mine.reduce((a, c) => a + c.wall_s, 0), spent_usd_milli: mine.reduce((a, c) => a + c.usd_milli, 0), closing: false,
           items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: calls.length,
           now: active ? pending ?? null : null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
