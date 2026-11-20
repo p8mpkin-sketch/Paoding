@@ -48,6 +48,12 @@ def norm(x: Any) -> Any:
     return x
 
 
+# 不比的事件体字段。F3 起开题带功法摘要、租约带会话形态（体质修炼 001）：摘要随每一次吞噬而变，
+# 拿它比只会让每次换火都报“不同”；这两个字段由 tests/fenjue/test_f3_gongfa.py 单独测。
+# 核对一次有意的改动只差在哪：--ignore kind.field,… 再拿掉几个字段比，差得只剩这些才重录基线。
+IGNORE: dict[str, tuple[str, ...]] = {"open_problem": ("gongfa",), "lease": ("form",)}
+
+
 def norm_event(e: dict[str, Any]) -> Any:
     out = norm({k: e[k] for k in KEEP})
     b = out["body"]
@@ -57,6 +63,8 @@ def norm_event(e: dict[str, Any]) -> Any:
         b = {k: v for k, v in b.items() if k != "size"}
         if isinstance(b.get("exec"), dict):  # 执行的起止时刻
             b["exec"] = {k: v for k, v in b["exec"].items() if k not in ("started_at", "ended_at")}
+    for field in IGNORE.get(out["kind"], ()):  # --ignore kind.field：有意加进事件体的字段
+        b = {k: v for k, v in b.items() if k != field}
     out["body"] = b
     return out
 
@@ -160,6 +168,10 @@ def stable(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
+    if "--ignore" in argv:
+        for kf in argv[argv.index("--ignore") + 1].split(","):
+            kind, _, fld = kf.partition(".")
+            IGNORE[kind] = (*IGNORE.get(kind, ()), fld)
     first, second = run(), run()
     now = stable(first, second)
     sf = surface()  # 录的时候也带上：核对时与冻结的比

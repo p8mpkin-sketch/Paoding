@@ -81,6 +81,7 @@ from paoding_adapter.contract import (  # noqa: E402
 )
 from paoding_adapter.purge import purge_workspaces  # noqa: E402
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
+from paoding_fenjue.contract import kernel_config  # noqa: E402
 from paoding_graph.contract import (  # noqa: E402
     BadBody,
     BlobStore,
@@ -322,7 +323,8 @@ class Stack:
             if os.environ.get(env, "").strip():
                 self.keyring.set(slot, os.environ[env], source="env")
         self.judges = kernel_judges(self.registry, self.connectors)
-        self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges), self.tokens)
+        # 焚决 F3：开题抄功法 (品阶, 摘要)、领租约抄会话形态；取自功法清单（paoding_fenjue），内核只抄不解释
+        self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges, **kernel_config()), self.tokens)
         self.blobs = BlobStore(home / "blobs")
         self.vault = Vault(home / "vault")
         self.http = GraphHttp(

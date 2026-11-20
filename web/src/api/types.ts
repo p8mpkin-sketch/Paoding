@@ -223,6 +223,8 @@ export type LeaseRow = {
   ended_seq?: number;
   transcript_ref?: string | null;
   reflect?: boolean;
+  /** 会话形态 id@ver（焚决 F3）；旧租约没有，按席位推 */
+  form?: string;
 };
 export type ProblemHead = {
   id: string;
@@ -235,6 +237,8 @@ export type ProblemHead = {
   closed_seq: number | null;
   profile: Profile;
 };
+/** 功法：品阶与摘要（焚决 F3） */
+export type Gongfa = { jie: number; digest: string };
 export type ProfileOverride = { axis: ProfileAxis; value: string; derived: string | null; by: string; seq: number; reason: Tagged };
 export type JudgeRequestRow = {
   id: string;
@@ -254,6 +258,8 @@ export type StatusView = Envelope & {
     judges: string[];
     origin: Origin;
     prefs?: TaskPrefs;
+    /** 开题时的功法（焚决 F3）；旧题没有，读作第 0 阶 */
+    gongfa?: Gongfa;
   };
   goal: {
     statement: Tagged;

@@ -142,6 +142,8 @@ F2 改写的是适配层与司南的分支，不碰内核，但会话的行为�
 
 提示词（各席位，扩权与资料两段的四种组合）、全部工具的形状与司南的次序另记一份 `@surface`，`tests/fenjue/test_zero_diff_surface.py` 在 CI 里每次都比。整套剧本较慢，手动跑 `--check`。
 
+**F3 的实现记录（2026-11-20）。** 体质修炼 001，变更表与三问见 [tizhi-001-gongfa-in-events.md](./tizhi-001-gongfa-in-events.md)。内核只多两个不透明的配置值（`Config.gongfa`、`Config.forms`），由组装根从 `paoding_fenjue.kernel_config()` 取来；读端缺省（第 0 阶、按席位推形态）是功法组件里的纯函数。零差剧本里只有经组装根开题的 4 个测试变了，变的正是这两个字段；拿掉它们之后 178 项全部相同。此后 `zero_diff.py` 缺省不比这两个字段（摘要随每次吞噬而变），由 `tests/fenjue/test_f3_gongfa.py` 单独测。
+
 ## 4. 与在途 PR 的关系
 
 | PR | 状态 | 与焚决 |

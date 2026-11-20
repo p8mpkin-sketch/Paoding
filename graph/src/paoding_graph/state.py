@@ -211,6 +211,7 @@ class Problem(TypedDict):
     renamed: NotRequired[list[Body]]  # curate 改名：[{seq, from}]，title 是现在的显示名
     pinned: NotRequired[bool]  # curate 置顶
     settings: NotRequired[Body]  # 宪章 D5：{version, digest}，开题时的设置快照；不进等级、消费门与画像
+    gongfa: NotRequired[Body]  # 焚决 F3：{jie, digest}，开题时的功法；同 settings，只记不解释
 
 
 class Producer(TypedDict):
@@ -324,6 +325,7 @@ class Lease(TypedDict):
     expires_at: int
     target: NotRequired[str]
     reflect: NotRequired[bool]
+    form: NotRequired[str]  # 焚决 F3：会话形态 "id@ver"，领租约时由图服务抄入；旧租约没有，读端按席位推
     outcome: NotRequired[str]
     ended_seq: NotRequired[int]
     transcript_ref: NotRequired[str]
