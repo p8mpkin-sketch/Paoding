@@ -44,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 from connector_hub import ConnectorHub  # noqa: E402
 from kaiti_hub import KaitiHub, kaiti_config, practice_doc  # noqa: E402
+from knowledge_hub import KnowledgeHub, knowledge_config  # noqa: E402
 from memory_hub import MemoryHub, memory_config  # noqa: E402
 from paoding_judgebox.contract import (  # noqa: E402
     BUILTINS,
@@ -128,6 +129,7 @@ class StackConfig:
         default_factory=lambda: {"level": "info", "format": "json", "file": "logs/stack.log", "access": False}
     )
     memory: dict = field(default_factory=lambda: memory_config(None))  # 通鉴：case_seal、model_epoch（v1.5）
+    knowledge: dict = field(default_factory=lambda: knowledge_config(None))  # 书库：embedder（v5 第四期）
     kaiti: dict = field(default_factory=dict)  # 一句话开题的起草服务（scripts/kaiti_hub.py）
     judges_dir: Path | None = None  # 判官注册表；缺省 judgebox/judges.d
     connectors_dir: Path | None = None  # 外部平台的连接器档案；缺省 judgebox/connectors.d（测试另给目录）
@@ -187,6 +189,7 @@ class StackConfig:
             raise ValueError(f"log 只认 {sorted(cfg.log)} 这几项")
         cfg.log = {**cfg.log, **lg}
         cfg.memory = memory_config(raw.get("memory"))
+        cfg.knowledge = knowledge_config(raw.get("knowledge"))
         cfg.kaiti = kaiti_config(raw.get("kaiti"), base)
         for k, v in over.items():
             if v is not None:
@@ -326,6 +329,8 @@ class Stack:
         )
         self.memory = MemoryHub(home, self.graph, self.tokens, self.tok["sinan"], cfg.memory)
         self.memory.mount(self.http)
+        self.knowledge = KnowledgeHub(home, self.blobs, cfg.knowledge)
+        self.knowledge.mount(self.http)
         self.catalog = catalog_of(self.registry, self.connectors)  # 判据形态目录（注册表驱动，§5.8）
         self.kaiti = KaitiHub(cfg.kaiti, cfg.backend == "real", cfg.upstream, self.catalog, key=self.keyring.get)
         self.kaiti.mount(self.http)
@@ -474,6 +479,7 @@ class Stack:
             "判官运行器已起：%s", ", ".join(f"{k}@{v['version']}" for k, v in sorted(self.judges.items()))
         )
         self._spawn("memory", self._memory_loop)
+        self._spawn("knowledge", self._knowledge_loop)
         self._spawn("sinan", self._sinan_supervisor)
         missing = [k for k in TASK_KINDS if not self.cfg.scripts.get(k)]
         where = "模型容器" if self.launch_mode == "container" else "宿主子进程"
@@ -567,6 +573,7 @@ class Stack:
             },
             "watchdog": self._loop_health("watchdog"),
             "memory": {**self._loop_health("memory"), "case_seal": self.cfg.memory["case_seal"]},
+            "knowledge": {**self._loop_health("knowledge"), **self.knowledge.health()},
             "kaiti": {"ok": True, **self.kaiti.state},
             "adapter": {
                 "ok": True,
@@ -649,6 +656,20 @@ class Stack:
             except OSError as e:  # 磁盘等环境故障：记下，下一轮照常
                 L.exception("tick 失败")
                 self._beat("memory", e)
+            self.stop_event.wait(self.cfg.poll_s)
+
+    # ---------- 书库：导入作业一次推进一步，回收站到期清理 ----------
+
+    def _knowledge_loop(self) -> None:
+        L = log("knowledge")
+        while not self.stop_event.is_set():
+            try:
+                for d in self.knowledge.tick():
+                    L.info("资料导入：%s", d)
+                self._beat("knowledge")
+            except OSError as e:  # 磁盘等环境故障：记下，下一轮照常
+                L.exception("tick 失败")
+                self._beat("knowledge", e)
             self.stop_event.wait(self.cfg.poll_s)
 
     # ---------- 司南：每道未关的题一个循环 ----------
@@ -799,6 +820,7 @@ class Stack:
             self.upstream.close()
         self.http.close()
         self.memory.close()
+        self.knowledge.close()
         if threading.excepthook == self._thread_died:
             threading.excepthook = self._prev_hook
         L.info("已停：链头 seq=%d", self.graph.head())
