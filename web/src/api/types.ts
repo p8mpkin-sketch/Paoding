@@ -60,6 +60,8 @@ export type Authority = "local" | "external" | "human" | "self";
 export type AuthorityTally = { problems: number; solved: number; accepted: number; delivered: number; unsolved: number; open: number };
 export type AcceptCheck = { id: string; verdict: "pass" | "fail"; ref?: ArtifactId; note?: string };
 export type AcceptRecord = { seq: number; decision: "accept" | "reject"; checks: AcceptCheck[]; reason?: string };
+/** 任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名。 */
+export type TaskPrefs = { model?: string };
 /** 开放道的必做自检项（open-lane §4.2）：原文里的检查命令；会话交付前自己跑、如实报告，判官不重放。 */
 export type SelfCheckInput = { text: string; src: "span" | "human" };
 export type SelfCheckItem = SelfCheckInput & { id: string };
@@ -81,6 +83,7 @@ export type ProblemInput = {
   budget: Budget & { verify_share: number; bootstrap_share: number };
   env: Env;
   judges: string[];
+  prefs?: TaskPrefs;
 };
 export type ArtifactClass = "exec" | "judge" | "input" | "authored";
 export type ExecRecord = {
@@ -246,6 +249,7 @@ export type StatusView = Envelope & {
     env: Env;
     judges: string[];
     origin: Origin;
+    prefs?: TaskPrefs;
   };
   goal: {
     statement: Tagged;
@@ -436,6 +440,9 @@ export type ProblemItem = ProblemHead & {
   human_todo: number;
   wall: { cap_s: number; elapsed_s: number };
   authority: Authority;
+  shelf: "active" | "archived" | "trash" | "purged";
+  pinned: boolean;
+  trash_until: number | null;
 };
 export type ProblemsView = Envelope & {
   items: ProblemItem[];
@@ -504,7 +511,8 @@ export type HumanOpKind =
   | "judge_revoke"
   | "intent_done"
   | "grant_scope"
-  | "revoke_scope";
+  | "revoke_scope"
+  | "curate";
 export type Op = { op: HumanOpKind; body: Record<string, unknown> };
 export type Seen = { seq: number; card_hash: string };
 export type OpResult = { ok: true; id: string | null; seq: number } | { ok: false; code: string; detail?: string; card?: unknown; as_of?: number };

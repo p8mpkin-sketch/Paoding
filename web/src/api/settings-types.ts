@@ -26,6 +26,8 @@ export type SettingsLogEntry = { version: number; from: string | null; to: strin
 /** 密钥槽：没有任何字段是密钥本身；指纹 = 加盐 sha256 前 8 位 + 末 4 位。 */
 export type KeySlot = { slot: string; set: boolean; fingerprint: string | null; set_at: number | null; source: "page" | "env" | "config" | "fake" | null; env: string };
 export type KeysView = { slots: KeySlot[]; note: string };
+/** POST /v1/models/test 的应答：ok 时带延迟；不 ok 时 code 与一句人话（已去掉密钥）。 */
+export type ModelProbe = { ok: boolean; latency_ms?: number; status?: number; code?: string; message?: string };
 /** 设置页的两节只读（宪章 Q6）：练习道信封（内核此刻加载的那一份）与预算先验表（外部注入的可插拔数据源）。 */
 export type PracticeEnvelope = {
   version: number;

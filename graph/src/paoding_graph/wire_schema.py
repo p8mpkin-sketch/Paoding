@@ -203,6 +203,7 @@ define(
     "AcceptRecord",
     obj({"seq": INT, "decision": lit("accept", "reject"), "checks": arr(ref("AcceptCheck"))}, {"reason": STR}),
 )
+define("TaskPrefs", obj({}, {"model": STR}, doc="任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名。"))
 define(
     "SelfCheckInput",
     obj(
@@ -231,6 +232,7 @@ define(
             "env": ref("Env"),
             "judges": arr(STR),
         },
+        {"prefs": ref("TaskPrefs")},
         doc="open_problem 的事件体。没有 profile 字段：画像是派生量，提交时不接受（HMI §3.2 强制点）。"
         "题目 id 在批次外层。",
     ),
@@ -482,7 +484,8 @@ define(
                             "env": ref("Env"),
                             "judges": arr(STR),
                             "origin": ref("Origin"),
-                        }
+                        },
+                        {"prefs": ref("TaskPrefs")},
                     ),
                 ),
                 "goal": obj(
@@ -802,10 +805,15 @@ define(
                 "human_todo": INT,
                 "wall": obj({"cap_s": INT, "elapsed_s": INT}),
                 "authority": ref("Authority"),
+                "shelf": lit("active", "archived", "trash", "purged"),
+                "pinned": BOOL,
+                "trash_until": null(INT),
             },
             doc=(
                 "题目列表的一行。authority 是判定来源（派生，external-verdict §5.7）。"
                 "closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。"
+                "shelf 是人整理后的位置（curate，软删）：trash 在 trash_until 之前可恢复，过期为 purged；"
+                "软删的题照样计入合计与读数。"
             ),
         ),
     ),
@@ -899,6 +907,7 @@ define(
             "intent_done",
             "grant_scope",
             "revoke_scope",
+            "curate",
         ),
         "description": "add_intent 之后的几种随后续里程碑启用（规格 3.1.9）；M0 的图服务以 schema_error 拒绝。",
     },

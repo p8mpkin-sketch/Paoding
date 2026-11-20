@@ -95,7 +95,7 @@ export function Import() {
   const ready = rows.filter((r) => r.state === "ready" || r.state === "failed").length;
   return (
     <div className="importer" data-page="import">
-      <Mast vol={["卷三", "导入"]} cap="导入任务集" title="一次新建一批任务" dek="文件在本机解析，逐个先存材料、再创建任务，与向导走同一条路；每个任务的结果单独显示，失败的可以重试。" />
+      <Mast cap="导入任务集" title="一次新建一批任务" dek="文件在本机解析，逐个先存材料、再创建任务，与向导走同一条路；每个任务的结果单独显示，失败的可以重试。" />
       <section className="today-sec">
         <SectionHead title="选文件与缺省值" note="JSON 或 CSV" />
         <div className="import-grid">

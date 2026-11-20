@@ -72,7 +72,12 @@ type ScopeReq = {
   intent?: string; riskRows: (number | null)[]; status: "pending" | "granted" | "denied";
   decided?: { seq: number; by: string; via?: "auto" | "approval"; policy_version?: number; reason?: string };
 };
-type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal };
+type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal;
+  shelf?: { state: "active" | "archived" | "trash"; seq: number; ts: number }; pinned?: boolean; renamed?: { seq: number; from: string }[] };
+// 整理（curate，v5 第三期软删）：与 graph/reducer/curate.py 同规则
+const TRASH_MS = 30 * 86_400_000;
+const trashUntil = (p: Problem) => (p.shelf?.state === "trash" ? p.shelf.ts + TRASH_MS : null);
+const shelfOf = (p: Problem, now: number) => { const u = trashUntil(p); return u !== null && now >= u ? "purged" as const : p.shelf?.state ?? "active"; };
 type State = {
   seq: number; now: number; problem?: Problem; overrides: StatusView["problem"]["profile_overrides"];
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
@@ -151,6 +156,15 @@ function project(events: Event[], pid: string, asOf: number): State {
         if (b.decision === "accept") s.accepted = true;
         break;
       case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
+      case "curate":
+        if (s.problem) {
+          const p = { ...s.problem };
+          if ("shelf" in b) p.shelf = { state: b.shelf, seq: ev.seq, ts: ev.ts };
+          if ("title" in b) { p.renamed = [...(p.renamed ?? []), { seq: ev.seq, from: p.title }]; p.title = b.title; }
+          if ("pinned" in b) p.pinned = b.pinned;
+          s.problem = p;
+        }
+        break;
     }
   }
   return s;
@@ -279,7 +293,7 @@ function authorityOf(goal: { accept: string; check?: { judge_id: string } }): Au
   return goal.accept === "human" ? "human" : EXTERNAL_JUDGES.has((goal.check ?? NO_CHECK).judge_id) ? "external" : "local";
 }
 
-function head(s: State, pid: string): ProblemItem {
+function head(s: State, pid: string, now = s.now): ProblemItem {
   const p = s.problem!;
   return {
     authority: authorityOf(p.goal),
@@ -290,15 +304,16 @@ function head(s: State, pid: string): ProblemItem {
     active: closed(s) ? [] : bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).filter((l) => l.ended_seq === undefined).map((l) => ({ kind: l.kind, ...(l.target !== undefined ? { target: l.target } : {}) })),
     human_todo: work(s, pid).filter((w) => w.kind === "human").length,
     wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor(((p.closed_ts ?? s.now) - p.opened_ts) / 1000)) },
+    shelf: shelfOf(p, now), pinned: !!p.pinned, trash_until: trashUntil(p),
   };
 }
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
-  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, ...h } = head(s, pid);
+  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, shelf: _sh, pinned: _pn, trash_until: _tu, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
-    problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },
+    problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin, ...(p.prefs ? { prefs: p.prefs } : {}) },
     goal: {
       statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check ?? NO_CHECK, levelOf(s, "goal"), p.goal.max_attempts ?? null),
       ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
@@ -509,7 +524,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
   const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension", grant_scope: "scope" };
 
   /** 校验一条人的操作，返回规范化的事件体。 */
-  function validate(pid: string, op: string, b: any, pendingArts: Set<string>): Record<string, unknown> {
+  function validate(pid: string, op: string, b: any, pendingArts: Set<string>, closing = false): Record<string, unknown> {
     const s = stateOf(pid);
     if (op === "register_artifact") {
       if (b.class !== "input") throw new Rejected("forbidden_op", "人的令牌只能登记 input 类");
@@ -520,6 +535,8 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (s.problem) throw new Rejected("schema_error", "题目已存在");
       if (!b.title || !Array.isArray(b.scope) || b.scope.length === 0) throw new Rejected("schema_error", "title、scope 必填");
       if (!(b.budget?.usd_milli > 0) || !(b.budget?.wall_s > 0)) throw new Rejected("schema_error", "预算为正");
+      // 任务级模型偏好（宪章 03 §3.1）：只能取设置页登记过的档案名
+      if (b.prefs && (Object.keys(b.prefs).some((k) => k !== "model") || (b.prefs.model !== undefined && !settings.models.profiles.some((p) => p.name === b.prefs.model)))) throw new Rejected("unknown_ref", `模型档案 ${b.prefs?.model} 未登记`);
       if (b.goal?.accept === "open") {
         // 开放道（open-lane §8）：不登记判据、不启用判官；假后端只收题面，不模拟求解与交付（第二步的结果页再补）
         if ("check" in b.goal || "max_attempts" in b.goal || (b.judges ?? []).length) throw new Rejected("schema_error", "开放道不登记判据、不启用判官");
@@ -538,6 +555,27 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       return { ...b, profile: deriveProfile(b.scope, (b.goal.check ?? NO_CHECK).judge_id) };
     }
     if (!s.problem) throw new Rejected("unknown_ref", `题目 ${pid} 未开`);
+    if (op === "curate") {
+      const extra = Object.keys(b).filter((k) => !["shelf", "title", "pinned"].includes(k));
+      if (extra.length || !Object.keys(b).length) throw new Rejected("schema_error", "curate 只改 shelf、title、pinned，至少一项");
+      const cur = shelfOf(s.problem, clock + 7000);
+      if (cur === "purged") throw new Rejected("forbidden_op", "这个任务在回收站里超过 30 天，工作区已清，不能再整理");
+      const out: Record<string, unknown> = {};
+      if ("shelf" in b) {
+        if (!["active", "archived", "trash"].includes(b.shelf)) throw new Rejected("schema_error", "shelf 取 active、archived、trash");
+        if (b.shelf === cur) throw new Rejected("schema_error", `任务已经在 ${cur}`);
+        if (b.shelf === "trash" && !closed(s) && !closing) throw new Rejected("forbidden_op", "正在跑的任务要先停（close_problem）再移进回收站");
+        out.shelf = b.shelf; out.from = cur;
+      }
+      if ("title" in b) {
+        const t = String(b.title ?? "").trim();
+        if (!t || t.length > 200) throw new Rejected("schema_error", "title 须非空、不超过 200 字");
+        if (t === s.problem.title) throw new Rejected("schema_error", "新名字与现在的一样");
+        out.title = t;
+      }
+      if ("pinned" in b) { if (typeof b.pinned !== "boolean") throw new Rejected("schema_error", "pinned 取 true 或 false"); out.pinned = b.pinned; }
+      return out;
+    }
     if (closed(s)) throw new Rejected("schema_error", "题目已关闭");
     const ck = DECISIONS[op];
     if (ck) {
@@ -647,7 +685,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       ops.forEach((o, n) => {
         const b = subst(o.body ?? {}) as Record<string, unknown>;
         try {
-          staged.push({ op: o.op, body: validate(pid, o.op, b, pending) });
+          staged.push({ op: o.op, body: validate(pid, o.op, b, pending, staged.some((x) => x.op === "close_problem")) });
           if (o.op === "register_artifact") pending.add(`a_${base + n + 1}`);
         } catch (e) {
           if (!(e instanceof Rejected)) throw e;
@@ -680,7 +718,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     caps: { global_usd_milli: 500_000, open_usd_milli: 20_000, open_wall_s: 14_400, practice_usd_milli: 500, practice_wall_s: 1_800 },
     risk: [{ resource: "workspace", pattern: "*", actions: ["read", "write"], risk: "r0" }],
     models: {
-      profiles: [{ name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" }],
+      profiles: [
+        { name: "default", endpoint: "", model: "main-1", family: "", tier: "strong", key_slot: "default" },
+        { name: "light", endpoint: "", model: "light-1", family: "", tier: "light", key_slot: "default" },
+      ],
       routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
     },
     grants: { runtime: true, auto: { practice: true } },
@@ -740,6 +781,18 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       return json(200, settingsDoc());
     }
     if (method === "GET" && path === "/v1/keys") return json(200, keysView());
+    if (method === "POST" && path === "/v1/models/test") {
+      // 与 settings_hub.probe 同形；假上游：模型 ID 里带 bad 的回 404，其余按名字给一个稳定的延迟
+      const p = parse()?.profile;
+      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot}}");
+      if (!p.model) return json(200, { ok: false, code: "no_model", message: "没写模型 ID：填上再测（不写时用命令行的缺省模型，没法单独测）" });
+      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(p.key_slot ?? "")) return json(200, { ok: false, code: "bad_slot", message: "密钥槽名不对" });
+      if (!keySlots.has(p.key_slot)) return json(200, { ok: false, code: "key_not_set", message: `密钥槽 ${p.key_slot} 还没有密钥：先填密钥再测` });
+      if (p.endpoint && !/^https?:\/\/./.test(p.endpoint)) return json(200, { ok: false, code: "bad_endpoint", message: "接口地址要以 http:// 或 https:// 开头" });
+      const ms = 180 + (parseInt(sha256(enc.encode(String(p.model))).slice(0, 4), 16) % 460);
+      if (String(p.model).includes("bad")) return json(200, { ok: false, latency_ms: ms, status: 404, code: "not_found", message: "接口地址或模型 ID 不对（上游回 404）：model not found" });
+      return json(200, { ok: true, latency_ms: ms, status: 200 });
+    }
     if (method === "DELETE" && path === "/v1/keys") { keySlots.clear(); return json(200, keysView()); }
     const km = path.match(/^\/v1\/keys\/([^/]+)$/);
     if (km) {
@@ -765,7 +818,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     const notFound = (d = `没有端点 ${path}`) => err(404, "unknown_ref", d);
     let m: RegExpMatchArray | null;
 
-    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");
@@ -845,7 +898,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     });
 
     if (path === "/v1/problems") {
-      const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid));
+      const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid, clock));
       // solved 与每解成本只数本地判定；外部判定与人工验收各自一行（external-verdict §5.7）
       const tally = (a: Authority) => {
         const xs = items.filter((i) => i.authority === a);

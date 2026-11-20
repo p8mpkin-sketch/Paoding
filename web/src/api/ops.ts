@@ -6,7 +6,7 @@ import type { AcceptCheck, HumanOpKind, Op, Profile, Seen } from "./types";
 export const HUMAN_OPS: ReadonlySet<HumanOpKind> = new Set<HumanOpKind>([
   "open_problem", "register_artifact", "hint", "approve", "profile_override", "abandon_intent", "close_problem",
   "add_intent", "extend", "budget_add", "pause", "resume", "rule", "accept", "judge_revoke", "intent_done",
-  "grant_scope", "revoke_scope",
+  "grant_scope", "revoke_scope", "curate",
 ]);
 
 export const ops = {
@@ -33,4 +33,8 @@ export const ops = {
   /** closeout：已逐条确认的四顾项（地图 Q21）。 */
   accept: (checks: AcceptCheck[], seen: Seen, closeout: string[]): Op => ({ op: "accept", body: { decision: "accept", checks, seen, closeout } }),
   rejectDelivery: (checks: AcceptCheck[], reason: string, seen: Seen): Op => ({ op: "accept", body: { decision: "reject", checks, seen, reason } }),
+  // —— 整理（v5 第三期，软删）：归档、回收站、恢复、改名、置顶 ——
+  shelve: (shelf: "active" | "archived" | "trash"): Op => ({ op: "curate", body: { shelf } }),
+  rename: (title: string): Op => ({ op: "curate", body: { title } }),
+  pin: (pinned: boolean): Op => ({ op: "curate", body: { pinned } }),
 } as const;

@@ -67,6 +67,9 @@ class AdapterConfig:
     grants_runtime: Callable[[], bool] | None = None
     # 热加闸门（设计 §12.2 的退路）：关掉时批下来的规则不进在跑的沙箱，等下一个租约起沙箱时生效
     grants_hot: bool = True
+    # 模型档案解析（宪章 03 §3.2）：(角色, 任务的 prefs.model) → 档案 {model, endpoint, key_slot}，或 None 用缺省。
+    # 会话开起时解析一次，中途不变；组装根给出读设置存储的函数
+    resolve_model: Callable[[str, str | None], Mapping[str, Any] | None] | None = None
 
 
 @dataclass
@@ -79,6 +82,8 @@ class SessionRecord:
     package_ref: str | None = None
     transcript_ref: str | None = None
     release: dict[str, Any] | None = None
+    model: str = ""  # 这个会话实际用的模型 id（按任务的模型档案解析，AC6.1）
+    model_profile: str | None = None
 
 
 def local_launcher(argv: list[str], env: dict[str, Any], cwd: Path) -> subprocess.Popen[Any]:
@@ -207,7 +212,17 @@ class SessionRunner:
                 self.endpoint.base, getattr(self.launcher, "mcp_base", None) or self.endpoint.base, 1
             )
             (sdir / "mcp.json").write_text(be.mcp_config(seen_url), encoding="utf-8")
-            self.proxy.register_task(task_token, lease_id, pid, lease["reserve"]["usd_milli"])
+            prof = self._model(pid, role)
+            rec.model = str(prof.get("model") or self.cfg.binding.model)
+            rec.model_profile = prof.get("name")
+            self.proxy.register_task(
+                task_token,
+                lease_id,
+                pid,
+                lease["reserve"]["usd_milli"],
+                upstream=str(prof.get("endpoint") or ""),
+                key_slot=str(prof.get("key_slot") or ""),
+            )
             plan = be.LaunchPlan(
                 lease_id,
                 ws,
@@ -219,6 +234,7 @@ class SessionRunner:
                 task_token=task_token,
                 max_budget_usd=lease["reserve"]["usd_milli"] / 1000,
                 max_turns=self.cfg.max_turns,
+                model=str(prof.get("model") or ""),
             )
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
@@ -307,6 +323,21 @@ class SessionRunner:
         src = self.cfg.root / prev[-1]["id"] / "workspace"
         if src.is_dir():
             shutil.copytree(src, ws, dirs_exist_ok=True, symlinks=True)
+
+    def _model(self, pid: str, role: str) -> Mapping[str, Any]:
+        """这个会话用哪个模型档案：任务的 prefs.model 优先，否则按设置层的角色路由（宪章 03 §3.2）。
+        没有接设置层（resolve_model 为 None）或解析不到时返回空，沿用 CliBinding 与代理的缺省。"""
+        if self.cfg.resolve_model is None:
+            return {}
+        want = (self.reader.state["problems"][pid].get("prefs") or {}).get("model")
+        try:
+            return self.cfg.resolve_model(role, want) or {}
+        except KeyError as e:  # 开题后档案被删掉：按角色路由退回，记一笔
+            LOG.warning("会话的模型档案解析不到（%s），按角色路由", e)
+            try:
+                return self.cfg.resolve_model(role, None) or {}
+            except KeyError:
+                return {}
 
     def _launch_sandbox(self, pid: str, lease: Mapping[str, Any], ws: Path) -> str:
         """按租约编译授权并起执行容器（§3.6.2）。reason 会话不走到这里。"""

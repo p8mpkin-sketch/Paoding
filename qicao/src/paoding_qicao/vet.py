@@ -548,15 +548,16 @@ def derivation_bytes(v: Vetted) -> bytes:
 def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
     """确认卡上人能改的两类（设计 §7.3）：每条授权规则的风险（三选一）与预算的金额、时限。纯函数。
 
-    ov = {"risk": {"<规则下标>": "r0|r1|r2"}, "usd_milli": int, "wall_s": int}，都可省。
+    ov = {"risk": {"<规则下标>": "r0|r1|r2"}, "usd_milli": int, "wall_s": int, "model": 档案名}，都可省。
+    model 是任务级模型偏好（宪章 03 §3.1），只能取设置页已登记的档案名，写进 open_problem 的 prefs.model。
     改过的字段出处记"人"；只要改过一项，这道题就不再是练习道候选（零确认只给没人碰过的草案）。
     超过单题硬顶、风险取值不合法、下标越界一律 ValueError，不裁剪：人写的数不替人改。
     """
     if v.input is None or v.lane == "refuse":
         raise ValueError("拒绝道没有可改的字段")
-    keys = {"risk", "usd_milli", "wall_s", "ack_command"}
+    keys = {"risk", "usd_milli", "wall_s", "ack_command", "model"}
     if set(ov) - keys:
-        raise ValueError(f"只能改 risk、usd_milli、wall_s、ack_command，不能改 {sorted(set(ov) - keys)}")
+        raise ValueError(f"只能改 risk、usd_milli、wall_s、ack_command、model，不能改 {sorted(set(ov) - keys)}")
     inp = json.loads(json.dumps(v.input))
     der = [dict(x) for x in v.derivation]
     touched: list[str] = []
@@ -596,6 +597,18 @@ def override(v: Vetted, ov: Mapping[str, Any], settings: Settings) -> Vetted:
         if inp["budget"][key] != val:
             inp["budget"][key] = val
             mark(f"budget.{key}", val)
+    model = ov.get("model")
+    if model is not None:
+        names = [p.get("name") for p in (settings.models or {}).get("profiles") or []]
+        if not isinstance(model, str) or model not in names:
+            raise ValueError(
+                f"模型档案 {model!r} 未登记：只能从设置页的档案里选（{'、'.join(map(str, names)) or '无'}）"
+            )
+        if (inp.get("prefs") or {}).get("model") != model:
+            inp["prefs"] = {"model": model}
+            der = [r for r in der if r["field"] != "prefs.model"]
+            der.append(_src("prefs.model", model, "human", note="人在确认卡上选的执行模型档案"))
+            touched.append("prefs.model")
     ack = ov.get("ack_command")
     if ack is not None and not isinstance(ack, bool):
         raise ValueError("ack_command 须是 true 或 false")

@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 async function openCockpit(page: Page, pid: string) {
-  await page.goto("/");
+  await page.goto("/today");
   await page.locator(`[data-problem="${pid}"] a`).first().click();
   await expect(page.locator(".cockpit")).toBeVisible();
   await expect(page.locator("[data-conn-label]")).toHaveText("实时");
@@ -153,7 +153,7 @@ test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) 
 });
 
 test("总览：进行中卡片、等你处理、主题切换；手机宽度只留待审批与进行中", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/today");
   await expect(page.locator(".run-card").first()).toBeVisible();
   await expect(page.locator("[data-waiting]")).toBeVisible();
   await expect(page.locator(".dash-stats")).toBeVisible();
@@ -180,12 +180,12 @@ test("待办：侧栏数量与页面一致，去处理进工作区并定位节�
 
 test("任务库：筛选写进 URL，刷新后仍在", async ({ page }) => {
   await page.goto("/problems");
-  await expect(page.locator("tr[data-problem]").first()).toBeVisible();
+  await expect(page.locator("[data-list] [data-problem]").first()).toBeVisible();
   await page.locator('[data-tab="running"]').click();
   await expect(page).toHaveURL(/terminal=running/);
   await page.reload();
   await expect(page.locator('[data-tab="running"]')).toHaveAttribute("aria-selected", "true");
-  for (const t of await page.locator("td[data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
+  for (const t of await page.locator("[data-list] [data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
 });
 
 test("一句话新建：回车起草，确认卡核对出处，创建后进工作区", async ({ page }) => {
@@ -224,7 +224,8 @@ test("向导：四步走完，文字材料与初始指导，创建后进工作�
 
 test("任务库：克隆一个任务进向导，id 留空、判据与 scope 已预填", async ({ page }) => {
   await page.goto("/problems");
-  await page.locator('tr[data-problem] [data-action="clone"]').first().click();
+  await page.locator('[data-list] [data-problem] [data-action="row-menu"]').first().click();
+  await page.locator('[data-menu="clone"]').click();
   await expect(page).toHaveURL(/\/new\/advanced\?from=/);
   await expect(page.locator("[data-cloned-from]")).toBeVisible();
   await expect(page.locator('[data-field="id"]')).toHaveValue("");
@@ -243,4 +244,22 @@ test("运行时扩权：横幅点开扩权卡，批准后横幅的数字减一�
   await card.locator('[data-action="approve"]').click();
   await expect(banner).toContainText("等你批准访问 1 个地址");
   await expect(page.locator('.tick[data-tick="S"]')).toHaveCount(before + 1);
+});
+
+test("任务列表：删除进回收站，30 天内可恢复；账不动", async ({ page }) => {
+  await page.goto("/tasks");
+  const row = page.locator('[data-list] [data-group-of="end"]').first();
+  const pid = await row.getAttribute("data-problem");
+  await row.locator('[data-action="row-menu"]').click();
+  await page.locator('[data-menu="delete"]').click();
+  await expect(page.locator("[data-confirm-delete]")).toContainText("30 天内可以恢复");
+  await page.locator('[data-action="confirm-delete"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toHaveCount(0);
+  await page.locator('[data-tab="trash"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toBeVisible();
+  await page.locator(`[data-problem="${pid}"] [data-action="row-menu"]`).click();
+  await page.locator('[data-menu="restore"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toHaveCount(0);
+  await page.locator('[data-tab="all"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toBeVisible();
 });

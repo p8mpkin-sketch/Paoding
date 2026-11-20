@@ -9,7 +9,7 @@ import type {
 } from "./types";
 import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
-import type { KeySlot, KeysView, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
+import type { KeySlot, KeysView, ModelProbe, ModelProfile, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
 
 export type ApiConfig = {
   /** 图服务的基址；同源部署时为空串。 */
@@ -144,6 +144,9 @@ export function createApi(cfg: ApiConfig) {
       (await call("PUT", `/v1/keys/${enc(slot)}`, json({ key }), "application/json")).json() as Promise<KeySlot & { note: string }>,
     clearKey: async (slot: string) => (await call("DELETE", `/v1/keys/${enc(slot)}`)).json() as Promise<KeySlot>,
     clearKeys: async () => (await call("DELETE", "/v1/keys")).json() as Promise<KeysView>,
+    /** 测试连接：按档案（可以还没保存）实际调一次上游；密钥只从服务端钥匙环取，不经这里。 */
+    testModel: async (profile: Pick<ModelProfile, "endpoint" | "model" | "key_slot">) =>
+      (await call("POST", "/v1/models/test", json({ profile }), "application/json")).json() as Promise<ModelProbe>,
 
     /** 人的其余操作都走这里。批内只能有人可提交的操作。 */
     propose: async (pid: string, ops: Op[], idemKey: string) => {

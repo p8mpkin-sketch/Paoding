@@ -11,6 +11,7 @@ import { Import } from "./pages/Import";
 import { PlatformImport } from "./pages/PlatformImport";
 import { Inbox } from "./pages/Inbox";
 import { Kaiti } from "./pages/Kaiti";
+import { ModelsPage } from "./pages/Models";
 import { Problems, useProblems } from "./pages/Problems";
 import { Readings } from "./pages/Readings";
 import { SettingsPage } from "./pages/Settings";
@@ -39,7 +40,7 @@ function TokenBox({ token, expiresAt, onSave }: { token: string | null; expiresA
   );
 }
 
-function Home() {
+function Today() {
   return <Dashboard now={useNow()} />;
 }
 
@@ -51,7 +52,8 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
   const { view, error } = useProblems(SHELL_POLL_MS);
   return (
     <AppShell route={route} problems={view} problemsError={error} canWrite={!!cfg.token} token={token}>
-      {route.page === "home" && <Home />}
+      {route.page === "home" && <Kaiti home />}
+      {route.page === "today" && <Today />}
       {route.page === "problems" && <Problems filter={{ q: route.q ?? "", terminal: route.terminal ?? "", judge: route.judge ?? "" }} />}
       {route.page === "new" && !route.advanced && <Kaiti />}
       {route.page === "new" && route.advanced && <Wizard key={route.from ?? ""} from={route.from} />}
@@ -60,6 +62,7 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
       {route.page === "readings" && <Readings />}
       {route.page === "inbox" && <Inbox />}
       {route.page === "settings" && <SettingsPage />}
+      {route.page === "models" && <ModelsPage />}
       {route.page === "problem" && <Cockpit key={route.pid} pid={route.pid} asOf={route.asOf} node={route.node} />}
     </AppShell>
   );

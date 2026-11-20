@@ -3,11 +3,13 @@ import type { ProblemItem, Terminal } from "../api/types";
 
 /** 进行中：未关的题，按开题先后。 */
 export const runningOf = (items: ProblemItem[]) => items.filter((p) => !p.closed);
+/** 回收站里的（含过期的）不进总览的最近列表与趋势；读数照算（软删不动账）。 */
+const kept = (p: ProblemItem) => p.shelf !== "trash" && p.shelf !== "purged";
 
 /** 最近完成：已关的题，后关的在前；filter 为空即全部。 */
 export function recentOf(items: ProblemItem[], filter: Terminal | null): ProblemItem[] {
   return items
-    .filter((p) => p.closed && (filter === null || p.terminal === filter))
+    .filter((p) => p.closed && kept(p) && (filter === null || p.terminal === filter))
     .sort((a, b) => (b.closed_seq ?? 0) - (a.closed_seq ?? 0));
 }
 

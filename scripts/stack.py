@@ -77,6 +77,7 @@ from paoding_adapter.contract import (  # noqa: E402
     fake_program,
     local_launcher,
 )
+from paoding_adapter.purge import purge_workspaces  # noqa: E402
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
 from paoding_graph.contract import BlobStore, Config, GraphHttp, GraphService, HttpConfig, TokenRegistry, load_policy  # noqa: E402
 from paoding_qicao.contract import catalog_of  # noqa: E402
@@ -411,6 +412,8 @@ class Stack:
             bases=dict(cfg.bases),
             env_for=env_for,
             grants_runtime=lambda: self.graph.cfg.grants_runtime,  # 设置层 grants.runtime（运行时扩权）
+            # 会话的模型档案（宪章 03 §3.2）：任务的 prefs.model 优先，否则按设置层的角色路由
+            resolve_model=lambda role, want: self.settings.store.resolve(role, want),
         )
         self.runner = SessionRunner(
             self.adapter_cfg,
@@ -756,6 +759,10 @@ class Stack:
                 for k in ("expired", "soft", "killed", "closed", "swept", "alerts"):
                     if getattr(r, k):
                         L.info("%s: %s", k, getattr(r, k))
+                # 回收站过期（软删 30 天）：清会话目录，账与留档不动
+                gone = purge_workspaces(self.graph.state, self.runner.cfg.root, int(time.time() * 1000))
+                if gone:
+                    L.info("回收站过期，已清工作区：%s", gone)
                 self._beat("watchdog")
             except (OSError, subprocess.SubprocessError) as e:  # 环境故障（磁盘、docker 命令）：记下，下一轮照常
                 L.exception("tick 失败")

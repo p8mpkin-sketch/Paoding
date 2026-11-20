@@ -133,6 +133,9 @@ class Task:
     spent_usd_milli: int = 0
     requests: int = 0
     revoked: bool = False
+    # 按任务解析出的模型档案的上游与密钥槽（宪章 03 §3.2）；空即用 ProxyConfig 的
+    upstream: str = ""
+    key_slot: str = ""
 
 
 @dataclass
@@ -187,9 +190,12 @@ class EndpointProxy:
 
     # ---------- 任务令牌 ----------
 
-    def register_task(self, token: str, lease_id: str, pid: str, reserve_usd_milli: int) -> None:
+    def register_task(
+        self, token: str, lease_id: str, pid: str, reserve_usd_milli: int, upstream: str = "", key_slot: str = ""
+    ) -> None:
+        """upstream、key_slot：这个任务的模型档案指定的上游与密钥槽（会话开起时解析一次，中途不变）。"""
         with self._lock:
-            self._tasks[token] = Task(token, lease_id, pid, reserve_usd_milli)
+            self._tasks[token] = Task(token, lease_id, pid, reserve_usd_milli, upstream=upstream, key_slot=key_slot)
 
     def revoke(self, token: str) -> None:
         with self._lock:
@@ -287,11 +293,12 @@ class EndpointProxy:
                     LOG.warning("代理：%s %s → %d %s", self.command, self.path, status, why)
                     return self._reject(status, why)
                 assert task is not None  # admit 放行（200）时必给任务
-                key = proxy.keyring.get(proxy.cfg.key_slot)
+                slot = task.key_slot or proxy.cfg.key_slot
+                key = proxy.keyring.get(slot)
                 if key is None:
-                    LOG.warning("代理：%s %s → 503 key_not_set（槽 %s）", self.command, self.path, proxy.cfg.key_slot)
+                    LOG.warning("代理：%s %s → 503 key_not_set（槽 %s）", self.command, self.path, slot)
                     return self._reject(503, "key_not_set")
-                up = urllib.parse.urlsplit(proxy.cfg.upstream)
+                up = urllib.parse.urlsplit(task.upstream or proxy.cfg.upstream)
                 conn: http.client.HTTPConnection
                 if up.scheme == "https":
                     conn = http.client.HTTPSConnection(up.netloc, timeout=600, context=proxy.tls)
