@@ -1,12 +1,12 @@
 // 模型页（前端重新设计 v5 第二期）：设置层的模型档案与默认分配单独成页。
 // 一张表看全部档案：接口、模型 ID、密钥槽有没有密钥、上次测试的结果；添加与编辑在右侧抽屉里，测通才能存。
 // 档案与路由仍是设置存储里的同一份（PUT /v1/settings，带 base_digest 做乐观并发）；密钥走 /v1/keys，页面不留它。
-// 接口格式现在只有 Anthropic 兼容一种：端点代理只按这种格式转发（OpenAI 兼容待定）。
+// 接口格式两种：Anthropic 兼容原样转发；OpenAI 兼容由端点代理改写（adapter/openai_compat.py）。
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { ApiError } from "../api/client";
-import type { KeysView, ModelProbe, ModelProfile, Settings, SettingsDoc } from "../api/settings-types";
+import type { ApiFormat, KeysView, ModelProbe, ModelProfile, Settings, SettingsDoc } from "../api/settings-types";
 import { useServices } from "../app/context";
 import { Button, Empty, Mast, SectionHead } from "../kit";
 import { ROLES, SLOT_RE, TIERS, settingsIssues } from "../model/settings";
@@ -16,7 +16,14 @@ import { Plain } from "../ui/registers";
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 /** 测试结果只对这三项有效：改了任何一项就要重测。 */
-export const probeSig = (p: Pick<ModelProfile, "endpoint" | "model" | "key_slot">) => JSON.stringify([p.endpoint.trim(), p.model.trim(), p.key_slot.trim()]);
+export const probeSig = (p: Pick<ModelProfile, "endpoint" | "model" | "key_slot" | "format">) => JSON.stringify([p.endpoint.trim(), p.model.trim(), p.key_slot.trim(), p.format ?? "anthropic"]);
+export const FORMAT_WORD: Record<ApiFormat, string> = { anthropic: "Anthropic 兼容", openai: "OpenAI 兼容" };
+const FORMAT_HINT: Record<ApiFormat, string> = {
+  anthropic: "原样转发 /v1/messages。地址写到域名为止，不带 /v1。",
+  openai: "端点代理把请求改写成 /chat/completions 再改回来；文字、图片、工具调用都转，思考过程与缓存控制转不过去。地址写到 /v1 为止。",
+};
+/** 存进设置时 anthropic 不写 format：旧快照与新存的同一个档案摘要相同。 */
+const withFormat = (p: ModelProfile): ModelProfile => { const { format, ...rest } = p; return format === "openai" ? { ...rest, format } : rest; };
 const hostOf = (endpoint: string) => {
   if (!endpoint.trim()) return "缺省上游";
   try { return new URL(endpoint).host; } catch { return endpoint; }
@@ -60,7 +67,7 @@ export function ModelsPage() {
   async function test(p: ModelProfile) {
     setTesting((t) => new Set(t).add(p.name));
     try {
-      const r = await api.testModel({ endpoint: p.endpoint, model: p.model, key_slot: p.key_slot });
+      const r = await api.testModel({ endpoint: p.endpoint, model: p.model, key_slot: p.key_slot, format: p.format ?? "anthropic" });
       setProbes((m) => ({ ...m, [p.name]: { ...r, sig: probeSig(p) } }));
     } catch (e) {
       setProbes((m) => ({ ...m, [p.name]: { ok: false, code: "error", message: errText(e), sig: probeSig(p) } }));
@@ -128,7 +135,7 @@ export function ModelsPage() {
           return (
             <div key={p.name} className="md-row" role="row" data-profile={p.name}>
               <span role="cell" className="md-name"><b>{p.name}</b><span className="k-mono">{p.model || "（命令行缺省模型）"}</span></span>
-              <span role="cell" className="md-api"><span>Anthropic 兼容</span><span className="k-mono">{hostOf(p.endpoint)}</span></span>
+              <span role="cell" className="md-api" data-format={p.format ?? "anthropic"}><span>{FORMAT_WORD[p.format ?? "anthropic"]}</span><span className="k-mono">{hostOf(p.endpoint)}</span></span>
               <span role="cell" className="md-key"><span className="k-mono">{p.key_slot}</span><span className={set ? "ok" : "need"}>{keys ? (set ? "已设" : "未填") : "—"}</span></span>
               <span role="cell" data-probe={fresh ? (fresh.ok ? "ok" : fresh.code) : "none"}>{testing.has(p.name) ? <span className="md-st live"><i aria-hidden="true" />测试中…</span> : <ProbeCell p={fresh} slotSet={!keys || set} />}</span>
               <span role="cell">{TIERS.find((t) => t.tier === p.tier)?.word}</span>
@@ -164,7 +171,7 @@ export function ModelsPage() {
           setSheet({ ...sheet, form, busy: true });
           try {
             if (key.trim()) { await api.putKey(form.key_slot, key.trim()); setKeys(await api.keys()); }
-            const r = await api.testModel({ endpoint: form.endpoint, model: form.model, key_slot: form.key_slot });
+            const r = await api.testModel({ endpoint: form.endpoint, model: form.model, key_slot: form.key_slot, format: form.format ?? "anthropic" });
             const pr = { ...r, sig: probeSig(form) };
             setSheet((s) => s && { ...s, key: "", probe: pr, busy: false });
             if (form.name) setProbes((m) => ({ ...m, [form.name]: pr }));
@@ -175,10 +182,10 @@ export function ModelsPage() {
         onSave={async (form) => {
           const n = clone(doc.settings);
           const idx = sheet?.index ?? null;
-          if (idx === null) n.models.profiles.push(form);
+          if (idx === null) n.models.profiles.push(withFormat(form));
           else {
             const old = n.models.profiles[idx].name;
-            n.models.profiles[idx] = form;
+            n.models.profiles[idx] = withFormat(form);
             for (const { role } of ROLES) if (n.models.routes[role] === old) n.models.routes[role] = form.name; // 改名时路由跟着走
           }
           if (await put(n, idx === null ? `添加模型 ${form.name}` : `保存模型 ${form.name}`)) setSheet(null);
@@ -212,6 +219,7 @@ function ModelSheet({ sheet, setSheet, profiles, routedOf, saving, onTest, onSav
     else if (profiles.some((p, i) => p.name === name && i !== sheet.index)) out.push("已经有同名的档案");
     if (!SLOT_RE.test(form.key_slot)) out.push("密钥槽名只取小写字母、数字、- 与 _");
     if (form.endpoint.trim() && !/^https?:\/\/./.test(form.endpoint.trim())) out.push("接口地址要以 http 或 https 协议开头");
+    if (form.format === "openai" && !form.endpoint.trim()) out.push("OpenAI 格式要写接口地址：缺省上游是 Anthropic 格式");
     return out;
   }, [form, sheet, profiles]);
   if (!sheet || !form) return null;
@@ -232,9 +240,13 @@ function ModelSheet({ sheet, setSheet, profiles, routedOf, saving, onTest, onSav
           </header>
           <div className="md-sheet-b">
             <div className="md-f">
-              <span className="md-l">接口格式</span>
-              <span>Anthropic 兼容</span>
-              <span className="md-hint">端点代理只按这种格式转发。OpenAI 兼容的接口现在还接不上。</span>
+              <span className="md-l" id="md-format">接口格式</span>
+              <div className="md-seg" role="radiogroup" aria-labelledby="md-format" data-field="model.format">
+                {(["anthropic", "openai"] as const).map((f) => (
+                  <button key={f} type="button" role="radio" aria-checked={(form.format ?? "anthropic") === f} data-format={f} onClick={() => setForm({ format: f })}>{FORMAT_WORD[f]}</button>
+                ))}
+              </div>
+              <span className="md-hint">{FORMAT_HINT[form.format ?? "anthropic"]}</span>
             </div>
             <label className="md-f">
               <span className="md-l">接口地址</span>

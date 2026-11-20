@@ -11,6 +11,7 @@ import { Import } from "./pages/Import";
 import { PlatformImport } from "./pages/PlatformImport";
 import { Inbox } from "./pages/Inbox";
 import { Kaiti } from "./pages/Kaiti";
+import { Knowledge } from "./pages/Knowledge";
 import { ModelsPage } from "./pages/Models";
 import { Problems, useProblems } from "./pages/Problems";
 import { Readings } from "./pages/Readings";
@@ -63,6 +64,7 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
       {route.page === "inbox" && <Inbox />}
       {route.page === "settings" && <SettingsPage />}
       {route.page === "models" && <ModelsPage />}
+      {route.page === "knowledge" && <Knowledge tab={route.tab} />}
       {route.page === "problem" && <Cockpit key={route.pid} pid={route.pid} asOf={route.asOf} node={route.node} />}
     </AppShell>
   );

@@ -8,7 +8,9 @@ export type Caps = {
   practice_wall_s: number;
 };
 export type RiskRule = { resource: string; pattern: string; actions: string[]; risk: "r0" | "r1" | "r2" };
-export type ModelProfile = { name: string; endpoint: string; model: string; family: string; tier: "strong" | "mid" | "light"; key_slot: string };
+// format：上游说哪种格式；可缺，缺省 anthropic（旧快照里没有这一项）。openai 时端点代理改写成 Chat Completions
+export type ApiFormat = "anthropic" | "openai";
+export type ModelProfile = { name: string; endpoint: string; model: string; family: string; tier: "strong" | "mid" | "light"; key_slot: string; format?: ApiFormat };
 export type ModelRole = "draft" | "bootstrap" | "reason" | "explore" | "verify";
 // grants：运行时扩权（docs/design/runtime-grants/ §10.3），设置页的呈现随 §12 第三步；旧快照里可缺
 export type Grants = { runtime: boolean; auto: { practice: boolean } };

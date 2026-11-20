@@ -40,6 +40,7 @@ const LEVEL_WORDS: Record<Level, string> = { E3: "判定通过", E3d: "相符", 
 const REGISTER: Record<string, RegisterName> = {
   "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "artifact:authored": "叙述",
   title: "叙述", summary: "叙述", hint: "人", human_reason: "人", statement: "人", estimate: "估",
+  delivery: "叙述", follow_up: "人",
 };
 const tag = <T>(src: string, value: T): Tagged<T> => ({ src, register: REGISTER[src], value });
 
@@ -83,17 +84,21 @@ type State = {
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
   leases: Map<string, Lease>; requests: Map<string, Req>; verdicts: Verdict[];
   decisions: Map<string, { decision: "approve" | "deny"; by: string; seq: number; reason: string }>;
-  costs: { kind: string; usd_milli: number; tokens: number; wall_s: number }[];
+  costs: { kind: string; lease: string; model?: string; usd_milli: number; tokens: number; wall_s: number }[];
   capAdd: number; marks: { pct: number; seq: number }[]; extendedSeq: number;
   scopeReqs: Map<string, ScopeReq>;
   acceptLog: AcceptRecord[]; accepted: boolean;
+  /** 开放道（open-lane §3.4–§3.5；地图 v0.9 §3.2 ③ 草案）：与图服务同形 */
+  deliveries: { id: string; seq: number; lease: string; outcome: "answered" | "partial" | "blocked"; answer?: string; claims: { text: string; refs: string[] }[]; self_check: { what: string; result: "pass" | "fail" | "skipped"; refs: string[]; item?: string }[]; unverified: string[]; needs: string[] }[];
+  followUps: { id: string; seq: number; text: string; after_delivery: string | null }[];
+  halted: { seq: number } | null; feedback: "adopted" | "rejected" | "none" | null;
 };
 
 function project(events: Event[], pid: string, asOf: number): State {
   const s: State = {
     seq: asOf, now: 0, overrides: [], artifacts: new Map(), facts: new Map(), intents: new Map(), hints: new Map(), leases: new Map(),
     requests: new Map(), verdicts: [], decisions: new Map(), costs: [], capAdd: 0, marks: [], extendedSeq: 0, scopeReqs: new Map(),
-    acceptLog: [], accepted: false,
+    acceptLog: [], accepted: false, deliveries: [], followUps: [], halted: null, feedback: null,
   };
   for (const ev of events) {
     if (ev.seq > asOf) break;
@@ -119,7 +124,7 @@ function project(events: Event[], pid: string, asOf: number): State {
         break;
       }
       case "approve": s.decisions.set(b.intent, { decision: b.decision, by: ev.actor.id, seq: ev.seq, reason: b.reason ?? "" }); break;
-      case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
+      case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", lease: b.task_id, ...(b.model ? { model: b.model } : {}), usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
       case "budget_mark": s.marks.push({ pct: b.mark, seq: ev.seq }); break;
       case "budget_add": s.capAdd += b.usd_milli; break;
       case "extend": s.extendedSeq = ev.seq; break;
@@ -155,7 +160,10 @@ function project(events: Event[], pid: string, asOf: number): State {
         s.acceptLog.push({ seq: ev.seq, decision: b.decision, checks: b.checks, ...(b.reason ? { reason: b.reason } : {}) });
         if (b.decision === "accept") s.accepted = true;
         break;
-      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
+      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; if (b.feedback) s.feedback = b.feedback; } break;
+      case "deliver": s.deliveries.push({ id: `d_${ev.seq}`, seq: ev.seq, ...b }); break;
+      case "follow_up": s.followUps.push({ id: `u_${ev.seq}`, seq: ev.seq, text: b.text, after_delivery: s.deliveries.at(-1)?.id ?? null }); s.capAdd += b.budget_add_usd_milli ?? 0; break;
+      case "halt": s.halted = { seq: ev.seq }; break;
       case "curate":
         if (s.problem) {
           const p = { ...s.problem };
@@ -271,12 +279,18 @@ function work(s: State, pid: string): WorkItem[] {
   if (!s.problem || closed(s)) return [];
   const items: WorkItem[] = [];
   if (s.leases.size === 0) items.push({ kind: "bootstrap" });
+  if (s.problem.goal.accept === "open" && !s.halted && s.leases.size > 0 && ![...s.leases.values()].some((l) => l.ended_seq === undefined)) {
+    const last = s.deliveries.at(-1);
+    if (!last || (s.followUps.at(-1)?.seq ?? 0) > last.seq) items.push({ kind: "solve" });
+  }
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "open") items.push({ kind: "explore", target: i.id });
   for (const r of bySeq(s.requests)) if (r.verdict_seq === undefined) items.push({ kind: "judge", target: r.id });
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "needs_human") items.push({ kind: "human", target: i.id, why: "needs_human" });
   if (extensionPending(s)) items.push({ kind: "human", target: pid, why: "extension" });
   for (const r of bySeq(s.scopeReqs)) if (r.status === "pending" && !r.auto && !r.intent) items.push({ kind: "human", target: r.id, why: "scope_request" });
   if (acceptanceReady(s) !== null) items.push({ kind: "human", target: pid, why: "acceptance" });
+  const last = s.deliveries.at(-1);
+  if (s.problem.goal.accept === "open" && last && (s.followUps.at(-1)?.seq ?? 0) < last.seq) items.push({ kind: "human", target: pid, why: last.outcome === "blocked" ? "blocked" : "delivered" });
   return items;
 }
 
@@ -310,6 +324,7 @@ function head(s: State, pid: string, now = s.now): ProblemItem {
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
+  const brief = (id: string) => ({ id, class: s.artifacts.get(id)?.class ?? "exec" });
   const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, shelf: _sh, pinned: _pn, trash_until: _tu, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
@@ -318,6 +333,17 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
       statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check ?? NO_CHECK, levelOf(s, "goal"), p.goal.max_attempts ?? null),
       ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
       ...(p.goal.acceptance ? { acceptance: p.goal.acceptance as AcceptanceItem[], acceptance_ready: acceptanceReady(s), accept_log: s.acceptLog } : {}),
+      ...(p.goal.accept === "open" ? {
+        deliveries: s.deliveries.map((d) => ({
+          id: d.id, seq: d.seq, lease: d.lease, outcome: d.outcome, answer: d.answer ?? null,
+          claims: d.claims.map((c) => ({ text: tag("delivery", c.text), refs: c.refs.map(brief), supported: c.refs.length > 0 })),
+          self_check: d.self_check.map((c) => ({ what: tag("delivery", c.what), result: c.result, refs: c.refs.map(brief), ...(c.item ? { item: c.item } : {}) })),
+          unverified: d.unverified.map((x) => tag("delivery", x)), needs: d.needs.map((x) => tag("delivery", x)),
+        })),
+        follow_ups: s.followUps.map((u) => ({ ...u, text: tag("follow_up", u.text) })),
+        ...(s.halted ? { halted: s.halted } : {}), ...(s.feedback ? { feedback: s.feedback } : {}),
+        self_checks: (p.goal.self_checks ?? []).map((c, k) => ({ ...c, id: `c${k + 1}` })),
+      } : {}),
     },
     facts: bySeq(s.facts).map((f) => factNode(s, f)), intents: bySeq(s.intents).map((i) => intentNode(s, i)), hints: bySeq(s.hints).map(hintNode),
     leases, requests: bySeq(s.requests).map((r) => ({ id: r.id, seq: r.seq, target: r.target, judge_id: r.judge_id, candidate: r.candidate ?? null, verdict_seq: r.verdict_seq ?? null })),
@@ -354,7 +380,21 @@ function budgetView(s: State): Omit<BudgetResponse, "as_of" | "head" | "view_has
     percent: { spent: Math.floor((spent.usd_milli * 100) / cap), committed: Math.floor(((spent.usd_milli + reserved.usd_milli) * 100) / cap) },
     mark_lines: [50, 80], mark_seqs: s.marks.map((m) => m.seq), verify_share: p.budget.verify_share, bootstrap_share: p.budget.bootstrap_share,
     wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor((s.now - p.opened_ts) / 1000)) }, review: false,
+    by_lease: byLease(s),
   };
+}
+
+/** 按会话的花费（地图 Q15，v0.9 §3.2 ③ 草案）：各行之和等于 spent */
+function byLease(s: State): NonNullable<BudgetResponse["by_lease"]> {
+  const rows = new Map<string, { lease: string; kind: string; usd_milli: number; tokens: number; active: boolean; model?: string }>();
+  for (const c of s.costs) {
+    const l = s.leases.get(c.lease);
+    const r = rows.get(c.lease) ?? { lease: c.lease, kind: l?.kind ?? c.kind, usd_milli: 0, tokens: 0, active: !!l && l.ended_seq === undefined && !closed(s) };
+    r.usd_milli += c.usd_milli; r.tokens += c.tokens;
+    if (c.model) r.model = c.model;
+    rows.set(c.lease, r);
+  }
+  return [...rows.values()].sort((a, b) => (a.lease < b.lease ? -1 : 1));
 }
 
 /** 时间轴的扩权刻度：与真图服务的 /ticks 同形。 */
@@ -605,9 +645,30 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if (!String(b.reason ?? "").trim()) throw new Rejected("schema_error", "覆盖须写理由");
         return { axis: b.axis, value: b.value, reason: String(b.reason).trim(), derived: s.problem.derived_profile[b.axis as keyof Profile] };
       }
-      case "close_problem":
+      case "close_problem": {
         if ("terminal" in b) throw new Rejected("schema_error", "terminal 是派生量，由图服务按三值算出");
-        return { terminal: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}) };
+        const open = s.problem.goal.accept === "open";
+        if (b.feedback !== undefined && (!open || !["adopted", "rejected", "none"].includes(b.feedback))) throw new Rejected("schema_error", "feedback 只用于人关开放道的题，取 adopted、rejected、none");
+        const terminal = open ? (s.deliveries.some((d) => d.outcome !== "blocked") ? "delivered" : "unsolved") : levelOf(s, "goal") === "E3" ? "solved" : "unsolved";
+        return { terminal, by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}), ...(b.feedback ? { feedback: b.feedback } : {}) };
+      }
+      case "follow_up": {
+        // 地图 v0.9 §3.2 ③ 草案：剩余低于收尾保留（这里取上限的一成）而没附追加、或追加后超单题硬顶 → over_budget
+        if (s.problem.goal.accept !== "open") throw new Rejected("conflict", "只有开放道的任务可以追问");
+        const text = String(b.text ?? "").trim();
+        if (!text || text.length > 2000) throw new Rejected("schema_error", "追问须非空、不超过 2000 字");
+        const add = b.budget_add_usd_milli;
+        if (add !== undefined && !(Number.isInteger(add) && add > 0)) throw new Rejected("schema_error", "追加预算为正整数");
+        const cap = s.problem.budget.usd_milli + s.capAdd + (add ?? 0);
+        const spent = s.costs.reduce((a, c) => a + c.usd_milli, 0);
+        if (cap > settings.caps.open_usd_milli) throw new Rejected("over_budget", `追加后超过单题硬顶 $${(settings.caps.open_usd_milli / 1000).toFixed(2)}`);
+        if (cap - spent < Math.ceil(cap / 10)) throw new Rejected("over_budget", "剩余预算不够再跑一轮：追问时请附追加预算");
+        return { text, ...(add ? { budget_add_usd_milli: add } : {}), seen: b.seen };
+      }
+      case "halt":
+        if (s.problem.goal.accept !== "open") throw new Rejected("conflict", "叫停只用于开放道的任务");
+        if (s.halted) throw new Rejected("conflict", "已经叫停过了");
+        return b.reason ? { reason: String(b.reason) } : {};
       case "extend": if (!extensionPending(s)) throw new Rejected("schema_error", "续期门未触发"); return {};
       case "grant_scope": {
         const r = s.scopeReqs.get(b.request);
@@ -784,7 +845,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     if (method === "POST" && path === "/v1/models/test") {
       // 与 settings_hub.probe 同形；假上游：模型 ID 里带 bad 的回 404，其余按名字给一个稳定的延迟
       const p = parse()?.profile;
-      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot}}");
+      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot, format?}}");
+      const fmt = p.format ?? "anthropic";
+      if (fmt !== "anthropic" && fmt !== "openai") return json(200, { ok: false, code: "bad_format", message: "格式取 anthropic 或 openai" });
+      if (fmt === "openai" && !p.endpoint) return json(200, { ok: false, code: "bad_endpoint", message: "OpenAI 格式要写接口地址（例如 https://…/v1），缺省上游是 Anthropic 格式" });
       if (!p.model) return json(200, { ok: false, code: "no_model", message: "没写模型 ID：填上再测（不写时用命令行的缺省模型，没法单独测）" });
       if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(p.key_slot ?? "")) return json(200, { ok: false, code: "bad_slot", message: "密钥槽名不对" });
       if (!keySlots.has(p.key_slot)) return json(200, { ok: false, code: "key_not_set", message: `密钥槽 ${p.key_slot} 还没有密钥：先填密钥再测` });
@@ -809,6 +873,53 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return err(405, "schema_error", `${path} 不支持 ${method}`);
   }
 
+  // ---- 记忆（通鉴；与 scripts/memory_hub.py 同形）：条目由关题封存派生，人只能钉住或遗忘 ----
+  type MemRec = { seq: number; problem: string; verdict: string; on_chain: boolean; derived?: boolean };
+  const memItems: Record<string, Record<string, unknown>> = {
+    "m-env-1": { id: "m-env-1", kind: "env_fact", title: "q1:8080 的登录页把答案串放在 /flag 的响应头里", scope: { env_key: "e-q1" }, source: { case: "c-demo-3", problem: "demo-3", node: "f_12" }, cases: ["demo-3"] },
+    "m-ex-1": { id: "m-ex-1", kind: "excluded", title: "直接猜默认口令：三次都被锁，走不通", scope: { env_key: "e-q1" }, source: { case: "c-demo-3", problem: "demo-3", node: "i_5" }, cases: ["demo-3"] },
+    "m-sp-1": { id: "m-sp-1", kind: "spend_profile", title: "花费画像：示例题：取得登录后显示的答案", scope: { sig_key: "s-1" }, source: { case: "c-demo-3", problem: "demo-3" }, cases: ["demo-3"], body: { usd_milli: 420 } },
+    "m-env-2": { id: "m-env-2", kind: "env_fact", title: "构建缓存目录在 /mnt/cache/pip", scope: { env_key: "e-ci" }, source: { case: "c-old", problem: "demo-1" }, cases: ["demo-1"] },
+  };
+  let memSeq = 40;
+  const memRecalls: Record<string, MemRec[]> = {
+    "m-env-1": [{ seq: 12, problem: "demo-3", verdict: "pass", on_chain: true, derived: true }],
+    "m-env-2": [{ seq: 20, problem: "demo-2", verdict: "pass", on_chain: false }, { seq: 31, problem: "demo-4", verdict: "fail", on_chain: false }],
+  };
+  const memPins: Record<string, boolean> = {};
+  const memForgotten: Record<string, boolean> = {};
+  const memState = (id: string) => {
+    if (memForgotten[id]) return "retired";
+    const judged = (memRecalls[id] ?? []).filter((h) => ["pass", "fail", "flaky"].includes(h.verdict));
+    if (judged.length >= 2 && judged.slice(-2).every((h) => h.verdict !== "pass")) return "retired";
+    if (judged.length && judged.at(-1)!.verdict !== "pass") return "stale";
+    return "active";
+  };
+  const memCard = (id: string) => ({ item: memItems[id], state: memState(id), pinned: !!memPins[id], recalls: memRecalls[id] ?? [] });
+  const memSeen = (id: string) => ({ seq: memSeq, card_hash: sha256(canonical(memCard(id))) });
+  function memoryRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
+    if (method === "GET" && path === "/v1/memory") {
+      return json(200, { items: Object.keys(memItems).sort().map((id) => ({ ...memItems[id], state: memState(id), pinned: !!memPins[id], recalls: memRecalls[id] ?? [] })), as_of: memSeq });
+    }
+    const m = path.match(/^\/v1\/memory\/items\/([^/]+)(?:\/(pin|forget))?$/);
+    if (!m) return err(404, "unknown_ref", `没有端点 ${path}`);
+    const id = decodeURIComponent(m[1]);
+    if (!memItems[id]) return err(404, "unknown_ref", "记忆条目不存在");
+    if (method === "GET" && !m[2]) return json(200, { ...memCard(id), seen: memSeen(id) });
+    if (method !== "POST" || !m[2]) return err(405, "schema_error", `${path} 不支持 ${method}`);
+    if (!auth.startsWith("Bearer ")) return err(401, "forbidden_op", "须带人的令牌");
+    if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "只接受人的令牌");
+    const b = parse();
+    if (!b || typeof b.reason !== "string" || typeof b.seen !== "object") return err(400, "schema_error", "请求体是 {reason, seen: {seq, card_hash}}");
+    if (!b.reason.trim()) return err(400, "schema_error", "须写理由");
+    if (b.seen?.card_hash !== memSeen(id).card_hash) return err(409, "stale_view", "所见的卡片已变，先看最新的");
+    if (memForgotten[id]) return err(400, "schema_error", "条目已遗忘");
+    if (m[2] === "pin" && ["stale", "retired"].includes(memState(id))) return err(400, "schema_error", "钉不住已过期的事实");
+    memSeq += 1;
+    if (m[2] === "pin") memPins[id] = true; else memForgotten[id] = true;
+    return json(200, { ok: true, results: [{ ok: true, seq: memSeq }], card: { ...memCard(id), seen: memSeen(id) } });
+  }
+
   // ---- 路由 ----
   function handle(req: MockRequest): MockResponse {
     const u = new URL(req.url, "http://mock");
@@ -819,6 +930,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     let m: RegExpMatchArray | null;
 
     if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/memory" || path.startsWith("/v1/memory/items/")) return memoryRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");

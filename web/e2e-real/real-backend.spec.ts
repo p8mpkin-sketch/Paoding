@@ -75,6 +75,7 @@ test("真实图服务：开题后驾驶舱渲染，人写入的 Intent 经 SSE �
   await page.goto(`/p/${PID}`);
   await expect(page.locator(".cockpit")).toBeVisible();
   await expect(page.locator("[data-conn-label]")).toHaveText("实时");
+  await page.locator('[data-task-tab="struct"]').click();             // 前沿与图在“结构”一栏
   expect(streams.length).toBeGreaterThan(0);                      // 页面订了 SSE
   const seq0 = await seq(page);
   expect(seq0).toBeGreaterThan(0);

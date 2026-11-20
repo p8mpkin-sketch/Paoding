@@ -134,3 +134,27 @@ def test_endpoint_needs_human_and_profile(tmp_path, upstream):
         assert req(url, "GET", "/v1/settings")[1]["version"] == 1  # 测试不改设置
     finally:
         s.stop()
+
+
+def test_probe_openai_format():
+    """format=openai：调 {endpoint}/chat/completions，Bearer 密钥，不带 Anthropic 的头；没写地址就拒绝。"""
+    from paoding_adapter.fakeupstream import FakeUpstream
+
+    up = FakeUpstream({"prompt_tokens": 1, "completion_tokens": 1}, model="m-1")
+    try:
+        ring = KeyRing({"default": ""})
+        ring.set("default", GOOD)
+        ok = probe({"endpoint": up.url + "/v1", "model": "m-1", "key_slot": "default", "format": "openai"}, ring, "")
+        assert ok["ok"] is True
+        seen = up.seen[-1]
+        h = {k.lower(): v for k, v in seen["headers"].items()}
+        assert seen["path"] == "/v1/chat/completions" and h["authorization"] == f"Bearer {GOOD}"
+        assert "x-api-key" not in h and "anthropic-version" not in h and seen["body"]["max_tokens"] == 1
+        no_ep = probe({"endpoint": "", "model": "m-1", "key_slot": "default", "format": "openai"}, ring, up.url)
+        assert no_ep["code"] == "bad_endpoint"
+        assert (
+            probe({"endpoint": up.url, "model": "m-1", "key_slot": "default", "format": "x"}, ring, "")["code"]
+            == "bad_format"
+        )
+    finally:
+        up.close()

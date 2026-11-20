@@ -19,10 +19,34 @@ async function page(token?: string | null) {
 }
 
 describe("模型页", () => {
-  it("测试结果的签名只看地址、ID、密钥槽", () => {
+  it("测试结果的签名只看地址、ID、密钥槽与格式（缺省即 anthropic）", () => {
     const p = { endpoint: " https://a.test ", model: "m", key_slot: "default" };
     expect(probeSig(p)).toBe(probeSig({ ...p, endpoint: "https://a.test" }));
     expect(probeSig(p)).not.toBe(probeSig({ ...p, model: "n" }));
+    expect(probeSig(p)).toBe(probeSig({ ...p, format: "anthropic" }));
+    expect(probeSig(p)).not.toBe(probeSig({ ...p, format: "openai" }));
+  });
+
+  it("OpenAI 兼容：选了格式要写地址；按这个格式测；存进设置带 format，表里写 OpenAI 兼容", async () => {
+    const { r } = await page();
+    fireEvent.click(btn("add-model"));
+    await waitFor(() => expect($("[data-model-sheet]")).not.toBeNull());
+    type("name", "兼容"); type("model", "model-a");
+    fireEvent.click($('[data-field="model.format"] [data-format="openai"]')!);
+    expect($('[data-field="model.format"] [data-format="openai"]')!.getAttribute("aria-checked")).toBe("true");
+    expect($("[data-model-sheet] .md-issues")!.textContent).toContain("OpenAI 格式要写接口地址");
+    expect(btn("probe-model").disabled).toBe(true);
+    type("endpoint", "https://compat.test/v1");
+    fireEvent.click(btn("probe-model"));
+    await waitFor(() => expect(btn("save-model").disabled).toBe(false));
+    const call = r.fetch.calls.filter((c) => c.url === "/v1/models/test").at(-1)!;
+    expect(JSON.parse(String(call.body)).profile.format).toBe("openai");
+    fireEvent.click(btn("save-model"));
+    await waitFor(() => expect($('[data-profile="兼容"] [data-format]')?.getAttribute("data-format")).toBe("openai"));
+    expect($('[data-profile="兼容"]')!.textContent).toContain("OpenAI 兼容");
+    const s = (await r.api.settings()).settings;
+    expect(s.models.profiles.at(-1)).toMatchObject({ name: "兼容", format: "openai" });
+    expect(s.models.profiles[0]).not.toHaveProperty("format"); // 旧档案不写 format，摘要不变
   });
 
   it("一张表列出全部档案；测试一行，连接一栏变“正常”并给延迟", async () => {
@@ -35,7 +59,7 @@ describe("模型页", () => {
     expect($('[data-profile="light"] [data-probe]')!.textContent).toMatch(/正常\d+ ms/);
     const calls = r.fetch.calls.filter((c) => c.url === "/v1/models/test");
     expect(calls).toHaveLength(1);
-    expect(JSON.parse(String(calls[0].body))).toEqual({ profile: { endpoint: "", model: "light-1", key_slot: "default" } });
+    expect(JSON.parse(String(calls[0].body))).toEqual({ profile: { endpoint: "", model: "light-1", key_slot: "default", format: "anthropic" } });
   });
 
   it("添加：没测通不能存；测通后改了模型 ID 要重测；存了表里多一行", async () => {

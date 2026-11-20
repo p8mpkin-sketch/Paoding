@@ -15,6 +15,8 @@ const PAGES: { word: string; to: Route; key?: string }[] = [
   { word: "新建任务", to: { page: "home" }, key: "C" },
   { word: "导入任务集", to: { page: "import" } },
   { word: "从平台导入", to: { page: "platform" } },
+  { word: "知识", to: { page: "knowledge", tab: "sources" } },
+  { word: "记忆", to: { page: "knowledge", tab: "memory" } },
   { word: "模型", to: { page: "models" } },
   { word: "读数", to: { page: "readings" } },
   { word: "设置", to: { page: "settings" } },

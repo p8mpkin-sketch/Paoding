@@ -5,14 +5,14 @@ import type { HumanWorkItem, ProblemItem } from "../api/types";
 import { useServices } from "../app/context";
 import { runningOf } from "../model/dashboard";
 import { Empty, Mark, Mast, SectionHead, btnClass } from "../kit";
-import { HAS_CARD, WHY } from "../ui/Todo";
+import { HAS_CARD, IN_RESULT, WHY } from "../ui/Todo";
 import { Plain, Text } from "../ui/registers";
 import { Link, useProblems } from "./Problems";
 
 export const INBOX_POLL_MS = 8000;
 
 /** 待办类别的单字印。 */
-const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", acceptance: "验", stalled: "停", scope_request: "权" };
+const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", acceptance: "验", stalled: "停", scope_request: "权", delivered: "看", blocked: "补" };
 
 type Group = { p: ProblemItem; items: HumanWorkItem[] | null; error: string | null };
 
@@ -53,7 +53,7 @@ export function Inbox() {
                   <Mark ch={WHY_MARK[t.why] ?? "待"} tone="dai" />
                   <div className="grow">
                     <div>{WHY[t.why] ?? t.why} · <span className="k-mono">{t.target}</span></div>
-                    <div className="t2">{HAS_CARD.has(t.why) ? "在工作区左栏的待办里打开卡片处理" : "网页暂不处理这一类，请用 pd"}</div>
+                    <div className="t2">{IN_RESULT.has(t.why) ? "在任务页的“结果”里看，采纳、不采纳或接着问" : HAS_CARD.has(t.why) ? "在任务页上方的待办里打开卡片处理" : "网页暂不处理这一类，请用 pd"}</div>
                   </div>
                   <Link to={{ page: "problem", pid: p.id, asOf: null, node: t.target }} className={btnClass("line", "sm")}>去处理</Link>
                 </li>

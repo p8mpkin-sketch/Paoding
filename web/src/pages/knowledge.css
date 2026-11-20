@@ -1,0 +1,28 @@
+/* 知识页（v5 第四期）：资料与记忆两栏；记忆表沿用模型页的行样式（md-tbl / md-row），只换列宽。 */
+.knowledge { display: flex; flex-direction: column; gap: 16px; }
+.kn-tabs { padding: 0; }
+.kn-tabs .ct { margin-left: 6px; color: var(--ink-3); font-weight: 400; }
+.kn-pane { display: flex; flex-direction: column; gap: 12px; }
+.kn-lede { margin: 0; }
+.kn-row { grid-template-columns: 64px minmax(0, 3fr) minmax(90px, 1fr) minmax(150px, 1.4fr) auto; }
+.kn-title { overflow-wrap: anywhere; }
+.kn-from a { color: inherit; font-family: var(--mono); font-size: var(--fs-xs); }
+.kn-st { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kn-st .md-ms { white-space: normal; }
+.kn-gone > summary { cursor: pointer; color: var(--ink-3); font-size: var(--fs-sm); padding: 6px 0; }
+.kn-gone > .md-tbl { margin-top: 8px; }
+.kn-modal { display: flex; flex-direction: column; gap: 12px; width: min(520px, calc(100vw - 32px)); }
+.kn-modal-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kn-modal-h h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.kn-card { border: 1px solid var(--rule); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.kn-card-t { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.kn-recalls { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-xs); color: var(--ink-2); }
+.kn-recalls .k-mono { margin-right: 6px; }
+.kn-note { margin: 0; font-size: var(--fs-sm); color: var(--zhu-ink); }
+.kn-reason { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+.kn-reason textarea { width: 100%; resize: vertical; }
+.kn-modal-f { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 860px) {
+  .kn-row { grid-template-columns: 1fr 1fr; }
+  .kn-title { grid-column: 1 / -1; order: -1; }
+}

@@ -23,9 +23,8 @@ test("驾驶舱：顶栏分主次，事件到来时视图跟着走，一条事�
   const snaps: string[] = [];
   page.on("request", (r) => { if (r.url().includes("/snapshot")) snaps.push(r.url()); });
   await openCockpit(page, "demo-1");
-  const primary = page.locator(".topbar-primary");
-  await expect(primary.locator("[data-terminal]")).toBeVisible();
-  await expect(primary.locator(".cost")).toBeVisible();
+  await expect(page.locator(".tk-head [data-terminal]")).toBeVisible();
+  await expect(page.locator(".tk-rail .cost")).toBeVisible();          // 花费在右栏
   await expect(page.locator("[data-goal-attempts]")).toBeHidden();       // 次要信息收在“详情”里
   await page.locator('[data-topbar="secondary"] > summary').click();
   await expect(page.locator("[data-goal-attempts]")).toBeVisible();
@@ -97,39 +96,56 @@ test("时间轴回放：跳到早先的序号，写操作禁用，链接带 as_o
   await expect(page).not.toHaveURL(/as_of=/);
 });
 
-test("窄屏（< 1024px）：一栏显示，按钮切换面板，选中节点跳到检视", async ({ page }) => {
+test("窄屏（手机宽度）：右栏落到正文下面，结构一栏里选中节点后检视在下方；没有横向滚动", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openCockpit(page, "demo-1");
-  const sw = page.locator(".panel-switch");
-  await expect(sw).toBeVisible();
-  await expect(page.locator(".main")).toBeVisible();
-  await expect(page.locator(".left")).toBeHidden();
-  await expect(page.locator(".right")).toBeHidden();
-  await page.locator('[data-panel-switch="left"]').click();
-  await expect(page.locator(".left")).toBeVisible();
-  await expect(page.locator(".main")).toBeHidden();
-  await page.locator('[data-panel-switch="main"]').click();
+  const col = (await page.locator(".tk-col").boundingBox())!;
+  const rail = (await page.locator(".tk-rail").boundingBox())!;
+  expect(rail.y).toBeGreaterThanOrEqual(col.y + col.height - 1);
+  await page.locator('[data-task-tab="struct"]').click();
   await page.locator('[data-action="select-node"]').first().click();
-  await expect(page.locator(".right")).toBeVisible();
-  await expect(page.locator(".main")).toBeHidden();
-  // 没有横向滚动
+  await expect(page.locator(".cockpit")).toHaveAttribute("data-inspect", "node");
+  const main = (await page.locator(".tk-struct .main").boundingBox())!;
+  const right = (await page.locator(".tk-struct .right").boundingBox())!;
+  expect(right.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("宽屏：三栏并排，面板切换按钮不显示；没选节点时检视栏收窄，选中后展开", async ({ page }) => {
+test("宽屏：正文与右栏并排；结构一栏没选节点时检视收窄，选中后展开", async ({ page }) => {
   await openCockpit(page, "demo-1");
-  await expect(page.locator(".panel-switch")).toBeHidden();
-  for (const c of [".left", ".main", ".right"]) await expect(page.locator(c)).toBeVisible();
-  const narrow = (await page.locator(".right").boundingBox())!.width;
+  const col = (await page.locator(".tk-col").boundingBox())!;
+  const rail = (await page.locator(".tk-rail").boundingBox())!;
+  expect(rail.x).toBeGreaterThanOrEqual(col.x + col.width - 1);
+  await page.locator('[data-task-tab="struct"]').click();
+  for (const c of [".tk-struct .main", ".tk-struct .right"]) await expect(page.locator(c)).toBeVisible();
+  const narrow = (await page.locator(".tk-struct .right").boundingBox())!.width;
   expect(narrow).toBeLessThanOrEqual(240);
   await page.locator('[data-action="select-node"]').first().click();
   await expect(page.locator(".cockpit")).toHaveAttribute("data-inspect", "node");
-  expect((await page.locator(".right").boundingBox())!.width).toBeGreaterThan(narrow + 60);
+  expect((await page.locator(".tk-struct .right").boundingBox())!.width).toBeGreaterThan(narrow + 60);
+});
+
+test("开放道任务页：结果一栏、依据抽屉、采纳要逐条确认四顾", async ({ page }) => {
+  await openCockpit(page, "demo-6");
+  await expect(page.locator("[data-status]")).toHaveAttribute("data-status", "look");
+  await expect(page.locator("[data-answer]")).toContainText("LangGraph");
+  await page.locator("[data-claim] [data-ref]").first().click();
+  await expect(page.locator("[data-evidence]")).toContainText("python repro/crash_test.py");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-evidence]")).toHaveCount(0);
+  await page.locator('[data-action="adopt-delivery"]').click();
+  const ok = page.locator('[data-action="confirm-feedback"]');
+  await expect(ok).toBeDisabled();
+  for (const b of await page.locator("[data-four]").all()) await b.check();
+  await ok.click();
+  await expect(page.locator("[data-feedback]")).toHaveAttribute("data-feedback", "adopted");
+  await expect(page.locator('[data-field="follow-up"]')).toHaveCount(0);   // 关闭后不再能追问
 });
 
 test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) => {
   await openCockpit(page, "demo-1");
+  await page.locator('[data-task-tab="struct"]').click();
   await page.locator('[data-action="graph-always"]').check();
   await page.locator('[data-action="tab-graph"]').click();
   const vp = page.locator("[data-graph-viewport]");
