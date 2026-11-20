@@ -145,7 +145,7 @@ L3 原来的三项（续期门、模型偏好、会话花费）有两项已经�
 | 读交付（已有，#106） | `GET /v1/problems/{pid}/status` | 开放道题带 `deliveries[]`：`{id, seq, lease, outcome, answer, claims[{text, refs[{id, class}], supported}], self_check[{what, result, refs, item?}], unverified[], needs[]}`，另有 `self_checks[]`、`feedback?`；证据下钻 `GET /v1/artifacts/{id}`。③ 只加 `follow_ups[]`、`halted?`、`idle_close_at?`，不改已有字段 |
 | 追问（Q31） | `POST /v1/problems/{pid}/proposals`，人的令牌 | `{op: "follow_up", body: {text, budget_add_usd_milli?, seen: {seq}}}`；`text` ≤ 2000 字符；剩余低于收尾保留而没附追加、或追加后超单题硬顶 → `over_budget`；已关题或非开放道 → `conflict`。成功后 `/work` 再派一个 solve，`follow_ups[]` 追加 `{id, seq, text, after_delivery}` |
 | 叫停（Q20） | 同上 | `{op: "halt", body: {reason?}}`；只认人的令牌；之后 `/work` 不再派 solve，在途会话收到收尾轮，60 秒不交付则终止；`halted: {seq}` |
-| 采纳与不采纳（Q32） | 同上（已有 `close_problem.feedback`） | `{op: "close_problem", body: {terminal, feedback: "adopted"\|"rejected", reason?, closeout?, seen?}}`；有四顾项时必须带 `closeout`（已确认的四顾项名单）与 `seen`（`closeout` 卡），与 `accept` 同法 |
+| 采纳与不采纳（Q32） | 同上（已有 `close_problem.feedback`） | `{op: "close_problem", body: {feedback: "adopted"\|"rejected", reason?, closeout?, seen?}}`；有四顾项时必须带 `closeout`（已确认的四顾项名单）与 `seen`（`closeout` 卡），与 `accept` 同法；人不带 `terminal`（派生量，由图服务算） |
 | 待办（Q37，已有） | `GET /v1/problems/{pid}/work` | 人工项 `why: "delivered"`（等你看）、`"blocked"`（要你补什么）、`"stalled"`、`"scope_request"` |
 | 会话花费（Q15） | `GET /v1/problems/{pid}/budget` | 加 `by_lease[]`：`{lease, kind, role, model, usd_milli, tokens, active}`，各行之和等于 `spent` |
 
