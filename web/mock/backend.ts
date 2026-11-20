@@ -920,6 +920,110 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return json(200, { ok: true, results: [{ ok: true, seq: memSeq }], card: { ...memCard(id), seen: memSeen(id) } });
   }
 
+  // ---- 资料（书库；与 scripts/knowledge_hub.py 同形）：每读一次作业列表，在导入的版本推进一步 ----
+  type KnRev = { n: number; file: { hash: string; size: number; media_type: string; name: string }; stage: string; failed: { stage: string; reason: string; seq: number; code?: string; count?: number } | null; chunks: number; ts: number; text: string; mask?: boolean };
+  type KnSrc = { id: string; name: string; origin: string; scope: string; disabled: boolean; deleted_at: number | null; created: number; revs: KnRev[] };
+  const T0 = Date.now();
+  const DAY = 86_400_000;
+  let knSeq = 10;
+  const knFile = (name: string, size: number, media = "") => ({ hash: sha256(enc.encode(name)), size, media_type: media, name });
+  const knRev = (name: string, size: number, stage: string, ts: number, text: string, chunks = 0, failed: KnRev["failed"] = null): KnRev =>
+    ({ n: 1, file: knFile(name, size), stage, failed, chunks, ts, text });
+  const knSources: KnSrc[] = [
+    { id: "s_team01", name: "团队约定.md", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 9 * DAY,
+      revs: [knRev("团队约定.md", 28_672, "ready", T0 - 8 * DAY, "上线前先在 staging 跑全量测试。回滚用上一个标签重新发布，数据库迁移必须能反向执行。\n\n值班交接要写清楚未关的告警和正在做的变更。", 46)] },
+    { id: "s_schema1", name: "数据库表结构导出.sql", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 10 * DAY,
+      revs: [knRev("数据库表结构导出.sql", 655_360, "ready", T0 - 9 * DAY, "CREATE TABLE orders (id bigint primary key, status text, created_at timestamptz);\n订单表按 created_at 分区，超时订单由 sweeper 每分钟扫一次。", 312)] },
+    { id: "s_olddep1", name: "旧版部署说明.md", origin: "file", scope: "all", disabled: true, deleted_at: null, created: T0 - 95 * DAY,
+      revs: [knRev("旧版部署说明.md", 1_258_291, "ready", T0 - 90 * DAY, "旧流程：手工 ssh 到每台机器拉代码重启。", 88)] },
+    { id: "s_runbk01", name: "运维手册 2026.md", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 60_000,
+      revs: [knRev("运维手册 2026.md", 190_000, "chunk", T0 - 60_000, "订单服务超时先看 sweeper 的延迟，再看数据库连接池是否耗尽。", 0)] },
+    { id: "s_scan01", name: "2025-08 支付超时复盘.pdf", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 120_000,
+      revs: [knRev("2025-08 支付超时复盘.pdf", 2_400_000, "parse", T0 - 120_000, "", 0, { stage: "parse", reason: "pdf 要到资料库第三期才能解析；现在可以把文字另存为 txt 或 md 再导入", code: "unsupported", seq: 9 })] },
+  ];
+  const knLive = (s: KnSrc) => (s.disabled || s.deleted_at !== null ? null : [...s.revs].reverse().find((r) => r.stage === "ready")?.n ?? null);
+  const knView = (s: KnSrc) => {
+    const last = s.revs.at(-1)!;
+    const live = knLive(s);
+    const cur = s.revs.find((r) => r.n === live) ?? null;
+    return { id: s.id, name: s.name, origin: s.origin, scope: s.scope, disabled: s.disabled, deleted_at: s.deleted_at, created: s.created, revisions: s.revs.length,
+      live_revision: live, chunks: cur?.chunks ?? 0, size: (cur ?? last).file.size, updated: (cur ?? last).ts, importing: ["parse", "chunk", "index"].includes(last.stage), failed: last.failed };
+  };
+  const knJobs = () => knSources.flatMap((s) => s.revs.filter((r) => ["parse", "chunk", "index"].includes(r.stage)).map((r) => ({
+    source: s.id, name: s.name, revision: r.n, file: r.file, stage: r.stage, failed: r.failed, warnings: [], chunks: r.stage === "index" ? r.chunks : null, started: r.ts })));
+  const knStep = () => {
+    for (const s of knSources) for (const r of s.revs) {
+      if (r.failed) continue;
+      if (r.stage === "parse") {
+        const hits = r.text.match(/(?<![A-Za-z0-9])(?:sk-|ghp_|AKIA)[A-Za-z0-9_-]{8,}/g) ?? [];
+        if (/\.(pdf|docx)$/i.test(r.file.name)) r.failed = { stage: "parse", reason: "pdf / docx 要到资料库第三期才能解析", code: "unsupported", seq: ++knSeq };
+        else if (hits.length && !r.mask) r.failed = { stage: "parse", reason: `发现 ${hits.length} 处像密钥或口令的串。可以遮盖后导入，或取消这次导入`, code: "secrets", count: hits.length, seq: ++knSeq };
+        else { if (hits.length) for (const h of hits) r.text = r.text.split(h).join("‹资料里的凭据，已遮盖›"); r.stage = "chunk"; }
+      }
+      else if (r.stage === "chunk") { r.stage = "index"; r.chunks = Math.max(1, Math.ceil(r.text.length / 500)); }
+      else if (r.stage === "index") { r.stage = "ready"; r.ts = Date.now(); }
+    }
+  };
+  const knSourcesView = () => ({ sources: [...knSources].sort((a, b) => b.created - a.created).map(knView), embedder: "hash-512-v1", note: "", as_of: knSeq });
+  const knTerms = (t: string) => { const l = t.toLowerCase(); const out: string[] = [...(l.match(/[a-z0-9_]{2,}/g) ?? [])]; for (const run of l.match(/[\u3400-\u9fff]+/g) ?? []) for (let i = 0; i < Math.max(1, run.length - 1); i++) out.push(run.slice(i, i + 2)); return out; };
+  function knowledgeRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
+    if (method === "GET" && path === "/v1/knowledge/sources") return json(200, knSourcesView());
+    if (method === "GET" && path === "/v1/knowledge/jobs") { const out = json(200, { jobs: knJobs(), as_of: knSeq }); knStep(); return out; }
+    if (method !== "POST") return err(405, "schema_error", `${path} 不支持 ${method}`);
+    const b = parse() ?? {};
+    if (path === "/v1/knowledge/search") {
+      if (typeof b.q !== "string") return err(400, "schema_error", "请求体是 {q, k?, pick?}");
+      const qt = new Set(knTerms(b.q));
+      const k = Math.max(1, Math.min(20, Number(b.k ?? 8)));
+      const hits = knSources.filter((s) => knLive(s) !== null && s.scope === "all").flatMap((s) => {
+        const r = s.revs.find((x) => x.n === knLive(s))!;
+        return r.text.split(/\n\n+/).map((para, i) => ({ s, r, para, i, score: knTerms(para).filter((t) => qt.has(t)).length }));
+      }).filter((h) => h.score > 0).sort((a, b2) => b2.score - a.score).slice(0, k);
+      return json(200, { hits: hits.map((h, n) => ({ id: `k_${sha256(enc.encode(`${h.s.id}:${h.i}`)).slice(0, 16)}`, source: h.s.id, source_name: h.s.name, revision: h.r.n, doc: h.r.file.name, heading: h.r.file.name, start: 0, end: h.para.length, text: h.para, score: Math.round((1 / (61 + n)) * 61 * 1000) / 1000, via: ["lex", "vec"] })),
+        via: "lexical+vector", embedder: "hash-512-v1", note: "" });
+    }
+    if (!auth.startsWith("Bearer ")) return err(401, "forbidden_op", "须带人的令牌");
+    if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "只接受人的令牌");
+    if (path === "/v1/knowledge/sources") {
+      if ("path" in b || "dir" in b || "folder" in b) return err(400, "forbidden_op", "资料库不读本机目录：请在网页上选文件上传，或粘贴文字");
+      if (typeof b.name !== "string" || !b.name.trim()) return err(400, "schema_error", "资料要有名字");
+      let file: KnRev["file"]; let text = "";
+      if (typeof b.text === "string") { if (!b.text.trim()) return err(400, "schema_error", "text 不能是空的"); const bytes = enc.encode(b.text); file = { hash: putBlob(bytes), size: bytes.length, media_type: "text/plain", name: b.file_name ?? "pasted.txt" }; text = b.text; }
+      else if (b.file && typeof b.file.hash === "string") { const bytes = blobs.get(b.file.hash); if (!bytes) return err(404, "unknown_ref", "Blob 不在：先 PUT /v1/blobs 再导入"); file = { ...b.file }; text = new TextDecoder().decode(bytes); }
+      else return err(400, "schema_error", "给 text，或 file: {hash, size, media_type, name}");
+      const id = `s_${sha256(enc.encode(`${b.name}:${++knSeq}`)).slice(0, 12)}`;
+      knSources.push({ id, name: b.name.trim(), origin: typeof b.text === "string" ? "text" : "file", scope: b.scope === "pick" ? "pick" : "all", disabled: false, deleted_at: null, created: Date.now(), revs: [{ n: 1, file, stage: "parse", failed: null, chunks: 0, ts: Date.now(), text }] });
+      return json(200, { source: id, revision: 1, sources: knSourcesView().sources, jobs: knJobs() });
+    }
+    let m = path.match(/^\/v1\/knowledge\/sources\/([^/]+)\/(disable|enable|delete|restore)$/);
+    if (m) {
+      const s = knSources.find((x) => x.id === m![1]);
+      if (!s) return err(404, "unknown_ref", "资料不存在");
+      if (m[2] === "delete" || m[2] === "restore") {
+        if ((m[2] === "delete") === (s.deleted_at !== null)) return err(409, "conflict", m[2] === "delete" ? "已经在回收站里" : "不在回收站里");
+        s.deleted_at = m[2] === "delete" ? Date.now() : null;
+      } else s.disabled = m[2] === "disable";
+      knSeq += 1;
+      return json(200, { ok: true, sources: knSourcesView().sources });
+    }
+    m = path.match(/^\/v1\/knowledge\/jobs\/([^/]+)\/(\d+)\/(retry|cancel)$/);
+    if (m) {
+      const r = knSources.find((x) => x.id === m![1])?.revs.find((x) => x.n === Number(m![2]));
+      if (!r) return err(404, "unknown_ref", "没有这个版本");
+      if (m[3] === "retry") {
+        if (!r.failed) return err(409, "conflict", "这一步没有失败");
+        if (b.mask !== undefined && typeof b.mask !== "boolean") return err(400, "schema_error", "mask 取 true 或 false");
+        if (b.mask && r.failed.code !== "secrets") return err(409, "conflict", "这一步不是因为凭据停下的");
+        if (b.mask) r.mask = true;
+        r.failed = null;
+      }
+      else { if (!["parse", "chunk", "index"].includes(r.stage)) return err(409, "conflict", "这个版本已经导入完或取消了"); r.stage = "cancelled"; r.failed = null; }
+      knSeq += 1;
+      return json(200, { ok: true, jobs: knJobs() });
+    }
+    return err(404, "unknown_ref", `没有端点 ${path}`);
+  }
+
   // ---- 路由 ----
   function handle(req: MockRequest): MockResponse {
     const u = new URL(req.url, "http://mock");
@@ -931,6 +1035,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
 
     if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path === "/v1/memory" || path.startsWith("/v1/memory/items/")) return memoryRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path.startsWith("/v1/knowledge/")) return knowledgeRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");

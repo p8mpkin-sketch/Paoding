@@ -11,7 +11,7 @@ import pathlib
 import re
 import sys
 
-COMPONENTS = ("pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan", "qicao", "web")
+COMPONENTS = ("pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan", "qicao", "shuku", "web")
 EXCLUDED_PARTS = {"tests", "judges.d", "kits", "__pycache__", "node_modules", "dist"}
 EXCLUDED_NAMES = {"package-lock.json"}
 SUFFIXES = {".py", ".yaml", ".yml", ".toml", ".json", ".ts", ".tsx", ".css", ".html"}
