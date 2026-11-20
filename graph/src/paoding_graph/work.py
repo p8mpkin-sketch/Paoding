@@ -289,21 +289,66 @@ def delivered(state: State, pid: str) -> bool:
     return any(d["outcome"] in ("answered", "partial") for d in state["problems"][pid].get("deliveries", []))
 
 
+def _last_seq(p: Mapping[str, Any], key: str) -> int:
+    xs = p.get(key) or []
+    return int(xs[-1]["seq"]) if xs else -1
+
+
+def open_round(state: State, pid: str) -> int:
+    """开放道当前这一轮从哪条事件起算：最后一次追问的 seq；没有追问即开题（地图 Q31）。"""
+    p = state["problems"][pid]
+    return max(p["opened_seq"], _last_seq(p, "follow_ups"))
+
+
+def halted(state: State, pid: str) -> bool:
+    """叫停是否仍有效：叫停之后没有新的追问（地图 Q20、D12）。"""
+    p = state["problems"][pid]
+    h = p.get("halted")
+    return h is not None and h["seq"] > _last_seq(p, "follow_ups")
+
+
+def waiting_since(state: State, pid: str) -> int | None:
+    """开放道交付之后等人的起点（事件时间戳，毫秒）：这一轮已经交付、没有在途会话、也没有更新的追问。
+    闲置自动关从这里计时（地图 Q33）；不在等人时 None。"""
+    p = state["problems"][pid]
+    if p.get("closed") or p["goal"]["accept"] != "open":
+        return None
+    ds = p.get("deliveries") or []
+    if not ds or ds[-1]["seq"] < open_round(state, pid):
+        return None
+    if any(l["active"] and l["kind"] == "solve" for l in leases_of(state, pid)):
+        return None
+    return int(ds[-1].get("ts", p["opened_ts"]))
+
+
+IDLE_CLOSE_S = 7 * 86400  # 开放道交付后闲置自动关的缺省（open-lane §12 第 8 条）；开题时抄进事件体的值优先
+
+
+def idle_close_at(state: State, pid: str) -> int | None:
+    since = waiting_since(state, pid)
+    if since is None:
+        return None
+    return since + int(state["problems"][pid].get("idle_close_s", IDLE_CLOSE_S)) * 1000
+
+
 def open_work(state: State, pid: str) -> list[dict[str, Any]]:
-    """开放道的 /work（open-lane §3.2、§3.3）：一个求解会话做到底；未交付而会话结束就接力，至多 OPEN_RELAYS 个；
-    交付之后不再派，等人看（why=delivered，受阻为 blocked）；接力用完仍未交付，转人（stalled）。
+    """开放道的 /work（open-lane §3.2、§3.3、§3.5）：一个求解会话做到底；未交付而会话结束就接力，每一轮至多
+    OPEN_RELAYS 个；交付之后不再派，等人看（why=delivered，受阻为 blocked）；人追问开始新的一轮（地图 Q31）；
+    人叫停之后不再派（Q20），在途的交出已有结果；接力用完或叫停后没有交付，转人（stalled）。
     没有 bootstrap、reason、explore，也没有判官项：开放道的 Goal 不设判官。"""
     p = state["problems"][pid]
     items: list[dict[str, Any]] = []
-    solves = [l for l in leases_of(state, pid) if l["kind"] == "solve"]
-    ds = p.get("deliveries") or []
+    start = open_round(state, pid)
+    solves = [l for l in leases_of(state, pid) if l["kind"] == "solve" and l["issued_seq"] > start]
+    ds = [d for d in (p.get("deliveries") or []) if d["seq"] > start]
     last = ds[-1] if ds else None
+    busy = any(l["active"] for l in solves)
     if last is not None:
         items.append(
             {"kind": "human", "target": pid, "why": "blocked" if last["outcome"] == "blocked" else "delivered"}
         )
-    elif not any(l["active"] for l in solves):
-        if len(solves) < OPEN_RELAYS:
+    elif not busy:
+        if not halted(state, pid) and len(solves) < OPEN_RELAYS:
             items.append({"kind": "solve"})
         else:
             items.append({"kind": "human", "target": pid, "why": "stalled"})
@@ -416,10 +461,13 @@ def closeout_items(state: State, pid: str) -> list[dict[str, Any]]:
     """四顾清单（3.1.8）。只对画像为 r1、r2 或 accept=human 的题列项；M0 的 r0 判官验收题恒为空。
     完整清单（范围修订、r2 凭据、stale/disputed/E3d）在 M4 落地，这里先给出 r1/r2 题的占位项。"""
     p = state["problems"][pid]
-    if p["profile"]["reversibility"] == "r0" and p["goal"]["accept"] in ("judge", "open"):
+    if p["profile"]["reversibility"] == "r0" and p["goal"]["accept"] == "judge":
         return []
-    items: list[dict[str, Any]] = [{"item": "closeout_review", "reason": p["profile"]["reversibility"]}]
-    if p["goal"]["accept"] == "human":
+    items: list[dict[str, Any]] = []
+    if p["profile"]["reversibility"] != "r0" or p["goal"]["accept"] == "human":
+        items.append({"item": "closeout_review", "reason": p["profile"]["reversibility"]})
+    if p["goal"]["accept"] in ("human", "open"):
+        # 开放道（地图 v0.9 P7、Q32）同人工验收：采纳或不采纳关题之前，运行时扩过的权逐条确认
         # 人工验收的题（宪章 D3、地图 Q21）：影响面逐项列出，验收通过之前人要逐条确认（accept 的 closeout 字段）
         granted = [
             {k: r[k] for k in ("resource", "pattern", "actions", "risk")}
@@ -429,7 +477,8 @@ def closeout_items(state: State, pid: str) -> list[dict[str, Any]]:
         if granted:
             items.append({"item": "scope_granted", "rules": granted})
         live = sorted(l["id"] for l in active_leases(state, pid) if l["kind"] != "judge")
-        if live:
+        # 开放道只列扩过的权：交付之后求解会话随即收尾，关题时的藏刀一并收掉它，不另要人确认
+        if live and p["goal"]["accept"] == "human":
             items.append({"item": "leases_active", "leases": live})
     return items
 

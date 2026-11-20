@@ -10,7 +10,10 @@
     pd scope list    pd scope grant <申请> [--risk r1,…] [--yes]    pd scope deny <申请> --reason "<文本>"
     pd scope revoke <规则下标> --reason "<文本>"     运行时扩权（docs/design/runtime-grants/）
     pd kaiti "<原文>" [--answer …] [--strict] [--yes]   一句话开题（判不了的进开放道，直接开始；见 kaiti.py）
-    pd close <pid> [--feedback adopted|rejected|none] [--reason "<文本>"] [--yes]   关题（开放道可带采纳与否）
+    pd close <pid> [--feedback adopted|rejected|none] [--reason "<文本>"] [--confirm 四顾项,…] [--yes]
+                                            关题（开放道可带采纳与否；扩过权的要逐条确认四顾）
+    pd follow-up <pid> "<追问>" [--add <美元>]   开放道交付之后追问（剩余不够收尾时要 --add 追加预算）
+    pd halt <pid> [--reason "<文本>"]       开放道叫停：不再派新会话，在途的交出已有结果
     pd settings show                        pd settings set <键路径> <值>
     pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
     pd connector list    pd connector tasks <平台>    pd connector import <平台> <任务号> [--yes]   从平台导入
@@ -36,7 +39,7 @@ from pathlib import Path
 
 import yaml
 
-from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, seen_card
+from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, closeout_items, seen_card
 
 from . import connector, kaiti, render
 
@@ -161,13 +164,56 @@ def cmd_close(local: Local, a, w, read=input) -> int:
         body["feedback"] = a.feedback
     if a.reason:
         body["reason"] = a.reason
+    items = [str(i["item"]) for i in closeout_items(st, pid)]
     if not is_open:
+        body["seen"] = seen_card(st, pid, "closeout", pid)
+    elif items:  # 开放道扩过权（地图 Q32）：与 pd accept 同法，四顾逐条确认并绑定所见的收尾卡
+        confirmed = [x for x in (a.confirm or "").split(",") if x]
+        missing = [x for x in items if x not in confirmed]
+        if missing:
+            w(f"[人] 四顾清单有未确认项：{'、'.join(missing)}；逐条看过之后用 --confirm {','.join(items)}\n")
+            return 2
+        body["closeout"] = items
         body["seen"] = seen_card(st, pid, "closeout", pid)
     out = local.submit(pid, f"pd-close:{pid}:{st['seq']}", [{"op": "close_problem", "body": body}])
     if not out["ok"]:
         w(f"[证据] 关题被拒：{_fail(out)}\n")
         return 1
     w(f"[证据] 已关题 {pid}，终态 {render.terminal_phrase(local.graph.state, pid)}\n")
+    return 0
+
+
+def cmd_follow_up(local: Local, a, w) -> int:
+    """开放道的追问（地图 Q31）：回到求解，带着工作区与上一轮交付。
+    seen 取此刻的链头：交付之后又有新的交付即 stale_view。"""
+    pid = a.target
+    if not _known(local, pid, w):
+        return 1
+    st = local.graph.state
+    body: dict = {"text": a.text, "seen": {"seq": st["seq"]}}
+    if a.add:
+        body["budget_add_usd_milli"] = round(float(a.add) * 1000)
+    out = local.submit(pid, f"pd-follow:{pid}:{st['seq']}", [{"op": "follow_up", "body": body}])
+    if not out["ok"]:
+        code = _fail(out)
+        hint = "；剩余不够这一轮收尾，用 --add <美元> 追加预算" if "over_budget" in code and not a.add else ""
+        w(f"[证据] 追问被拒：{code}{hint}\n")
+        return 1
+    w(f"[人] 已追问 {pid}，它会接着之前的工作区再做一轮\n")
+    return 0
+
+
+def cmd_halt(local: Local, a, w) -> int:
+    """开放道叫停（地图 Q20、D12）：之后不再派新的求解会话；在途的收到收尾轮，一分钟内不交付就被终止。"""
+    pid = a.target
+    if not _known(local, pid, w):
+        return 1
+    body = {"reason": a.reason} if a.reason else {}
+    out = local.submit(pid, f"pd-halt:{pid}:{local.graph.state['seq']}", [{"op": "halt", "body": body}])
+    if not out["ok"]:
+        w(f"[证据] 叫停被拒：{_fail(out)}\n")
+        return 1
+    w(f"[人] 已叫停 {pid}：在途的会话会先交出已有结果\n")
     return 0
 
 
@@ -518,7 +564,15 @@ def parser() -> argparse.ArgumentParser:
     cl.add_argument("target")
     cl.add_argument("--feedback", choices=["adopted", "rejected", "none"], help="开放道：采纳、不采纳、不表态")
     cl.add_argument("--reason")
+    cl.add_argument("--confirm", help="开放道扩过权时：已逐条确认的四顾项，逗号分隔")
     cl.add_argument("--yes", action="store_true")
+    fu = sp.add_parser("follow-up")
+    fu.add_argument("target")
+    fu.add_argument("text")
+    fu.add_argument("--add", help="追加预算（美元）：剩余不够这一轮收尾时要带")
+    ht = sp.add_parser("halt")
+    ht.add_argument("target")
+    ht.add_argument("--reason")
     sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
     sc.add_parser("list")
     for name in ("grant", "deny", "revoke"):
@@ -568,6 +622,10 @@ def main(
         return cmd_accept(local, a, w, a.cmd, read)
     if a.cmd == "close":
         return cmd_close(local, a, w, read)
+    if a.cmd == "follow-up":
+        return cmd_follow_up(local, a, w)
+    if a.cmd == "halt":
+        return cmd_halt(local, a, w)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)
 
 

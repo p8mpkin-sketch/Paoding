@@ -33,6 +33,7 @@
 | 系统·风险表 | 资源种类与模式 → 风险等级；未命中按 r2 | 设置存储 | 人 | 新开题起 | 以摘要进；每条 scope 的风险照旧写进 `open_problem` |
 | 系统·练习道信封 | 一句话开题 §4.4 的 `allow`、`judge`、`budget`、`goal` | 设置存储（取代 `kaiti.d/practice.yaml` 的手工编辑） | 人 | 新开题起 | 信封版本与摘要进 `origin.draft.policy` |
 | 系统·运行时扩权 | `grants: {runtime: on\|off, auto: {practice: on\|off}}`；练习道的自动批准白名单就是信封的 `allow.net_patterns`，不另起一份；风险沿用风险表 | 设置存储 | 人 | 新的扩权申请起 | 以摘要进；每条扩权申请事件体戳设置摘要（D5），重放不读设置 |
+| 系统·开放道（v0.9） | `lanes: {open: on\|off, idle_close_days: 7}`（`open` 是回滚开关，#106 已有；`idle_close_days` 是交付后无人动作自动关的天数，Q33）；`grants.readonly_allow`：人维护的只读白名单，缺省空，命中且动作只读时图服务自动批（Q36），与练习道白名单分开 | 设置存储 | 人 | 新开题起（`idle_close_days` 对在途题按开题时的快照） | 以摘要进；自动批准的扩权事件体戳白名单版本 |
 | 系统·预算先验 | 先验源的名称、版本、档位表（只读显示） | 外部注入，见 §6 | 部署方 | 起草服务启动时加载 | 版本进出处账 |
 | 系统·判定器 | 已注册判官（只读，注册表由配置目录给出，Worker 不可写） | `judgebox/judges.d/` | 人（在仓库或部署里） | 重启 | `judge_snapshot` |
 | 系统·运行环境 | 执行容器基础规格（只读） | `config.yaml` 的 `executor.bases` | 部署方 | 重启 | `env.base` |

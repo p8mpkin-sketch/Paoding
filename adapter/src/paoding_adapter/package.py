@@ -108,6 +108,16 @@ def open_brief(state: State, pid: str, statement: str) -> str:
         lines.append("必做自检项（交付前逐条做，结果如实写进 self_check，item 填编号）：")
         lines += [f"- {c['id']}：{c['text']}" for c in checks]
     lines.append(f"授权范围：{_j(p['scope'])}")
+    ups = p.get("follow_ups") or []
+    if ups:
+        # 追问（地图 Q31）：人看过上一轮交付之后写的话。最新那条就是这一轮要回答的；上一轮的工作区与笔记已接力过来
+        ds = {d["id"]: d for d in p.get("deliveries") or []}
+        last = ds.get(ups[-1]["after_delivery"]) or {}
+        lines.append("这是追问之后的一轮。上一轮交付（你或前一个会话交的）：")
+        lines.append(_j({k: last[k] for k in ("id", "outcome", "answer", "unverified", "needs") if k in last}))
+        lines.append("人的追问（按时间，最后一条是这一轮要回答的）：")
+        lines += [f"- {u['text']}" for u in ups]
+        lines.append("这一轮做完同样用 deliver 交付：交的是回答追问之后的完整结果，不只是增量。")
     return "\n".join(lines)
 
 

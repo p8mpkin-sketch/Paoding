@@ -8,6 +8,9 @@
    elapsed（缺省，旧行为）按开题以来的墙钟；spend 按花费墙钟（cost 事件的 wall_s 累计），另有题的最长存活
    life_s 兜底。两种取值下都执行 deadline：到点停掉工作租约，等待中的延迟判官复判在 settle_s 之内照常进行，
    之后关题。
+   开放道（地图 v0.9 Q20、Q33）另有三条：人叫停之后通知在途的求解会话收尾，HALT_GRACE_S 之后仍在就终止；
+   墙钟按“这一轮”计（从开题或最后一次追问算起），交付之后等人的时间不算；交付后闲置满 idle_close_s
+   （开题时抄入，缺省 7 天）自动关题，原因 idle，不带反馈。
 3. 清理孤儿容器：调用注入的清扫函数（执行层按标签回收）。
 4. 健康告警：某后端最近 N 个任务里失败占比超过阈值 → backend_unhealthy 告警交人。
 
@@ -26,6 +29,8 @@ from paoding_graph.contract import GraphPort, GraphReader
 from .contract import TaskControl
 
 SOFT_LINE = 0.9
+HALT_GRACE_S = 60  # 与 graph reducer.deliver.HALT_GRACE_S 相同（D12）；哮天犬只依赖 contract，这里抄一份
+IDLE_CLOSE_S = 7 * 86400  # 与 graph work.IDLE_CLOSE_S 相同：开题时没抄入时用它
 FAIL_OUTCOMES = ("failed", "expired")
 
 
@@ -49,12 +54,38 @@ class TickReport:
     alerts: list = field(default_factory=list)
 
 
+def _last(p: dict, key: str) -> dict | None:
+    xs = p.get(key) or []
+    return xs[-1] if xs else None
+
+
+def _round_start_ts(p: dict) -> int:
+    """开放道这一轮的起点：最后一次追问，没有即开题（地图 Q31）。"""
+    u = _last(p, "follow_ups")
+    return int(u["ts"]) if u is not None else int(p["opened_ts"])
+
+
+def _open_waiting_since(p: dict, solving: bool) -> int | None:
+    """开放道交付之后等人的起点；这一轮还没交付、或还有在途求解会话时 None（与 graph work.waiting_since 同义）。"""
+    d, u = _last(p, "deliveries"), _last(p, "follow_ups")
+    if d is None or solving or (u is not None and u["seq"] > d["seq"]):
+        return None
+    return int(d.get("ts", p["opened_ts"]))
+
+
+def _halted(p: dict) -> dict | None:
+    h, u = p.get("halted"), _last(p, "follow_ups")
+    return h if h is not None and (u is None or h["seq"] > u["seq"]) else None
+
+
 def _over_time(p: dict, view: dict, now: int) -> str | None:
     """墙钟与存活（§5.6）。elapsed：开题以来的墙钟 ≥ wall_s（旧行为，逐字不变）。spend：花费墙钟 ≥ wall_s，
     或开题以来 ≥ life_s。"""
     if "wall_s" not in p["budget"] or "opened_ts" not in p:
         return None
     age_ms = now - p["opened_ts"]
+    if p["goal"]["accept"] == "open":  # 开放道：墙钟按这一轮计，交付之后等人的时间不算（由闲置自动关接管）
+        return "wall_s" if now - _round_start_ts(p) >= p["budget"]["wall_s"] * 1000 else None
     if p.get("wall_mode", "elapsed") == "elapsed":
         return "wall_s" if age_ms >= p["budget"]["wall_s"] * 1000 else None
     if (view["spent"].get("wall_s") or 0) >= p["budget"]["wall_s"]:
@@ -68,6 +99,8 @@ def _wall_used(p: dict, view: dict, now: int) -> float | None:
     """墙钟用掉的比例（与 _over_time 同一口径）；题没有墙钟时 None。"""
     if "wall_s" not in p["budget"] or "opened_ts" not in p or p["budget"]["wall_s"] <= 0:
         return None
+    if p["goal"]["accept"] == "open":
+        return (now - _round_start_ts(p)) / (p["budget"]["wall_s"] * 1000)
     if p.get("wall_mode", "elapsed") == "elapsed":
         return (now - p["opened_ts"]) / (p["budget"]["wall_s"] * 1000)
     return (view["spent"].get("wall_s") or 0) / p["budget"]["wall_s"]
@@ -151,6 +184,8 @@ class Watchdog:
                     if self.control is not None:
                         self.control.soft_line(l["id"])
                     r.soft.append(l["id"])
+        if p["goal"]["accept"] == "open" and self._open_lane(pid, p, now, r):
+            return
         cap = view["cap"].get("usd_milli")
         over_cap = cap is not None and view["spent"]["usd_milli"] >= cap
         why = "problem_budget" if over_cap else _over_time(p, view, now)
@@ -172,6 +207,31 @@ class Watchdog:
             )
             if out["ok"]:
                 r.closed.append(pid)
+
+    def _open_lane(self, pid: str, p: dict, now: int, r: TickReport) -> bool:
+        """开放道的叫停与闲置（地图 Q20、Q33）。返回 True 表示这道题本轮已处理完（等人或已关），不再看墙钟与题预算：
+        交付之后等人的时间不算墙钟；预算到顶的题在等人时也不关，人追问时再追加。"""
+        solves = [l for l in self._active(pid) if l["kind"] == "solve"]
+        h = _halted(p)
+        if h is not None:
+            for l in solves:
+                if l["id"] not in self._soft_sent:
+                    self._soft_sent.add(l["id"])
+                    if self.control is not None:
+                        self.control.soft_line(l["id"])
+                    r.soft.append(l["id"])
+                if now - int(h["ts"]) >= HALT_GRACE_S * 1000:
+                    self._halt(l["id"], "halted", r)
+        since = _open_waiting_since(p, bool(solves))
+        if since is None:
+            return False
+        if now - since >= int(p.get("idle_close_s", IDLE_CLOSE_S)) * 1000:
+            out = self.graph.submit(
+                self.cfg.token, pid, f"close:{pid}:idle", [{"op": "close_problem", "body": {"reason": "idle"}}]
+            )
+            if out["ok"]:
+                r.closed.append(pid)
+        return True
 
     def _halt(self, lid: str, why: str, r: TickReport, record: bool = True) -> None:
         if lid in self._killed:

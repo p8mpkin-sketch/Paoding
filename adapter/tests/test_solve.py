@@ -266,3 +266,24 @@ def test_closing_round_asks_for_a_delivery_before_relaying(tmp_path, graph, upst
         assert d["outcome"] == "partial" and d["unverified"] == ["第 2、3 节没写"]
     finally:
         rig.close()
+
+
+def test_open_brief_carries_follow_ups_and_the_last_delivery():
+    """追问之后的一轮（地图 Q31）：简报里有上一轮交付的结局与未验证项、人的追问全文（最后一条是这一轮的）。"""
+    from paoding_adapter.package import open_brief
+
+    p = {
+        "title": "t",
+        "origin": {"statement_ref": "a_1", "materials": []},
+        "goal": {"statement": "查清楚 X", "accept": "open"},
+        "scope": [],
+        "deliveries": [
+            {"id": "d_5", "seq": 5, "outcome": "partial", "answer": "a_4", "unverified": ["第二来源"], "needs": []}
+        ],
+        "follow_ups": [{"id": "u_7", "seq": 7, "text": "把第二来源也核对一下", "after_delivery": "d_5"}],
+    }
+    brief = open_brief({"problems": {"p1": p}}, "p1", "原话")
+    assert "人的追问" in brief and "- 把第二来源也核对一下" in brief
+    assert '"outcome":"partial"' in brief.replace(" ", "") and "第二来源" in brief
+    p.pop("follow_ups")
+    assert "人的追问" not in open_brief({"problems": {"p1": p}}, "p1", "原话")  # 没有追问时与旧版一致

@@ -312,6 +312,8 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             **({"prefs": prefs} if prefs is not None else {}),
             # 时限语义开关（§5.6）：缺省 elapsed 时事件体与旧版相同；spend 时连同最长存活一起抄入
             **({"wall_mode": "spend", "life_s": cfg.life_s} if cfg.wall_mode == "spend" else {}),
+            # 开放道交付后闲置自动关的时长（地图 Q33）：开题时抄入，在途题不随设置变
+            **({"idle_close_s": cfg.idle_close_s} if accept == "open" and cfg.idle_close_s is not None else {}),
             # 宪章 D5：开在哪一版设置之下。由图服务抄入，提交体里不接受；不进等级、消费门与画像
             **({"settings": {"version": cfg.settings[0], "digest": cfg.settings[1]}} if cfg.settings else {}),
         }

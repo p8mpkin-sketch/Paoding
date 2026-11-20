@@ -126,6 +126,14 @@ def world():
     solve5 = {"kind": "adapter", "id": "ad1", "session": lid5, "role": "solve"}
     ans5 = k.art("p5", "authored", b"answer", actor=solve5)
     run5 = k.art("p5", "exec", b"curl output")
+    # 追问要一道已经交付过的开放道题（地图 Q31）
+    st6 = k.art("p6", "input", b"statement p6")
+    assert k.submit(HUMAN, "p6", "open_problem", {**open5, "origin": {"statement_ref": st6, "materials": []}}) == "ok"
+    lid6 = k.submit(SINAN, "p6", "lease", {"kind": "solve", "holder": "sn1", "reserve": R, "ttl_s": 600})
+    solve6 = {"kind": "adapter", "id": "ad1", "session": lid6, "role": "solve"}
+    ans6 = k.art("p6", "authored", b"answer", actor=solve6)
+    d6 = {"outcome": "partial", "answer": ans6, "claims": [], "self_check": [], "unverified": ["没跑完"], "needs": []}
+    assert k.submit(solve6, "p6", "deliver", d6).startswith("d_")
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -255,6 +263,8 @@ def world():
                 "needs": [],
             },
         ),
+        (HUMAN, "p6", "follow_up", {"text": "接着把第二部分做完", "seen": {"seq": k.state["seq"]}}),
+        (HUMAN, "p5", "halt", {"reason": "先停一下"}),
         (
             HUMAN,
             "p4",

@@ -324,3 +324,17 @@ def test_profile_format_is_optional_and_checked():
     assert validate_settings(ok)["models"]["profiles"][0]["format"] == "openai"
     with pytest.raises(BadBody):
         validate_settings({**d, "models": {**d["models"], "profiles": [{**p0, "format": "gemini"}]}})
+
+
+def test_lanes_idle_close_days_is_optional_and_checked():
+    """开放道交付后闲置自动关（地图 Q33）：lanes.idle_close_days 可缺（缺省 7 天，旧快照摘要不变）；给了须为正整数。"""
+    d = defaults()
+    assert "idle_close_days" not in d["lanes"]
+    assert digest_of(validate_settings(d)) == digest_of(d)
+    ok = {**d, "lanes": {"open": True, "idle_close_days": 3}}
+    assert validate_settings(ok)["lanes"] == {"open": True, "idle_close_days": 3}
+    for bad in (0, -1, "7", 1.5):
+        with pytest.raises(BadBody):
+            validate_settings({**d, "lanes": {"open": True, "idle_close_days": bad}})
+    with pytest.raises(BadBody):
+        validate_settings({**d, "lanes": {"open": True, "idle": 3}})
