@@ -1,6 +1,6 @@
 {
  "id": "h1.solo",
- "ver": 1,
+ "ver": 2,
  "slot": "H1",
  "seats": [
   "solve"
@@ -40,7 +40,7 @@
  "assets": [
   {
    "name": "adapter/prompts/solve.md",
-   "sha256": "5d5344424367a930107fe5720c5356089f77da3f9a01bd18a916630052ac2ccb"
+   "sha256": "f09738266a5280f261cdc6881e63d1be9fb2863037d69b69ff7e28b393724cdb"
   }
  ],
  "organ": {

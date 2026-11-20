@@ -2,37 +2,37 @@
  "@surface": {
   "events": "",
   "n_events": 0,
-  "packages": "c8f3bddf9e8ec3ed68702cc142cc4666766bfe0860d05013bcb07398bab5e5a6",
+  "packages": "5432468579adb83313311dbd7c1f7f9c421bd6da09f6c27cf3e672055ca2d4cd",
   "n_packages": 16
  },
  "adapter/tests/test_activity.py::test_solve_session_activity_is_readable_live_and_after_it_ends": {
-  "events": "99cba541bb9ac2e4c2ef7982df289503461c66338042342ceefa2eabe0f7035e",
+  "events": "6f155fbd0e9d1e318e659fdbc207268b52aaa83f299cfcbd641ea5337cb3d23d",
   "n_events": 13,
-  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
   "n_packages": 2
  },
  "adapter/tests/test_activity_ledger.py::test_cap_leaves_only_round_ends_and_the_closing_anchor": {
-  "events": "9b109131c82e5248710ac2b240e9e45363306ae1daa4d27f6010871ce5773fb0",
+  "events": "e7760bcfaddcc0ed2ac6ae396158e3c54cf02eeacf7d6f473dc731b9d9ef77bb",
   "n_events": 14,
-  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
   "n_packages": 2
  },
  "adapter/tests/test_activity_ledger.py::test_the_ledger_outlives_the_session_directory": {
-  "events": "66baef37d34c34d32ab9dbb36e0b081acaa198eaa43f030fbffe5e61774ca3e3",
+  "events": "14da76d3250f90bdc73e3c33064fa8ab4f9ef7dcfd2cf88cbc3ddceb7a1b0eb2",
   "n_events": 16,
-  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
   "n_packages": 2
  },
  "adapter/tests/test_activity_ledger.py::test_what_was_seen_live_replays_byte_for_byte": {
-  "events": "66baef37d34c34d32ab9dbb36e0b081acaa198eaa43f030fbffe5e61774ca3e3",
+  "events": "14da76d3250f90bdc73e3c33064fa8ab4f9ef7dcfd2cf88cbc3ddceb7a1b0eb2",
   "n_events": 16,
-  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
   "n_packages": 2
  },
  "adapter/tests/test_activity_ledger.py::test_without_the_ledger_nothing_is_registered": {
-  "events": "fc16cc15c5a1f0445120e86b4c68395694e342420681c18d550598a7bd26b6c0",
+  "events": "565eddb0d82763b95c3f147bf55a342254ed3c379ce87c16bf8ced2fee40c765",
   "n_events": 13,
-  "packages": "73e0e4559d8e0a6ac457033cdd31da3fdf6414d78e57efcd4dbed3b823ef49c6",
+  "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
   "n_packages": 2
  },
  "adapter/tests/test_keyring.py::test_legacy_api_key_moves_into_ring": {
@@ -546,39 +546,39 @@
   "n_packages": 2
  },
  "adapter/tests/test_solve.py::test_blocked_must_say_what_it_needs": {
-  "events": "271f0f027208516a8a394fb26edb831fa646a89bbfd5dd2ff0bc406af5869681",
+  "events": "c158caa9cda9cfac7ea1ae38fd9609296e1a82e7532831866d7c1cdbe8532d36",
   "n_events": 11,
-  "packages": "38e2fbd6292b0b315bcee82f7f0c63de1ca4b445454e21a9cbff7f0f1697cc2e",
+  "packages": "1978ac1794a55804155613bba2b8bb068c3773609625a0a6399796cd6ee9d1ec",
   "n_packages": 2
  },
  "adapter/tests/test_solve.py::test_closing_round_asks_for_a_delivery_before_relaying": {
-  "events": "bc6032b4d82b04dd995edbf9d9426c376f6d76f337a1070597dc266d81530a62",
+  "events": "c99a2f03f825f5f5b0e23f20f6059146206c323f73526b819ecf498fba7a9451",
   "n_events": 12,
-  "packages": "9581c231273796e089d277c9182fccd88a49978e5d5b83d4bebccc3f2942cc63",
+  "packages": "0bbde11575ce8937a59f03d4cc704db84b026dfb63103c21e0d5d0bcb9b22030",
   "n_packages": 3
  },
  "adapter/tests/test_solve.py::test_credential_never_reaches_the_card_or_the_delivery": {
-  "events": "8663924c394906678caf9c52b5d89a74f04999cc16249897a9e94eb5f805c122",
+  "events": "ff3e53fdb0f3e189c57b120d8adb07103d97ea1ca6f7e79d66dbc808d62f3b27",
   "n_events": 12,
-  "packages": "41a871e3f32667218c74ef0a2237e3e7922465cb440b06b4da0b3a3429265691",
+  "packages": "9274ad9b76e120252b48b4d6a1ffe28048c984da965addcf48836115577ce520",
   "n_packages": 2
  },
  "adapter/tests/test_solve.py::test_own_writing_is_not_evidence": {
-  "events": "f7bc8d8b4d5b5ede54b95bc74d69f0f24f09c26d6c9754efb26bbd9cb2cf6927",
+  "events": "13105ce82696e7c020c6f230a907927e8e5da8b4393ff83aceabbc517230023f",
   "n_events": 14,
-  "packages": "592ea0a88cad77b3f725a70273899c9aa3ee52f91cd4ba74a277871c445ba2ec",
+  "packages": "cd0c4a0f4145bcf06b7a80f1a98489dfd31fb8798a7a7876912746ab63bce217",
   "n_packages": 2
  },
  "adapter/tests/test_solve.py::test_relay_carries_the_workspace": {
-  "events": "7ec432ddd72fcf62a0c625982878f385a18a9d70d11a4c0a5ba2f4f8c1ad8c9d",
+  "events": "cc3ad4f5bcffb98972411d98055bbe1996ffe0542e9c0f8178524913335cd9a5",
   "n_events": 16,
-  "packages": "349531a9d1657de24663651c8910734d6456572d21849e1c3b7385057b244fb6",
+  "packages": "aed3fc419871621dd85b4bd3438d4e81f6f3aa1adc6c53874e121ea5a7be5e84",
   "n_packages": 6
  },
  "adapter/tests/test_solve.py::test_solve_runs_to_a_delivery_with_exec_evidence": {
-  "events": "947937cb16500ff3886036f507ad1672ad2065da554211fe1a993324c7021638",
+  "events": "bf73fdc823126a91cf4c6a592d5402ad8da38686f5aef693c6f33445b36e4b06",
   "n_events": 15,
-  "packages": "7e4c3d595242f83028579c1e9fc86ab4916c2c6a821b3e69247f217ca482456f",
+  "packages": "cd3ff9023f17daf982fa0a4363e31ce4b9467f4d332a248e41afff7621d40552",
   "n_packages": 2
  },
  "sinan/tests/test_loop.py::test_bootstrap_reserve_is_thin": {
@@ -852,9 +852,9 @@
   "n_packages": 0
  },
  "tests/integration/test_knowledge_session.py::test_kb_query_is_logged_and_pick_scope_only_sees_the_named": {
-  "events": "c59167318bfd56726a0d5235f00b5d53d5281bd9075a6fd4074798b5bf7ef7ae",
+  "events": "fce6f13ceb24f0f6a2f2943cb0d1f35f30d19e261fa46844259aeabee00c3b4e",
   "n_events": 14,
-  "packages": "52acb25320bab70cb70561fbe0485e6f76a31fd5456be5a5fd364b20d092ddf2",
+  "packages": "5f84f7f4beded98983deb874885f823b5d4c1a58723efb0a5f0ebc1093d90380",
   "n_packages": 2
  },
  "tests/integration/test_ledger.py::test_duplicate_cost_report_counted_once": {
@@ -882,21 +882,21 @@
   "n_packages": 0
  },
  "tests/integration/test_open_lane_e2e.py::test_blocked_ends_honestly": {
-  "events": "a0ed28b32d78734a38f5808f4bd4b67b0a9107c136bfa8e7583d8b6034dabc1c",
+  "events": "99b2a9da26beaa0d0cb038c970d6c62171e46efbd0f9a69dbcc4b6e4ebfa9103",
   "n_events": 14,
-  "packages": "eb98420fe7d1c8d8daf4b9eff8ae68b265d12d444ae7870f16e5f27f7bbd65f3",
+  "packages": "a3f2747ec5d263891c0076388e2f9618bcd3b688401e1f850d4c91f1d8a956cc",
   "n_packages": 2
  },
  "tests/integration/test_open_lane_e2e.py::test_credential_in_the_prompt_stays_off_the_card": {
-  "events": "608ad0d37e2a3174192265dc8f6ca9fe9e9433170123a0a436aabb3b9c87ec9c",
+  "events": "79953abacbc397aa512dd2c299a8a99ae54fc9a158bcb0542b9ad22362ec55db",
   "n_events": 12,
-  "packages": "4aaab9e4f9996e8bb10e808a6e340af714e6e1950e98d4a2ef974fa5a75d5090",
+  "packages": "bf81b620dfb33e415221fdf8fc6e3201c53bb5770f68ed1d55c45ab487bc16a5",
   "n_packages": 2
  },
  "tests/integration/test_open_lane_e2e.py::test_refused_prompt_now_runs_to_an_answer_with_evidence": {
-  "events": "ea9c66f596ebedf6e38aea375c4af0f7ad15f84c850200a51d05fda7289ea76e",
+  "events": "6f194f772fbd1c04fce99fc82d4df90527cd8b132594e21d555efdd7c4963064",
   "n_events": 17,
-  "packages": "b1a6e749bd5db8af3f3926530194a21a100c0819987a46382483e320d5e103d8",
+  "packages": "e4734eb3e41b57083fd666150666f2990af7c709244f5f99fb21e49efac96457",
   "n_packages": 2
  },
  "tests/integration/test_parallel.py::test_serial_when_capped_at_one": {
@@ -912,7 +912,7 @@
   "n_packages": 8
  },
  "tests/integration/test_session_activity.py::test_activity_endpoint_reads_the_session_log": {
-  "events": "0e5ff9cea30019994bac0fd3222feff9c460b534d155011e1153dfdef436b789",
+  "events": "1246b69d85b9b5815eb539dd20f3a2ede4aa307ce854a1a73a64ae274f181f44",
   "n_events": 3,
   "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "n_packages": 0
