@@ -73,6 +73,8 @@ TRIALS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "graph/tests/test_recall_kernel.py::test_m1_log_replays_byte_for_byte",
             "tests/fenjue/test_t4_zhang.py",
             "tests/fenjue/test_tables.py",
+            "graph/tests/test_gongfa_fields.py",  # 体质修炼 001 的 T4-1、T4-2
+            "tests/fenjue/test_f3_gongfa.py",
             "tests/integration/test_backup.py",
             "tests/integration/test_oplog.py",
         ),
