@@ -155,3 +155,34 @@ def check(f: dict[str, Any]) -> list[str]:
                     elif ev not in m1:
                         errs.append(f"{fid}: 工具 {t} 要用 M1:{ev}，清单没申请")
     return errs
+
+
+# ---------------------------------------------------------------- 读端的缺省（F3，01 §9）
+
+# 旧租约没有 form：按席位推出形态。只在读端推，不写回日志，也不进状态哈希
+SEAT_FORMS = {
+    "bootstrap": "h1.triad",
+    "reason": "h1.triad",
+    "explore": "h1.triad",
+    "solve": "h1.solo",
+    "recall": "h1.recall",
+}
+
+
+def gongfa_of(problem: dict[str, Any]) -> dict[str, Any]:
+    """一道题开在哪一套功法之下。焚决之前开的题没有这个字段，读作第 0 阶（旧法），摘要为空。"""
+    g = problem.get("gongfa")
+    return {"jie": g["jie"], "digest": g["digest"]} if g else {"jie": 0, "digest": None}
+
+
+def form_of(lease: dict[str, Any]) -> str | None:
+    """一个会话用的形态 id（不带修订号）。新租约记在事件里；旧租约按席位推；判官的租约没有形态。"""
+    f = lease.get("form")
+    return f.partition("@")[0] if f else SEAT_FORMS.get(lease["kind"])
+
+
+def kernel_config() -> dict[str, Any]:
+    """组装根抄给内核 Config 的两样：功法 (品阶, 摘要) 与席位 → 形态 "id@ver"。内核只抄不解释。"""
+    g = gongfa()
+    forms = tuple(sorted((seat, ref(f["id"])) for f in active("H1") for seat in f["seats"]))
+    return {"gongfa": (g["jie"], g["digest"]), "forms": forms}

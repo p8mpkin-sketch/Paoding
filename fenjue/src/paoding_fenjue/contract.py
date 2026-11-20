@@ -10,8 +10,11 @@ from .shapes import (
     fire_digest,
     fire_ids,
     form,
+    form_of,
     gongfa,
     gongfa_digest,
+    gongfa_of,
+    kernel_config,
     params,
     ref,
 )
@@ -30,8 +33,11 @@ __all__ = [
     "fire_digest",
     "fire_ids",
     "form",
+    "form_of",
     "gongfa",
     "gongfa_digest",
+    "gongfa_of",
+    "kernel_config",
     "params",
     "ref",
 ]

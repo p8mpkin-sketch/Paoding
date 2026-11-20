@@ -452,7 +452,14 @@ define(
             "expires_at": INT,
             "active": BOOL,
         },
-        {"target": STR, "outcome": STR, "ended_seq": INT, "transcript_ref": null(STR), "reflect": BOOL},
+        {
+            "target": STR,
+            "outcome": STR,
+            "ended_seq": INT,
+            "transcript_ref": null(STR),
+            "reflect": BOOL,
+            "form": doc(STR, "会话形态 id@ver（焚决 F3）；旧租约没有，按席位推"),
+        },
     ),
 )
 define(
@@ -471,6 +478,7 @@ define(
         }
     ),
 )
+define("Gongfa", obj({"jie": INT, "digest": STR}, doc="功法：品阶与摘要（焚决 F3）"))
 define(
     "ProfileOverride",
     obj(
@@ -507,7 +515,10 @@ define(
                             "judges": arr(STR),
                             "origin": ref("Origin"),
                         },
-                        {"prefs": ref("TaskPrefs")},
+                        {
+                            "prefs": ref("TaskPrefs"),
+                            "gongfa": doc(ref("Gongfa"), "开题时的功法（焚决 F3）；旧题没有，读作第 0 阶"),
+                        },
                     ),
                 ),
                 "goal": obj(

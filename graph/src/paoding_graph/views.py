@@ -365,6 +365,7 @@ def _lease(l: Lease) -> View:
         "ended_seq",
         "transcript_ref",
         "reflect",
+        "form",
     )
     rec = cast(View, l)
     return {k: rec[k] for k in keep if k in rec}
@@ -471,6 +472,7 @@ def status(state: State, pid: str) -> View:
             "closed_seq": p.get("closed_seq"),
             "now_ts": state["now"],
             "profile": dict(p["profile"]),
+            **({"gongfa": dict(p["gongfa"])} if "gongfa" in p else {}),  # 焚决 F3：旧题没有，读端读作第 0 阶
             "derived_profile": dict(p.get("derived_profile", p["profile"])),
             "profile_overrides": [
                 {

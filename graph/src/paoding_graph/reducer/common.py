@@ -50,6 +50,10 @@ class Config:
     open_cap_usd_milli: int | None = None
     open_cap_wall_s: int | None = None
     settings: tuple[int, str] | None = None  # 设置存储当时的 (版本, 摘要)，开题时抄进事件体（宪章 D5）
+    # 焚决 F3（FJ5，体质修炼）：此刻生效的功法 (品阶, 摘要)，开题时抄进事件体；席位 → 会话形态 "id@ver"，
+    # 领租约时抄进事件体。都由组装根从功法清单（paoding_fenjue）取来；内核不认识任何一团火，只抄不解释
+    gongfa: tuple[int, str] | None = None
+    forms: tuple[tuple[str, str], ...] = ()
     # 练习道信封（一句话开题增量 13、15）：None 即本部署不接受 lane=practice 的开题。版本与摘要开题时抄进事件体
     practice: PracticePolicy | None = None
     # 运行时扩权（runtime-grants §4、§10.3）：设置层 grants 节与风险表，由组装根在设置变更时整体替换 Config。

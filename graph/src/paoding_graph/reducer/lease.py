@@ -47,6 +47,8 @@ def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: i
     if not ok:
         return Reject("over_budget", "spent + reserved + reserve 超过上限")
     attempt = 1 + sum(1 for l in wk.leases_of(state, pid) if l["kind"] == kind and l.get("target") == target)
+    # 焚决 F3：这次会话用哪个形态。由图服务按席位从配置抄入，提交体里给的不认；旧事件没有，读端按席位推
+    form = dict(cfg.forms).get(kind)
     return Ok(
         {
             "kind": kind,
@@ -56,6 +58,7 @@ def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: i
             "ttl_s": ttl,
             "attempt": attempt,
             **({"reflect": True} if kind == "reason" and wk.in_review(state, pid) else {}),
+            **({"form": form} if form is not None else {}),
         }
     )
 
