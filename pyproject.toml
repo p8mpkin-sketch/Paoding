@@ -44,7 +44,7 @@ paoding-shuku = { workspace = true }
 members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan", "tongjian", "qicao", "shuku"]
 
 [tool.pytest.ini_options]
-testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "tongjian/tests", "qicao/tests", "shuku/tests", "ci/tests", "tests/integration"]
+testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "tongjian/tests", "qicao/tests", "shuku/tests", "ci/tests", "tests/integration", "tests/fenjue"]
 
 # 覆盖率（P2-3）：只量组件源码与组装脚本。CI 里 `pytest --cov` 之后由 ci/coverage_by_component.py 按组件汇总。
 # 子进程里跑的代码（假 CLI、被测试起成子进程的 run.py）量不到，读数因此偏低而不偏高。
