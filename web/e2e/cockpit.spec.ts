@@ -279,3 +279,30 @@ test("任务列表：删除进回收站，30 天内可恢复；账不动", async
   await page.locator('[data-tab="all"]').click();
   await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toBeVisible();
 });
+
+test("知识页资料：粘贴一段文字导入，几轮后可用并能查到", async ({ page }) => {
+  await page.goto("/knowledge");
+  await expect(page.locator('[data-job="s_runbk01"]')).toBeVisible();
+  await page.locator('[data-action="kn-import"]').click();
+  await page.locator('[data-mode="text"]').click();
+  await page.locator('[data-field="kn-name"]').fill("值班约定");
+  await page.locator('[data-field="kn-text"]').fill("交接时写清楚未关的告警和正在做的变更。");
+  await page.locator('[data-action="kn-start"]').click();
+  await expect(page.locator("[data-kn-import]")).toHaveCount(0);
+  const row = page.locator("[data-source]", { hasText: "值班约定" });
+  await expect(row).toBeVisible();
+  await expect(row).toHaveAttribute("data-live", "1", { timeout: 15_000 }); // 每 2 秒一轮，一轮推进一步
+  await page.locator('[data-field="kn-query"]').fill("未关的告警");
+  await page.locator('[data-action="kn-search"]').click();
+  await expect(page.locator("[data-hit]", { hasText: "值班约定" }).first()).toBeVisible();
+});
+
+test("知识页资料：选文件后列在抽屉里，导入后出现作业", async ({ page }) => {
+  await page.goto("/knowledge");
+  await page.locator('[data-action="kn-import"]').click();
+  await page.locator('[data-field="kn-files"]').setInputFiles([{ name: "告警规则.yaml", mimeType: "text/yaml", buffer: Buffer.from("延迟超过 300ms 报警\n") }]);
+  await expect(page.locator('[data-picked="告警规则.yaml"]')).toBeVisible();
+  await page.locator('[data-action="kn-start"]').click();
+  await expect(page.locator("[data-kn-import]")).toHaveCount(0);
+  await expect(page.locator("[data-source]", { hasText: "告警规则.yaml" })).toBeVisible();
+});
