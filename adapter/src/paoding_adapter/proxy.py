@@ -45,6 +45,7 @@ import yaml
 from paoding_graph.contract import GraphPort, GraphReader
 
 from .keyring import KeyRing
+from .openai_compat import StreamTranslator, count_tokens, error_body, from_openai_response, to_openai_request
 
 LOG = logging.getLogger("adapter")
 # 系统没配好 CA 时（macOS 上 python.org 与 uv 装的 Python 常见）依次试的证书包
@@ -82,6 +83,7 @@ def tls_context() -> tuple[ssl.SSLContext, str]:
 
 
 ESTIMATED = "+estimated"
+FORMATS = ("anthropic", "openai")
 BYTES_PER_TOKEN = 3  # 估算用：英文约 4 字节一个 token，中文约 3 字节；取小的，估多不估少
 
 HOP = {
@@ -136,6 +138,8 @@ class Task:
     # 按任务解析出的模型档案的上游与密钥槽（宪章 03 §3.2）；空即用 ProxyConfig 的
     upstream: str = ""
     key_slot: str = ""
+    # 上游说哪种格式：anthropic（原样转发）| openai（改写成 Chat Completions 再改回来，见 openai_compat）
+    format: str = "anthropic"
 
 
 @dataclass
@@ -191,11 +195,22 @@ class EndpointProxy:
     # ---------- 任务令牌 ----------
 
     def register_task(
-        self, token: str, lease_id: str, pid: str, reserve_usd_milli: int, upstream: str = "", key_slot: str = ""
+        self,
+        token: str,
+        lease_id: str,
+        pid: str,
+        reserve_usd_milli: int,
+        upstream: str = "",
+        key_slot: str = "",
+        fmt: str = "anthropic",
     ) -> None:
-        """upstream、key_slot：这个任务的模型档案指定的上游与密钥槽（会话开起时解析一次，中途不变）。"""
+        """upstream、key_slot、fmt：这个任务的模型档案指定的上游、密钥槽与格式（会话开起时解析一次，中途不变）。"""
+        if fmt not in FORMATS:
+            raise ValueError(f"上游格式取 {FORMATS}，不是 {fmt!r}")
         with self._lock:
-            self._tasks[token] = Task(token, lease_id, pid, reserve_usd_milli, upstream=upstream, key_slot=key_slot)
+            self._tasks[token] = Task(
+                token, lease_id, pid, reserve_usd_milli, upstream=upstream, key_slot=key_slot, format=fmt
+            )
 
     def revoke(self, token: str) -> None:
         with self._lock:
@@ -269,7 +284,9 @@ class EndpointProxy:
                 return auth[7:] if auth.lower().startswith("bearer ") else None
 
             def _reject(self, code: int, why: str) -> None:
-                body = json.dumps({"type": "error", "error": {"type": why, "message": why}}).encode()
+                self._reply(code, json.dumps({"type": "error", "error": {"type": why, "message": why}}).encode())
+
+            def _reply(self, code: int, body: bytes) -> None:
                 self.send_response(code)
                 self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(body)))
@@ -299,17 +316,43 @@ class EndpointProxy:
                     LOG.warning("代理：%s %s → 503 key_not_set（槽 %s）", self.command, self.path, slot)
                     return self._reject(503, "key_not_set")
                 up = urllib.parse.urlsplit(task.upstream or proxy.cfg.upstream)
+                openai = task.format == "openai"
+                tr: StreamTranslator | None = None
+                if openai:
+                    route = urllib.parse.urlsplit(self.path).path
+                    if self.command == "POST" and route.endswith("/v1/messages/count_tokens"):
+                        return self._reply(200, count_tokens(body, BYTES_PER_TOKEN))  # 本地估，不调上游、不计费
+                    if not (self.command == "POST" and route.endswith("/v1/messages")):
+                        return self._reject(404, "not_supported_for_openai_format")
+                    try:
+                        req = json.loads(body or b"{}")
+                    except ValueError:
+                        return self._reject(400, "invalid_json")
+                    if not isinstance(req, dict):
+                        return self._reject(400, "invalid_json")
+                    oreq = to_openai_request(req)
+                    up_body: bytes | None = json.dumps(oreq, ensure_ascii=False).encode()
+                    headers = {
+                        "content-type": "application/json",
+                        "authorization": f"Bearer {key}",
+                        "accept-encoding": "identity",
+                    }
+                    path = up.path.rstrip("/") + "/chat/completions"
+                    if oreq.get("stream"):
+                        tr = StreamTranslator(str(oreq.get("model") or ""))
+                else:
+                    up_body = body
+                    headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+                    headers["x-api-key"] = key
+                    headers["accept-encoding"] = "identity"  # 压缩的响应没法边转边计量
+                    path = (up.path.rstrip("/") + self.path) if up.path else self.path
                 conn: http.client.HTTPConnection
                 if up.scheme == "https":
                     conn = http.client.HTTPSConnection(up.netloc, timeout=600, context=proxy.tls)
                 else:
                     conn = http.client.HTTPConnection(up.netloc, timeout=600)
-                headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
-                headers["x-api-key"] = key
-                headers["accept-encoding"] = "identity"  # 压缩的响应没法边转边计量
-                path = (up.path.rstrip("/") + self.path) if up.path else self.path
                 try:
-                    conn.request(self.command, path, body=body, headers=headers)
+                    conn.request(self.command, path, body=up_body, headers=headers)
                     resp = conn.getresponse()
                 except OSError as e:
                     conn.close()
@@ -339,25 +382,58 @@ class EndpointProxy:
                 )
                 ctype = resp.getheader("content-type", "")
                 self.send_response(resp.status)
-                for k, v in resp.getheaders():
-                    if k.lower() not in HOP:
-                        self.send_header(k, v)
+                if openai:  # 改写过的响应：上游的头（长度、类型、编码）都不再对，只留请求号一类
+                    for k, v in resp.getheaders():
+                        if k.lower().startswith(("x-request-id", "request-id", "retry-after")):
+                            self.send_header(k, v)
+                    streaming = tr is not None and resp.status < 400
+                    self.send_header("content-type", "text/event-stream" if streaming else "application/json")
+                else:
+                    for k, v in resp.getheaders():
+                        if k.lower() not in HOP:
+                            self.send_header(k, v)
                 self.send_header("transfer-encoding", "chunked")
                 self.end_headers()
                 meter = _Meter(ctype.startswith("text/event-stream"), resp.getheader("content-encoding", ""))
                 client_gone = False
+
+                def send(data: bytes) -> None:
+                    nonlocal client_gone
+                    if client_gone or not data:
+                        return
+                    try:
+                        self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
+                    except OSError:  # 客户端断开：继续读完上游，用量照记
+                        client_gone = True
+
+                whole = b""  # openai 非流式与出错时：整体收下再改写
                 try:
                     while chunk := resp.read1(65536):
                         meter.feed(chunk)
-                        if not client_gone:
-                            try:
-                                self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
-                            except OSError:  # 客户端断开：继续读完上游，用量照记
-                                client_gone = True
+                        if not openai:
+                            send(chunk)
+                        elif tr is not None and resp.status < 400:
+                            send(tr.feed(chunk))
+                        else:
+                            whole += chunk
                 except OSError:
                     pass
                 finally:
                     conn.close()
+                    if openai:
+                        try:
+                            if resp.status >= 400:
+                                send(error_body(resp.status, whole))
+                            elif tr is not None:
+                                send(tr.finish())
+                            else:
+                                send(
+                                    json.dumps(
+                                        from_openai_response(json.loads(whole or b"{}")), ensure_ascii=False
+                                    ).encode()
+                                )
+                        except (ValueError, AttributeError):
+                            send(error_body(502, b"upstream returned a body that is not Chat Completions JSON"))
                     try:
                         self._meter(task, n, body, resp, ctype, meter)
                     except Exception:  # noqa: BLE001  计量出错不能吞掉响应收尾，否则客户端一直等最后一块

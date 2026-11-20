@@ -8,6 +8,7 @@ dialect 模拟别家 Anthropic 兼容端点（真实测试报告 P0-C，DeepSeek
 - gzip：不理会请求的 accept-encoding，响应一律 gzip
 - usage_at：start（缺省，输入侧在 message_start、输出在 message_delta）| delta（全部在 message_delta）
 - no_usage：响应里不带 usage
+路径以 /chat/completions 结尾时按 OpenAI Chat Completions 回（openai_tool、error 两个 dialect 键见 _openai）。
 usage 原样回报：可以用 OpenAI 式或 DeepSeek 式的字段名，也可以带 null。
 """
 
@@ -55,6 +56,8 @@ class FakeUpstream:
                 body = json.loads(self.rfile.read(int(self.headers["content-length"])))
                 up.seen.append({"path": self.path, "headers": dict(self.headers), "body": body})
                 dl = up.dialect
+                if self.path.endswith("/chat/completions"):
+                    return self._openai(body)
                 if body.get("stream"):
                     out_keys = ("output_tokens", "completion_tokens")
                     if dl.get("usage_at") == "delta":
@@ -101,6 +104,69 @@ class FakeUpstream:
                 self.send_header("content-type", ctype)
                 if dl.get("gzip"):
                     self.send_header("content-encoding", "gzip")
+                self.send_header("content-length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def _openai(self, body: dict[str, Any]) -> None:
+                """OpenAI Chat Completions：dialect 的 openai_tool=True 时回一个工具调用，error=状态码 时回错误。"""
+                dl = up.dialect
+                if dl.get("error"):
+                    data = json.dumps({"error": {"message": "bad model", "type": "invalid_request_error"}}).encode()
+                    self.send_response(int(dl["error"]))
+                    self.send_header("content-type", "application/json")
+                    self.send_header("content-length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                tool = bool(dl.get("openai_tool"))
+                usage = dict(up.usage)
+                if body.get("stream"):
+                    chunks: list[dict[str, Any]] = [
+                        {
+                            "id": "c1",
+                            "model": up.model,
+                            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "h"}}],
+                        },
+                        {"id": "c1", "model": up.model, "choices": [{"index": 0, "delta": {"content": "i"}}]},
+                    ]
+                    if tool:
+                        call = {
+                            "index": 0,
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "Bash", "arguments": '{"comm'},
+                        }
+                        chunks.append({"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [call]}}]})
+                        more = {"index": 0, "function": {"arguments": 'and": "ls"}'}}
+                        chunks.append({"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [more]}}]})
+                    reason = "tool_calls" if tool else "stop"
+                    chunks.append({"id": "c1", "choices": [{"index": 0, "delta": {}, "finish_reason": reason}]})
+                    if not dl.get("no_usage"):
+                        chunks.append({"id": "c1", "choices": [], "usage": usage})
+                    data = b"".join(b"data: %s\n\n" % json.dumps(c).encode() for c in chunks) + b"data: [DONE]\n\n"
+                    ctype = "text/event-stream"
+                else:
+                    msg: dict[str, Any] = {"role": "assistant", "content": "hi"}
+                    if tool:
+                        msg["tool_calls"] = [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "Bash", "arguments": '{"command": "ls"}'},
+                            }
+                        ]
+                    out = {
+                        "id": "c1",
+                        "object": "chat.completion",
+                        "model": up.model,
+                        "choices": [{"index": 0, "message": msg, "finish_reason": "tool_calls" if tool else "stop"}],
+                        **({} if dl.get("no_usage") else {"usage": usage}),
+                    }
+                    data = json.dumps(out).encode()
+                    ctype = "application/json"
+                self.send_response(200)
+                self.send_header("content-type", ctype)
                 self.send_header("content-length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)

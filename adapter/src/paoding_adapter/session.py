@@ -222,6 +222,7 @@ class SessionRunner:
                 lease["reserve"]["usd_milli"],
                 upstream=str(prof.get("endpoint") or ""),
                 key_slot=str(prof.get("key_slot") or ""),
+                fmt=str(prof.get("format") or "anthropic"),
             )
             plan = be.LaunchPlan(
                 lease_id,

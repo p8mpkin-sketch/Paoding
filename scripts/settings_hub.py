@@ -7,7 +7,7 @@
     PUT    /v1/keys/{slot}       人的令牌；请求体 {key}；只进端点代理的钥匙环，不落盘
     DELETE /v1/keys/{slot}       清除一个槽，立即生效
     DELETE /v1/keys              全部锁定
-    POST   /v1/models/test       人的令牌；请求体 {profile: {endpoint, model, key_slot}}；按 Anthropic 格式实际调一次
+    POST   /v1/models/test       人的令牌；请求体 {profile: {endpoint, model, key_slot, format?}}；按格式实际调一次
                                  （max_tokens=1），回 {ok, latency_ms, status?, code?, message?}；不改设置，不进账本
 
 设置存储在 <home>/settings/：当前快照 settings.json 加只追加的 settings.log（每行一次变更：旧摘要、新摘要、
@@ -144,8 +144,12 @@ def validate(raw: object) -> dict[str, Any]:
     profiles, names = [], set()
     fields = ("name", "endpoint", "model", "family", "tier", "key_slot")
     for i, p in enumerate(models["profiles"] if isinstance(models["profiles"], list) else [None]):
-        if not isinstance(p, dict) or set(p) != set(fields) or not all(isinstance(p[k], str) for k in fields):
-            raise BadBody(f"models.profiles[{i}] 是 {{{', '.join(fields)}}}，都取字符串")
+        # format 可缺（这一项加进来之前写下的快照照旧有效、摘要不变），缺省即 anthropic
+        keys = set(p) - {"format"} if isinstance(p, dict) else set()
+        if not isinstance(p, dict) or keys != set(fields) or not all(isinstance(p[k], str) for k in fields):
+            raise BadBody(f"models.profiles[{i}] 是 {{{', '.join(fields)}}}，都取字符串；可选 format")
+        if "format" in p and p["format"] not in FORMATS:
+            raise BadBody(f"models.profiles[{i}].format 取 {FORMATS}")
         if not p["name"] or p["name"] in names:
             raise BadBody(f"models.profiles[{i}].name 须非空且不重名")
         if p["tier"] not in TIERS:
@@ -153,7 +157,7 @@ def validate(raw: object) -> dict[str, Any]:
         if not SLOT_RE.fullmatch(p["key_slot"]):
             raise BadBody(f"models.profiles[{i}].key_slot 取小写字母、数字、- 与 _，至多 32 字符")
         names.add(p["name"])
-        profiles.append({k: p[k] for k in fields})
+        profiles.append({k: p[k] for k in fields} | ({"format": p["format"]} if "format" in p else {}))
     if not profiles:
         raise BadBody("models.profiles 至少一个档案")
     routes = models["routes"]
@@ -190,6 +194,7 @@ def validate(raw: object) -> dict[str, Any]:
 
 
 WALL_MODES = ("elapsed", "spend")
+FORMATS = ("anthropic", "openai")  # 与 adapter 的 proxy.FORMATS 同一份取值
 DEFAULT_BUDGET = {"wall_mode": "elapsed", "life_s": 7 * 86400}
 
 
@@ -294,13 +299,23 @@ _PROBE_WHY = {
 
 
 def probe(profile: dict[str, Any], keyring: KeyRing, default_upstream: str, tls: Any = None) -> dict[str, Any]:
-    """按档案实际调一次上游的 /v1/messages（Anthropic 格式，max_tokens=1），看连不连得通。
+    """按档案实际调一次上游，看连不连得通：format=anthropic（缺省）调 /v1/messages（x-api-key），
+    format=openai 调 {endpoint}/chat/completions（Bearer）；都只要 1 个 token。
 
-    只读档案的 endpoint、model、key_slot 三项，可以是还没保存的档案。密钥只从钥匙环取，不经请求体；
+    只读档案的 endpoint、model、key_slot、format 四项，可以是还没保存的档案。密钥只从钥匙环取，不经请求体；
     回给页面的说明一律先去掉密钥。这一次调用不经端点代理，不记花费（至多几个 token）。"""
     endpoint = str(profile.get("endpoint") or "") or default_upstream
     model = str(profile.get("model") or "")
     slot = str(profile.get("key_slot") or "")
+    fmt = str(profile.get("format") or "anthropic")
+    if fmt not in FORMATS:
+        return {"ok": False, "code": "bad_format", "message": f"格式取 {' 或 '.join(FORMATS)}"}
+    if fmt == "openai" and not profile.get("endpoint"):
+        return {
+            "ok": False,
+            "code": "bad_endpoint",
+            "message": "OpenAI 格式要写接口地址（例如 https://…/v1），缺省上游是 Anthropic 格式",
+        }
     if not model:
         return {
             "ok": False,
@@ -321,10 +336,15 @@ def probe(profile: dict[str, Any], keyring: KeyRing, default_upstream: str, tls:
     else:
         conn = http.client.HTTPConnection(up.netloc, timeout=PROBE_TIMEOUT_S)
     body = json.dumps({"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "ping"}]})
-    headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
+    if fmt == "openai":
+        headers = {"content-type": "application/json", "authorization": f"Bearer {key}"}
+        route = up.path.rstrip("/") + "/chat/completions"
+    else:
+        headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
+        route = up.path.rstrip("/") + "/v1/messages"
     t0 = time.monotonic()
     try:
-        conn.request("POST", up.path.rstrip("/") + "/v1/messages", body=body, headers=headers)
+        conn.request("POST", route, body=body, headers=headers)
         resp = conn.getresponse()
         raw = resp.read(4096)
     except OSError as e:
@@ -398,7 +418,7 @@ class SettingsHub:
     def _probe(self, q: dict[str, str], body: dict[str, Any] | None) -> dict[str, Any]:
         prof = body.get("profile") if isinstance(body, dict) else None
         if not isinstance(prof, dict):
-            raise BadBody("请求体是 {profile: {endpoint, model, key_slot}}")
+            raise BadBody("请求体是 {profile: {endpoint, model, key_slot, format?}}")
         _no_secrets(prof, "profile")
         return probe(prof, self.keyring, self.proxy.cfg.upstream, self.proxy.tls)
 

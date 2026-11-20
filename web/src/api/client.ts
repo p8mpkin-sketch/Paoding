@@ -145,7 +145,7 @@ export function createApi(cfg: ApiConfig) {
     clearKey: async (slot: string) => (await call("DELETE", `/v1/keys/${enc(slot)}`)).json() as Promise<KeySlot>,
     clearKeys: async () => (await call("DELETE", "/v1/keys")).json() as Promise<KeysView>,
     /** 测试连接：按档案（可以还没保存）实际调一次上游；密钥只从服务端钥匙环取，不经这里。 */
-    testModel: async (profile: Pick<ModelProfile, "endpoint" | "model" | "key_slot">) =>
+    testModel: async (profile: Pick<ModelProfile, "endpoint" | "model" | "key_slot" | "format">) =>
       (await call("POST", "/v1/models/test", json({ profile }), "application/json")).json() as Promise<ModelProbe>,
 
     /** 人的其余操作都走这里。批内只能有人可提交的操作。 */

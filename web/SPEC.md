@@ -121,7 +121,9 @@
 - `/models` 单独成页：一张档案表（模型、接口、密钥槽、连接、档位、用在哪些角色），添加与编辑在右侧抽屉；默认分配（五个角色）即改即存，仍是 `PUT /v1/settings` 带 `base_digest`。
 - 测试连接走 `POST /v1/models/test`（只认人的令牌）：服务端按档案实际调一次上游 `/v1/messages`（`max_tokens: 1`），密钥只从钥匙环取；回 `{ok, latency_ms, status, code, message}`，说明里不带密钥。抽屉里“测通了才能存”，测过之后改了地址、模型 ID 或密钥槽要重测。
 - 抽屉里填的密钥先 `PUT /v1/keys/{slot}` 再测，输入框随即清空，页面不留它。默认分配里还在用的档案删不掉。
-- 接口格式现在只有 Anthropic 兼容一种（OpenAI 兼容待定）。
+- 接口格式两种（档案的可选字段 `format`，缺省 `anthropic`；存 Anthropic 格式时不写这一项，旧快照摘要不变）：
+  - Anthropic 兼容：端点代理原样转发 `/v1/messages`，测试连接调 `{endpoint}/v1/messages`（`x-api-key`）。
+  - OpenAI 兼容：端点代理把命令行的 Messages 请求改写成 `{endpoint}/chat/completions`（`Bearer` 密钥），响应改写回 Messages（非流式整体改写，流式逐块改写；文字、图片、工具调用、停止原因、用量都转，思考过程与缓存控制丢掉）；`count_tokens` 本地估，不出站；其他路径拒绝。计量照旧从上游原始字节取用量。测试连接调 `{endpoint}/chat/completions`。这种格式必须写地址（缺省上游是 Anthropic 格式）。
 - 设置页不再编辑档案与路由，只留一条去模型页的链接；密钥一节仍在设置页。
 - 新建任务：输入框旁“执行模型”可先选一个已登记的档案；起草后交回同一份草案只加 `overrides.model`，写进任务的 `prefs.model`。开放道照旧回车即开；这一步失败时不自动开题。
 

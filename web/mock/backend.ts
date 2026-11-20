@@ -845,7 +845,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     if (method === "POST" && path === "/v1/models/test") {
       // 与 settings_hub.probe 同形；假上游：模型 ID 里带 bad 的回 404，其余按名字给一个稳定的延迟
       const p = parse()?.profile;
-      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot}}");
+      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot, format?}}");
+      const fmt = p.format ?? "anthropic";
+      if (fmt !== "anthropic" && fmt !== "openai") return json(200, { ok: false, code: "bad_format", message: "格式取 anthropic 或 openai" });
+      if (fmt === "openai" && !p.endpoint) return json(200, { ok: false, code: "bad_endpoint", message: "OpenAI 格式要写接口地址（例如 https://…/v1），缺省上游是 Anthropic 格式" });
       if (!p.model) return json(200, { ok: false, code: "no_model", message: "没写模型 ID：填上再测（不写时用命令行的缺省模型，没法单独测）" });
       if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(p.key_slot ?? "")) return json(200, { ok: false, code: "bad_slot", message: "密钥槽名不对" });
       if (!keySlots.has(p.key_slot)) return json(200, { ok: false, code: "key_not_set", message: `密钥槽 ${p.key_slot} 还没有密钥：先填密钥再测` });

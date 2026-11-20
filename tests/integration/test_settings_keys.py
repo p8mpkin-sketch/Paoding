@@ -312,3 +312,15 @@ def test_grants_section_is_optional_and_checked():
     for bad in ({"runtime": "yes", "auto": {"practice": True}}, {"runtime": True}, {"runtime": True, "auto": {}}):
         with pytest.raises(BadBody):
             validate_settings({**d, "grants": bad})
+
+
+def test_profile_format_is_optional_and_checked():
+    """模型档案的 format（OpenAI 兼容）：可缺，缺省即 anthropic，旧快照摘要不变；给了只认 anthropic、openai。"""
+    d = defaults()
+    assert "format" not in d["models"]["profiles"][0]
+    assert digest_of(validate_settings(d)) == digest_of(d)
+    p0 = d["models"]["profiles"][0]
+    ok = {**d, "models": {**d["models"], "profiles": [{**p0, "format": "openai"}]}}
+    assert validate_settings(ok)["models"]["profiles"][0]["format"] == "openai"
+    with pytest.raises(BadBody):
+        validate_settings({**d, "models": {**d["models"], "profiles": [{**p0, "format": "gemini"}]}})
