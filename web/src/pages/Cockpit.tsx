@@ -129,7 +129,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const actLease = open && asOf === null ? (pickLease ?? (solves.filter((l) => l.active).at(-1) ?? solves.at(-1))?.id ?? null) : null;
   const actKind = vm.leases.find((l) => l.id === actLease)?.kind ?? "solve";
   const actHidden = !(actOpen ?? solves.some((l) => l.active));
-  const openLease = (id: string) => { setPickLease(id); setActOpen(true); requestAnimationFrame(() => actRef.current?.scrollIntoView({ block: "nearest" })); };
+  const openLease = (id: string) => { setPickLease(id); setActOpen(true); requestAnimationFrame(() => actRef.current?.scrollIntoView?.({ block: "nearest" })); };
   const elapsed = vm.budget.wallSpent;
   const meta = vm.closed ? `用了 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒` : `已跑 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`;
 
