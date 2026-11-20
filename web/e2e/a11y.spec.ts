@@ -109,3 +109,27 @@ for (const theme of THEMES) {
     expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
   });
 }
+
+// v5 第三期：任务列表的行菜单、删除确认与选择模式
+for (const theme of THEMES) {
+  test(`axe：任务列表菜单、删除确认与批量栏（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    await page.goto("/tasks");
+    await expect(page.locator(".shell-status")).toContainText("已连接");
+    const scan = async (what: string) => {
+      await page.waitForTimeout(200);
+      const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+    };
+    await page.locator('[data-list] [data-problem] [data-action="row-menu"]').first().click();
+    await expect(page.locator("[data-row-menu]")).toBeVisible();
+    await scan("行菜单");
+    await page.locator('[data-menu="delete"]').click();
+    await expect(page.locator("[data-confirm-delete]")).toBeVisible();
+    await scan("删除确认");
+    await page.keyboard.press("Escape");
+    await page.locator('[data-action="select-mode"]').click();
+    await page.locator("[data-pick]").first().check();
+    await scan("批量栏");
+  });
+}

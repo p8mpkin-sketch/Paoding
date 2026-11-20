@@ -440,6 +440,9 @@ export type ProblemItem = ProblemHead & {
   human_todo: number;
   wall: { cap_s: number; elapsed_s: number };
   authority: Authority;
+  shelf: "active" | "archived" | "trash" | "purged";
+  pinned: boolean;
+  trash_until: number | null;
 };
 export type ProblemsView = Envelope & {
   items: ProblemItem[];
@@ -508,7 +511,8 @@ export type HumanOpKind =
   | "judge_revoke"
   | "intent_done"
   | "grant_scope"
-  | "revoke_scope";
+  | "revoke_scope"
+  | "curate";
 export type Op = { op: HumanOpKind; body: Record<string, unknown> };
 export type Seen = { seq: number; card_hash: string };
 export type OpResult = { ok: true; id: string | null; seq: number } | { ok: false; code: string; detail?: string; card?: unknown; as_of?: number };

@@ -11,6 +11,7 @@ import "./pages/pages.css";
 import "./pages/workspace.css";
 import "./pages/kaiti.css";
 import "./pages/models.css";
+import "./pages/tasks.css";
 
 applyTheme(loadTheme()); // 先于首帧，免得闪一下
 

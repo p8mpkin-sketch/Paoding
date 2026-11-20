@@ -207,6 +207,9 @@ class Problem(TypedDict):
     prefs: NotRequired[Body]  # 任务级偏好 {model?}（宪章 03 §3.1、地图 Q12）：不进等级、消费门与画像
     labels: NotRequired[Body]  # v1.5 增量 10：{tags, env?}，env 即通鉴的环境键；不进等级与画像
     recall: NotRequired[Body]  # v1.5 增量 9：召回清单 {items, excluded_by_human, match_digest, mode?, notes?}
+    shelf: NotRequired[Body]  # curate（v5 第三期）：{state: active|archived|trash, seq, ts}；软删，不动账
+    renamed: NotRequired[list[Body]]  # curate 改名：[{seq, from}]，title 是现在的显示名
+    pinned: NotRequired[bool]  # curate 置顶
     settings: NotRequired[Body]  # 宪章 D5：{version, digest}，开题时的设置快照；不进等级、消费门与画像
 
 

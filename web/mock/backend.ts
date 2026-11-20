@@ -72,7 +72,12 @@ type ScopeReq = {
   intent?: string; riskRows: (number | null)[]; status: "pending" | "granted" | "denied";
   decided?: { seq: number; by: string; via?: "auto" | "approval"; policy_version?: number; reason?: string };
 };
-type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal };
+type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal;
+  shelf?: { state: "active" | "archived" | "trash"; seq: number; ts: number }; pinned?: boolean; renamed?: { seq: number; from: string }[] };
+// 整理（curate，v5 第三期软删）：与 graph/reducer/curate.py 同规则
+const TRASH_MS = 30 * 86_400_000;
+const trashUntil = (p: Problem) => (p.shelf?.state === "trash" ? p.shelf.ts + TRASH_MS : null);
+const shelfOf = (p: Problem, now: number) => { const u = trashUntil(p); return u !== null && now >= u ? "purged" as const : p.shelf?.state ?? "active"; };
 type State = {
   seq: number; now: number; problem?: Problem; overrides: StatusView["problem"]["profile_overrides"];
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
@@ -151,6 +156,15 @@ function project(events: Event[], pid: string, asOf: number): State {
         if (b.decision === "accept") s.accepted = true;
         break;
       case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
+      case "curate":
+        if (s.problem) {
+          const p = { ...s.problem };
+          if ("shelf" in b) p.shelf = { state: b.shelf, seq: ev.seq, ts: ev.ts };
+          if ("title" in b) { p.renamed = [...(p.renamed ?? []), { seq: ev.seq, from: p.title }]; p.title = b.title; }
+          if ("pinned" in b) p.pinned = b.pinned;
+          s.problem = p;
+        }
+        break;
     }
   }
   return s;
@@ -279,7 +293,7 @@ function authorityOf(goal: { accept: string; check?: { judge_id: string } }): Au
   return goal.accept === "human" ? "human" : EXTERNAL_JUDGES.has((goal.check ?? NO_CHECK).judge_id) ? "external" : "local";
 }
 
-function head(s: State, pid: string): ProblemItem {
+function head(s: State, pid: string, now = s.now): ProblemItem {
   const p = s.problem!;
   return {
     authority: authorityOf(p.goal),
@@ -290,12 +304,13 @@ function head(s: State, pid: string): ProblemItem {
     active: closed(s) ? [] : bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).filter((l) => l.ended_seq === undefined).map((l) => ({ kind: l.kind, ...(l.target !== undefined ? { target: l.target } : {}) })),
     human_todo: work(s, pid).filter((w) => w.kind === "human").length,
     wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor(((p.closed_ts ?? s.now) - p.opened_ts) / 1000)) },
+    shelf: shelfOf(p, now), pinned: !!p.pinned, trash_until: trashUntil(p),
   };
 }
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
-  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, ...h } = head(s, pid);
+  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, shelf: _sh, pinned: _pn, trash_until: _tu, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
     problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin, ...(p.prefs ? { prefs: p.prefs } : {}) },
@@ -509,7 +524,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
   const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension", grant_scope: "scope" };
 
   /** 校验一条人的操作，返回规范化的事件体。 */
-  function validate(pid: string, op: string, b: any, pendingArts: Set<string>): Record<string, unknown> {
+  function validate(pid: string, op: string, b: any, pendingArts: Set<string>, closing = false): Record<string, unknown> {
     const s = stateOf(pid);
     if (op === "register_artifact") {
       if (b.class !== "input") throw new Rejected("forbidden_op", "人的令牌只能登记 input 类");
@@ -540,6 +555,27 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       return { ...b, profile: deriveProfile(b.scope, (b.goal.check ?? NO_CHECK).judge_id) };
     }
     if (!s.problem) throw new Rejected("unknown_ref", `题目 ${pid} 未开`);
+    if (op === "curate") {
+      const extra = Object.keys(b).filter((k) => !["shelf", "title", "pinned"].includes(k));
+      if (extra.length || !Object.keys(b).length) throw new Rejected("schema_error", "curate 只改 shelf、title、pinned，至少一项");
+      const cur = shelfOf(s.problem, clock + 7000);
+      if (cur === "purged") throw new Rejected("forbidden_op", "这个任务在回收站里超过 30 天，工作区已清，不能再整理");
+      const out: Record<string, unknown> = {};
+      if ("shelf" in b) {
+        if (!["active", "archived", "trash"].includes(b.shelf)) throw new Rejected("schema_error", "shelf 取 active、archived、trash");
+        if (b.shelf === cur) throw new Rejected("schema_error", `任务已经在 ${cur}`);
+        if (b.shelf === "trash" && !closed(s) && !closing) throw new Rejected("forbidden_op", "正在跑的任务要先停（close_problem）再移进回收站");
+        out.shelf = b.shelf; out.from = cur;
+      }
+      if ("title" in b) {
+        const t = String(b.title ?? "").trim();
+        if (!t || t.length > 200) throw new Rejected("schema_error", "title 须非空、不超过 200 字");
+        if (t === s.problem.title) throw new Rejected("schema_error", "新名字与现在的一样");
+        out.title = t;
+      }
+      if ("pinned" in b) { if (typeof b.pinned !== "boolean") throw new Rejected("schema_error", "pinned 取 true 或 false"); out.pinned = b.pinned; }
+      return out;
+    }
     if (closed(s)) throw new Rejected("schema_error", "题目已关闭");
     const ck = DECISIONS[op];
     if (ck) {
@@ -649,7 +685,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       ops.forEach((o, n) => {
         const b = subst(o.body ?? {}) as Record<string, unknown>;
         try {
-          staged.push({ op: o.op, body: validate(pid, o.op, b, pending) });
+          staged.push({ op: o.op, body: validate(pid, o.op, b, pending, staged.some((x) => x.op === "close_problem")) });
           if (o.op === "register_artifact") pending.add(`a_${base + n + 1}`);
         } catch (e) {
           if (!(e instanceof Rejected)) throw e;
@@ -862,7 +898,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     });
 
     if (path === "/v1/problems") {
-      const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid));
+      const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid, clock));
       // solved 与每解成本只数本地判定；外部判定与人工验收各自一行（external-verdict §5.7）
       const tally = (a: Authority) => {
         const xs = items.filter((i) => i.authority === a);

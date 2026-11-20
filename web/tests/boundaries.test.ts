@@ -56,10 +56,12 @@ describe("HT-12 请求的去向", () => {
     // 规格 3.1.9 操作表里 human 可提交的操作
     const SPEC_HUMAN = ["open_problem", "register_artifact", "hint", "approve", "profile_override", "abandon_intent", "close_problem", "add_intent", "extend", "budget_add", "pause", "resume", "rule", "accept", "judge_revoke", "intent_done",
       // 运行时扩权（runtime-grants §4，#93 起内核接受人的这两种）
-      "grant_scope", "revoke_scope"];
+      "grant_scope", "revoke_scope",
+      // 整理（v5 第三期软删，cz 2026-11-20 裁决）：归档、回收站、恢复、改名、置顶
+      "curate"];
     for (const o of HUMAN_OPS) expect(SPEC_HUMAN).toContain(o);
     const seen = { seq: 1, card_hash: "x" };
-    const built: Op[] = [ops.registerInput("h", 1, "t"), ops.hintAdd("t"), ops.hintAdd("t", "f_1"), ops.hintClose("h_1"), ops.approve("i_1", seen), ops.deny("i_1", "r", seen), ops.abandonIntent("i_1"), ops.profileOverride("judge", "none", "r"), ops.closeProblem("r"), ops.extend(seen), ops.budgetAdd(1), ops.grantScope("r_1", seen), ops.grantScope("r_1", seen, ["r2"]), ops.denyScope("r_1", "r", seen), ops.revokeScope(1, "r")];
+    const built: Op[] = [ops.registerInput("h", 1, "t"), ops.hintAdd("t"), ops.hintAdd("t", "f_1"), ops.hintClose("h_1"), ops.approve("i_1", seen), ops.deny("i_1", "r", seen), ops.abandonIntent("i_1"), ops.profileOverride("judge", "none", "r"), ops.closeProblem("r"), ops.extend(seen), ops.budgetAdd(1), ops.grantScope("r_1", seen), ops.grantScope("r_1", seen, ["r2"]), ops.denyScope("r_1", "r", seen), ops.revokeScope(1, "r"), ops.shelve("trash"), ops.rename("x"), ops.pin(true)];
     for (const o of built) expect(HUMAN_OPS.has(o.op), o.op).toBe(true);
     expect(JSON.stringify(ops.closeProblem("r"))).not.toContain("terminal"); // 终态是派生量
     const r = rig();
