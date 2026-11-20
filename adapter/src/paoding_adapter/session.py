@@ -29,6 +29,7 @@ from typing import IO, Any
 from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
+from . import activity as act
 from . import backend as be
 from . import creds
 from .mcp import ToolEndpoint
@@ -192,6 +193,7 @@ class SessionRunner:
             knowledge=kb if "kb_search" in tools else None,
         )
         url = self.endpoint.mount(host)
+        log = act.ActivityLog(sdir, s.secrets)  # 实时活动（工作台轮询 activity()；原话里的凭据先遮盖）
         lv = self.live[lease_id] = {
             "proc": None,
             "closing": False,
@@ -199,6 +201,11 @@ class SessionRunner:
             "sandbox_id": s.sandbox_id,
             "ws": ws,
             "env": {**self.cfg.extra_env, **(self.cfg.env_for(lease) if self.cfg.env_for else {})},
+            "activity": log,
+            "started": time.time(),
+            "task_token": task_token,
+            "rec": rec,
+            "role": role,
         }
         try:
             limits = {
@@ -311,6 +318,7 @@ class SessionRunner:
             rec.status = final_status
             return rec
         finally:
+            self._end_activity(lease_id, sdir)
             self.live.pop(lease_id, None)
             release = getattr(self.launcher, "release", None)
             if release is not None:  # 模型容器、端点中继与它们的内部网络
@@ -320,6 +328,63 @@ class SessionRunner:
             self.issuer.revoke(token)
             if owned is not None and self.executor is not None:  # owned 只在起过执行容器时才有
                 self.executor.destroy(owned)
+
+    # ---------- 实时活动（工作台的“会话活动”面板） ----------
+
+    def activity(self, lease_id: str, after: int = 0) -> dict[str, Any] | None:
+        """一个会话的活动：在途的从内存读，结束了的从会话目录读。没有这个会话（或目录已清掉）返回 None。
+        耗时按本进程的墙钟、花费取端点代理给这个任务令牌记的账（与 cost 事件同一个计量）。"""
+        lv = self.live.get(lease_id)
+        sdir = self.cfg.root / lease_id
+        if lv is not None and "activity" in lv:
+            t = self.proxy.task(lv["task_token"])
+            rec = lv["rec"]
+            head = {
+                "lease": lease_id,
+                "role": lv["role"],
+                "live": True,
+                "status": rec.status,
+                "rounds": rec.rounds,
+                "model": rec.model,
+                "elapsed_s": max(0, int(time.time() - lv["started"])),
+                "spent_usd_milli": t.spent_usd_milli if t else 0,
+                "closing": bool(lv["closing"]),
+            }
+            return {**head, **act.view(lv["activity"].snapshot(), after)}
+        if not sdir.is_dir() or not (sdir / act.FILE).exists() and act.read_end(sdir) is None:
+            return None
+        end = act.read_end(sdir) or {}
+        head = {
+            "lease": lease_id,
+            "role": end.get("role"),
+            "live": False,
+            "status": end.get("status", "ended"),
+            "rounds": end.get("rounds", 0),
+            "model": end.get("model", ""),
+            "elapsed_s": end.get("elapsed_s", 0),
+            "spent_usd_milli": end.get("spent_usd_milli", 0),
+            "closing": False,
+        }
+        return {**head, **act.view(act.read_items(sdir), after), "now": None}  # 结束了就没有“正在做”
+
+    def _end_activity(self, lease_id: str, sdir: Path) -> None:
+        lv = self.live.get(lease_id)
+        if lv is None or "activity" not in lv:
+            return
+        t = self.proxy.task(lv["task_token"])
+        rec = lv["rec"]
+        doc = {
+            "role": lv["role"],
+            "status": rec.status,
+            "rounds": rec.rounds,
+            "model": rec.model,
+            "elapsed_s": max(0, int(time.time() - lv["started"])),
+            "spent_usd_milli": t.spent_usd_milli if t else 0,
+        }
+        try:
+            (sdir / act.END_FILE).write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
 
     def _relay(self, pid: str, lease_id: str, ws: Path) -> None:
         """开放道的接力（open-lane §3.2）：把本题上一个求解会话的工作区（含它的 NOTES.md）拷进新会话的工作区。
@@ -421,6 +486,8 @@ class SessionRunner:
                 except ValueError:
                     continue
                 rec.events.append({"round": rec.rounds, **ev})
+                if "activity" in lv and isinstance(ev, dict):
+                    lv["activity"].feed(ev, rec.rounds)
                 if ev.get("type") == "assistant":
                     turns[0] += 1
 

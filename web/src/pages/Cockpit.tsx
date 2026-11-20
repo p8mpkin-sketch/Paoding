@@ -1,7 +1,7 @@
 // 任务页（v5 第三期；HMI 设计 §4、§10.2）。上面是状态、标题、执行流程条与原话；中间四栏：结果、过程、结构（前沿与图、检视）、文件；
 // 右栏是花费、用时、钱花在哪、模型、可以访问、会话与指导；开放道底部是“补充一句 / 接着问”。
 // 每个面板都是 view(as_of) 的排版；写操作只在链头且实时的时候可用。
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { GRAPH_MIN_NODES, prefs } from "../app/config";
 import { useServices } from "../app/context";
 import { hrefOf, navigate } from "../app/router";
@@ -28,6 +28,7 @@ import type { ViewModel } from "../model/viewmodel";
 import { FeedbackButtons, HaltButton, TaskDock } from "../ui/TaskActions";
 import { TaskFiles, TaskSteps } from "../ui/TaskLog";
 import { TaskRail } from "../ui/TaskRail";
+import { SessionActivity } from "../ui/SessionActivity";
 import { TaskResult } from "../ui/TaskResult";
 
 type Sheet = { kind: "todo"; key: string } | { kind: "hint"; id: string } | { kind: "inject" } | null;
@@ -81,6 +82,10 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const [graphPref, setGraphPref] = useState(prefs.graphView());
   const [sheet, setSheet] = useState<Sheet>(null);
   const [tab, setTab] = useState<Tab | null>(node ? "struct" : null);
+  // 开放道的会话活动面板：默认跟着在途（没有就最近）的求解会话；右栏“看活动”可以换一个看
+  const [pickLease, setPickLease] = useState<string | null>(null);
+  const [actOpen, setActOpen] = useState<boolean | null>(null); // null：按有没有在途的求解会话自动展开
+  const actRef = useRef<HTMLDivElement>(null);
 
   // H 打开“给出指导”，Esc 收起卡片；焦点在输入框里时不抢键
   useEffect(() => {
@@ -120,6 +125,11 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
     todo: vm.todo.map((t) => t.why), deliveries: vm.open.deliveries.length, lastDeliverySeq: last?.seq ?? 0, lastHadSelfCheck: (last?.self_check.length ?? 0) > 0,
     lastFollowUpSeq: vm.open.followUps.at(-1)?.seq ?? 0, judged: vm.goal.predicate.verdicts.length > 0,
   };
+  const solves = vm.leases.filter((l) => l.kind === "solve");
+  const actLease = open && asOf === null ? (pickLease ?? (solves.filter((l) => l.active).at(-1) ?? solves.at(-1))?.id ?? null) : null;
+  const actKind = vm.leases.find((l) => l.id === actLease)?.kind ?? "solve";
+  const actHidden = !(actOpen ?? solves.some((l) => l.active));
+  const openLease = (id: string) => { setPickLease(id); setActOpen(true); requestAnimationFrame(() => actRef.current?.scrollIntoView?.({ block: "nearest" })); };
   const elapsed = vm.budget.wallSpent;
   const meta = vm.closed ? `用了 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒` : `已跑 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`;
 
@@ -193,6 +203,16 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           </div>
         )}
 
+        {actLease && !actHidden && (
+          <div ref={actRef} className="tk-act-wrap">
+            <SessionActivity key={actLease} lease={actLease} kind={actKind} spent={vm.budget.byLease.find((l) => l.lease === actLease)?.usd_milli}
+              onClose={() => setActOpen(false)} />
+          </div>
+        )}
+        {actLease && actHidden && (
+          <button type="button" className="ws-banner tk-act-show" data-action="activity-show" onClick={() => setActOpen(true)}>会话活动<span className="t2">{solves.some((l) => l.active) ? "已收起，点开看智能体在做什么" : "会话已结束，点开看它做过的每一步"}</span></button>
+        )}
+
         <div className="tk-tabs" role="tablist" aria-label="任务视图">
           {(["result", "steps", "struct", "files"] as const).filter((k) => k !== "result" || hasResult).map((k) => (
             <button key={k} type="button" role="tab" aria-selected={cur === k} data-task-tab={k} onClick={() => setTab(k)}>{TAB_WORD[k]}</button>
@@ -236,7 +256,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           <TaskDock pid={pid} head={s.head} mode={waitingLook ? "follow" : "hint"} disabled={!writable} />
         )}
       </div>
-      <TaskRail vm={vm} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })} />
+      <TaskRail vm={vm} onSelect={select} onOpenHint={(id) => setSheet({ kind: "hint", id })}
+        {...(open && asOf === null ? { onOpenLease: openLease, openLease: actHidden ? null : actLease } : {})} />
     </div>
   );
 }
