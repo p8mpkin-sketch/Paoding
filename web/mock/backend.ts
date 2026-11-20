@@ -40,6 +40,7 @@ const LEVEL_WORDS: Record<Level, string> = { E3: "判定通过", E3d: "相符", 
 const REGISTER: Record<string, RegisterName> = {
   "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "artifact:authored": "叙述",
   title: "叙述", summary: "叙述", hint: "人", human_reason: "人", statement: "人", estimate: "估",
+  delivery: "叙述", follow_up: "人",
 };
 const tag = <T>(src: string, value: T): Tagged<T> => ({ src, register: REGISTER[src], value });
 
@@ -72,23 +73,32 @@ type ScopeReq = {
   intent?: string; riskRows: (number | null)[]; status: "pending" | "granted" | "denied";
   decided?: { seq: number; by: string; via?: "auto" | "approval"; policy_version?: number; reason?: string };
 };
-type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal };
+type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; opened_seq: number; opened_ts: number; closed_seq?: number; closed_ts?: number; terminal?: Terminal;
+  shelf?: { state: "active" | "archived" | "trash"; seq: number; ts: number }; pinned?: boolean; renamed?: { seq: number; from: string }[] };
+// 整理（curate，v5 第三期软删）：与 graph/reducer/curate.py 同规则
+const TRASH_MS = 30 * 86_400_000;
+const trashUntil = (p: Problem) => (p.shelf?.state === "trash" ? p.shelf.ts + TRASH_MS : null);
+const shelfOf = (p: Problem, now: number) => { const u = trashUntil(p); return u !== null && now >= u ? "purged" as const : p.shelf?.state ?? "active"; };
 type State = {
   seq: number; now: number; problem?: Problem; overrides: StatusView["problem"]["profile_overrides"];
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
   leases: Map<string, Lease>; requests: Map<string, Req>; verdicts: Verdict[];
   decisions: Map<string, { decision: "approve" | "deny"; by: string; seq: number; reason: string }>;
-  costs: { kind: string; usd_milli: number; tokens: number; wall_s: number }[];
+  costs: { kind: string; lease: string; model?: string; usd_milli: number; tokens: number; wall_s: number }[];
   capAdd: number; marks: { pct: number; seq: number }[]; extendedSeq: number;
   scopeReqs: Map<string, ScopeReq>;
   acceptLog: AcceptRecord[]; accepted: boolean;
+  /** 开放道（open-lane §3.4–§3.5；地图 v0.9 §3.2 ③ 草案）：与图服务同形 */
+  deliveries: { id: string; seq: number; lease: string; outcome: "answered" | "partial" | "blocked"; answer?: string; claims: { text: string; refs: string[] }[]; self_check: { what: string; result: "pass" | "fail" | "skipped"; refs: string[]; item?: string }[]; unverified: string[]; needs: string[] }[];
+  followUps: { id: string; seq: number; text: string; after_delivery: string | null }[];
+  halted: { seq: number } | null; feedback: "adopted" | "rejected" | "none" | null;
 };
 
 function project(events: Event[], pid: string, asOf: number): State {
   const s: State = {
     seq: asOf, now: 0, overrides: [], artifacts: new Map(), facts: new Map(), intents: new Map(), hints: new Map(), leases: new Map(),
     requests: new Map(), verdicts: [], decisions: new Map(), costs: [], capAdd: 0, marks: [], extendedSeq: 0, scopeReqs: new Map(),
-    acceptLog: [], accepted: false,
+    acceptLog: [], accepted: false, deliveries: [], followUps: [], halted: null, feedback: null,
   };
   for (const ev of events) {
     if (ev.seq > asOf) break;
@@ -114,7 +124,7 @@ function project(events: Event[], pid: string, asOf: number): State {
         break;
       }
       case "approve": s.decisions.set(b.intent, { decision: b.decision, by: ev.actor.id, seq: ev.seq, reason: b.reason ?? "" }); break;
-      case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
+      case "cost": s.costs.push({ kind: s.leases.get(b.task_id)?.kind ?? "other", lease: b.task_id, ...(b.model ? { model: b.model } : {}), usd_milli: b.usd_milli, tokens: b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out, wall_s: b.wall_s }); break;
       case "budget_mark": s.marks.push({ pct: b.mark, seq: ev.seq }); break;
       case "budget_add": s.capAdd += b.usd_milli; break;
       case "extend": s.extendedSeq = ev.seq; break;
@@ -150,7 +160,19 @@ function project(events: Event[], pid: string, asOf: number): State {
         s.acceptLog.push({ seq: ev.seq, decision: b.decision, checks: b.checks, ...(b.reason ? { reason: b.reason } : {}) });
         if (b.decision === "accept") s.accepted = true;
         break;
-      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; } break;
+      case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; if (b.feedback) s.feedback = b.feedback; } break;
+      case "deliver": s.deliveries.push({ id: `d_${ev.seq}`, seq: ev.seq, ...b }); break;
+      case "follow_up": s.followUps.push({ id: `u_${ev.seq}`, seq: ev.seq, text: b.text, after_delivery: s.deliveries.at(-1)?.id ?? null }); s.capAdd += b.budget_add_usd_milli ?? 0; break;
+      case "halt": s.halted = { seq: ev.seq }; break;
+      case "curate":
+        if (s.problem) {
+          const p = { ...s.problem };
+          if ("shelf" in b) p.shelf = { state: b.shelf, seq: ev.seq, ts: ev.ts };
+          if ("title" in b) { p.renamed = [...(p.renamed ?? []), { seq: ev.seq, from: p.title }]; p.title = b.title; }
+          if ("pinned" in b) p.pinned = b.pinned;
+          s.problem = p;
+        }
+        break;
     }
   }
   return s;
@@ -257,12 +279,18 @@ function work(s: State, pid: string): WorkItem[] {
   if (!s.problem || closed(s)) return [];
   const items: WorkItem[] = [];
   if (s.leases.size === 0) items.push({ kind: "bootstrap" });
+  if (s.problem.goal.accept === "open" && !s.halted && s.leases.size > 0 && ![...s.leases.values()].some((l) => l.ended_seq === undefined)) {
+    const last = s.deliveries.at(-1);
+    if (!last || (s.followUps.at(-1)?.seq ?? 0) > last.seq) items.push({ kind: "solve" });
+  }
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "open") items.push({ kind: "explore", target: i.id });
   for (const r of bySeq(s.requests)) if (r.verdict_seq === undefined) items.push({ kind: "judge", target: r.id });
   for (const i of bySeq(s.intents)) if (intentState(s, i) === "needs_human") items.push({ kind: "human", target: i.id, why: "needs_human" });
   if (extensionPending(s)) items.push({ kind: "human", target: pid, why: "extension" });
   for (const r of bySeq(s.scopeReqs)) if (r.status === "pending" && !r.auto && !r.intent) items.push({ kind: "human", target: r.id, why: "scope_request" });
   if (acceptanceReady(s) !== null) items.push({ kind: "human", target: pid, why: "acceptance" });
+  const last = s.deliveries.at(-1);
+  if (s.problem.goal.accept === "open" && last && (s.followUps.at(-1)?.seq ?? 0) < last.seq) items.push({ kind: "human", target: pid, why: last.outcome === "blocked" ? "blocked" : "delivered" });
   return items;
 }
 
@@ -279,7 +307,7 @@ function authorityOf(goal: { accept: string; check?: { judge_id: string } }): Au
   return goal.accept === "human" ? "human" : EXTERNAL_JUDGES.has((goal.check ?? NO_CHECK).judge_id) ? "external" : "local";
 }
 
-function head(s: State, pid: string): ProblemItem {
+function head(s: State, pid: string, now = s.now): ProblemItem {
   const p = s.problem!;
   return {
     authority: authorityOf(p.goal),
@@ -290,19 +318,32 @@ function head(s: State, pid: string): ProblemItem {
     active: closed(s) ? [] : bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).filter((l) => l.ended_seq === undefined).map((l) => ({ kind: l.kind, ...(l.target !== undefined ? { target: l.target } : {}) })),
     human_todo: work(s, pid).filter((w) => w.kind === "human").length,
     wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor(((p.closed_ts ?? s.now) - p.opened_ts) / 1000)) },
+    shelf: shelfOf(p, now), pinned: !!p.pinned, trash_until: trashUntil(p),
   };
 }
 
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
-  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, ...h } = head(s, pid);
+  const brief = (id: string) => ({ id, class: s.artifacts.get(id)?.class ?? "exec" });
+  const { spent_usd_milli: _s, cap_usd_milli: _c, closed_ts: _t, goal_level: _g, active: _a, human_todo: _h, wall: _w, authority: _au, shelf: _sh, pinned: _pn, trash_until: _tu, ...h } = head(s, pid);
   const leases: LeaseRow[] = bySeq(new Map([...s.leases].map(([k, l]) => [k, { ...l, seq: l.issued_seq }]))).map(({ seq: _q, ...l }) => ({ ...l, active: l.ended_seq === undefined }));
   return {
-    problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin },
+    problem: { ...h, now_ts: s.now, derived_profile: p.derived_profile, profile_overrides: s.overrides, scope: p.scope, env: p.env, judges: [...p.judges].sort(), origin: p.origin, ...(p.prefs ? { prefs: p.prefs } : {}) },
     goal: {
       statement: tag("statement", p.goal.statement), accept: p.goal.accept, predicate: predicate(s, "goal", p.goal.check ?? NO_CHECK, levelOf(s, "goal"), p.goal.max_attempts ?? null),
       ...(authorityOf(p.goal) !== "local" ? { authority: authorityOf(p.goal) } : {}),
       ...(p.goal.acceptance ? { acceptance: p.goal.acceptance as AcceptanceItem[], acceptance_ready: acceptanceReady(s), accept_log: s.acceptLog } : {}),
+      ...(p.goal.accept === "open" ? {
+        deliveries: s.deliveries.map((d) => ({
+          id: d.id, seq: d.seq, lease: d.lease, outcome: d.outcome, answer: d.answer ?? null,
+          claims: d.claims.map((c) => ({ text: tag("delivery", c.text), refs: c.refs.map(brief), supported: c.refs.length > 0 })),
+          self_check: d.self_check.map((c) => ({ what: tag("delivery", c.what), result: c.result, refs: c.refs.map(brief), ...(c.item ? { item: c.item } : {}) })),
+          unverified: d.unverified.map((x) => tag("delivery", x)), needs: d.needs.map((x) => tag("delivery", x)),
+        })),
+        follow_ups: s.followUps.map((u) => ({ ...u, text: tag("follow_up", u.text) })),
+        ...(s.halted ? { halted: s.halted } : {}), ...(s.feedback ? { feedback: s.feedback } : {}),
+        self_checks: (p.goal.self_checks ?? []).map((c, k) => ({ ...c, id: `c${k + 1}` })),
+      } : {}),
     },
     facts: bySeq(s.facts).map((f) => factNode(s, f)), intents: bySeq(s.intents).map((i) => intentNode(s, i)), hints: bySeq(s.hints).map(hintNode),
     leases, requests: bySeq(s.requests).map((r) => ({ id: r.id, seq: r.seq, target: r.target, judge_id: r.judge_id, candidate: r.candidate ?? null, verdict_seq: r.verdict_seq ?? null })),
@@ -339,7 +380,21 @@ function budgetView(s: State): Omit<BudgetResponse, "as_of" | "head" | "view_has
     percent: { spent: Math.floor((spent.usd_milli * 100) / cap), committed: Math.floor(((spent.usd_milli + reserved.usd_milli) * 100) / cap) },
     mark_lines: [50, 80], mark_seqs: s.marks.map((m) => m.seq), verify_share: p.budget.verify_share, bootstrap_share: p.budget.bootstrap_share,
     wall: { cap_s: p.budget.wall_s, elapsed_s: Math.max(0, Math.floor((s.now - p.opened_ts) / 1000)) }, review: false,
+    by_lease: byLease(s),
   };
+}
+
+/** 按会话的花费（地图 Q15，v0.9 §3.2 ③ 草案）：各行之和等于 spent */
+function byLease(s: State): NonNullable<BudgetResponse["by_lease"]> {
+  const rows = new Map<string, { lease: string; kind: string; usd_milli: number; tokens: number; active: boolean; model?: string }>();
+  for (const c of s.costs) {
+    const l = s.leases.get(c.lease);
+    const r = rows.get(c.lease) ?? { lease: c.lease, kind: l?.kind ?? c.kind, usd_milli: 0, tokens: 0, active: !!l && l.ended_seq === undefined && !closed(s) };
+    r.usd_milli += c.usd_milli; r.tokens += c.tokens;
+    if (c.model) r.model = c.model;
+    rows.set(c.lease, r);
+  }
+  return [...rows.values()].sort((a, b) => (a.lease < b.lease ? -1 : 1));
 }
 
 /** 时间轴的扩权刻度：与真图服务的 /ticks 同形。 */
@@ -509,7 +564,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
   const DECISIONS: Record<string, CardKind> = { approve: "approval", extend: "extension", grant_scope: "scope" };
 
   /** 校验一条人的操作，返回规范化的事件体。 */
-  function validate(pid: string, op: string, b: any, pendingArts: Set<string>): Record<string, unknown> {
+  function validate(pid: string, op: string, b: any, pendingArts: Set<string>, closing = false): Record<string, unknown> {
     const s = stateOf(pid);
     if (op === "register_artifact") {
       if (b.class !== "input") throw new Rejected("forbidden_op", "人的令牌只能登记 input 类");
@@ -520,6 +575,8 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       if (s.problem) throw new Rejected("schema_error", "题目已存在");
       if (!b.title || !Array.isArray(b.scope) || b.scope.length === 0) throw new Rejected("schema_error", "title、scope 必填");
       if (!(b.budget?.usd_milli > 0) || !(b.budget?.wall_s > 0)) throw new Rejected("schema_error", "预算为正");
+      // 任务级模型偏好（宪章 03 §3.1）：只能取设置页登记过的档案名
+      if (b.prefs && (Object.keys(b.prefs).some((k) => k !== "model") || (b.prefs.model !== undefined && !settings.models.profiles.some((p) => p.name === b.prefs.model)))) throw new Rejected("unknown_ref", `模型档案 ${b.prefs?.model} 未登记`);
       if (b.goal?.accept === "open") {
         // 开放道（open-lane §8）：不登记判据、不启用判官；假后端只收题面，不模拟求解与交付（第二步的结果页再补）
         if ("check" in b.goal || "max_attempts" in b.goal || (b.judges ?? []).length) throw new Rejected("schema_error", "开放道不登记判据、不启用判官");
@@ -538,6 +595,27 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       return { ...b, profile: deriveProfile(b.scope, (b.goal.check ?? NO_CHECK).judge_id) };
     }
     if (!s.problem) throw new Rejected("unknown_ref", `题目 ${pid} 未开`);
+    if (op === "curate") {
+      const extra = Object.keys(b).filter((k) => !["shelf", "title", "pinned"].includes(k));
+      if (extra.length || !Object.keys(b).length) throw new Rejected("schema_error", "curate 只改 shelf、title、pinned，至少一项");
+      const cur = shelfOf(s.problem, clock + 7000);
+      if (cur === "purged") throw new Rejected("forbidden_op", "这个任务在回收站里超过 30 天，工作区已清，不能再整理");
+      const out: Record<string, unknown> = {};
+      if ("shelf" in b) {
+        if (!["active", "archived", "trash"].includes(b.shelf)) throw new Rejected("schema_error", "shelf 取 active、archived、trash");
+        if (b.shelf === cur) throw new Rejected("schema_error", `任务已经在 ${cur}`);
+        if (b.shelf === "trash" && !closed(s) && !closing) throw new Rejected("forbidden_op", "正在跑的任务要先停（close_problem）再移进回收站");
+        out.shelf = b.shelf; out.from = cur;
+      }
+      if ("title" in b) {
+        const t = String(b.title ?? "").trim();
+        if (!t || t.length > 200) throw new Rejected("schema_error", "title 须非空、不超过 200 字");
+        if (t === s.problem.title) throw new Rejected("schema_error", "新名字与现在的一样");
+        out.title = t;
+      }
+      if ("pinned" in b) { if (typeof b.pinned !== "boolean") throw new Rejected("schema_error", "pinned 取 true 或 false"); out.pinned = b.pinned; }
+      return out;
+    }
     if (closed(s)) throw new Rejected("schema_error", "题目已关闭");
     const ck = DECISIONS[op];
     if (ck) {
@@ -567,9 +645,30 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         if (!String(b.reason ?? "").trim()) throw new Rejected("schema_error", "覆盖须写理由");
         return { axis: b.axis, value: b.value, reason: String(b.reason).trim(), derived: s.problem.derived_profile[b.axis as keyof Profile] };
       }
-      case "close_problem":
+      case "close_problem": {
         if ("terminal" in b) throw new Rejected("schema_error", "terminal 是派生量，由图服务按三值算出");
-        return { terminal: levelOf(s, "goal") === "E3" ? "solved" : "unsolved", by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}) };
+        const open = s.problem.goal.accept === "open";
+        if (b.feedback !== undefined && (!open || !["adopted", "rejected", "none"].includes(b.feedback))) throw new Rejected("schema_error", "feedback 只用于人关开放道的题，取 adopted、rejected、none");
+        const terminal = open ? (s.deliveries.some((d) => d.outcome !== "blocked") ? "delivered" : "unsolved") : levelOf(s, "goal") === "E3" ? "solved" : "unsolved";
+        return { terminal, by: "human", card_hash: null, ...(b.reason ? { reason: String(b.reason) } : {}), ...(b.feedback ? { feedback: b.feedback } : {}) };
+      }
+      case "follow_up": {
+        // 地图 v0.9 §3.2 ③ 草案：剩余低于收尾保留（这里取上限的一成）而没附追加、或追加后超单题硬顶 → over_budget
+        if (s.problem.goal.accept !== "open") throw new Rejected("conflict", "只有开放道的任务可以追问");
+        const text = String(b.text ?? "").trim();
+        if (!text || text.length > 2000) throw new Rejected("schema_error", "追问须非空、不超过 2000 字");
+        const add = b.budget_add_usd_milli;
+        if (add !== undefined && !(Number.isInteger(add) && add > 0)) throw new Rejected("schema_error", "追加预算为正整数");
+        const cap = s.problem.budget.usd_milli + s.capAdd + (add ?? 0);
+        const spent = s.costs.reduce((a, c) => a + c.usd_milli, 0);
+        if (cap > settings.caps.open_usd_milli) throw new Rejected("over_budget", `追加后超过单题硬顶 $${(settings.caps.open_usd_milli / 1000).toFixed(2)}`);
+        if (cap - spent < Math.ceil(cap / 10)) throw new Rejected("over_budget", "剩余预算不够再跑一轮：追问时请附追加预算");
+        return { text, ...(add ? { budget_add_usd_milli: add } : {}), seen: b.seen };
+      }
+      case "halt":
+        if (s.problem.goal.accept !== "open") throw new Rejected("conflict", "叫停只用于开放道的任务");
+        if (s.halted) throw new Rejected("conflict", "已经叫停过了");
+        return b.reason ? { reason: String(b.reason) } : {};
       case "extend": if (!extensionPending(s)) throw new Rejected("schema_error", "续期门未触发"); return {};
       case "grant_scope": {
         const r = s.scopeReqs.get(b.request);
@@ -647,7 +746,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       ops.forEach((o, n) => {
         const b = subst(o.body ?? {}) as Record<string, unknown>;
         try {
-          staged.push({ op: o.op, body: validate(pid, o.op, b, pending) });
+          staged.push({ op: o.op, body: validate(pid, o.op, b, pending, staged.some((x) => x.op === "close_problem")) });
           if (o.op === "register_artifact") pending.add(`a_${base + n + 1}`);
         } catch (e) {
           if (!(e instanceof Rejected)) throw e;
@@ -680,7 +779,10 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     caps: { global_usd_milli: 500_000, open_usd_milli: 20_000, open_wall_s: 14_400, practice_usd_milli: 500, practice_wall_s: 1_800 },
     risk: [{ resource: "workspace", pattern: "*", actions: ["read", "write"], risk: "r0" }],
     models: {
-      profiles: [{ name: "default", endpoint: "", model: "", family: "", tier: "strong", key_slot: "default" }],
+      profiles: [
+        { name: "default", endpoint: "", model: "main-1", family: "", tier: "strong", key_slot: "default" },
+        { name: "light", endpoint: "", model: "light-1", family: "", tier: "light", key_slot: "default" },
+      ],
       routes: { draft: "default", bootstrap: "default", reason: "default", explore: "default", verify: "default" },
     },
     grants: { runtime: true, auto: { practice: true } },
@@ -740,6 +842,21 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       return json(200, settingsDoc());
     }
     if (method === "GET" && path === "/v1/keys") return json(200, keysView());
+    if (method === "POST" && path === "/v1/models/test") {
+      // 与 settings_hub.probe 同形；假上游：模型 ID 里带 bad 的回 404，其余按名字给一个稳定的延迟
+      const p = parse()?.profile;
+      if (!p || typeof p !== "object") return err(400, "schema_error", "请求体是 {profile: {endpoint, model, key_slot, format?}}");
+      const fmt = p.format ?? "anthropic";
+      if (fmt !== "anthropic" && fmt !== "openai") return json(200, { ok: false, code: "bad_format", message: "格式取 anthropic 或 openai" });
+      if (fmt === "openai" && !p.endpoint) return json(200, { ok: false, code: "bad_endpoint", message: "OpenAI 格式要写接口地址（例如 https://…/v1），缺省上游是 Anthropic 格式" });
+      if (!p.model) return json(200, { ok: false, code: "no_model", message: "没写模型 ID：填上再测（不写时用命令行的缺省模型，没法单独测）" });
+      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(p.key_slot ?? "")) return json(200, { ok: false, code: "bad_slot", message: "密钥槽名不对" });
+      if (!keySlots.has(p.key_slot)) return json(200, { ok: false, code: "key_not_set", message: `密钥槽 ${p.key_slot} 还没有密钥：先填密钥再测` });
+      if (p.endpoint && !/^https?:\/\/./.test(p.endpoint)) return json(200, { ok: false, code: "bad_endpoint", message: "接口地址要以 http:// 或 https:// 开头" });
+      const ms = 180 + (parseInt(sha256(enc.encode(String(p.model))).slice(0, 4), 16) % 460);
+      if (String(p.model).includes("bad")) return json(200, { ok: false, latency_ms: ms, status: 404, code: "not_found", message: "接口地址或模型 ID 不对（上游回 404）：model not found" });
+      return json(200, { ok: true, latency_ms: ms, status: 200 });
+    }
     if (method === "DELETE" && path === "/v1/keys") { keySlots.clear(); return json(200, keysView()); }
     const km = path.match(/^\/v1\/keys\/([^/]+)$/);
     if (km) {
@@ -756,6 +873,157 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return err(405, "schema_error", `${path} 不支持 ${method}`);
   }
 
+  // ---- 记忆（通鉴；与 scripts/memory_hub.py 同形）：条目由关题封存派生，人只能钉住或遗忘 ----
+  type MemRec = { seq: number; problem: string; verdict: string; on_chain: boolean; derived?: boolean };
+  const memItems: Record<string, Record<string, unknown>> = {
+    "m-env-1": { id: "m-env-1", kind: "env_fact", title: "q1:8080 的登录页把答案串放在 /flag 的响应头里", scope: { env_key: "e-q1" }, source: { case: "c-demo-3", problem: "demo-3", node: "f_12" }, cases: ["demo-3"] },
+    "m-ex-1": { id: "m-ex-1", kind: "excluded", title: "直接猜默认口令：三次都被锁，走不通", scope: { env_key: "e-q1" }, source: { case: "c-demo-3", problem: "demo-3", node: "i_5" }, cases: ["demo-3"] },
+    "m-sp-1": { id: "m-sp-1", kind: "spend_profile", title: "花费画像：示例题：取得登录后显示的答案", scope: { sig_key: "s-1" }, source: { case: "c-demo-3", problem: "demo-3" }, cases: ["demo-3"], body: { usd_milli: 420 } },
+    "m-env-2": { id: "m-env-2", kind: "env_fact", title: "构建缓存目录在 /mnt/cache/pip", scope: { env_key: "e-ci" }, source: { case: "c-old", problem: "demo-1" }, cases: ["demo-1"] },
+  };
+  let memSeq = 40;
+  const memRecalls: Record<string, MemRec[]> = {
+    "m-env-1": [{ seq: 12, problem: "demo-3", verdict: "pass", on_chain: true, derived: true }],
+    "m-env-2": [{ seq: 20, problem: "demo-2", verdict: "pass", on_chain: false }, { seq: 31, problem: "demo-4", verdict: "fail", on_chain: false }],
+  };
+  const memPins: Record<string, boolean> = {};
+  const memForgotten: Record<string, boolean> = {};
+  const memState = (id: string) => {
+    if (memForgotten[id]) return "retired";
+    const judged = (memRecalls[id] ?? []).filter((h) => ["pass", "fail", "flaky"].includes(h.verdict));
+    if (judged.length >= 2 && judged.slice(-2).every((h) => h.verdict !== "pass")) return "retired";
+    if (judged.length && judged.at(-1)!.verdict !== "pass") return "stale";
+    return "active";
+  };
+  const memCard = (id: string) => ({ item: memItems[id], state: memState(id), pinned: !!memPins[id], recalls: memRecalls[id] ?? [] });
+  const memSeen = (id: string) => ({ seq: memSeq, card_hash: sha256(canonical(memCard(id))) });
+  function memoryRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
+    if (method === "GET" && path === "/v1/memory") {
+      return json(200, { items: Object.keys(memItems).sort().map((id) => ({ ...memItems[id], state: memState(id), pinned: !!memPins[id], recalls: memRecalls[id] ?? [] })), as_of: memSeq });
+    }
+    const m = path.match(/^\/v1\/memory\/items\/([^/]+)(?:\/(pin|forget))?$/);
+    if (!m) return err(404, "unknown_ref", `没有端点 ${path}`);
+    const id = decodeURIComponent(m[1]);
+    if (!memItems[id]) return err(404, "unknown_ref", "记忆条目不存在");
+    if (method === "GET" && !m[2]) return json(200, { ...memCard(id), seen: memSeen(id) });
+    if (method !== "POST" || !m[2]) return err(405, "schema_error", `${path} 不支持 ${method}`);
+    if (!auth.startsWith("Bearer ")) return err(401, "forbidden_op", "须带人的令牌");
+    if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "只接受人的令牌");
+    const b = parse();
+    if (!b || typeof b.reason !== "string" || typeof b.seen !== "object") return err(400, "schema_error", "请求体是 {reason, seen: {seq, card_hash}}");
+    if (!b.reason.trim()) return err(400, "schema_error", "须写理由");
+    if (b.seen?.card_hash !== memSeen(id).card_hash) return err(409, "stale_view", "所见的卡片已变，先看最新的");
+    if (memForgotten[id]) return err(400, "schema_error", "条目已遗忘");
+    if (m[2] === "pin" && ["stale", "retired"].includes(memState(id))) return err(400, "schema_error", "钉不住已过期的事实");
+    memSeq += 1;
+    if (m[2] === "pin") memPins[id] = true; else memForgotten[id] = true;
+    return json(200, { ok: true, results: [{ ok: true, seq: memSeq }], card: { ...memCard(id), seen: memSeen(id) } });
+  }
+
+  // ---- 资料（书库；与 scripts/knowledge_hub.py 同形）：每读一次作业列表，在导入的版本推进一步 ----
+  type KnRev = { n: number; file: { hash: string; size: number; media_type: string; name: string }; stage: string; failed: { stage: string; reason: string; seq: number; code?: string; count?: number } | null; chunks: number; ts: number; text: string; mask?: boolean };
+  type KnSrc = { id: string; name: string; origin: string; scope: string; disabled: boolean; deleted_at: number | null; created: number; revs: KnRev[] };
+  const T0 = Date.now();
+  const DAY = 86_400_000;
+  let knSeq = 10;
+  const knFile = (name: string, size: number, media = "") => ({ hash: sha256(enc.encode(name)), size, media_type: media, name });
+  const knRev = (name: string, size: number, stage: string, ts: number, text: string, chunks = 0, failed: KnRev["failed"] = null): KnRev =>
+    ({ n: 1, file: knFile(name, size), stage, failed, chunks, ts, text });
+  const knSources: KnSrc[] = [
+    { id: "s_team01", name: "团队约定.md", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 9 * DAY,
+      revs: [knRev("团队约定.md", 28_672, "ready", T0 - 8 * DAY, "上线前先在 staging 跑全量测试。回滚用上一个标签重新发布，数据库迁移必须能反向执行。\n\n值班交接要写清楚未关的告警和正在做的变更。", 46)] },
+    { id: "s_schema1", name: "数据库表结构导出.sql", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 10 * DAY,
+      revs: [knRev("数据库表结构导出.sql", 655_360, "ready", T0 - 9 * DAY, "CREATE TABLE orders (id bigint primary key, status text, created_at timestamptz);\n订单表按 created_at 分区，超时订单由 sweeper 每分钟扫一次。", 312)] },
+    { id: "s_olddep1", name: "旧版部署说明.md", origin: "file", scope: "all", disabled: true, deleted_at: null, created: T0 - 95 * DAY,
+      revs: [knRev("旧版部署说明.md", 1_258_291, "ready", T0 - 90 * DAY, "旧流程：手工 ssh 到每台机器拉代码重启。", 88)] },
+    { id: "s_runbk01", name: "运维手册 2026.md", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 60_000,
+      revs: [knRev("运维手册 2026.md", 190_000, "chunk", T0 - 60_000, "订单服务超时先看 sweeper 的延迟，再看数据库连接池是否耗尽。", 0)] },
+    { id: "s_scan01", name: "2025-08 支付超时复盘.pdf", origin: "file", scope: "all", disabled: false, deleted_at: null, created: T0 - 120_000,
+      revs: [knRev("2025-08 支付超时复盘.pdf", 2_400_000, "parse", T0 - 120_000, "", 0, { stage: "parse", reason: "pdf 要到资料库第三期才能解析；现在可以把文字另存为 txt 或 md 再导入", code: "unsupported", seq: 9 })] },
+  ];
+  const knLive = (s: KnSrc) => (s.disabled || s.deleted_at !== null ? null : [...s.revs].reverse().find((r) => r.stage === "ready")?.n ?? null);
+  const knView = (s: KnSrc) => {
+    const last = s.revs.at(-1)!;
+    const live = knLive(s);
+    const cur = s.revs.find((r) => r.n === live) ?? null;
+    return { id: s.id, name: s.name, origin: s.origin, scope: s.scope, disabled: s.disabled, deleted_at: s.deleted_at, created: s.created, revisions: s.revs.length,
+      live_revision: live, chunks: cur?.chunks ?? 0, size: (cur ?? last).file.size, updated: (cur ?? last).ts, importing: ["parse", "chunk", "index"].includes(last.stage), failed: last.failed };
+  };
+  const knJobs = () => knSources.flatMap((s) => s.revs.filter((r) => ["parse", "chunk", "index"].includes(r.stage)).map((r) => ({
+    source: s.id, name: s.name, revision: r.n, file: r.file, stage: r.stage, failed: r.failed, warnings: [], chunks: r.stage === "index" ? r.chunks : null, started: r.ts })));
+  const knStep = () => {
+    for (const s of knSources) for (const r of s.revs) {
+      if (r.failed) continue;
+      if (r.stage === "parse") {
+        const hits = r.text.match(/(?<![A-Za-z0-9])(?:sk-|ghp_|AKIA)[A-Za-z0-9_-]{8,}/g) ?? [];
+        if (/\.(pdf|docx)$/i.test(r.file.name)) r.failed = { stage: "parse", reason: "pdf / docx 要到资料库第三期才能解析", code: "unsupported", seq: ++knSeq };
+        else if (hits.length && !r.mask) r.failed = { stage: "parse", reason: `发现 ${hits.length} 处像密钥或口令的串。可以遮盖后导入，或取消这次导入`, code: "secrets", count: hits.length, seq: ++knSeq };
+        else { if (hits.length) for (const h of hits) r.text = r.text.split(h).join("‹资料里的凭据，已遮盖›"); r.stage = "chunk"; }
+      }
+      else if (r.stage === "chunk") { r.stage = "index"; r.chunks = Math.max(1, Math.ceil(r.text.length / 500)); }
+      else if (r.stage === "index") { r.stage = "ready"; r.ts = Date.now(); }
+    }
+  };
+  const knSourcesView = () => ({ sources: [...knSources].sort((a, b) => b.created - a.created).map(knView), embedder: "hash-512-v1", note: "", as_of: knSeq });
+  const knTerms = (t: string) => { const l = t.toLowerCase(); const out: string[] = [...(l.match(/[a-z0-9_]{2,}/g) ?? [])]; for (const run of l.match(/[\u3400-\u9fff]+/g) ?? []) for (let i = 0; i < Math.max(1, run.length - 1); i++) out.push(run.slice(i, i + 2)); return out; };
+  function knowledgeRoute(method: string, path: string, auth: string, parse: () => any): MockResponse {
+    if (method === "GET" && path === "/v1/knowledge/sources") return json(200, knSourcesView());
+    if (method === "GET" && path === "/v1/knowledge/jobs") { const out = json(200, { jobs: knJobs(), as_of: knSeq }); knStep(); return out; }
+    if (method !== "POST") return err(405, "schema_error", `${path} 不支持 ${method}`);
+    const b = parse() ?? {};
+    if (path === "/v1/knowledge/search") {
+      if (typeof b.q !== "string") return err(400, "schema_error", "请求体是 {q, k?, pick?}");
+      const qt = new Set(knTerms(b.q));
+      const k = Math.max(1, Math.min(20, Number(b.k ?? 8)));
+      const hits = knSources.filter((s) => knLive(s) !== null && s.scope === "all").flatMap((s) => {
+        const r = s.revs.find((x) => x.n === knLive(s))!;
+        return r.text.split(/\n\n+/).map((para, i) => ({ s, r, para, i, score: knTerms(para).filter((t) => qt.has(t)).length }));
+      }).filter((h) => h.score > 0).sort((a, b2) => b2.score - a.score).slice(0, k);
+      return json(200, { hits: hits.map((h, n) => ({ id: `k_${sha256(enc.encode(`${h.s.id}:${h.i}`)).slice(0, 16)}`, source: h.s.id, source_name: h.s.name, revision: h.r.n, doc: h.r.file.name, heading: h.r.file.name, start: 0, end: h.para.length, text: h.para, score: Math.round((1 / (61 + n)) * 61 * 1000) / 1000, via: ["lex", "vec"] })),
+        via: "lexical+vector", embedder: "hash-512-v1", note: "" });
+    }
+    if (!auth.startsWith("Bearer ")) return err(401, "forbidden_op", "须带人的令牌");
+    if (auth.slice(7).trim() !== MOCK_TOKEN) return err(403, "forbidden_op", "只接受人的令牌");
+    if (path === "/v1/knowledge/sources") {
+      if ("path" in b || "dir" in b || "folder" in b) return err(400, "forbidden_op", "资料库不读本机目录：请在网页上选文件上传，或粘贴文字");
+      if (typeof b.name !== "string" || !b.name.trim()) return err(400, "schema_error", "资料要有名字");
+      let file: KnRev["file"]; let text = "";
+      if (typeof b.text === "string") { if (!b.text.trim()) return err(400, "schema_error", "text 不能是空的"); const bytes = enc.encode(b.text); file = { hash: putBlob(bytes), size: bytes.length, media_type: "text/plain", name: b.file_name ?? "pasted.txt" }; text = b.text; }
+      else if (b.file && typeof b.file.hash === "string") { const bytes = blobs.get(b.file.hash); if (!bytes) return err(404, "unknown_ref", "Blob 不在：先 PUT /v1/blobs 再导入"); file = { ...b.file }; text = new TextDecoder().decode(bytes); }
+      else return err(400, "schema_error", "给 text，或 file: {hash, size, media_type, name}");
+      const id = `s_${sha256(enc.encode(`${b.name}:${++knSeq}`)).slice(0, 12)}`;
+      knSources.push({ id, name: b.name.trim(), origin: typeof b.text === "string" ? "text" : "file", scope: b.scope === "pick" ? "pick" : "all", disabled: false, deleted_at: null, created: Date.now(), revs: [{ n: 1, file, stage: "parse", failed: null, chunks: 0, ts: Date.now(), text }] });
+      return json(200, { source: id, revision: 1, sources: knSourcesView().sources, jobs: knJobs() });
+    }
+    let m = path.match(/^\/v1\/knowledge\/sources\/([^/]+)\/(disable|enable|delete|restore)$/);
+    if (m) {
+      const s = knSources.find((x) => x.id === m![1]);
+      if (!s) return err(404, "unknown_ref", "资料不存在");
+      if (m[2] === "delete" || m[2] === "restore") {
+        if ((m[2] === "delete") === (s.deleted_at !== null)) return err(409, "conflict", m[2] === "delete" ? "已经在回收站里" : "不在回收站里");
+        s.deleted_at = m[2] === "delete" ? Date.now() : null;
+      } else s.disabled = m[2] === "disable";
+      knSeq += 1;
+      return json(200, { ok: true, sources: knSourcesView().sources });
+    }
+    m = path.match(/^\/v1\/knowledge\/jobs\/([^/]+)\/(\d+)\/(retry|cancel)$/);
+    if (m) {
+      const r = knSources.find((x) => x.id === m![1])?.revs.find((x) => x.n === Number(m![2]));
+      if (!r) return err(404, "unknown_ref", "没有这个版本");
+      if (m[3] === "retry") {
+        if (!r.failed) return err(409, "conflict", "这一步没有失败");
+        if (b.mask !== undefined && typeof b.mask !== "boolean") return err(400, "schema_error", "mask 取 true 或 false");
+        if (b.mask && r.failed.code !== "secrets") return err(409, "conflict", "这一步不是因为凭据停下的");
+        if (b.mask) r.mask = true;
+        r.failed = null;
+      }
+      else { if (!["parse", "chunk", "index"].includes(r.stage)) return err(409, "conflict", "这个版本已经导入完或取消了"); r.stage = "cancelled"; r.failed = null; }
+      knSeq += 1;
+      return json(200, { ok: true, jobs: knJobs() });
+    }
+    return err(404, "unknown_ref", `没有端点 ${path}`);
+  }
+
   // ---- 路由 ----
   function handle(req: MockRequest): MockResponse {
     const u = new URL(req.url, "http://mock");
@@ -765,7 +1033,9 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     const notFound = (d = `没有端点 ${path}`) => err(404, "unknown_ref", d);
     let m: RegExpMatchArray | null;
 
-    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys")) return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/memory" || path.startsWith("/v1/memory/items/")) return memoryRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path.startsWith("/v1/knowledge/")) return knowledgeRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {
       const auth = req.headers?.authorization ?? "";
       if (auth.slice(7).trim() !== MOCK_TOKEN) return err(401, "forbidden_op", "须带人的令牌");
@@ -845,7 +1115,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     });
 
     if (path === "/v1/problems") {
-      const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid));
+      const items = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem).map((x) => head(x.s, x.pid, clock));
       // solved 与每解成本只数本地判定；外部判定与人工验收各自一行（external-verdict §5.7）
       const tally = (a: Authority) => {
         const xs = items.filter((i) => i.authority === a);

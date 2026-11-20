@@ -1,80 +1,88 @@
-/* 设计系统（视觉重做第四版：纸、墨、朱印、界栏）。
-   令牌全部是 CSS 变量，四套主题只换变量；Tailwind 只在构建期运行，产物是普通 CSS。
-   字体全部自托管（CSP 只许同源），只三族、各司其职（阅读质量轮）：
-     宋体 --serif：只给页面标题与小节标题；
-     无衬线 --sans：一切正文、按钮、表格（含模型撰写的文字，语域靠标签区分，不靠字体）；
-     等宽 --mono：只给编号、序号、金额与代码。
-   字号只用六级阶梯 --fs-*（12 / 13 / 14 / 17 / 22 / 30），最小 12px；不在样式里写裸的 px 字号。 */
+/* 设计系统（前端重新设计 v5：冷灰中性底、无衬线、颜色只三义）。
+   令牌全部是 CSS 变量，主题只换变量；Tailwind 只在构建期运行，产物是普通 CSS。
+   旧变量名（paper / ink / rule / zhu …）沿用，免得一次改动全部页面；它们现在装的是 v5 的值：
+     paper=工作面  paper-2=侧栏（最深一层）  sheet=浮起物（卡、弹层、表）
+     ink / ink-2 / ink-3 / ink-4 = 正文 / 次要 / 说明 / 极淡
+     rule / rule-2 / rule-3 = 发丝线 / 输入框边 / 强一点的线
+     zhu = “等你”（琥珀）；qing = 交付、可用（绿）；dai = 智能体在做（蓝，也是焦点色）；zhe = 中性提醒（灰）
+   字体只两族：无衬线 --sans（Geist + 思源黑体，一切正文和标题），等宽 --mono（Geist Mono，金额、编号、代码）。不用衬线。
+   字号只用六级阶梯 --fs-*（12 / 13 / 14 / 16 / 20 / 30），最小 12px；不在样式里写裸的 px 字号。 */
 @import "tailwindcss";
 
-@import "@fontsource/noto-serif-sc/600.css";
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-mono/400.css";
-@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/noto-sans-sc/400.css";
+@import "@fontsource/noto-sans-sc/600.css";
+/* Geist 自己声明，限定在拉丁字符：它带的全角标点是窄的，中文里的，：；“”…—要交给思源黑体 */
+@font-face { font-family: "Geist Sans"; font-style: normal; font-display: swap; font-weight: 400; src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-200F, U+2028-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Geist Sans"; font-style: normal; font-display: swap; font-weight: 500; src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-200F, U+2028-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Geist Sans"; font-style: normal; font-display: swap; font-weight: 600; src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-200F, U+2028-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Geist Mono"; font-style: normal; font-display: swap; font-weight: 400; src: url("../node_modules/@fontsource/geist-mono/files/geist-mono-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-200F, U+2028-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Geist Mono"; font-style: normal; font-display: swap; font-weight: 500; src: url("../node_modules/@fontsource/geist-mono/files/geist-mono-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-200F, U+2028-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
-/* 宣：纸本（亮色） */
+/* 亮色 */
 :root, :root[data-theme="light"] {
-  --paper: #F2EEE5; --paper-2: #EAE5D9; --sheet: #FAF8F3; --hover: rgba(27,25,22,.045); --sel: rgba(27,25,22,.075);
-  --ink: #1B1916; --ink-2: #5A5449; --ink-3: #6A6458; --ink-4: #B9B2A4;
-  --rule: #DCD5C6; --rule-2: #C7BEAC; --rule-3: #A69C88;
-  --zhu: #B83924; --zhu-ink: #A0301E; --zhu-soft: rgba(184,57,36,.08); --zhu-line: rgba(184,57,36,.55);
-  --qing: #3B6A5C; --qing-soft: rgba(59,106,92,.10);
-  --zhe: #96601C; --zhe-soft: rgba(163,104,31,.11);
-  --dai: #3F4C68; --dai-soft: rgba(63,76,104,.09);
-  --btn-ink-bg: #1B1916; --btn-ink-fg: #F7F4EC; --on-zhu: #FBF6EC;
-  --jie: rgba(27,25,22,.045); --shade: rgba(27,25,22,.28);
+  --paper: #FCFCFD; --paper-2: #F3F4F6; --sheet: #FFFFFF; --hover: #ECEEF1; --sel: #E6E9EE;
+  --ink: #0F1114; --ink-2: #474C55; --ink-3: #5F6670; --ink-4: #B6BBC3;
+  --rule: #E4E6EA; --rule-2: #CDD1D7; --rule-3: #AEB4BD;
+  --zhu: #A35400; --zhu-ink: #8A4700; --zhu-soft: #FFF5E6; --zhu-line: rgba(163,84,0,.45);
+  --qing: #0B7547; --qing-soft: #E8F5EE;
+  --zhe: #5F6670; --zhe-soft: #F0F1F3;
+  --dai: #1247E6; --dai-soft: #EAEFFF;
+  --btn-ink-bg: #0F1114; --btn-ink-fg: #FFFFFF; --on-zhu: #FFFFFF;
+  --jie: transparent; --shade: rgba(15,17,20,.32);
+  --shadow: 0 1px 2px rgba(15,17,20,.06), 0 12px 32px -12px rgba(15,17,20,.18);
   color-scheme: light;
 }
-/* 墨：夜间 */
+/* 暗色 */
 :root[data-theme="dark"] {
-  --paper: #151412; --paper-2: #100F0E; --sheet: #1C1B18; --hover: rgba(236,231,221,.045); --sel: rgba(236,231,221,.075);
-  --ink: #ECE7DC; --ink-2: #A8A194; --ink-3: #8C8678; --ink-4: #4D4A43;
-  --rule: #2A2824; --rule-2: #38352F; --rule-3: #57534A;
-  --zhu: #E25A3F; --zhu-ink: #F07A60; --zhu-soft: rgba(226,90,63,.11); --zhu-line: rgba(226,90,63,.6);
-  --qing: #82B4A3; --qing-soft: rgba(130,180,163,.12);
-  --zhe: #D7A253; --zhe-soft: rgba(215,162,83,.12);
-  --dai: #93A5C8; --dai-soft: rgba(147,165,200,.12);
-  --btn-ink-bg: #ECE7DC; --btn-ink-fg: #151412; --on-zhu: #1B1110;
-  --jie: rgba(236,231,221,.035); --shade: rgba(0,0,0,.5);
+  --paper: #0F1114; --paper-2: #0A0B0D; --sheet: #16191D; --hover: #1B1F24; --sel: #222830;
+  --ink: #ECEEF1; --ink-2: #AEB4BD; --ink-3: #8A919B; --ink-4: #3E454E;
+  --rule: #21262C; --rule-2: #343B44; --rule-3: #4A525D;
+  --zhu: #F0A848; --zhu-ink: #F5BC6C; --zhu-soft: #2A2010; --zhu-line: rgba(240,168,72,.5);
+  --qing: #52C793; --qing-soft: #10261C;
+  --zhe: #8A919B; --zhe-soft: #1B1F24;
+  --dai: #7399FF; --dai-soft: #172349;
+  --btn-ink-bg: #ECEEF1; --btn-ink-fg: #0F1114; --on-zhu: #0F1114;
+  --jie: transparent; --shade: rgba(0,0,0,.55);
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -12px rgba(0,0,0,.6);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --paper: #151412; --paper-2: #100F0E; --sheet: #1C1B18; --hover: rgba(236,231,221,.045); --sel: rgba(236,231,221,.075);
-    --ink: #ECE7DC; --ink-2: #A8A194; --ink-3: #8C8678; --ink-4: #4D4A43;
-    --rule: #2A2824; --rule-2: #38352F; --rule-3: #57534A;
-    --zhu: #E25A3F; --zhu-ink: #F07A60; --zhu-soft: rgba(226,90,63,.11); --zhu-line: rgba(226,90,63,.6);
-    --qing: #82B4A3; --qing-soft: rgba(130,180,163,.12);
-    --zhe: #D7A253; --zhe-soft: rgba(215,162,83,.12);
-    --dai: #93A5C8; --dai-soft: rgba(147,165,200,.12);
-    --btn-ink-bg: #ECE7DC; --btn-ink-fg: #151412; --on-zhu: #1B1110;
-    --jie: rgba(236,231,221,.035); --shade: rgba(0,0,0,.5);
+    --paper: #0F1114; --paper-2: #0A0B0D; --sheet: #16191D; --hover: #1B1F24; --sel: #222830;
+    --ink: #ECEEF1; --ink-2: #AEB4BD; --ink-3: #8A919B; --ink-4: #3E454E;
+    --rule: #21262C; --rule-2: #343B44; --rule-3: #4A525D;
+    --zhu: #F0A848; --zhu-ink: #F5BC6C; --zhu-soft: #2A2010; --zhu-line: rgba(240,168,72,.5);
+    --qing: #52C793; --qing-soft: #10261C;
+    --zhe: #8A919B; --zhe-soft: #1B1F24;
+    --dai: #7399FF; --dai-soft: #172349;
+    --btn-ink-bg: #ECEEF1; --btn-ink-fg: #0F1114; --on-zhu: #0F1114;
+    --jie: transparent; --shade: rgba(0,0,0,.55);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -12px rgba(0,0,0,.6);
     color-scheme: dark;
   }
 }
-/* 素：高对比。纸纹、界栏、朱批这些装饰全部关掉 */
+/* 高对比 */
 :root[data-theme="contrast"] {
   --paper: #FFFFFF; --paper-2: #FFFFFF; --sheet: #FFFFFF; --hover: rgba(0,0,0,.06); --sel: rgba(0,0,0,.1);
   --ink: #000000; --ink-2: #000000; --ink-3: #1F1F1F; --ink-4: #4A4A4A;
   --rule: #000000; --rule-2: #000000; --rule-3: #000000;
-  --zhu: #B0220C; --zhu-ink: #8F1A08; --zhu-soft: rgba(176,34,12,.1); --zhu-line: #B0220C;
+  --zhu: #7A3E00; --zhu-ink: #5E3000; --zhu-soft: rgba(122,62,0,.1); --zhu-line: #7A3E00;
   --qing: #0F4D3B; --qing-soft: rgba(15,77,59,.1);
-  --zhe: #6B4100; --zhe-soft: rgba(107,65,0,.1);
-  --dai: #1A2B52; --dai-soft: rgba(26,43,82,.1);
+  --zhe: #1F1F1F; --zhe-soft: rgba(0,0,0,.06);
+  --dai: #0A2FA8; --dai-soft: rgba(10,47,168,.1);
   --btn-ink-bg: #000000; --btn-ink-fg: #FFFFFF; --on-zhu: #FFFFFF;
   --jie: transparent; --shade: rgba(0,0,0,.4);
+  --shadow: 0 0 0 1px #000;
   color-scheme: light;
 }
 
 :root {
-  --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
-  --sans: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: "Geist Sans", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   /* 字号阶梯：说明小字 / 次要正文 / 正文 / 小节标题 / 卡片大数 / 页面标题 */
-  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 17px; --fs-xl: 22px; --fs-2xl: 30px;
-  --side-w: 216px;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 30px;
+  --r-sm: 6px; --r: 8px; --r-lg: 12px;
+  --side-w: 244px;
 }
 
 @theme inline {
@@ -95,7 +103,6 @@
   --color-qing: var(--qing);
   --color-zhe: var(--zhe);
   --color-dai: var(--dai);
-  --font-serif: var(--serif);
   --font-sans: var(--sans);
   --font-mono: var(--mono);
 }
@@ -103,6 +110,6 @@
 @layer base {
   html, body { height: 100%; }
   body { font: 400 var(--fs-md)/1.6 var(--sans); color: var(--ink); background: var(--paper); -webkit-font-smoothing: antialiased; }
-  ::selection { background: var(--zhu-soft); }
-  :focus-visible { outline: 2px solid var(--zhu); outline-offset: 2px; }
+  ::selection { background: var(--dai-soft); }
+  :focus-visible { outline: 2px solid var(--dai); outline-offset: 2px; }
 }

@@ -6,7 +6,7 @@ import { countUsage } from "../app/usage";
 import { dailySeries, leaseKinds, minutes, ratio, recentOf, runningOf, solvedToday, terminalCounts, type DayBucket } from "../model/dashboard";
 import { LEVEL_GLYPH, terminalWord } from "../model/levels";
 import { usd } from "../model/text";
-import { Empty, Mark, Mast, Meter, Quan, SectionHead, btnClass } from "../kit";
+import { Empty, Mark, Mast, Meter, SectionHead, btnClass } from "../kit";
 import { TERMINAL_MARK } from "../ui/marks";
 import { CriterionBadge, Glyph } from "../ui/criterion";
 import { Plain, Text } from "../ui/registers";
@@ -47,14 +47,14 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
   if (view.items.length === 0) return <FirstRun />;
 
   const title = asks > 0
-    ? <><span className="today-n">{cn(asks)}<Quan style={{ left: -12, top: -8, width: 58, height: 60 }} rot={-8} /></span>件事等你拍板</>
+    ? <><span className="today-n">{cn(asks)}</span>件事等你拍板</>
     : running.length > 0 ? <>{cn(running.length)}个任务在跑，没有事等你</> : <>没有在跑的任务</>;
   // 导语只说“下一步做什么”，不复述下面已有的数字（阅读质量轮第 1、2 条）
   const dek = asks > 0 ? "按任务列在下面，从第一项开始；处理完的会自动消失。"
     : running.length > 0 ? "任务需要审批、验收或裁决时，会出现在这里。" : "新建一个任务，或从任务库克隆一个。";
   return (
-    <div className="today" data-page="home">
-      <Mast vol={["卷一", "今日"]} cap={dateLine(now)} title={title} dek={dek} />
+    <div className="today" data-page="today">
+      <Mast cap={dateLine(now)} title={title} dek={dek} />
       {error && <p className="error">刷新失败，显示的是上一次读到的：<Plain text={error} /></p>}
 
       <div className="today-cols">
@@ -62,9 +62,8 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
           {waiting.length > 0 && (
             <section className="today-sec today-focus" data-waiting aria-label="等你处理">
               <ol className="asks">
-                {waiting.map((p, i) => (
+                {waiting.map((p) => (
                   <li key={p.id} className="ask-row">
-                    <span className="ix" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                     <Mark ch="待" tone="dai" label="等你处理" />
                     <div className="grow">
                       <div className="ell"><Text t={p.title} block={false} /></div>
@@ -80,7 +79,7 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
 
           <section className="today-sec dash-running" aria-labelledby="h-running">
             <SectionHead id="h-running" title="运行中" right={<span className="k-sh-note">会话 · 目标结论 · 花费 · 用时</span>} />
-            {running.length === 0 ? <Empty title="没有运行中的任务" action={<Link to={{ page: "new" }} className={btnClass("line", "sm")}>新建任务</Link>}>任务运行时会列在这里。</Empty> : running.map((p) => <RunningRow key={p.id} p={p} />)}
+            {running.length === 0 ? <Empty title="没有运行中的任务" action={<Link to={{ page: "home" }} className={btnClass("line", "sm")}>新建任务</Link>}>任务运行时会列在这里。</Empty> : running.map((p) => <RunningRow key={p.id} p={p} />)}
           </section>
         </div>
 
@@ -246,11 +245,11 @@ export function Trend({ series }: { series: DayBucket[] }) {
 /** 第一次打开、还没有任何任务时：空状态即教程。 */
 function FirstRun() {
   return (
-    <div className="today first-run" data-page="home">
-      <Mast vol={["卷一", "今日"]} cap="开始" title="四步上手" dek="交给庖丁一个任务，它会沿着事实的纹理拆开、尝试、验证；需要你拍板的时候，会在“待办”里找你。" />
+    <div className="today first-run" data-page="today">
+      <Mast cap="开始" title="四步上手" dek="交给庖丁一个任务，它会沿着事实的纹理拆开、尝试、验证；需要你拍板的时候，会在“待办”里找你。" />
       <ol className="steps4">
         <li><span className="no">一</span><div className="grow"><b>连上服务</b><p className="t2">左下角配置人的令牌；没有令牌时整站只读。</p></div></li>
-        <li><span className="no hot">二</span><div className="grow"><b>建第一个任务</b><p className="t2">说清楚要达成什么、怎样算完成，约两分钟。可以从模板开始。</p></div><Link to={{ page: "new" }} className={btnClass("ink", "sm")}>新建任务</Link></li>
+        <li><span className="no hot">二</span><div className="grow"><b>建第一个任务</b><p className="t2">说清楚要达成什么、怎样算完成，约两分钟。可以从模板开始。</p></div><Link to={{ page: "home" }} className={btnClass("ink", "sm")}>新建任务</Link></li>
         <li><span className="no">三</span><div className="grow"><b>看它工作，必要时指点</b><p className="t2">在任务的工作区里写一句指导，之后的每一步都会参考。</p></div></li>
         <li><span className="no">四</span><div className="grow"><b>已经有一批任务？</b><p className="t2">导入 CSV 或 JSON，字段自动对应。</p></div><Link to={{ page: "import" }} className={btnClass("line", "sm")}>导入任务集</Link></li>
       </ol>

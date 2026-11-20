@@ -7,7 +7,9 @@ export type BankFilter = { q: string; terminal: string; judge: string };
 export const NO_FILTER: BankFilter = { q: "", terminal: "", judge: "" };
 
 export type Route =
+  /** 首页就是新建任务的输入框（v5 第三期）；今日看板挪到 /today。 */
   | { page: "home" }
+  | { page: "today" }
   | ({ page: "problems" } & Partial<BankFilter>)
   /** /new 是一句话开题的输入框；/new/advanced 是四步向导（高级模式，克隆也到这里）。 */
   | { page: "new"; advanced?: boolean; from?: string }
@@ -17,6 +19,8 @@ export type Route =
   | { page: "readings" }
   | { page: "inbox" }
   | { page: "settings" }
+  | { page: "models" }
+  | { page: "knowledge"; tab: "sources" | "memory" }
   | { page: "problem"; pid: string; asOf: number | null; node: string | null };
 
 export function parseRoute(pathname: string, search: string): Route {
@@ -31,9 +35,13 @@ export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/new") return q.get("from") ? { page: "new", advanced: true, from: q.get("from")! } : { page: "new" };
   if (pathname === "/import") return { page: "import" };
   if (pathname === "/import/platform") return q.get("id") ? { page: "platform", id: q.get("id")! } : { page: "platform" };
+  if (pathname === "/today") return { page: "today" };
   if (pathname === "/readings") return { page: "readings" };
   if (pathname === "/inbox") return { page: "inbox" };
   if (pathname === "/settings") return { page: "settings" };
+  if (pathname === "/models") return { page: "models" };
+  if (pathname === "/knowledge") return { page: "knowledge", tab: "sources" };
+  if (pathname === "/knowledge/memory") return { page: "knowledge", tab: "memory" };
   if (pathname === "/tasks") return { page: "problems", q: q.get("q") ?? "", terminal: q.get("terminal") ?? "", judge: q.get("judge") ?? "" };
   if (pathname === "/problems") return { page: "problems", q: q.get("q") ?? "", terminal: q.get("terminal") ?? "", judge: q.get("judge") ?? "" };
   return { page: "home" };
@@ -42,6 +50,7 @@ export function parseRoute(pathname: string, search: string): Route {
 export function hrefOf(r: Route): string {
   switch (r.page) {
     case "home": return "/";
+    case "today": return "/today";
     case "problems": {
       const q = new URLSearchParams();
       for (const k of ["q", "terminal", "judge"] as const) if (r[k]) q.set(k, r[k]!);
@@ -54,6 +63,8 @@ export function hrefOf(r: Route): string {
     case "readings": return "/readings";
     case "inbox": return "/inbox";
     case "settings": return "/settings";
+    case "models": return "/models";
+    case "knowledge": return r.tab === "memory" ? "/knowledge/memory" : "/knowledge";
     case "problem": {
       const q = new URLSearchParams();
       if (r.asOf !== null) q.set("as_of", String(r.asOf));

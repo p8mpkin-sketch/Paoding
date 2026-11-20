@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, request }) => {
 });
 
 async function openCockpit(page: Page, pid: string) {
-  await page.goto("/");
+  await page.goto("/today");
   await page.locator(`[data-problem="${pid}"] a`).first().click();
   await expect(page.locator(".cockpit")).toBeVisible();
   await expect(page.locator("[data-conn-label]")).toHaveText("实时");
@@ -23,9 +23,8 @@ test("驾驶舱：顶栏分主次，事件到来时视图跟着走，一条事�
   const snaps: string[] = [];
   page.on("request", (r) => { if (r.url().includes("/snapshot")) snaps.push(r.url()); });
   await openCockpit(page, "demo-1");
-  const primary = page.locator(".topbar-primary");
-  await expect(primary.locator("[data-terminal]")).toBeVisible();
-  await expect(primary.locator(".cost")).toBeVisible();
+  await expect(page.locator(".tk-head [data-terminal]")).toBeVisible();
+  await expect(page.locator(".tk-rail .cost")).toBeVisible();          // 花费在右栏
   await expect(page.locator("[data-goal-attempts]")).toBeHidden();       // 次要信息收在“详情”里
   await page.locator('[data-topbar="secondary"] > summary').click();
   await expect(page.locator("[data-goal-attempts]")).toBeVisible();
@@ -97,39 +96,56 @@ test("时间轴回放：跳到早先的序号，写操作禁用，链接带 as_o
   await expect(page).not.toHaveURL(/as_of=/);
 });
 
-test("窄屏（< 1024px）：一栏显示，按钮切换面板，选中节点跳到检视", async ({ page }) => {
+test("窄屏（手机宽度）：右栏落到正文下面，结构一栏里选中节点后检视在下方；没有横向滚动", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openCockpit(page, "demo-1");
-  const sw = page.locator(".panel-switch");
-  await expect(sw).toBeVisible();
-  await expect(page.locator(".main")).toBeVisible();
-  await expect(page.locator(".left")).toBeHidden();
-  await expect(page.locator(".right")).toBeHidden();
-  await page.locator('[data-panel-switch="left"]').click();
-  await expect(page.locator(".left")).toBeVisible();
-  await expect(page.locator(".main")).toBeHidden();
-  await page.locator('[data-panel-switch="main"]').click();
+  const col = (await page.locator(".tk-col").boundingBox())!;
+  const rail = (await page.locator(".tk-rail").boundingBox())!;
+  expect(rail.y).toBeGreaterThanOrEqual(col.y + col.height - 1);
+  await page.locator('[data-task-tab="struct"]').click();
   await page.locator('[data-action="select-node"]').first().click();
-  await expect(page.locator(".right")).toBeVisible();
-  await expect(page.locator(".main")).toBeHidden();
-  // 没有横向滚动
+  await expect(page.locator(".cockpit")).toHaveAttribute("data-inspect", "node");
+  const main = (await page.locator(".tk-struct .main").boundingBox())!;
+  const right = (await page.locator(".tk-struct .right").boundingBox())!;
+  expect(right.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("宽屏：三栏并排，面板切换按钮不显示；没选节点时检视栏收窄，选中后展开", async ({ page }) => {
+test("宽屏：正文与右栏并排；结构一栏没选节点时检视收窄，选中后展开", async ({ page }) => {
   await openCockpit(page, "demo-1");
-  await expect(page.locator(".panel-switch")).toBeHidden();
-  for (const c of [".left", ".main", ".right"]) await expect(page.locator(c)).toBeVisible();
-  const narrow = (await page.locator(".right").boundingBox())!.width;
+  const col = (await page.locator(".tk-col").boundingBox())!;
+  const rail = (await page.locator(".tk-rail").boundingBox())!;
+  expect(rail.x).toBeGreaterThanOrEqual(col.x + col.width - 1);
+  await page.locator('[data-task-tab="struct"]').click();
+  for (const c of [".tk-struct .main", ".tk-struct .right"]) await expect(page.locator(c)).toBeVisible();
+  const narrow = (await page.locator(".tk-struct .right").boundingBox())!.width;
   expect(narrow).toBeLessThanOrEqual(240);
   await page.locator('[data-action="select-node"]').first().click();
   await expect(page.locator(".cockpit")).toHaveAttribute("data-inspect", "node");
-  expect((await page.locator(".right").boundingBox())!.width).toBeGreaterThan(narrow + 60);
+  expect((await page.locator(".tk-struct .right").boundingBox())!.width).toBeGreaterThan(narrow + 60);
+});
+
+test("开放道任务页：结果一栏、依据抽屉、采纳要逐条确认四顾", async ({ page }) => {
+  await openCockpit(page, "demo-6");
+  await expect(page.locator("[data-status]")).toHaveAttribute("data-status", "look");
+  await expect(page.locator("[data-answer]")).toContainText("LangGraph");
+  await page.locator("[data-claim] [data-ref]").first().click();
+  await expect(page.locator("[data-evidence]")).toContainText("python repro/crash_test.py");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-evidence]")).toHaveCount(0);
+  await page.locator('[data-action="adopt-delivery"]').click();
+  const ok = page.locator('[data-action="confirm-feedback"]');
+  await expect(ok).toBeDisabled();
+  for (const b of await page.locator("[data-four]").all()) await b.check();
+  await ok.click();
+  await expect(page.locator("[data-feedback]")).toHaveAttribute("data-feedback", "adopted");
+  await expect(page.locator('[data-field="follow-up"]')).toHaveCount(0);   // 关闭后不再能追问
 });
 
 test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) => {
   await openCockpit(page, "demo-1");
+  await page.locator('[data-task-tab="struct"]').click();
   await page.locator('[data-action="graph-always"]').check();
   await page.locator('[data-action="tab-graph"]').click();
   const vp = page.locator("[data-graph-viewport]");
@@ -153,7 +169,7 @@ test("图：键盘聚焦节点、Enter 检视，+ − 缩放", async ({ page }) 
 });
 
 test("总览：进行中卡片、等你处理、主题切换；手机宽度只留待审批与进行中", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/today");
   await expect(page.locator(".run-card").first()).toBeVisible();
   await expect(page.locator("[data-waiting]")).toBeVisible();
   await expect(page.locator(".dash-stats")).toBeVisible();
@@ -180,12 +196,12 @@ test("待办：侧栏数量与页面一致，去处理进工作区并定位节�
 
 test("任务库：筛选写进 URL，刷新后仍在", async ({ page }) => {
   await page.goto("/problems");
-  await expect(page.locator("tr[data-problem]").first()).toBeVisible();
+  await expect(page.locator("[data-list] [data-problem]").first()).toBeVisible();
   await page.locator('[data-tab="running"]').click();
   await expect(page).toHaveURL(/terminal=running/);
   await page.reload();
   await expect(page.locator('[data-tab="running"]')).toHaveAttribute("aria-selected", "true");
-  for (const t of await page.locator("td[data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
+  for (const t of await page.locator("[data-list] [data-terminal]").all()) await expect(t).toHaveAttribute("data-terminal", "running");
 });
 
 test("一句话新建：回车起草，确认卡核对出处，创建后进工作区", async ({ page }) => {
@@ -224,7 +240,8 @@ test("向导：四步走完，文字材料与初始指导，创建后进工作�
 
 test("任务库：克隆一个任务进向导，id 留空、判据与 scope 已预填", async ({ page }) => {
   await page.goto("/problems");
-  await page.locator('tr[data-problem] [data-action="clone"]').first().click();
+  await page.locator('[data-list] [data-problem] [data-action="row-menu"]').first().click();
+  await page.locator('[data-menu="clone"]').click();
   await expect(page).toHaveURL(/\/new\/advanced\?from=/);
   await expect(page.locator("[data-cloned-from]")).toBeVisible();
   await expect(page.locator('[data-field="id"]')).toHaveValue("");
@@ -243,4 +260,49 @@ test("运行时扩权：横幅点开扩权卡，批准后横幅的数字减一�
   await card.locator('[data-action="approve"]').click();
   await expect(banner).toContainText("等你批准访问 1 个地址");
   await expect(page.locator('.tick[data-tick="S"]')).toHaveCount(before + 1);
+});
+
+test("任务列表：删除进回收站，30 天内可恢复；账不动", async ({ page }) => {
+  await page.goto("/tasks");
+  const row = page.locator('[data-list] [data-group-of="end"]').first();
+  const pid = await row.getAttribute("data-problem");
+  await row.locator('[data-action="row-menu"]').click();
+  await page.locator('[data-menu="delete"]').click();
+  await expect(page.locator("[data-confirm-delete]")).toContainText("30 天内可以恢复");
+  await page.locator('[data-action="confirm-delete"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toHaveCount(0);
+  await page.locator('[data-tab="trash"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toBeVisible();
+  await page.locator(`[data-problem="${pid}"] [data-action="row-menu"]`).click();
+  await page.locator('[data-menu="restore"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toHaveCount(0);
+  await page.locator('[data-tab="all"]').click();
+  await expect(page.locator(`[data-list] [data-problem="${pid}"]`)).toBeVisible();
+});
+
+test("知识页资料：粘贴一段文字导入，几轮后可用并能查到", async ({ page }) => {
+  await page.goto("/knowledge");
+  await expect(page.locator('[data-job="s_runbk01"]')).toBeVisible();
+  await page.locator('[data-action="kn-import"]').click();
+  await page.locator('[data-mode="text"]').click();
+  await page.locator('[data-field="kn-name"]').fill("值班约定");
+  await page.locator('[data-field="kn-text"]').fill("交接时写清楚未关的告警和正在做的变更。");
+  await page.locator('[data-action="kn-start"]').click();
+  await expect(page.locator("[data-kn-import]")).toHaveCount(0);
+  const row = page.locator("[data-source]", { hasText: "值班约定" });
+  await expect(row).toBeVisible();
+  await expect(row).toHaveAttribute("data-live", "1", { timeout: 15_000 }); // 每 2 秒一轮，一轮推进一步
+  await page.locator('[data-field="kn-query"]').fill("未关的告警");
+  await page.locator('[data-action="kn-search"]').click();
+  await expect(page.locator("[data-hit]", { hasText: "值班约定" }).first()).toBeVisible();
+});
+
+test("知识页资料：选文件后列在抽屉里，导入后出现作业", async ({ page }) => {
+  await page.goto("/knowledge");
+  await page.locator('[data-action="kn-import"]').click();
+  await page.locator('[data-field="kn-files"]').setInputFiles([{ name: "告警规则.yaml", mimeType: "text/yaml", buffer: Buffer.from("延迟超过 300ms 报警\n") }]);
+  await expect(page.locator('[data-picked="告警规则.yaml"]')).toBeVisible();
+  await page.locator('[data-action="kn-start"]').click();
+  await expect(page.locator("[data-kn-import]")).toHaveCount(0);
+  await expect(page.locator("[data-source]", { hasText: "告警规则.yaml" })).toBeVisible();
 });

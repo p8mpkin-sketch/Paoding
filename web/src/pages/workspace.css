@@ -4,8 +4,8 @@
 .topbar { padding: 12px 24px 16px; gap: 8px 18px; }
 .topbar-primary { flex: 1; gap: 10px 18px; flex-wrap: wrap; min-width: 0; }
 .ws-id { min-width: 0; flex: 1 1 260px; }
-.ws-cap { font-size: var(--fs-xs); letter-spacing: .12em; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ws-title { font: 600 var(--fs-xl)/1.25 var(--serif); margin: 3px 0 0; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-cap { font-size: var(--fs-xs); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-title { font: 600 var(--fs-xl)/1.25 var(--sans); margin: 3px 0 0; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-title q.reg-narrative { display: inline; margin: 0; padding: 0; border: 0; quotes: none; font: inherit; }
 .ws-title .reg-label { font: 500 var(--fs-xs)/16px var(--sans); color: var(--ink-2); border-color: var(--rule-3); padding: 0 4px; margin-right: 8px; vertical-align: 4px; }
 .ws-title .plain { white-space: nowrap; }
@@ -14,7 +14,7 @@
 .topbar .terminal .muted { font-size: var(--fs-xs); }
 .conn { border: 0; padding: 0; font-weight: 500; font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .conn::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--qing); }
-[data-conn="live"] .conn::before { background: var(--zhu); box-shadow: 0 0 0 3px var(--zhu-soft); }
+[data-conn="live"] .conn::before { background: var(--dai); box-shadow: 0 0 0 3px var(--dai-soft); }
 [data-conn="connecting"] .conn::before { background: var(--ink-3); }
 [data-conn="disconnected"] .conn::before, [data-conn="replay"] .conn::before { background: transparent; border: 1.5px solid var(--ink-2); }
 [data-conn="disconnected"] .conn, [data-conn="replay"] .conn { border: 0; color: var(--ink-2); }
@@ -39,10 +39,9 @@
 .right { padding: 18px 22px; background: var(--paper); }
 .main { padding: 14px 22px 22px; }
 .ws-sec { margin-bottom: 26px; }
-.ws-h { display: flex; align-items: baseline; gap: 10px; font: 600 var(--fs-md) var(--serif); margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--ink); }
-.ws-h .no { font: 500 var(--fs-xs) var(--mono); color: var(--ink-3); padding-right: 10px; border-right: 1px solid var(--rule-3); }
+.ws-h { display: flex; align-items: baseline; gap: 10px; font: 600 var(--fs-md) var(--sans); margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
 .ws-h .ct { margin-left: auto; font: 400 var(--fs-xs) var(--sans); color: var(--ink-3); }
-.ws-h .ct.hot { font: 600 var(--fs-xs)/18px var(--mono); color: var(--on-zhu); background: var(--zhu); min-width: 18px; text-align: center; padding: 0 4px; border-radius: 2px; }
+.ws-h .ct.hot { font: 500 var(--fs-xs)/18px var(--mono); color: var(--on-zhu); background: var(--zhu); min-width: 18px; text-align: center; padding: 0 6px; border-radius: 9px; }
 .ws-h .ct.k-mono { font-family: var(--mono); }
 
 /* 待你 */
@@ -73,7 +72,7 @@
 .sess .pulse { background: var(--zhu); box-shadow: 0 0 0 3px var(--zhu-soft); }
 .sess .pulse.off { background: var(--ink-3); box-shadow: none; }
 .sess:not(.on) { color: var(--ink-2); }
-.sess-target { height: auto; padding: 0 5px; font-size: var(--fs-xs); border: 1px solid var(--rule-2); border-radius: 2px; background: none; color: var(--ink-2); }
+.sess-target { height: auto; padding: 0 5px; font-size: var(--fs-xs); border: 1px solid var(--rule-2); border-radius: var(--r-sm); background: none; color: var(--ink-2); }
 .sess-target:hover { color: var(--ink); border-color: var(--ink); background: none; }
 .sess-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 3px 0 0 14px; font-family: var(--mono); font-size: var(--fs-xs); }
 .sess-done summary { cursor: pointer; font-size: var(--fs-xs); color: var(--ink-2); padding: 8px 0 2px; }
@@ -95,7 +94,7 @@
 .ws-tabs > button .t2 { display: inline; font-weight: 400; }
 .ws-tabs label.t2 { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .ws-tabs .grow { flex: 1; }
-.main > .sheet { border: 1px solid var(--rule-3); border-top: 3px solid var(--ink); box-shadow: 0 22px 48px -24px var(--shade); padding: 16px 18px; margin-bottom: 18px; }
+.main > .sheet { border: 1px solid var(--rule); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 18px 20px; margin-bottom: 18px; }
 .main > .sheet[data-sheet="todo"] { border-top-color: var(--zhu); }
 .sheet-close { position: absolute; right: 10px; top: 10px; }
 .sheet-close .k-kbd { margin-left: 6px; }
@@ -109,7 +108,7 @@
 .node-row { position: relative; padding: 8px 10px 9px 12px; border-bottom: 1px solid var(--rule); background: color-mix(in srgb, var(--sheet) 70%, transparent); }
 .node-row::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 9px; width: 2px; background: var(--rule-3); }
 .node-row.selected { outline: 0; background: var(--sel); }
-.node-row.selected::before { background: var(--zhu); width: 3px; }
+.node-row.selected::before { background: var(--dai); width: 3px; }
 .node-row:hover { background: var(--hover); }
 .row-main { gap: 6px; padding: 0; height: auto; border-radius: 0; color: var(--ink); }
 .row-main:hover { background: none; }
@@ -119,7 +118,7 @@
 .node-row .estimates summary { font-size: var(--fs-xs); color: var(--ink-3); cursor: pointer; }
 
 /* 图：制图网格、直角边、节点卡 */
-.graph-wrap { height: min(68vh, 680px); border: 1px solid var(--rule-2); background-color: var(--sheet); background-image: linear-gradient(var(--jie) 1px, transparent 1px), linear-gradient(90deg, var(--jie) 1px, transparent 1px), linear-gradient(var(--jie) 1px, transparent 1px), linear-gradient(90deg, var(--jie) 1px, transparent 1px); background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px; }
+.graph-wrap { height: min(68vh, 680px); border: 1px solid var(--rule-2); background-color: var(--sheet);  }
 .gnode rect, .gnode polygon { fill: var(--paper); stroke: var(--ink-3); stroke-width: 1; }
 .gnode text { fill: var(--ink); }
 .gnode .g-title { font-family: var(--sans); }
@@ -162,7 +161,7 @@
 .todo-card[aria-pressed="true"], .todo-card[aria-pressed="true"]:hover { color: var(--ink); background: var(--zhu-soft); }
 .graph-ctl [data-zoom] { margin-left: 10px; font: var(--fs-xs) var(--mono); color: var(--ink-2); }
 /* 给出指导 */
-.hint-h { display: flex; align-items: baseline; gap: 12px; font: 600 var(--fs-md) var(--serif); margin: 0 0 10px; }
+.hint-h { display: flex; align-items: baseline; gap: 12px; font: 600 var(--fs-md) var(--sans); margin: 0 0 10px; }
 .hint-text { display: block; width: 100%; min-height: 72px; border: 0; border-bottom: 1px solid var(--rule-3); border-radius: 0; background: transparent; padding: 6px 0; font: var(--fs-md)/1.6 var(--sans); }
 .hint-text:focus-visible { outline: none; border-bottom-color: var(--ink); }
 .hint-count { display: block; text-align: right; margin-top: 4px; }
@@ -185,14 +184,14 @@
 
 /* 站位条（宪章 06 屏五）：十二格；当前站墨底反白，等人的站朱红下划线并写数量（不只靠颜色：另有“等你 n”文字） */
 .stations { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; margin: 0 0 12px; padding: 0; list-style: none; }
-.stn { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border-bottom: 2px solid var(--ink-4); color: var(--ink-3); font-size: var(--fs-xs); min-width: 0; }
+.stn { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-bottom: 2px solid var(--rule); color: var(--ink-3); font-size: var(--fs-xs); min-width: 0; }
 .stn-w { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stn-id { font-size: var(--fs-xs); color: var(--ink-3); }
-.stn.cur { background: var(--ink); color: var(--paper, #fff); border-bottom-color: var(--ink); }
+.stn.cur { background: var(--sheet); color: var(--ink); font-weight: 500; border-bottom-color: var(--dai); }
 .stn.cur .stn-id { color: inherit; }
 .stn.wait { border-bottom-color: var(--zhu); }
 .stn-n { color: var(--zhu-ink); font-weight: 600; }
-.stn.cur .stn-n { color: inherit; text-decoration: underline var(--zhu) 2px; }
+.stn.cur .stn-n { color: var(--zhu-ink); }
 @media (max-width: 720px) {
   .stations { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }

@@ -20,6 +20,7 @@ from . import refmodel as rm
 from . import work as wk
 from .parse import BadBody, Obj
 from .reducer import Config
+from .reducer import curate as cu
 from .reducer.common import _rule
 from .reducer.problem import _derive_profile
 from .state import Check, Fact, Hint, Intent, Lease, Problem, State
@@ -424,6 +425,10 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
                 ],
                 "human_todo": sum(1 for w in wk.work(state, pid) if w["kind"] == "human"),
                 "wall": {"cap_s": p["budget"]["wall_s"], "elapsed_s": max(0, end - p["opened_ts"]) // 1000},
+                # 整理（curate，v5 第三期）：软删的题照样在列表与合计里，读端按 shelf 收起来
+                "shelf": cu.shelf_of(p, state["now"]),
+                "pinned": bool(p.get("pinned")),
+                "trash_until": cu.trash_until(p),
             }
         )
     return {
@@ -471,6 +476,8 @@ def status(state: State, pid: str) -> View:
             "env": dict(p["env"]),
             "judges": sorted(p["judges"]),
             "origin": {"statement_ref": p["origin"]["statement_ref"], "materials": list(p["origin"]["materials"])},
+            # 任务级偏好（地图 Q12）：没有时不写，旧日志的视图逐字节不变
+            **({"prefs": dict(p["prefs"])} if "prefs" in p else {}),
         },
         "goal": {
             "statement": tag("statement", p["goal"]["statement"]),

@@ -9,12 +9,15 @@ import { Plain } from "../ui/registers";
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; problems: ProblemsView | null };
 
 const PAGES: { word: string; to: Route; key?: string }[] = [
-  { word: "今日", to: { page: "home" } },
+  { word: "今日", to: { page: "today" } },
   { word: "待办", to: { page: "inbox" } },
   { word: "任务库", to: { page: "problems" } },
-  { word: "新建任务", to: { page: "new" }, key: "C" },
+  { word: "新建任务", to: { page: "home" }, key: "C" },
   { word: "导入任务集", to: { page: "import" } },
   { word: "从平台导入", to: { page: "platform" } },
+  { word: "知识", to: { page: "knowledge", tab: "sources" } },
+  { word: "记忆", to: { page: "knowledge", tab: "memory" } },
+  { word: "模型", to: { page: "models" } },
   { word: "读数", to: { page: "readings" } },
   { word: "设置", to: { page: "settings" } },
 ];

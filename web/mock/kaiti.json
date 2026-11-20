@@ -2496,6 +2496,1917 @@
    }
   },
   {
+   "name": "command",
+   "overrides": {
+    "model": "light"
+   },
+   "out": {
+    "lane": "confirm",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "command_criterion",
+      "field": "goal.check",
+      "text": "判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入",
+      "lane": "confirm"
+     },
+     {
+      "code": "risk_unmatched",
+      "field": "scope[0]",
+      "text": "git.lab:8443 不在风险表里，按 r2：每次用到都要你批准",
+      "lane": "confirm"
+     },
+     {
+      "code": "no_answer",
+      "field": "goal.check",
+      "text": "没有标准答案：不能零确认",
+      "lane": "confirm"
+     },
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 prefs.model",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "仓库在 git.lab:8443，修好构建失败。",
+      "source": "span",
+      "spans": [
+       "s4"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "仓库在 git.lab:8443，修好构建失败",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "replay · make test",
+      "source": "span",
+      "spans": [
+       "s2"
+      ],
+      "note": "“这条命令就是完成标准”由起草模型指认"
+     },
+     {
+      "field": "goal.max_attempts",
+      "value": 5,
+      "source": "table"
+     },
+     {
+      "field": "scope[0].pattern",
+      "value": "git.lab:8443",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "scope[0].risk",
+      "value": "r2",
+      "source": "table",
+      "note": "未命中风险表，按规格缺省 r2"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 5000,
+      "source": "span",
+      "spans": [
+       "s3"
+      ]
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     },
+     {
+      "field": "prefs.model",
+      "value": "light",
+      "source": "human",
+      "note": "人在确认卡上选的执行模型档案"
+     }
+    ],
+    "input": {
+     "title": "仓库在 git.lab:8443，修好构建失败",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "仓库在 git.lab:8443，修好构建失败。",
+      "check": {
+       "judge_id": "replay",
+       "spec_ref": "$spec",
+       "expect": {
+        "exit_code": 0
+       }
+      },
+      "max_attempts": 5,
+      "accept": "judge"
+     },
+     "scope": [
+      {
+       "resource": "net",
+       "pattern": "git.lab:8443",
+       "actions": [
+        "connect"
+       ],
+       "risk": "r2"
+      }
+     ],
+     "budget": {
+      "usd_milli": 5000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [
+      "replay"
+     ],
+     "prefs": {
+      "model": "light"
+     }
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-3ac25d961cce",
+    "nonce": "fixture-command",
+    "text": "仓库在 git.lab:8443，修好构建失败。完成标准：在仓库根目录跑 `make test` 全部通过。预算 $5。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "addr",
+      "start": 4,
+      "end": 16,
+      "text": "git.lab:8443"
+     },
+     {
+      "id": "s2",
+      "kind": "code",
+      "start": 37,
+      "end": 48,
+      "text": "`make test`"
+     },
+     {
+      "id": "s3",
+      "kind": "money",
+      "start": 57,
+      "end": 59,
+      "text": "$5"
+     },
+     {
+      "id": "s4",
+      "kind": "sentence",
+      "start": 0,
+      "end": 24,
+      "text": "仓库在 git.lab:8443，修好构建失败。"
+     },
+     {
+      "id": "s5",
+      "kind": "sentence",
+      "start": 24,
+      "end": 54,
+      "text": "完成标准：在仓库根目录跑 `make test` 全部通过。"
+     },
+     {
+      "id": "s6",
+      "kind": "sentence",
+      "start": 54,
+      "end": 60,
+      "text": "预算 $5。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "仓库在 git.lab:8443，修好构建失败",
+     "goal_sentence": [
+      "s4"
+     ],
+     "entries": [
+      {
+       "span": "s1",
+       "role": "entry"
+      }
+     ],
+     "deliverable": null,
+     "check": {
+      "form": "command",
+      "spans": [
+       "s2"
+      ]
+     },
+     "deadline": null,
+     "spend": "s3",
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "仓库在 git.lab:8443，修好构建失败。完成标准：在仓库根目录跑 `make test` 全部通过。预算 $5。",
+      "hash": "01c712074898d064ea656ad089fb44aca50fcc7cc5ba5e838f59b74a77e44326",
+      "size": 122
+     },
+     {
+      "name": "spec",
+      "media_type": "text/x-shellscript",
+      "text": "make test\n",
+      "hash": "cfa5c4526386239681bc6cdb4563c86551da2ef1325ecc9c20b48ae2cf97df9a",
+      "size": 10
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s4\"],\"value\":\"仓库在 git.lab:8443，修好构建失败。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"仓库在 git.lab:8443，修好构建失败\"},{\"field\":\"goal.check\",\"note\":\"“这条命令就是完成标准”由起草模型指认\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"replay · make test\"},{\"field\":\"goal.max_attempts\",\"source\":\"table\",\"value\":5},{\"field\":\"scope[0].pattern\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"git.lab:8443\"},{\"field\":\"scope[0].risk\",\"note\":\"未命中风险表，按规格缺省 r2\",\"source\":\"table\",\"value\":\"r2\"},{\"field\":\"budget.usd_milli\",\"source\":\"span\",\"spans\":[\"s3\"],\"value\":5000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"},{\"field\":\"prefs.model\",\"note\":\"人在确认卡上选的执行模型档案\",\"source\":\"human\",\"value\":\"light\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":5000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"judge\",\"check\":{\"expect\":{\"exit_code\":0},\"judge_id\":\"replay\",\"spec_ref\":\"$spec\"},\"max_attempts\":5,\"statement\":\"仓库在 git.lab:8443，修好构建失败。\"},\"judges\":[\"replay\"],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"prefs\":{\"model\":\"light\"},\"scope\":[{\"actions\":[\"connect\"],\"pattern\":\"git.lab:8443\",\"resource\":\"net\",\"risk\":\"r2\"}],\"title\":\"仓库在 git.lab:8443，修好构建失败\"},\"lane\":\"confirm\",\"needs_ack\":null,\"notes\":[{\"code\":\"command_criterion\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"判官会在洁净容器里重放这条命令，按退出码判定；开题后不能改。如果它是向外部平台提交，它就不是检查：重放会再提交一次，或者因为出不去网被判失败。外部平台说了算的任务，请先登记这个平台，再从平台导入\"},{\"code\":\"risk_unmatched\",\"field\":\"scope[0]\",\"lane\":\"confirm\",\"text\":\"git.lab:8443 不在风险表里，按 r2：每次用到都要你批准\"},{\"code\":\"no_answer\",\"field\":\"goal.check\",\"lane\":\"confirm\",\"text\":\"没有标准答案：不能零确认\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 prefs.model\"}],\"pid\":\"kt-3ac25d961cce\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "71af909d1cb7385ee59c9a0dabd02f2d239e8cc420bfcb34047544a771005f9b",
+      "size": 2508
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "01c712074898d064ea656ad089fb44aca50fcc7cc5ba5e838f59b74a77e44326",
+       "size": 122,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "cfa5c4526386239681bc6cdb4563c86551da2ef1325ecc9c20b48ae2cf97df9a",
+       "size": 10,
+       "media_type": "text/x-shellscript",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "71af909d1cb7385ee59c9a0dabd02f2d239e8cc420bfcb34047544a771005f9b",
+       "size": 2508,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "仓库在 git.lab:8443，修好构建失败",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$2",
+         "lane": "confirm"
+        }
+       },
+       "goal": {
+        "statement": "仓库在 git.lab:8443，修好构建失败。",
+        "check": {
+         "judge_id": "replay",
+         "spec_ref": "$1",
+         "expect": {
+          "exit_code": 0
+         }
+        },
+        "max_attempts": 5,
+        "accept": "judge"
+       },
+       "scope": [
+        {
+         "resource": "net",
+         "pattern": "git.lab:8443",
+         "actions": [
+          "connect"
+         ],
+         "risk": "r2"
+        }
+       ],
+       "budget": {
+        "usd_milli": 5000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [
+        "replay"
+       ],
+       "prefs": {
+        "model": "light"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "model": "light"
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 prefs.model",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     },
+     {
+      "field": "prefs.model",
+      "value": "light",
+      "source": "human",
+      "note": "人在确认卡上选的执行模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [],
+     "prefs": {
+      "model": "light"
+     }
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"},{\"field\":\"prefs.model\",\"note\":\"人在确认卡上选的执行模型档案\",\"source\":\"human\",\"value\":\"light\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"prefs\":{\"model\":\"light\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 prefs.model\"}],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "2afd1fcf17cdffb21d9aef6af1fa7e00fb1cd984a180223df275b0a46c9d6e62",
+      "size": 1825
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "2afd1fcf17cdffb21d9aef6af1fa7e00fb1cd984a180223df275b0a46c9d6e62",
+       "size": 1825,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [],
+       "prefs": {
+        "model": "light"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "usd_milli": 500,
+    "wall_s": 600
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 budget.usd_milli、budget.wall_s",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 500,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 600,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 500,
+      "wall_s": 600,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": []
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":500},{\"field\":\"budget.wall_s\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":600},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":500,\"verify_share\":0.2,\"wall_s\":600},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 budget.usd_milli、budget.wall_s\"}],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "a8b7385fa087180b1ac2c74b51fc5fb5fbd4962790e8074fc9fd83dd4f8d4244",
+      "size": 1645
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "a8b7385fa087180b1ac2c74b51fc5fb5fbd4962790e8074fc9fd83dd4f8d4244",
+       "size": 1645,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 500,
+        "wall_s": 600,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": []
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "model": "light",
+    "usd_milli": 500,
+    "wall_s": 600
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 budget.usd_milli、budget.wall_s、prefs.model",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 500,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 600,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     },
+     {
+      "field": "prefs.model",
+      "value": "light",
+      "source": "human",
+      "note": "人在确认卡上选的执行模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 500,
+      "wall_s": 600,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [],
+     "prefs": {
+      "model": "light"
+     }
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":500},{\"field\":\"budget.wall_s\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":600},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"},{\"field\":\"prefs.model\",\"note\":\"人在确认卡上选的执行模型档案\",\"source\":\"human\",\"value\":\"light\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":500,\"verify_share\":0.2,\"wall_s\":600},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"prefs\":{\"model\":\"light\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 budget.usd_milli、budget.wall_s、prefs.model\"}],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "e8359b6a3d4e06395eefeff3018b2a67b54e387f9873da7d43de4cfc54f8f99a",
+      "size": 1794
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "e8359b6a3d4e06395eefeff3018b2a67b54e387f9873da7d43de4cfc54f8f99a",
+       "size": 1794,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 500,
+        "wall_s": 600,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [],
+       "prefs": {
+        "model": "light"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "usd_milli": 2000,
+    "wall_s": 1800
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": []
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "9a2fb562cef164ac64d93c643beafe4bf9573f58200338b88b00ef1e906c5e94",
+      "size": 1597
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "9a2fb562cef164ac64d93c643beafe4bf9573f58200338b88b00ef1e906c5e94",
+       "size": 1597,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": []
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "model": "light",
+    "usd_milli": 2000,
+    "wall_s": 1800
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 prefs.model",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     },
+     {
+      "field": "prefs.model",
+      "value": "light",
+      "source": "human",
+      "note": "人在确认卡上选的执行模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [],
+     "prefs": {
+      "model": "light"
+     }
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"},{\"field\":\"prefs.model\",\"note\":\"人在确认卡上选的执行模型档案\",\"source\":\"human\",\"value\":\"light\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"prefs\":{\"model\":\"light\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 prefs.model\"}],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "2afd1fcf17cdffb21d9aef6af1fa7e00fb1cd984a180223df275b0a46c9d6e62",
+      "size": 1825
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "2afd1fcf17cdffb21d9aef6af1fa7e00fb1cd984a180223df275b0a46c9d6e62",
+       "size": 1825,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [],
+       "prefs": {
+        "model": "light"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "usd_milli": 6000,
+    "wall_s": 3600
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 budget.usd_milli、budget.wall_s",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 6000,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 3600,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 6000,
+      "wall_s": 3600,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": []
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":6000},{\"field\":\"budget.wall_s\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":3600},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":6000,\"verify_share\":0.2,\"wall_s\":3600},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 budget.usd_milli、budget.wall_s\"}],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "7c57068080f330f446193ec967cae84ebf13646441239c6e25a59db79beed57e",
+      "size": 1649
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "7c57068080f330f446193ec967cae84ebf13646441239c6e25a59db79beed57e",
+       "size": 1649,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 6000,
+        "wall_s": 3600,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": []
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open",
+   "overrides": {
+    "model": "light",
+    "usd_milli": 6000,
+    "wall_s": 3600
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 budget.usd_milli、budget.wall_s、prefs.model",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "source": "span",
+      "spans": [
+       "s1"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+      "source": "model"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 6000,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 3600,
+      "source": "human",
+      "note": "人在确认卡上改"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "draft.model",
+      "value": "heuristic",
+      "source": "table",
+      "note": "起草模型档案"
+     },
+     {
+      "field": "prefs.model",
+      "value": "light",
+      "source": "human",
+      "note": "人在确认卡上选的执行模型档案"
+     }
+    ],
+    "input": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": []
+     },
+     "goal": {
+      "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 6000,
+      "wall_s": 3600,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [],
+     "prefs": {
+      "model": "light"
+     }
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-9e2570b3856b",
+    "nonce": "fixture-open",
+    "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "sentence",
+      "start": 0,
+      "end": 27,
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"
+     }
+    ],
+    "has_answer": false,
+    "draft": {
+     "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+     "goal_sentence": [
+      "s1"
+     ],
+     "entries": [],
+     "deliverable": null,
+     "check": {
+      "form": "none"
+     },
+     "deadline": null,
+     "spend": null,
+     "tier_guess": null,
+     "materials": []
+    },
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+      "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+      "size": 81
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},{\"field\":\"title\",\"source\":\"model\",\"value\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":6000},{\"field\":\"budget.wall_s\",\"note\":\"人在确认卡上改\",\"source\":\"human\",\"value\":3600},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"draft.model\",\"note\":\"起草模型档案\",\"source\":\"table\",\"value\":\"heuristic\"},{\"field\":\"prefs.model\",\"note\":\"人在确认卡上选的执行模型档案\",\"source\":\"human\",\"value\":\"light\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":6000,\"verify_share\":0.2,\"wall_s\":3600},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"帮我比较三种排序算法在十万个整数上的速度，写一份结论。\"},\"judges\":[],\"origin\":{\"materials\":[],\"statement_ref\":\"$statement\"},\"prefs\":{\"model\":\"light\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"帮我比较三种排序算法在十万个整数上的速度，写一份\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 budget.usd_milli、budget.wall_s、prefs.model\"}],\"pid\":\"kt-9e2570b3856b\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "eaeaca3e569005d77d9235b1dc73dbe578711d6cd15dc47d871536e9c8fd5e95",
+      "size": 1798
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "741a375b95bc06df3ef9dc92d65a61fb8e67c4670641f01ff2dcfba60933aeff",
+       "size": 81,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "eaeaca3e569005d77d9235b1dc73dbe578711d6cd15dc47d871536e9c8fd5e95",
+       "size": 1798,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "帮我比较三种排序算法在十万个整数上的速度，写一份",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [],
+        "draft": {
+         "record": "$1",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 6000,
+        "wall_s": 3600,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [],
+       "prefs": {
+        "model": "light"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
    "name": "outbound",
    "overrides": {
     "ack_command": true

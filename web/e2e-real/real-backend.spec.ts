@@ -68,13 +68,14 @@ test("真实图服务：开题后驾驶舱渲染，人写入的 Intent 经 SSE �
   page.on("request", (r) => { if (r.url().includes("/stream")) streams.push(r.url()); });
   page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
 
-  // 总览里列着这道题（数据来自真图服务的 /v1/problems）
-  await page.goto("/");
+  // 今日看板里列着这道题（数据来自真图服务的 /v1/problems）
+  await page.goto("/today");
   await expect(page.locator(`[data-problem="${PID}"]`).first()).toBeVisible();
 
   await page.goto(`/p/${PID}`);
   await expect(page.locator(".cockpit")).toBeVisible();
   await expect(page.locator("[data-conn-label]")).toHaveText("实时");
+  await page.locator('[data-task-tab="struct"]').click();             // 前沿与图在“结构”一栏
   expect(streams.length).toBeGreaterThan(0);                      // 页面订了 SSE
   const seq0 = await seq(page);
   expect(seq0).toBeGreaterThan(0);
@@ -209,4 +210,24 @@ test("真实全栈：人工验收的任务交付后由结构检查给读数，�
   const tot = (await (await request.get("/v1/problems", { headers: auth() })).json()).totals;
   expect(tot.by_authority.human.accepted).toBe(1);
   expect(tot.solved).toBe(tot.by_authority.local.solved);
+});
+
+test("真实全栈：知识页导入一段文字，书库推进到可用后“试一下”能查到", async ({ page, request }) => {
+  await page.addInitScript((t) => {
+    sessionStorage.setItem("paoding.human_token", JSON.stringify({ token: t, expires_at: Date.now() + 3600_000 }));
+  }, token());
+  await page.goto("/knowledge");
+  await expect(page.locator("[data-sources]")).toBeVisible();
+  await page.locator('[data-action="kn-import"]').click();
+  await page.locator('[data-mode="text"]').click();
+  await page.locator('[data-field="kn-name"]').fill("值班约定");
+  await page.locator('[data-field="kn-text"]').fill("# 交接\n\n交接时写清楚未关的告警和正在做的变更。");
+  await page.locator('[data-action="kn-start"]').click();
+  const row = page.locator("[data-source]", { hasText: "值班约定" });
+  await expect(row).toHaveAttribute("data-live", "1", { timeout: 20_000 });
+  await page.locator('[data-field="kn-query"]').fill("未关的告警");
+  await page.locator('[data-action="kn-search"]').click();
+  await expect(page.locator("[data-hit]", { hasText: "值班约定" }).first()).toBeVisible();
+  const r = await request.post("/v1/knowledge/sources", { headers: auth(), data: { name: "题库", path: "~/paoding-bank" } });
+  expect(r.status()).toBe(400); // 硬规则：不读本机目录
 });

@@ -152,7 +152,7 @@ export function Wizard({ from }: { from?: string } = {}) {
 
   return (
     <div className="wizard" data-wizard data-step-index={step}>
-      <Mast vol={["卷三", "新建"]} cap={d.clonedFrom ? "克隆任务" : "新建任务"}
+      <Mast cap={d.clonedFrom ? "克隆任务" : "新建任务"}
         title={d.clonedFrom ? <>从 <span className="k-mono" data-cloned-from={d.clonedFrom}><Plain text={d.clonedFrom} /></span> 克隆一个任务</> : "四步新建一个任务"}
         dek={d.kaiti
           ? "来自一句话新建：预填的字段旁标着出处（摘自原文、查表、估值、起草），你改过的变成“人”。从这里提交的一律要你确认。"

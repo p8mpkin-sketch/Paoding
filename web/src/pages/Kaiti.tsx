@@ -1,21 +1,23 @@
 // 一句话开题（设计 docs/design/kaiti §7；迁移表第二期）。/new 是一个输入框：回车 → 起草服务给出校验结果 →
 // 确认卡（原文逐段标号对字段）或拒绝页（三条降级路）。零确认一律关：练习道候选也要人按"开题"。
 // 页面不推导任何字段：抽取、校验、分道都在服务端（qicao 的 vet），这里只排版、只收人改的风险与预算。
+import * as Popover from "@radix-ui/react-popover";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { newIdemKey } from "../api/client";
 import type { ProfilePreview, Risk, VaultRef } from "../api/types";
 import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiRow, KaitiVetted } from "../api/kaiti";
-import type { Settings } from "../api/settings-types";
+import type { Settings, SettingsSources } from "../api/settings-types";
 import { useServices } from "../app/context";
 import { saveDraft } from "../app/draft";
 import { navigate } from "../app/router";
 import { submitVetted } from "../app/submit";
-import { Kbd, Mark, Mast, SectionHead, btnClass } from "../kit";
+import { Kbd, Mark, SectionHead, btnClass } from "../kit";
 import {
   circled, fieldWord, goalSentences, GROUPS, groupOf, segments, SOURCE, spanNumbers, usdOf, valueText, wallOf, wizardDraftOf,
 } from "../model/kaiti";
 import { draftFromTemplate } from "../model/wizard";
-import { Link } from "./Problems";
+import { Link, Recent } from "./Problems";
 import { pending, recorded, rejected } from "../ui/feedback";
 import { Plain } from "../ui/registers";
 import { rejectText } from "../ui/useProposal";
@@ -68,11 +70,14 @@ function Source({ r, nums }: { r: KaitiRow; nums: Map<string, number> }) {
 
 const SESSION_ROLES = [["bootstrap", "Bootstrap"], ["reason", "Reason"], ["explore", "Explore"], ["verify", "Verify"]] as const;
 
-/** 05 模型（宪章 02 §3.2、Q10）：起草用哪个档案（只列设置页登记过的，改了即重新起草），会话按全局路由（只读）。 */
-function ModelBlock({ v, models, busy, onPick, nums }: {
-  v: KaitiVetted; models: Settings["models"] | null; busy: boolean; onPick: (name: string) => void; nums: Map<string, number>;
+/** 05 模型（宪章 02 §3.2、03 §3.1，Q10、Q12）：起草用哪个档案（改了即重新起草）；执行用哪个档案（缺省按角色路由，
+ * 另选即写进任务的 prefs.model，会话开起时按它解析一次）。两处都只列设置页登记过的档案。 */
+function ModelBlock({ v, models, busy, onPick, onRun, nums }: {
+  v: KaitiVetted; models: Settings["models"] | null; busy: boolean; onPick: (name: string) => void; onRun: (name: string | null) => void; nums: Map<string, number>;
 }) {
   const row = v.derivation.find((r) => r.field === "draft.model");
+  const runRow = v.derivation.find((r) => r.field === "prefs.model");
+  const run = v.input?.prefs?.model ?? "";
   const names = models?.profiles.map((p) => p.name) ?? [];
   const known = names.includes(v.model);
   return (
@@ -93,14 +98,25 @@ function ModelBlock({ v, models, busy, onPick, nums }: {
             <span className="t2 kt-note">只列设置页登记过的档案；改了会重新起草一次</span>
           </dd>
         </div>
-        <div className="kt-row" data-field="session.models">
-          <dt>会话用</dt>
+        <div className="kt-row" data-field="prefs.model">
+          <dt>执行用</dt>
           <dd>
-            <span className="kt-val" data-session-routes>
-              {models ? SESSION_ROLES.map(([k, w]) => `${w} → ${models.routes[k]}`).join(" · ") : "读取中…"}
-            </span>
-            <Mark ch={SOURCE.table.ch} tone={SOURCE.table.tone} label="查设置页的角色路由" />
-            <span className="t2 kt-note">按设置页的角色路由，新会话起生效；按任务另选档案还没有做</span>
+            {names.length > 0 && (
+              <select value={run} aria-label="执行会话用的模型档案" data-action="pick-run-profile" disabled={busy || !v.input}
+                onChange={(e) => onRun(e.target.value || null)}>
+                <option value="">按角色路由（缺省）</option>
+                {names.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            )}
+            {run ? (runRow && <Source r={runRow} nums={nums} />) : (
+              <>
+                <span className="kt-val" data-session-routes>
+                  {models ? SESSION_ROLES.map(([k, w]) => `${w} → ${models.routes[k]}`).join(" · ") : "读取中…"}
+                </span>
+                <Mark ch={SOURCE.table.ch} tone={SOURCE.table.tone} label="查设置页的角色路由" />
+              </>
+            )}
+            <span className="t2 kt-note">另选一个档案，这个任务的每个会话都用它；会话开起时定下，中途改设置不影响已在跑的会话</span>
           </dd>
         </div>
       </dl>
@@ -144,7 +160,28 @@ function HumanWay({ v, busy, onGo }: { v: KaitiVetted; busy: boolean; onGo: (ite
   );
 }
 
-export function Kaiti() {
+const TIER_WORD: Record<string, string> = { easy: "小", medium: "中", hard: "大" };
+const money = (milli: number) => `$${(milli / 1000).toFixed(2)}`;
+const tierWord = (k: string, t: SettingsSources["priors"] | null) => {
+  const x = t?.tiers[k];
+  return x ? `${TIER_WORD[k] ?? k} · ${money(x.usd_milli)}` : k;
+};
+
+/** 输入框下面的一个选项：显示当前值，点开才展开。 */
+function ChipPop({ label, value, field, disabled, children }: { label: string; value: string; field: string; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="kt-pickb" data-field={field} disabled={disabled}>{label} <b>{value}</b><ChevronDown aria-hidden="true" /></button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="kt-pop" align="start" sideOffset={6} data-pop={field}>{children}</Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+export function Kaiti({ home = false }: { home?: boolean } = {}) {
   const { api, cfg } = useServices();
   const writable = cfg.token !== null;
   const [text, setText] = useState("");
@@ -159,6 +196,13 @@ export function Kaiti() {
   const [preview, setPreview] = useState<ProfilePreview | null>(null);
   const [models, setModels] = useState<Settings["models"] | null>(null);
   const [prof, setProf] = useState<string | null>(null);
+  // 输入框旁选的执行模型（前端 v5 第二期）：空即按角色路由；选了就在起草后作为 overrides.model 交回校验，写进 prefs.model
+  const [runPick, setRunPick] = useState("");
+  // 预算档位（v5 第三期）：档位表来自外部注入的先验表（/v1/settings/sources 的 priors；占位表时如实标出）；空即按服务端先验
+  const [tiers, setTiers] = useState<SettingsSources["priors"] | null>(null);
+  const [tier, setTier] = useState("");
+  // 严格判定：默认关。关着时不收答案，开放道回车即开；打开才出答案框与判定方式的入口
+  const [strictOn, setStrictOn] = useState(false);
   const [usdS, setUsdS] = useState("");
   const [minS, setMinS] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -179,6 +223,12 @@ export function Kaiti() {
     api.settings().then((d) => { if (live) setModels(d.settings.models); }, () => { if (live) setModels(null); });
     return () => { live = false; };
   }, [api, writable]);
+
+  useEffect(() => {
+    let live = true;
+    api.settingsSources().then((d) => { if (live) setTiers(d.priors); }, () => { if (live) setTiers(null); });
+    return () => { live = false; };
+  }, [api]);
 
   // 卡上的数字框跟着校验结果走
   useEffect(() => {
@@ -206,9 +256,18 @@ export function Kaiti() {
     let out: KaitiVetted | null = null;
     try {
       out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...(profile ? { profile } : {}), ...(strict ? { strict } : {}) });
-      setV(out); setOv({}); setProf(profile); setAcc(null);
+      const t = tier ? tiers?.tiers[tier] : undefined;
+      const want: KaitiOverrides = { ...(runPick ? { model: runPick } : {}), ...(t ? { usd_milli: t.usd_milli, wall_s: t.wall_s } : {}) };
+      let picked: KaitiOverrides = {};
+      if (Object.keys(want).length && out.input && out.lane !== "refuse" && out.draft) {
+        // 交回同一份草案（不再调模型），只加输入框下面选的执行模型与预算档位
+        picked = want;
+        out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: out.draft, model: out.model, ...(profile ? { profile } : {}), nonce: out.nonce, overrides: picked });
+      }
+      setV(out); setOv(picked); setProf(profile); setAcc(null);
     } catch (e) {
       setErr(e as Error); setV(null);
+      out = null; // 人选的执行模型或预算没写进去：不按开放道自动开题
     } finally {
       setBusy(null);
     }
@@ -320,38 +379,69 @@ export function Kaiti() {
 
   return (
     <div className="kaiti" data-kaiti data-lane={v?.lane ?? "input"}>
-      <Mast vol={["卷三", "新建"]} cap="新建任务" title="一句话说清要做的事"
-        dek="写要做什么就行。没有标准答案的，回车即开始，智能体自己找答案、交付时附证据（开放道，结果未经判定）；给了标准答案的，起草一张任务单，每个字段标着出处，你看过再创建。"
-        actions={
-          <div className="kt-links t2">
-            <Link to={{ page: "new", advanced: true }} data-action="advanced-blank">高级模式</Link>
-            <span aria-hidden="true">·</span>
-            <Link to={{ page: "import" }}>导入任务集</Link>
-            <span aria-hidden="true">·</span>
-            <Link to={{ page: "platform" }} data-action="to-platform">从平台导入</Link>
+      <section className="kt-hero" data-kaiti-input>
+        <h1 className="kt-ask">要做什么？</h1>
+        <div className="kt-composer">
+          {models !== null && models.profiles.length === 0 && (
+            <div className="kt-notice" role="status"><span><b>还没有能用的模型。</b>先添加一个并测通，才能开始。</span><Link to={{ page: "models" }} className={btnClass("ink", "sm")}>添加模型</Link></div>
+          )}
+          <label className="sr-only" htmlFor="kt-text">要做的事</label>
+          <textarea id="kt-text" ref={box} className="kt-box" data-field="kaiti-text" value={text} placeholder={strictOn ? EXAMPLE : "说一句要做的事。不用给标准答案，做完会附上证据。"} rows={3}
+            disabled={!writable || busy === "open"}
+            onChange={(e) => { setText(e.target.value); if (v) setV(null); }} onKeyDown={onKey} />
+          <Extracted ext={ext} />
+          <div className="kt-bar">
+            <ChipPop label="模型" value={runPick ? runPick : "自动"} field="run-model" disabled={!writable || busy !== null}>
+              <p className="kt-pop-h">执行用的模型</p>
+              <select value={runPick} aria-label="执行这个任务用的模型" data-field="run-model-select"
+                onChange={(e) => { setRunPick(e.target.value); if (v) setV(null); }}>
+                <option value="">自动（按默认分配）</option>
+                {(models?.profiles ?? []).map((p) => <option key={p.name} value={p.name}>{p.name}{p.model ? ` · ${p.model}` : ""}</option>)}
+              </select>
+              <Link to={{ page: "models" }} className="kt-pop-link">管理模型</Link>
+            </ChipPop>
+            <ChipPop label="预算" value={tier ? tierWord(tier, tiers) : "自动"} field="budget-tier" disabled={!writable || busy !== null}>
+              <p className="kt-pop-h">花多少、跑多久</p>
+              <div className="kt-tiers" role="radiogroup" aria-label="预算档位">
+                <button type="button" role="radio" aria-checked={tier === ""} data-tier="" onClick={() => { setTier(""); if (v) setV(null); }}>自动<span className="t2">按任务的类型估</span></button>
+                {Object.entries(tiers?.tiers ?? {}).map(([k, t]) => (
+                  <button key={k} type="button" role="radio" aria-checked={tier === k} data-tier={k} onClick={() => { setTier(k); if (v) setV(null); }}>
+                    {TIER_WORD[k] ?? k}<span className="t2 k-mono">{money(t.usd_milli)} · {Math.round(t.wall_s / 60)} 分钟</span>
+                  </button>
+                ))}
+              </div>
+              {tiers?.placeholder && <p className="t2">档位数字是占位表，正式值由部署注入。</p>}
+            </ChipPop>
+            <ChipPop label="知识" value="自动" field="knowledge" disabled={!writable}>
+              <p className="kt-pop-h">它会用到的知识</p>
+              <p className="t2">现在自动用以前任务沉淀下来的记忆（开始前先复核）。导入资料、执行时检索的资料库做好后，这里可以指定资料或不用。</p>
+            </ChipPop>
+            <span className="grow" />
+            <button type="button" className="kt-switch" role="switch" aria-checked={strictOn} data-action="strict" disabled={!writable || busy !== null}
+              onClick={() => { setStrictOn(!strictOn); if (strictOn) setAnswer(""); if (v) setV(null); }}>
+              <span className="kt-sw" aria-hidden="true" />严格判定
+            </button>
+            <button type="button" className={btnClass("ink")} data-action="draft" disabled={!writable || !text.trim() || busy !== null || (models !== null && models.profiles.length === 0)} onClick={() => void draftIt(prof)}>
+              {busy === "draft" ? "起草中…" : "开始"} <Kbd>↵</Kbd>
+            </button>
           </div>
-        } />
-
-      <section className="kt-input" data-kaiti-input>
-        <label className="sr-only" htmlFor="kt-text">要做的事</label>
-        <textarea id="kt-text" ref={box} className="kt-box" data-field="kaiti-text" value={text} placeholder={EXAMPLE} rows={4}
-          disabled={!writable || busy === "open"}
-          onChange={(e) => { setText(e.target.value); if (v) setV(null); }} onKeyDown={onKey} />
-        <Extracted ext={ext} />
-        <details className="kt-answer" data-kaiti-answer>
-          <summary>答案（只给判定器）{answer.trim() ? <span className="t2">已收起，不进题面</span> : <span className="t2">可空；原文里写“答案：…”也行</span>}</summary>
-          <input type="password" autoComplete="off" value={answer} data-field="kaiti-answer" aria-label="答案（只给判定器）"
-            onChange={(e) => { setAnswer(e.target.value); if (v) setV(null); }} />
-        </details>
-        <div className="kt-go">
-          <button type="button" className={btnClass("ink")} data-action="draft" disabled={!writable || !text.trim() || busy !== null} onClick={() => void draftIt(prof)}>
-            {busy === "draft" ? "起草中…" : "起草任务单"} <Kbd>↵</Kbd>
-          </button>
-          <span className="t2">⇧↵ 换行</span>
-          {!writable && <span className="t2">起草与新建任务都要人的令牌：先在左下角配置。</span>}
-          {err && <span className="error" data-reject>{rejectText(err) ?? err.message}</span>}
+          {strictOn && (
+            <div className="kt-strict" data-kaiti-answer>
+              <p className="t2">给练习和评测用：由判定器比对结果，记入解出率。平时不用开。开始前会先给你看一张确认卡：判据、授权、预算。</p>
+              <label className="kt-f">
+                <span>答案（只给判定器，智能体看不到）</span>
+                <input type="password" autoComplete="off" value={answer} data-field="kaiti-answer" placeholder="粘贴标准答案；也可以在原文里写“答案：…”"
+                  onChange={(e) => { setAnswer(e.target.value); if (v) setV(null); }} />
+              </label>
+              <p className="t2">检查命令直接写在原文里（例如“跑 make test 返回 0”）。判定权在外部平台的，<Link to={{ page: "platform" }} data-action="to-platform">从平台导入</Link>；要逐项填，用<Link to={{ page: "new", advanced: true }} data-action="advanced-blank">高级模式</Link>。</p>
+            </div>
+          )}
         </div>
+        <p className="kt-facts"><span>回车开始，Shift+回车换行</span><span>默认不联网，要访问外部地址时会先问你</span><span>预算用完前会先把已有结果交出来</span></p>
+        {!writable && <p className="t2">新建任务要人的令牌：先在左下角配置。</p>}
+        {err && <p className="error" data-reject>{rejectText(err) ?? err.message}</p>}
       </section>
+      {home && !v && <Recent />}
 
       {v && !refused && v.input && (
         <div className="kt-card" data-kaiti-card onKeyDown={onCardKey}>
@@ -418,7 +508,8 @@ export function Kaiti() {
                   </div>
                 );
               })}
-              <ModelBlock v={v} models={models} busy={busy !== null} nums={nums} onPick={(n) => void draftIt(n)} />
+              <ModelBlock v={v} models={models} busy={busy !== null} nums={nums} onPick={(n) => void draftIt(n)}
+                onRun={(n) => { setRunPick(n ?? ""); const { model: _drop, ...rest } = ov; void revet(n ? { ...rest, model: n } : rest); }} />
               {fieldErr && <p className="error" data-field-error><Plain text={fieldErr} /></p>}
             </section>
 

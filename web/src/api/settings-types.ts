@@ -8,7 +8,9 @@ export type Caps = {
   practice_wall_s: number;
 };
 export type RiskRule = { resource: string; pattern: string; actions: string[]; risk: "r0" | "r1" | "r2" };
-export type ModelProfile = { name: string; endpoint: string; model: string; family: string; tier: "strong" | "mid" | "light"; key_slot: string };
+// format：上游说哪种格式；可缺，缺省 anthropic（旧快照里没有这一项）。openai 时端点代理改写成 Chat Completions
+export type ApiFormat = "anthropic" | "openai";
+export type ModelProfile = { name: string; endpoint: string; model: string; family: string; tier: "strong" | "mid" | "light"; key_slot: string; format?: ApiFormat };
 export type ModelRole = "draft" | "bootstrap" | "reason" | "explore" | "verify";
 // grants：运行时扩权（docs/design/runtime-grants/ §10.3），设置页的呈现随 §12 第三步；旧快照里可缺
 export type Grants = { runtime: boolean; auto: { practice: boolean } };
@@ -26,6 +28,8 @@ export type SettingsLogEntry = { version: number; from: string | null; to: strin
 /** 密钥槽：没有任何字段是密钥本身；指纹 = 加盐 sha256 前 8 位 + 末 4 位。 */
 export type KeySlot = { slot: string; set: boolean; fingerprint: string | null; set_at: number | null; source: "page" | "env" | "config" | "fake" | null; env: string };
 export type KeysView = { slots: KeySlot[]; note: string };
+/** POST /v1/models/test 的应答：ok 时带延迟；不 ok 时 code 与一句人话（已去掉密钥）。 */
+export type ModelProbe = { ok: boolean; latency_ms?: number; status?: number; code?: string; message?: string };
 /** 设置页的两节只读（宪章 Q6）：练习道信封（内核此刻加载的那一份）与预算先验表（外部注入的可插拔数据源）。 */
 export type PracticeEnvelope = {
   version: number;

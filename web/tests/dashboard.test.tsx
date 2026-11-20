@@ -18,7 +18,7 @@ function item(id: string, patch: Partial<ProblemItem> = {}): ProblemItem {
     id, authority: "local", title: { src: "title", register: "叙述", value: `题 ${id}` }, closed: false, terminal: null,
     terminal_badge: { judge_id: "exact_match", version: "1", grade: "decisive", kind: "hard", label: "exact_match@1" },
     opened_seq: 1, opened_ts: NOW - 5 * H, closed_seq: null, profile: { info: "complete", judge: "hard", reversibility: "r0" },
-    spent_usd_milli: 100, cap_usd_milli: 1000, closed_ts: null, goal_level: "E0", active: [], human_todo: 0, wall: { cap_s: 7200, elapsed_s: 60 },
+    spent_usd_milli: 100, cap_usd_milli: 1000, closed_ts: null, goal_level: "E0", active: [], human_todo: 0, wall: { cap_s: 7200, elapsed_s: 60 }, shelf: "active", pinned: false, trash_until: null,
     ...patch,
   };
 }
@@ -93,8 +93,8 @@ describe("总览页（假后端）", () => {
   it("题库按 URL 里的条件筛选", async () => {
     const r = rig();
     const { container } = renderWith(r, <Problems filter={{ q: "", terminal: "solved", judge: "" }} />);
-    await until(() => container.querySelector("[data-page=bank] table, [data-page=bank] .k-empty") !== null, "题库");
-    for (const row of container.querySelectorAll("tr[data-problem] td[data-terminal]")) expect(row.getAttribute("data-terminal")).toBe("solved");
+    await until(() => container.querySelector("[data-page=bank] [data-list] [data-problem], [data-page=bank] .k-empty") !== null, "题库");
+    for (const row of container.querySelectorAll("[data-problem] [data-terminal]")) expect(row.getAttribute("data-terminal")).toBe("solved");
   });
 });
 

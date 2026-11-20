@@ -4,7 +4,7 @@
  "body": {
   "as_of": 36,
   "head": 36,
-  "view_hash": "bcd3911f559bc8fb8ca10dc9c46f180324691243921660c88831c41a3eea9b3b",
+  "view_hash": "f48c828855f218540592b100316f69d8241196f46dc13255beaaed4c6849a43c",
   "items": [
    {
     "id": "p1",
@@ -40,7 +40,10 @@
     "wall": {
      "cap_s": 3600,
      "elapsed_s": 0
-    }
+    },
+    "shelf": "active",
+    "pinned": false,
+    "trash_until": null
    },
    {
     "id": "p2",
@@ -76,7 +79,10 @@
     "wall": {
      "cap_s": 3600,
      "elapsed_s": 0
-    }
+    },
+    "shelf": "active",
+    "pinned": false,
+    "trash_until": null
    }
   ],
   "totals": {
@@ -89,6 +95,7 @@
      "problems": 2,
      "solved": 1,
      "accepted": 0,
+     "delivered": 0,
      "unsolved": 0,
      "open": 1
     },
@@ -96,6 +103,7 @@
      "problems": 0,
      "solved": 0,
      "accepted": 0,
+     "delivered": 0,
      "unsolved": 0,
      "open": 0
     },
@@ -103,6 +111,15 @@
      "problems": 0,
      "solved": 0,
      "accepted": 0,
+     "delivered": 0,
+     "unsolved": 0,
+     "open": 0
+    },
+    "self": {
+     "problems": 0,
+     "solved": 0,
+     "accepted": 0,
+     "delivered": 0,
      "unsolved": 0,
      "open": 0
     }

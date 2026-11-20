@@ -225,6 +225,7 @@ def world():
         ),
         (WATCHDOG, "p1", "expire_lease", {"lease": lid}),
         (HUMAN, "p1", "abandon_intent", {"intent": gated, "reason": "不做"}),
+        (HUMAN, "p1", "curate", {"title": "改过的名字", "pinned": True}),
         (
             solve5,
             "p5",

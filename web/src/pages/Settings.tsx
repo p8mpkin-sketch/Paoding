@@ -2,16 +2,17 @@
 // 存在服务端的设置存储里，只有人的令牌能写；读端点不含密钥。“个人”一组（主题等）仍在侧栏，只存本机。
 //
 // 密钥一节：每个槽只显示已设 / 未设、指纹、设置时间与来源；输入框提交后立即清空，浏览器不在任何存储里留它。
-// 其余四节（硬顶、模型档案与角色路由、风险表）是同一份设置，一次保存，带 base_digest 做乐观并发：
+// 模型档案与默认分配已搬到模型页（Models.tsx）；其余几节（硬顶、风险表、运行时扩权）是同一份设置，一次保存，带 base_digest 做乐观并发：
 // 别人先改了就 409，重读再改。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
-import type { KeySlot, KeysView, ModelProfile, RiskRule, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "../api/settings-types";
+import type { KeySlot, KeysView, RiskRule, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "../api/settings-types";
 import type { PlatformEntry } from "../api/kaiti";
 import { fmtTs, useServices } from "../app/context";
+import { hrefOf, navigate } from "../app/router";
 import { Button, Mark, Mast, SectionHead } from "../kit";
 import {
-  KEY_NOTE, ROLES, TIERS, capIssues, changedKeys, emptyRule, fromMinInput, fromUsdInput, parseActions, rulerFraction, settingsIssues, toMinInput, toUsdInput,
+  KEY_NOTE, capIssues, changedKeys, emptyRule, fromMinInput, fromUsdInput, parseActions, rulerFraction, settingsIssues, toMinInput, toUsdInput,
 } from "../model/settings";
 import { shortHash, usd } from "../model/text";
 import { pending, recorded, rejected } from "../ui/feedback";
@@ -84,7 +85,6 @@ export function SettingsPage() {
   return (
     <div className="settings" data-settings-version={doc.version}>
       <Mast
-        vol={["卷五", "设置"]}
         cap="系统 · 存在服务端，改动只追加进变更记录"
         title="设置只许下一层收窄上一层"
         dek="任务里能改的只有预算、风险（只许往上调）、模型档案（只能选这里登记过的）；端点、密钥、硬顶、风险表都只在这里改。"
@@ -103,8 +103,8 @@ export function SettingsPage() {
       <Sources version={doc.version} />
 
       <section className="settings-sec" aria-labelledby="sec-models">
-        <SectionHead id="sec-models" title="模型档案与角色路由" note="新会话起生效，会话中途不换模型" />
-        <Models draft={draft} set={set} writable={writable} />
+        <SectionHead id="sec-models" title="模型档案与默认分配" note="已搬到单独的模型页：在那里添加、测试连接和分配" />
+        <p className="muted" data-models-moved><a href={hrefOf({ page: "models" })} onClick={(e) => { e.preventDefault(); navigate({ page: "models" }); }}>去模型页</a>（{doc.settings.models.profiles.length} 个档案）。密钥仍在上面“密钥”一节。</p>
       </section>
 
       <section className="settings-sec" aria-labelledby="sec-risk">
@@ -289,60 +289,6 @@ function Caps({ draft, set, writable }: Part) {
         </div>
       ))}
     </div>
-  );
-}
-
-// ---------- 03 模型档案与角色路由 ----------
-
-function Models({ draft, set, writable }: Part) {
-  const profiles = draft.models.profiles;
-  const edit = (i: number, patch: Partial<ModelProfile>) => set((s) => {
-    const old = s.models.profiles[i].name;
-    s.models.profiles[i] = { ...s.models.profiles[i], ...patch };
-    if (patch.name !== undefined) for (const { role } of ROLES) if (s.models.routes[role] === old) s.models.routes[role] = patch.name; // 改名时路由跟着走
-  });
-  const cols: { k: keyof ModelProfile; word: string }[] = [
-    { k: "name", word: "名称" }, { k: "endpoint", word: "端点" }, { k: "model", word: "模型" }, { k: "family", word: "家族" },
-  ];
-  return (
-    <>
-      <div className="table-scroll">
-        <table className="mini wide" data-profiles>
-          <thead><tr>{cols.map((c) => <th key={c.k}>{c.word}</th>)}<th>档位</th><th>密钥槽</th><th /></tr></thead>
-          <tbody>
-            {profiles.map((p, i) => (
-              <tr key={i} data-profile={p.name}>
-                {cols.map((c) => (
-                  <td key={c.k}><input value={p[c.k]} disabled={!writable} aria-label={`档案 ${i + 1} ${c.word}`} data-field={`profile.${c.k}`} onChange={(e) => edit(i, { [c.k]: e.target.value })} /></td>
-                ))}
-                <td>
-                  <select value={p.tier} disabled={!writable} aria-label={`档案 ${i + 1} 档位`} onChange={(e) => edit(i, { tier: e.target.value as ModelProfile["tier"] })}>
-                    {TIERS.map((t) => <option key={t.tier} value={t.tier}>{t.word}</option>)}
-                  </select>
-                </td>
-                <td><input value={p.key_slot} disabled={!writable} aria-label={`档案 ${i + 1} 密钥槽`} data-field="profile.key_slot" onChange={(e) => edit(i, { key_slot: e.target.value })} /></td>
-                <td>
-                  <Button tone="bare" size="sm" disabled={!writable || profiles.length <= 1 || ROLES.some((r) => draft.models.routes[r.role] === p.name)}
-                    title="还有角色指向它时不能删" onClick={() => set((s) => { s.models.profiles.splice(i, 1); })}>删</Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Button tone="line" size="sm" disabled={!writable} data-action="add-profile"
-        onClick={() => set((s) => { s.models.profiles.push({ name: `profile-${s.models.profiles.length + 1}`, endpoint: "", model: "", family: "", tier: "mid", key_slot: "default" }); })}>加一个档案</Button>
-      <p className="muted">端点与密钥槽只能在这里改；任务里只能从这些档案里选，不能填端点或密钥。</p>
-      <div className="routes" data-routes>
-        {ROLES.map(({ role, word }) => (
-          <label key={role} className="sel-u">{word}
-            <select value={draft.models.routes[role]} disabled={!writable} data-field={`route.${role}`} onChange={(e) => set((s) => { s.models.routes[role] = e.target.value; })}>
-              {profiles.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-            </select>
-          </label>
-        ))}
-      </div>
-    </>
   );
 }
 

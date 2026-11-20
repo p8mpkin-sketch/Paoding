@@ -72,9 +72,9 @@ export function PlatformImport({ id }: { id?: string }) {
 
   return (
     <div className="kaiti" data-platform-import>
-      <Mast vol={["卷三", "新建"]} cap="从平台导入" title="判定权在外部平台的任务"
+      <Mast cap="从平台导入" title="判定权在外部平台的任务"
         dek="从已登记的平台领一个任务：题面、时限、提交额度都取自平台，完成与否看平台回执。领题那一刻平台开始计时。"
-        actions={<div className="kt-links t2"><Link to={{ page: "new" }}>一句话新建</Link></div>} />
+        actions={<div className="kt-links t2"><Link to={{ page: "home" }}>一句话新建</Link></div>} />
 
       {!writable && <p className="t2">领题与新建任务都要人的令牌：先在左下角配置。</p>}
       {err && <p className="error" data-reject><Plain text={err} /></p>}

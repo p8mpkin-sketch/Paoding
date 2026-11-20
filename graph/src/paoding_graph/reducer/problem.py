@@ -144,13 +144,28 @@ def _deadline(state: State, pid: str, d: Obj) -> Body | Reject:
     return out
 
 
+def _prefs(pr: Obj, cfg: Config) -> Body | Reject:
+    """任务级偏好（宪章 03 §3.1）：现在只有 model，一个已登记的模型档案名。端点与密钥不能在任务里填。"""
+    if not pr.keys() <= {"model"}:
+        return Reject("schema_error", "prefs 只有 model 一项：端点、密钥等只能在设置页改")
+    out: Body = {}
+    if "model" in pr:
+        name = pr.text("model")
+        if name not in cfg.model_profiles:
+            known = "、".join(sorted(cfg.model_profiles)) or "无"
+            return Reject("unknown_ref", f"模型档案 {name!r} 未登记（已登记：{known}）：任务级只能从设置页的档案里选")
+        out["model"] = name
+    return out
+
+
 def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok | Reject:
     if pid in state["problems"]:
         return Reject("schema_error", "题目已存在")
     if "profile" in body:
         return Reject("schema_error", "profile 是派生字段，提交时不接受")
     allowed = {"title", "origin", "goal", "scope", "budget", "env", "judges"}
-    optional = {"labels", "recall", "deadline"}  # v1.5 增量 9、10；external-verdict §5.6：可选，缺省时事件体与旧版相同
+    # v1.5 增量 9、10；external-verdict §5.6；prefs 为任务级偏好（宪章 03 §3.1、地图 Q12）：可选，缺省时事件体与旧版相同
+    optional = {"labels", "recall", "deadline", "prefs"}
     if not allowed <= body.keys() <= allowed | optional:
         return Reject("schema_error", f"字段应为 {sorted(allowed)}，可选 {sorted(optional)}")
     judges = body.strings("judges")
@@ -261,6 +276,12 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
         deadline = dl
     if cfg.wall_mode not in WALL_MODES:
         raise ValueError(f"Config.wall_mode 只取 {WALL_MODES}")  # 组装根的缺陷，不是输入错误
+    prefs: Body | None = None
+    if "prefs" in body:
+        pr = _prefs(body.child("prefs"), cfg)
+        if isinstance(pr, Reject):
+            return pr
+        prefs = pr
     extras = recall.open_extras(state, pid, body, judges)
     if isinstance(extras, Reject):
         return extras
@@ -281,6 +302,8 @@ def _v_open_problem(state: State, actor: Actor, pid: str, body: Obj, cfg: Config
             "profile": _derive_profile(scope, gj, cfg),
             **extras,
             **({"deadline": deadline} if deadline is not None else {}),
+            # 任务级模型偏好（工作台设计 C13）：只记名字，不进等级、消费门与画像；会话开起时按它解析一次
+            **({"prefs": prefs} if prefs is not None else {}),
             # 时限语义开关（§5.6）：缺省 elapsed 时事件体与旧版相同；spend 时连同最长存活一起抄入
             **({"wall_mode": "spend", "life_s": cfg.life_s} if cfg.wall_mode == "spend" else {}),
             # 宪章 D5：开在哪一版设置之下。由图服务抄入，提交体里不接受；不进等级、消费门与画像

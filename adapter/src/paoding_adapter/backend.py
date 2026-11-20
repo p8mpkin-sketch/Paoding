@@ -53,6 +53,7 @@ class LaunchPlan:
     max_budget_usd: float = 0.0
     max_turns: int = 0
     resume: bool = False
+    model: str = ""  # 按任务解析出的模型 id（宪章 03 §3.2）；空即用 CliBinding.model
 
 
 @dataclass
@@ -89,8 +90,8 @@ class CliBinding:
         ]
         if plan.max_budget_usd:  # 8 花费上限（客户端估算，可能略超）
             argv += ["--max-budget-usd", f"{plan.max_budget_usd:.2f}"]
-        if self.model:
-            argv += ["--model", self.model]
+        if plan.model or self.model:
+            argv += ["--model", plan.model or self.model]
         if plan.max_turns and self.max_turns_flag:
             argv += ["--max-turns", str(plan.max_turns)]
         env = {

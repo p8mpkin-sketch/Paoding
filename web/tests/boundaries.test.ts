@@ -56,10 +56,14 @@ describe("HT-12 请求的去向", () => {
     // 规格 3.1.9 操作表里 human 可提交的操作
     const SPEC_HUMAN = ["open_problem", "register_artifact", "hint", "approve", "profile_override", "abandon_intent", "close_problem", "add_intent", "extend", "budget_add", "pause", "resume", "rule", "accept", "judge_revoke", "intent_done",
       // 运行时扩权（runtime-grants §4，#93 起内核接受人的这两种）
-      "grant_scope", "revoke_scope"];
+      "grant_scope", "revoke_scope",
+      // 整理（v5 第三期软删，cz 2026-11-20 裁决）：归档、回收站、恢复、改名、置顶
+      "curate",
+      // 开放道的追问与叫停（地图 v0.9 §3.2 ③ 草案，L3 线实现）
+      "follow_up", "halt"];
     for (const o of HUMAN_OPS) expect(SPEC_HUMAN).toContain(o);
     const seen = { seq: 1, card_hash: "x" };
-    const built: Op[] = [ops.registerInput("h", 1, "t"), ops.hintAdd("t"), ops.hintAdd("t", "f_1"), ops.hintClose("h_1"), ops.approve("i_1", seen), ops.deny("i_1", "r", seen), ops.abandonIntent("i_1"), ops.profileOverride("judge", "none", "r"), ops.closeProblem("r"), ops.extend(seen), ops.budgetAdd(1), ops.grantScope("r_1", seen), ops.grantScope("r_1", seen, ["r2"]), ops.denyScope("r_1", "r", seen), ops.revokeScope(1, "r")];
+    const built: Op[] = [ops.registerInput("h", 1, "t"), ops.hintAdd("t"), ops.hintAdd("t", "f_1"), ops.hintClose("h_1"), ops.approve("i_1", seen), ops.deny("i_1", "r", seen), ops.abandonIntent("i_1"), ops.profileOverride("judge", "none", "r"), ops.closeProblem("r"), ops.extend(seen), ops.budgetAdd(1), ops.grantScope("r_1", seen), ops.grantScope("r_1", seen, ["r2"]), ops.denyScope("r_1", "r", seen), ops.revokeScope(1, "r"), ops.shelve("trash"), ops.rename("x"), ops.pin(true), ops.followUp("x", { seq: 1 }), ops.followUp("x", { seq: 1 }, 500), ops.halt(), ops.closeWithFeedback("adopted", "r")];
     for (const o of built) expect(HUMAN_OPS.has(o.op), o.op).toBe(true);
     expect(JSON.stringify(ops.closeProblem("r"))).not.toContain("terminal"); // 终态是派生量
     const r = rig();
@@ -74,7 +78,8 @@ describe("HT-12 请求的去向", () => {
 describe("HMI §2 禁令", () => {
   it("不内嵌 reducer：源码里不按事件种类推导图的状态", () => {
     // 认识事件种类的只有时间轴刻度（model/ticks.ts）；别处出现 add_fact、judge_verdict 这类写状态的事件名就是在复刻 reducer
-    expect(offenders(/["'](add_fact|judge_verdict|request_judge|expire_lease|release)["']/).filter((f) => f !== "src/model/ticks.ts" && f !== "src/api/types.ts")).toEqual([]);
+    // 任务页“过程”一栏（ui/TaskLog.tsx）也按事件种类给一句说法：只排版事件体已有的字段，不推导任何状态
+    expect(offenders(/["'](add_fact|judge_verdict|request_judge|expire_lease|release)["']/).filter((f) => f !== "src/model/ticks.ts" && f !== "src/api/types.ts" && f !== "src/ui/TaskLog.tsx")).toEqual([]);
   });
 
   it("视图不读本机时钟与随机数", () => {

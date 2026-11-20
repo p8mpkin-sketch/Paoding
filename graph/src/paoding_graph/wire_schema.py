@@ -203,6 +203,7 @@ define(
     "AcceptRecord",
     obj({"seq": INT, "decision": lit("accept", "reject"), "checks": arr(ref("AcceptCheck"))}, {"reason": STR}),
 )
+define("TaskPrefs", obj({}, {"model": STR}, doc="任务级偏好（宪章 03 §3.1）：model 为设置页已登记的模型档案名。"))
 define(
     "SelfCheckInput",
     obj(
@@ -231,6 +232,7 @@ define(
             "env": ref("Env"),
             "judges": arr(STR),
         },
+        {"prefs": ref("TaskPrefs")},
         doc="open_problem 的事件体。没有 profile 字段：画像是派生量，提交时不接受（HMI §3.2 强制点）。"
         "题目 id 在批次外层。",
     ),
@@ -482,7 +484,8 @@ define(
                             "env": ref("Env"),
                             "judges": arr(STR),
                             "origin": ref("Origin"),
-                        }
+                        },
+                        {"prefs": ref("TaskPrefs")},
                     ),
                 ),
                 "goal": obj(
@@ -499,6 +502,10 @@ define(
                         "self_checks": arr(ref("SelfCheckItem")),
                         "deliveries": arr(ref("Delivery")),
                         "feedback": lit("adopted", "rejected", "none"),
+                        # 地图 v0.9 §3.2 ③ 的接口草案（L3 线实现）：追问、叫停、闲置自动关
+                        "follow_ups": arr(ref("FollowUp")),
+                        "halted": obj({"seq": INT}),
+                        "idle_close_at": null(INT),
                     },
                 ),
                 "facts": arr(ref("FactNode")),
@@ -534,6 +541,13 @@ define(
         },
         doc="开放道的一次交付（open-lane §3.4）。内核只校验依据真实存在、类别可采信，不校验结论对不对；"
         "supported=false 即这条主张没有任何留档支撑。",
+    ),
+)
+define(
+    "FollowUp",
+    obj(
+        {"id": STR, "seq": INT, "text": ref("Tagged"), "after_delivery": null(STR)},
+        doc="人在交付之后的追问（地图 Q31）：回到求解，带着工作区与上一轮交付。",
     ),
 )
 define(
@@ -593,7 +607,8 @@ define(
                 "bootstrap_share": NUM,
                 "wall": obj({"cap_s": INT, "elapsed_s": INT}),
                 "review": BOOL,
-            }
+            },
+            {"by_lease": doc(arr(ref("LeaseCost")), "按会话的花费（地图 Q15）；各行之和等于 spent")},
         )
     ),
 )
@@ -802,10 +817,15 @@ define(
                 "human_todo": INT,
                 "wall": obj({"cap_s": INT, "elapsed_s": INT}),
                 "authority": ref("Authority"),
+                "shelf": lit("active", "archived", "trash", "purged"),
+                "pinned": BOOL,
+                "trash_until": null(INT),
             },
             doc=(
                 "题目列表的一行。authority 是判定来源（派生，external-verdict §5.7）。"
                 "closed_ts 是关题事件的 ts；active 是在途租约的种类与目标（不推断“阶段”）。"
+                "shelf 是人整理后的位置（curate，软删）：trash 在 trash_until 之前可恢复，过期为 purged；"
+                "软删的题照样计入合计与读数。"
             ),
         ),
     ),
@@ -874,6 +894,13 @@ define(
     "TicksResponse",
     obj({"as_of": INT, "head": INT, "ticks": arr(ref("WireTick")), "last_seq": INT, "head_hash": null(STR)}),
 )
+define(
+    "LeaseCost",
+    obj(
+        {"lease": STR, "kind": STR, "usd_milli": INT, "tokens": INT, "active": BOOL},
+        {"role": STR, "model": STR},
+    ),
+)
 define("ViewFrame", obj({"as_of": INT, "parts_hash": ref("PartsHash")}, doc="事件流里一批事件之后的具名帧。"))
 
 section("写")
@@ -899,6 +926,9 @@ define(
             "intent_done",
             "grant_scope",
             "revoke_scope",
+            "curate",
+            "follow_up",
+            "halt",
         ),
         "description": "add_intent 之后的几种随后续里程碑启用（规格 3.1.9）；M0 的图服务以 schema_error 拒绝。",
     },

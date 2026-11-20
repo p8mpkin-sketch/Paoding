@@ -26,8 +26,8 @@ export type StationInput = {
 };
 export type Stations = { current: StationId; waiting: Partial<Record<StationId, number>> };
 
-/** 等人的事落在哪一站：关闭前的验收与四顾在 S10，其余（审批、续期门、争议、停滞、申请访问）在 S8。 */
-const WAIT_AT: Record<string, StationId> = { closeout: "S10", acceptance: "S10" };
+/** 等人的事落在哪一站：关闭前的验收与四顾、开放道交付后等人看（delivered，地图 Q37）在 S10；受阻（blocked）与其余（审批、续期门、争议、停滞、申请访问）在 S8。 */
+const WAIT_AT: Record<string, StationId> = { closeout: "S10", acceptance: "S10", delivered: "S10" };
 
 export function stationsOf(x: StationInput): Stations {
   const waiting: Partial<Record<StationId, number>> = {};

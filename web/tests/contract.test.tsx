@@ -131,7 +131,9 @@ describe("假后端与真图服务同形", () => {
     same("verdict", m.status.goal.predicate.verdicts, body<StatusView>("p1-status").goal.predicate.verdicts);
     same("view", m.view, body<GraphView>("p1-view"));
     same("frontier", m.view.frontier, body<GraphView>("p1-view").frontier);
-    same("budget", m.budget, body<BudgetResponse>("p1-budget"));
+    // by_lease 是地图 v0.9 §3.2 ③ 草案的字段：假服务先给，真服务随 L3 线补上后重录夹具即可去掉这一行
+    const { by_lease: _ahead, ...budgetNow } = m.budget;
+    same("budget", budgetNow, body<BudgetResponse>("p1-budget"));
     same("work", m.work, body<WorkView>("p1-work"));
     same("problems", m.problems, body<ProblemsView>("problems"));
     same("problems.items", m.problems.items, body<ProblemsView>("problems").items);

@@ -1,13 +1,11 @@
 // 基础组件（shadcn 模式：代码在仓库里，样式只用设计令牌）。页面只从这里拿外观，不各自定义颜色。
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { Brush } from "./flavor";
-
-export { Brush, Quan, Seal } from "./flavor";
+export { Logo } from "./flavor";
 
 type Tone = "ink" | "zhu" | "line" | "bare";
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; size?: "sm" | "md" };
 
-/** 按钮只有四种：墨（主操作）、朱（只给“需要你”的那一下）、线框（次要）、无框（工具）。 */
+/** 按钮只有四种：墨（主操作，黑底）、朱（只给“等你”的那一下，琥珀）、线框（次要）、无框（工具）。 */
 export const Button = forwardRef<HTMLButtonElement, BtnProps>(function Button({ tone = "line", size = "md", className, type = "button", ...rest }, ref) {
   return <button ref={ref} type={type} className={btnClass(tone, size, className)} {...rest} />;
 });
@@ -35,13 +33,12 @@ export function Meter({ value, cap, marks = [], hot = false, label }: { value: n
   );
 }
 
-/** 页眉：左侧竖排卷签，大标题（写成结论句，是整页唯一焦点），一行导语，右侧操作，下方一笔墨线。
+/** 页眉：小字栏目名、大标题（写成结论句，是整页唯一焦点）、一行导语，右侧操作。
  *  导语不重复页面里另有的数字（阅读质量轮第 2 条）。 */
-export function Mast({ vol, cap, title, dek, actions }: { vol?: [string, string]; cap?: ReactNode; title: ReactNode; dek?: ReactNode; actions?: ReactNode }) {
+export function Mast({ cap, title, dek, actions }: { cap?: ReactNode; title: ReactNode; dek?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="k-mast-wrap">
       <div className="k-mast">
-        {vol && <div className="k-vlabel" aria-hidden="true"><b>{vol[0]}</b><span>{vol[1]}</span></div>}
         <div className="k-mast-main">
           {cap && <div className="k-cap">{cap}</div>}
           <h1>{title}</h1>
@@ -50,12 +47,11 @@ export function Mast({ vol, cap, title, dek, actions }: { vol?: [string, string]
         <span className="grow" />
         {actions && <div className="k-mast-actions">{actions}</div>}
       </div>
-      <Brush />
     </header>
   );
 }
 
-/** 小节标题：前面自动带等宽编号（CSS 计数器），右侧放说明或链接。 */
+/** 小节标题：右侧放说明或链接。 */
 export function SectionHead({ title, note, right, id }: { title: ReactNode; note?: ReactNode; right?: ReactNode; id?: string }) {
   return (
     <div className="k-sh">

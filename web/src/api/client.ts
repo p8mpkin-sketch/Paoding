@@ -3,13 +3,15 @@
 // 都带人的令牌，与 pd 是同一条提议通道。设置层（宪章 03 §7）另有 PUT /v1/settings 与 /v1/keys 的 PUT/DELETE，
 // 也只认人的令牌；密钥只经 PUT 发出一次，没有任何读端点能把它读回来。一句话开题多三个：PUT /v1/vault（答案只写不读）
 // 与起草服务的 POST /v1/drafts、/v1/drafts/extract（组装根挂在图服务上，同源；只算不写，模型调用在服务端，前端不碰模型）。
+import type { KnJob, KnPut, KnSearch, KnSourceVerb, KnSources } from "./knowledge-types";
+import type { MemCard, MemDecision, MemRow, MemSeen } from "./memory-types";
 import type {
   ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
   NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, VaultRef, WorkView,
 } from "./types";
 import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
-import type { KeySlot, KeysView, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
+import type { KeySlot, KeysView, ModelProbe, ModelProfile, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
 
 export type ApiConfig = {
   /** 图服务的基址；同源部署时为空串。 */
@@ -130,6 +132,23 @@ export function createApi(cfg: ApiConfig) {
       onlyHuman(ops);
       return accepted(await post<ProposalResponse>("/v1/problems", { id, idem_key: idemKey, ops }));
     },
+    // ---- 记忆（通鉴，v5 第四期知识页）----
+    memory: () => get<{ items: MemRow[]; as_of: number }>("/v1/memory"),
+    memoryCard: (id: string) => get<MemCard>(`/v1/memory/items/${enc(id)}`),
+    /** 钉住或遗忘：须写理由；seen 取自刚看的卡，卡变了回 409 stale_view。 */
+    memoryDecide: (id: string, verb: "pin" | "forget", reason: string, seen: MemSeen) =>
+      post<MemDecision>(`/v1/memory/items/${enc(id)}/${verb}`, { reason, seen }),
+    // ---- 资料（书库，v5 第四期知识页）----
+    knSources: () => get<KnSources>("/v1/knowledge/sources"),
+    knJobs: () => get<{ jobs: KnJob[]; as_of: number }>("/v1/knowledge/jobs"),
+    /** 新建一份资料：粘贴的文字，或先 putBlob 再交 file。只收网页交来的字节。 */
+    knPut: (body: KnPut) => post<{ source: string; revision: number; jobs: KnJob[] }>("/v1/knowledge/sources", body),
+    knSource: (id: string, verb: KnSourceVerb) => post<{ ok: true }>(`/v1/knowledge/sources/${enc(id)}/${verb}`, {}),
+    /** mask：只对因凭据停下的版本有效，遮盖认出的串后再导入。 */
+    knJob: (id: string, revision: number, verb: "retry" | "cancel", mask = false) =>
+      post<{ ok: true; jobs: KnJob[] }>(`/v1/knowledge/jobs/${enc(id)}/${revision}/${verb}`, mask ? { mask: true } : {}),
+    /** “试一下”：与执行中的检索同一个函数，不登记引用。 */
+    knSearch: (q: string, k = 8) => post<KnSearch>("/v1/knowledge/search", { q, k }),
     // ---- 设置层 ----
     settings: () => get<SettingsDoc>("/v1/settings"),
     settingsLog: () => get<{ items: SettingsLogEntry[] }>("/v1/settings/log"),
@@ -144,6 +163,9 @@ export function createApi(cfg: ApiConfig) {
       (await call("PUT", `/v1/keys/${enc(slot)}`, json({ key }), "application/json")).json() as Promise<KeySlot & { note: string }>,
     clearKey: async (slot: string) => (await call("DELETE", `/v1/keys/${enc(slot)}`)).json() as Promise<KeySlot>,
     clearKeys: async () => (await call("DELETE", "/v1/keys")).json() as Promise<KeysView>,
+    /** 测试连接：按档案（可以还没保存）实际调一次上游；密钥只从服务端钥匙环取，不经这里。 */
+    testModel: async (profile: Pick<ModelProfile, "endpoint" | "model" | "key_slot" | "format">) =>
+      (await call("POST", "/v1/models/test", json({ profile }), "application/json")).json() as Promise<ModelProbe>,
 
     /** 人的其余操作都走这里。批内只能有人可提交的操作。 */
     propose: async (pid: string, ops: Op[], idemKey: string) => {
