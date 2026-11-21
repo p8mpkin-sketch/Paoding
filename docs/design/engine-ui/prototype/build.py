@@ -1,4 +1,5 @@
 """拼成单文件：python3 build.py（在本目录运行）。"""
+
 from pathlib import Path
 
 H = Path(__file__).resolve().parent
@@ -13,7 +14,7 @@ def main() -> None:
     js = (H / "app.js").read_text(encoding="utf-8")
     data = (H / "data.json").read_text(encoding="utf-8").replace("</", "<\\/")
     html = (
-        f"{HEAD}\n<style>{css}</style></head><body><div id=\"root\"></div>\n"
+        f'{HEAD}\n<style>{css}</style></head><body><div id="root"></div>\n'
         f"<script>window.DATA={data};</script><script>{js}</script></body></html>"
     )
     (H / "index.html").write_text(html, encoding="utf-8")
