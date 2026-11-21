@@ -10,7 +10,15 @@
 它不在执行容器的网络上，所以连不到授权范围内的目标；执行容器也不在这张网络上，连不到模型端点（3.6.4 的 4）。
 容器里只有任务令牌（ANTHROPIC_API_KEY）与中继地址（ANTHROPIC_BASE_URL），真实密钥只在端点代理进程里。
 
-中继到 Adapter 进程之间走 Unix 套接字：端点代理与工具端点仍只监听本机回环，不对任何网络接口开放。
+中继到 Adapter 进程之间有两种通路（`transport`），端点代理与工具端点都仍只监听本机回环：
+
+- `unix`（Linux 缺省）：Adapter 在一个短路径目录里开两个 Unix 套接字（UnixBridge），只读挂进中继；
+- `tcp`（macOS 缺省）：Docker Desktop 的容器跑在虚拟机里，挂进去的 Unix 套接字连不通（连上就被重置）。
+  中继另接默认网桥，经 `host.docker.internal` 连宿主回环上的两个端点（Docker Desktop 把它转到宿主的本机回环），
+  与评测台 baseline 的做法相同（eval/box.py）。模型容器始终只在内部网络上，`host.docker.internal` 只加给中继。
+
+中继起来后先从中继里探一遍上游（两个套接字，或宿主上的两个端口）：连不上就在开会话之前报 LaunchError，
+而不是等 CLI 或驱动程序第一次调工具时才被重置。
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -35,6 +44,13 @@ WORKSPACE, SESSION, HOME = "/workspace", "/session", "/home/pd"
 LABEL, OWNER, LEASE, ROLE = "paoding.sandbox", "paoding.owner", "paoding.lease", "paoding.role"
 ISOLATED = "com.docker.network.bridge.gateway_mode_ipv4=isolated"
 RELAY_SCRIPT = Path(__file__).with_name("relay.py")  # 中继脚本；评测台的 baseline 也挂它
+HOST_ALIAS = "host.docker.internal"  # tcp 通路：中继里宿主的名字（--add-host …:host-gateway）
+TRANSPORTS = ("unix", "tcp")
+
+
+def default_transport() -> str:
+    """macOS（Docker Desktop）上 Unix 套接字挂不进容器，走 tcp；其余走 unix。"""
+    return "tcp" if sys.platform == "darwin" else "unix"
 
 
 class LaunchError(RuntimeError):
@@ -130,21 +146,33 @@ class ContainerLauncher:
         sock_dir: Path | None = None,
         memory: str = "2g",
         pids: int = 512,
+        transport: str = "",
+        host_ports: tuple[int, int] | None = None,
     ):
+        """transport：中继到 Adapter 的通路，`unix` 或 `tcp`，缺省按平台（default_transport）。
+        host_ports：tcp 通路下中继在 host.docker.internal 上要连的两个端口（端点代理、工具端点）；缺省就是
+        proxy_port、mcp_port（Docker Desktop 把 host.docker.internal 转到宿主的本机回环）。"""
         if not shutil.which("docker"):
             raise LaunchError("模型容器要 Docker，但找不到 docker 命令")
+        self.transport = transport or default_transport()
+        if self.transport not in TRANSPORTS:
+            raise LaunchError(f"transport 取 unix 或 tcp，不是 {self.transport!r}")
         self.image, self.relay_image, self.mounts = image, relay_image, tuple(mounts)
         self.memory, self.pids = memory, pids
         self.owner = _owner()
         self.user = f"{os.getuid()}:{os.getgid()}"  # 容器内与 Adapter 同一 uid：工作区文件的属主一致
-        # 套接字路径有 108 字节上限，所以放在短路径下，不放数据目录里
-        self._own_sock_dir = sock_dir is None
-        self.sock_dir = Path(sock_dir or tempfile.mkdtemp(prefix="pd-ep-"))
-        self.sock_dir.chmod(0o700)
-        self._bridges = [
-            UnixBridge(self.sock_dir / "proxy.sock", proxy_port),
-            UnixBridge(self.sock_dir / "mcp.sock", mcp_port),
-        ]
+        self.host_ports = host_ports or (proxy_port, mcp_port)
+        self._own_sock_dir = False
+        self._bridges: list[UnixBridge] = []
+        if self.transport == "unix":
+            # 套接字路径有上限（Linux 108 字节、macOS 104 字节），所以放在短路径下，不放数据目录里
+            self._own_sock_dir = sock_dir is None
+            self.sock_dir = Path(sock_dir or tempfile.mkdtemp(prefix="pd-ep-"))
+            self.sock_dir.chmod(0o700)
+            self._bridges = [
+                UnixBridge(self.sock_dir / "proxy.sock", proxy_port),
+                UnixBridge(self.sock_dir / "mcp.sock", mcp_port),
+            ]
         self._sessions: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._isolated: bool | None = None  # 这台 Docker 认不认隔离网关（27.1 起）
@@ -182,9 +210,14 @@ class ContainerLauncher:
         ]
         try:
             self._network(n["net"], labels)
+            if self.transport == "unix":
+                way = ["--mount", f"type=bind,src={self.sock_dir},dst=/run/pd,readonly"]
+                ups = ("/run/pd/proxy.sock", "/run/pd/mcp.sock")
+            else:
+                way = ["--add-host", f"{HOST_ALIAS}:host-gateway"]
+                ups = (f"tcp:{HOST_ALIAS}:{self.host_ports[0]}", f"tcp:{HOST_ALIAS}:{self.host_ports[1]}")
             _docker(
-                "run",
-                "-d",
+                "create",
                 "--name",
                 n["relay"],
                 *labels,
@@ -205,36 +238,69 @@ class ContainerLauncher:
                 "256",
                 "--memory",
                 "128m",
-                "--mount",
-                f"type=bind,src={self.sock_dir},dst=/run/pd,readonly",
+                *way,
                 "--mount",
                 f"type=bind,src={RELAY_SCRIPT},dst=/opt/paoding/relay.py,readonly",
                 self.relay_image,
                 "python",
                 "-I",
                 "/opt/paoding/relay.py",
-                f"{PROXY_PORT}=/run/pd/proxy.sock",
-                f"{MCP_PORT}=/run/pd/mcp.sock",
+                f"{PROXY_PORT}={ups[0]}",
+                f"{MCP_PORT}={ups[1]}",
             )
-            probe = (
-                "import socket,sys,time\n"
-                "for _ in range(100):\n"
-                "    try:\n"
-                f"        [socket.create_connection(('127.0.0.1', p), 1).close() for p in ({PROXY_PORT}, {MCP_PORT})]\n"
-                "        sys.exit(0)\n"
-                "    except OSError:\n"
-                "        time.sleep(0.05)\n"
-                "sys.exit(1)\n"
-            )
-            if _docker("exec", n["relay"], "python", "-I", "-c", probe, check=False).returncode != 0:
-                logs = _docker("logs", "--tail", "20", n["relay"], check=False)
-                raise LaunchError(f"端点中继未就绪：{(logs.stdout + logs.stderr).decode('utf-8', 'replace')[-400:]}")
+            if self.transport == "tcp":  # 中继另一只脚接默认网桥去找宿主；模型容器不在这张网上
+                _docker("network", "connect", "bridge", n["relay"])
+            _docker("start", n["relay"])
+            self._probe(n["relay"], ups)
         except BaseException:
             self._teardown(n)
             raise
         with self._lock:
             self._sessions[lease_id] = n
         return n
+
+    @staticmethod
+    def _probe(relay: str, ups: tuple[str, ...]) -> None:
+        """从中继里探：先等它自己的两个端口听上，再对每个上游走一个来回（发一个 GET、要收到应答的头一个字节；
+        两个上游都是 HTTP 服务）。只建连不够：Docker Desktop 上挂进去的 Unix 套接字有时连得上、一发数据就被重置。
+        上游不通（那种套接字、tcp 通路上宿主的端口没开或被挡）在这里就报出来，
+        不留到会话里变成“Connection reset by peer”。"""
+        probe = (
+            "import socket,sys,time\n"
+            f"ups={list(ups)!r}\n"
+            "def up(u):\n"
+            "    if u.startswith('tcp:'):\n"
+            "        _, h, p = u.split(':')\n"
+            "        return socket.create_connection((h, int(p)), 3)\n"
+            "    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(3); s.connect(u); return s\n"
+            "for _ in range(100):\n"
+            "    try:\n"
+            f"        [socket.create_connection(('127.0.0.1', p), 1).close() for p in ({PROXY_PORT}, {MCP_PORT})]\n"
+            "        break\n"
+            "    except OSError:\n"
+            "        time.sleep(0.05)\n"
+            "else:\n"
+            "    print('relay not listening'); sys.exit(1)\n"
+            "for u in ups:\n"
+            "    try:\n"
+            "        c = up(u); c.sendall(b'GET / HTTP/1.0\\r\\nHost: pd\\r\\n\\r\\n')\n"
+            "        if not c.recv(1):\n"
+            "            raise OSError('closed without a reply')\n"
+            "        c.close()\n"
+            "    except OSError as e:\n"
+            "        print(f'{u}: {e}'); sys.exit(2)\n"
+        )
+        p = _docker("exec", relay, "python", "-I", "-c", probe, check=False)
+        if p.returncode == 0:
+            return
+        said = p.stdout.decode("utf-8", "replace").strip()
+        if p.returncode == 2:
+            raise LaunchError(
+                f"端点中继连不到宿主上的端点（{said}）。macOS 的 Docker Desktop 上要走 tcp 通路"
+                "（配置 backend.transport: tcp，缺省按平台选）；Linux 上检查 Unix 套接字目录的权限"
+            )
+        logs = _docker("logs", "--tail", "20", relay, check=False)
+        raise LaunchError(f"端点中继未就绪：{said} {(logs.stdout + logs.stderr).decode('utf-8', 'replace')[-400:]}")
 
     def _network(self, net: str, labels: list[str]) -> None:
         """`--internal` 且隔离网关：容器既没有出站路由，也到不了宿主在网桥上的地址。

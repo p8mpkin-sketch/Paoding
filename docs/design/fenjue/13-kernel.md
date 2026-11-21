@@ -79,6 +79,7 @@ SIGINT（运行器的终止）→ `result` 记 `interrupted`，退出码 130；�
 程序在 `/opt/paoding/tunshi_cli.py`，包在 `/opt/paoding/lib/`（`PD_LIB`），以 `python3 -I` 运行。
 **模型容器的镜像要有 Python 3.12 或更新**（通用的 `python:3.12-slim` 就行，`test_tunshi_container.py` 用的就是它）。
 宿主子进程模式（没有 Docker 时）用宿主的解释器跑同一个文件。
+中继到宿主的通路按平台选（`backend.transport`）：Linux 走挂进去的 Unix 套接字，macOS 的 Docker Desktop 上走 `host.docker.internal`（[adapter/SPEC.md](../../../adapter/SPEC.md)）；两种通路都在 CI 的 Linux Docker 上真跑到第 1 次确认。
 
 ## 4. 宿主工具
 

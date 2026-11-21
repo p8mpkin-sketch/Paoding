@@ -9,6 +9,7 @@ backend:
   upstream: https://api.anthropic.com
   api_key_env: ANTHROPIC_API_KEY     # 密钥只经环境变量给，不写进本文件
   model: claude-sonnet-5-5           # 缺省档案的模型；三个档位都用它，除非在设置里另配 heavy/mid/light 档案
+  # transport: tcp                   # 模型容器的中继连回本机的通路；缺省按平台（macOS 走 tcp，Linux 走 unix）
 
 executor:
   kind: docker                       # 抓取在沙箱里跑，要本机 Docker

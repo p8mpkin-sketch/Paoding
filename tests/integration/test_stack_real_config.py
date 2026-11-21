@@ -127,3 +127,34 @@ def test_local_cli_resolved_on_host_path(tmp_path, monkeypatch):
 def test_bad_program_refused(tmp_path):
     with pytest.raises(StackError, match="backend.program"):
         _cfg(tmp_path, program=[1, 2])
+
+
+def test_backend_transport_is_validated_and_reaches_the_container_launcher(tmp_path, monkeypatch):
+    """模型容器的中继通路（backend.transport）：只认 unix / tcp / 缺省；给了就原样交给模型容器的启动器。"""
+    import stack as st
+
+    (tmp_path / "a").mkdir()
+    with pytest.raises(StackError, match="backend.transport"):
+        Stack(_cfg(tmp_path / "a", transport="udp", program=str(_fake_cli(tmp_path / "bin"))))
+    seen = {}
+
+    class Launcher:
+        def __init__(self, image, proxy_port, mcp_port, *, mounts=(), transport=""):
+            seen.update(image=image, transport=transport)
+            self.transport = transport or "unix"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(st, "ContainerLauncher", Launcher)
+    monkeypatch.setattr(st, "docker_available", lambda: True)
+    p = tmp_path / "b" / "config.json"
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        json.dumps({"backend": {"kind": "real", "image": "python:3.12-slim", "transport": "tcp"}, "executor": "none"})
+    )
+    s = Stack(StackConfig.load(tmp_path / "b" / "home", p))
+    try:
+        assert seen == {"image": "python:3.12-slim", "transport": "tcp"}
+    finally:
+        _close(s)
