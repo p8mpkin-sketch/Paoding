@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
 
-from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
+from paoding_executor.contract import ExecSpec, SandboxPort, ScopeError, compile_spec
 from paoding_fenjue.contract import View, for_problem, params
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
@@ -203,9 +203,20 @@ class SessionRunner:
             tools += tuple(gf.params("H3", "h3.kb")["tools"])
         boxed = "exec" in tools or bool(shape.get("sandbox"))  # 形态可以要沙箱而不给模型 exec（宿主工具自己用）
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
+        no_box = ""  # 执行容器起不来的原因（执行层编不了这道题的授权，例如范围里有它连不了的外部主机）
         if boxed and sandbox_id is None and hasattr(self.executor, "launch"):
-            sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
+            try:
+                sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
+            except ScopeError as e:
+                LOG.warning("会话 %s 的执行容器起不来：%s", lease_id, e)
+                if not driver:  # 模型要 exec 才能干活：照实按失败释放租约，不让它悬到过期
+                    try:
+                        return self._fail(rec, token, pid, lease_id, f"执行容器起不来：{e}")
+                    finally:
+                        self.issuer.revoke(token)
+                no_box = str(e)  # 驱动程序的会话：沙箱只给宿主工具抓材料用，没有也照常跑，抓取时如实说明
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if boxed else None)
+        s.no_box = no_box
         an = tunshi.Analysis(shape["ref"], self.cfg.analysis or (lambda _pid: {})) if driver else None
         max_turns = int(shape.get("max_turns") or self.cfg.max_turns)
         s.kb_cite = shape["kb_cite"]
@@ -371,6 +382,12 @@ class SessionRunner:
             rec.release = {"outcome": outcome, "ok": out["ok"], "results": out["results"]}
             rec.status = final_status
             return rec
+        except Exception as e:  # noqa: BLE001  会话边界：本组件或下游的缺陷不能让租约悬着、进程留着
+            LOG.exception("会话 %s 因缺陷中止", lease_id)
+            proc = lv.get("proc")
+            if proc is not None and proc.poll() is None:
+                _terminate(proc)
+            return self._fail(rec, token, pid, lease_id, f"会话因缺陷中止：{type(e).__name__}: {e}")
         finally:
             self._end_activity(lease_id, sdir)
             self.live.pop(lease_id, None)
@@ -600,6 +617,17 @@ class SessionRunner:
             except KeyError:
                 return {}
 
+    def _fail(self, rec: SessionRecord, token: str, pid: str, lease_id: str, why: str) -> SessionRecord:
+        """按失败释放租约（司南照常按接力上限再派，或转人），把原因写进会话目录的 stderr 文件。"""
+        with stderr_file(self.cfg.root / lease_id / "workspace") as err:
+            err.write(f"\n[adapter] {why}\n".encode())
+        out = self.graph.submit(
+            token, pid, f"release:{lease_id}", [{"op": "release", "body": {"lease": lease_id, "outcome": "failed"}}]
+        )
+        rec.release = {"outcome": "failed", "ok": out["ok"], "results": out["results"], "why": why}
+        rec.status = "failed(error)"
+        return rec
+
     def _launch_sandbox(self, pid: str, lease: Mapping[str, Any], ws: Path) -> str:
         """按租约编译授权并起执行容器（§3.6.2）。reason 会话不走到这里。"""
         ws.chmod(0o777)  # 容器内进程丢了全部能力，靠目录权限写工作区
@@ -616,7 +644,11 @@ class SessionRunner:
         if lv is None or not lv.get("sandbox_id") or hot is None or not self.cfg.grants_hot:
             return None
         lease = self.reader.state["leases"][lease_id]
-        out: dict[str, Any] = hot(lv["sandbox_id"], self._spec(lease["problem_id"], lease, lv["ws"]))
+        try:
+            out: dict[str, Any] = hot(lv["sandbox_id"], self._spec(lease["problem_id"], lease, lv["ws"]))
+        except ScopeError as e:  # 执行层连不了批下来的目标（M0 只认本机题目容器）：照实告诉调用方，会话照常跑
+            LOG.warning("会话 %s 的出站闸门没能对齐：%s", lease_id, e)
+            return {"added": [], "removed": [], "unsupported": str(e)}
         if out.get("added") or out.get("removed"):
             LOG.info("会话 %s 的出站闸门已对齐：新增 %s，撤下 %s", lease_id, out.get("added"), out.get("removed"))
         return out

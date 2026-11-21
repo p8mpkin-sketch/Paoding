@@ -2,7 +2,8 @@
 
     python scripts/tunshi.py --url http://127.0.0.1:8100 --token-file <home>/human.token --pid a1 \
         --statement "看看这个系统里有什么值得我们集成的做法" \
-        [--repo https://github.com/o/r@<提交或标签>]... [--doc https://…]... [--upload 归档或文件]... \
+        [--repo https://github.com/o/r@<提交或标签>]... [--doc https://…]... \
+        [--upload 归档或文件 [--upload-origin https://github.com/o/r@<提交>]]... \
         [--service https://… --probe-plan 计划文件] [--dry-run] [--usd 20]
 
 只上传材料、不要别的模式时不必用它：界面上照常开题、附上材料就行，立项单按材料推出（正式模式、每份材料一个来源）。
@@ -77,8 +78,14 @@ def split_repo(v: str) -> tuple[str, str]:
 
 def build(a: argparse.Namespace, uploads: list[tuple[str, str]]) -> dict:
     sources: list[dict] = []
-    for aid, form in uploads:
-        sources.append({"no": len(sources) + 1, "form": form, "via": "upload", "artifact": aid})
+    origins = list(getattr(a, "upload_origin", None) or [])
+    if len(origins) > len(uploads):
+        raise SystemExit("--upload-origin 比 --upload 多：每个出处对应前面同一位置的一个上传")
+    for i, (aid, form) in enumerate(uploads):
+        src = {"no": len(sources) + 1, "form": form, "via": "upload", "artifact": aid}
+        if i < len(origins):  # 上传的归档从哪来（仓库地址与钉住的提交）：记进立项单，产物与界面能标明来源
+            src["url"], src["ref"] = split_repo(origins[i])
+        sources.append(src)
     for v in a.repo:
         u, ref = split_repo(v)
         sources.append({"no": len(sources) + 1, "form": "code", "via": "repo_url", "url": u, "ref": ref})
@@ -113,6 +120,12 @@ def main() -> int:
     ap.add_argument("--repo", action="append", default=[], help="<仓库地址>@<提交或标签>，可重复")
     ap.add_argument("--doc", action="append", default=[], help="文档地址，可重复")
     ap.add_argument("--upload", action="append", default=[], help="本地的归档或文件，可重复")
+    ap.add_argument(
+        "--upload-origin",
+        action="append",
+        default=[],
+        help="<仓库地址>@<提交>：第 N 个对应第 N 个 --upload，记下那份归档的出处（只登记，不去抓）",
+    )
     ap.add_argument("--service")
     ap.add_argument("--probe-plan")
     ap.add_argument("--dry-run", action="store_true", help="试算模式：预算减半，自动取前三个候选")

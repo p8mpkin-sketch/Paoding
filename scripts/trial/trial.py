@@ -6,8 +6,9 @@
 
 setup：写一版设置：关开放道复核（cz 2026-11-21 接受的建议），把 codeload.github.com:443 的连接标成 r1（要人批）。
 open：每个用例先钉住提交（`git ls-remote`，标签取它指向的提交），再经 GitHub 的接口核对许可证；许可证不清楚
-（没有、NOASSERTION、OTHER）的不开题。然后以试算模式开题（scripts/tunshi.py），钉住的提交与许可证记在
-<当前目录>/trial-record.json。
+（没有、NOASSERTION、OTHER）的不开题。然后在你这边下载那个提交的源码归档，以试算模式随题上传开题（scripts/tunshi.py）；
+执行层（M0）只能连本机的题目容器、连不了互联网上的主机，所以缺省不让分析会话自己去抓（--via repo 才那样做）。
+钉住的提交、许可证与归档的摘要记在 <当前目录>/trial-record.json。重跑用 --tag 换题号。
 report：读每道题的交付、花费与导出的工作区，写 trial-report.md（读数回给 Claude 整理）。
 
 只用标准库；在你自己的电脑上跑，联网（git、api.github.com）也在你这边。
@@ -16,6 +17,7 @@ report：读每道题的交付、花费与导出的工作区，写 trial-report.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -116,6 +118,38 @@ def license_of(repo: str, sha: str) -> dict:
     return {"spdx": lic.get("spdx_id"), "name": lic.get("name"), "path": doc.get("path"), "url": doc.get("html_url")}
 
 
+ARCHIVE_MAX = 200_000_000  # 与材料定版的总字节上限一致（paoding_fenjue.engine.materials.Limits）
+
+
+def download(repo: str, sha: str, cache: Path) -> tuple[Path, str]:
+    """下载钉住的提交的源码归档（GitHub 的 codeload，按提交哈希取，不会漂）。已下载过、摘要对得上就不再下。"""
+    m = re.match(r"^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", repo)
+    if not m:
+        raise SystemExit(f"{repo}：只认 https://github.com/<owner>/<repo>")
+    cache.mkdir(parents=True, exist_ok=True)
+    f = cache / f"{m[1]}-{m[2]}-{sha[:12]}.tar.gz"
+    note = f.with_suffix(".sha256")
+    if f.exists() and note.exists():
+        digest = hashlib.sha256(f.read_bytes()).hexdigest()
+        if digest == note.read_text().strip():
+            return f, digest
+    url = f"https://codeload.github.com/{m[1]}/{m[2]}/tar.gz/{sha}"
+    req = urllib.request.Request(url, headers={"User-Agent": "paoding-trial"})
+    h, n = hashlib.sha256(), 0
+    tmp = f.with_suffix(".part")
+    with urllib.request.urlopen(req, timeout=300) as r, tmp.open("wb") as out:
+        while chunk := r.read(1 << 20):
+            n += len(chunk)
+            if n > ARCHIVE_MAX:
+                tmp.unlink(missing_ok=True)
+                raise SystemExit(f"{repo}@{sha[:12]} 的归档超过 {ARCHIVE_MAX // 1_000_000} MB，换一个小一点的仓库")
+            h.update(chunk)
+            out.write(chunk)
+    tmp.replace(f)
+    note.write_text(h.hexdigest() + "\n")
+    return f, h.hexdigest()
+
+
 def open_cases(a: argparse.Namespace) -> int:
     cases = json.loads(Path(a.cases).read_text(encoding="utf-8"))["cases"]
     if a.only:
@@ -134,21 +168,31 @@ def open_cases(a: argparse.Namespace) -> int:
             )
             bad += 1
         else:
+            pid = c["id"] + (f"-{a.tag}" if a.tag else "")
+            row["pid"] = pid
+            if a.via == "upload":  # 缺省：在你这边下载钉住的那个提交的归档，随题上传（执行层连不了互联网上的主机）
+                f, digest = download(c["repo"], sha, Path(a.cache))
+                row["archive"] = {"file": str(f), "sha256": digest, "bytes": f.stat().st_size}
+                src = ["--upload", str(f), "--upload-origin", f"{c['repo']}@{sha}"]
+            else:  # 让分析会话在沙箱里抓（要执行层能连 codeload.github.com:443）
+                src = ["--repo", f"{c['repo']}@{sha}"]
+            short = re.sub(r"^https://github\.com/", "", c["repo"]).rstrip("/")
             r = subprocess.run(
                 [
                     sys.executable, str(HERE.parent / "tunshi.py"), "--url", a.url, "--token-file",
-                    str(Path(a.token_file).expanduser()), "--pid", c["id"], "--title", f"试算：{c['case']}",
-                    "--statement", c["statement"], "--repo", f"{c['repo']}@{sha}", "--dry-run", "--usd", str(a.usd),
+                    str(Path(a.token_file).expanduser()), "--pid", pid, "--title",
+                    f"试算：{c['case']}（{short}@{sha[:12]}）", "--statement", c["statement"], *src,
+                    "--dry-run", "--usd", str(a.usd),
                 ],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=600,
             )  # fmt: skip
             row["opened"] = r.returncode == 0
             if r.returncode != 0:
                 row["error"] = (r.stderr or r.stdout).strip()[:500]
                 bad += 1
-            done = "已开题" if r.returncode == 0 else "开题失败：" + row["error"]
+            done = f"已开题 {pid}" if r.returncode == 0 else "开题失败：" + row["error"]
             print(f"{c['id']}：{how}，许可证 {lic['spdx']}，{done}")
-        record[c["id"]] = row
+        record[row.get("pid", c["id"])] = row
         rec_path.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return 1 if bad else 0
 
@@ -229,6 +273,14 @@ def main() -> int:
             p.add_argument("--cases", default=str(HERE / "cases.json"))
             p.add_argument("--only", action="append", default=[])
             p.add_argument("--usd", type=float, default=20, help="每道题的预算（美元）〔占位〕；试算只用其中一半的份额")
+            p.add_argument(
+                "--via",
+                choices=("upload", "repo"),
+                default="upload",
+                help="upload（缺省）：在你这边下载钉住的提交的归档随题上传；repo：让分析会话在沙箱里抓（执行层要能连外网）",
+            )
+            p.add_argument("--tag", default="", help="题号后缀：重跑时题号不能重复，例如 --tag 2 开出 trial-a-2")
+            p.add_argument("--cache", default="trial-cache", help="下载的归档放在这里（可重复使用）")
     a = ap.parse_args()
     return {"setup": setup, "open": open_cases, "report": report}[a.cmd](a)
 

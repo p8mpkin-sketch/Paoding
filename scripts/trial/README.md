@@ -26,7 +26,7 @@ uv run python scripts/run.py --home ~/paoding-analysis --port 8200 --config scri
 uv run python scripts/trial/trial.py setup --url http://127.0.0.1:8200 --token-file ~/paoding-analysis/human.token
 ```
 
-做两件事：关开放道复核（你接受的建议）；把 `codeload.github.com:443` 的连接标成 r1，抓取时在权限卡上由你批。
+做两件事：关开放道复核（你接受的建议）；把 `codeload.github.com:443` 的连接标成 r1（只在 `--via repo` 时用得上，见下）。
 
 ## 3. 开三道题
 
@@ -44,15 +44,26 @@ uv run python scripts/trial/trial.py open --url http://127.0.0.1:8200 --token-fi
 
 每道题开之前，脚本先用 `git ls-remote` 钉住提交（写了 `ref` 就用它，没写取最新的标签，没有标签取默认分支此刻的提交），
 再经 GitHub 的接口核对**这个提交**的许可证；许可证不清楚（没有、NOASSERTION、OTHER）的**不开题**，换一个仓库再开
-（`--only trial-a` 只开一道）。钉住的提交与许可证记在当前目录的 `trial-record.json`。
+（`--only trial-a` 只开一道）。
+
+然后**在你这边**下载那个提交的源码归档（`codeload.github.com/<owner>/<repo>/tar.gz/<提交>`，至多 200 MB，放在当前目录的
+`trial-cache/`，摘要对得上就不重下），随题上传开题；立项单上这份上传带着出处（仓库地址与提交），标题里也写着
+`owner/repo@提交前 12 位`。钉住的提交、许可证、归档的 sha256 与字节数记在当前目录的 `trial-record.json`。
+
+为什么不让分析会话自己去抓：执行层（M0）只能连本机的题目容器，连不了互联网上的主机。`--via repo` 仍保留那条路
+（会话申请连 `codeload.github.com:443`、你在权限卡上批），但在 M0 上批了也开不了，会交付“受阻”并写明这一点。
+
+**重跑**：题号不能重复，加 `--tag`，例如 `--tag 2` 开出 `trial-a-2`、`trial-b-2`、`trial-c-2`（之前的 `trial-a/b/c`
+留在原处，不影响）。
 
 ## 4. 在界面上做的事
 
-- 每道题第一轮会申请连接 `codeload.github.com:443`（只下载、不执行）：在权限卡上批准。等批的时限是 15 分钟，过了会交付
-  “受阻”，批完追问一句“继续”。
+- 缺省（随题上传）不需要批任何访问申请，开题后直接跑。用 `--via repo` 时第一轮会申请连接 `codeload.github.com:443`
+  （只下载、不执行），见上一节。
 - 试算走完会交付一次（`answered`），报告里有结论、自动选中的三个候选、正式跑的估算、产物对照表（每份产物的出处与许可证在
   产物里）。试算不需要你在确认点上作决定；看完觉得值得，就照报告里的估算决定要不要对哪一道开正式分析。
-- 会话卡住、端点调不通、预算用完，都会交付并在“需要”里写明下一步；不用看日志。
+- 会话卡住、端点调不通、预算用完、执行层开不了，都会交付并在“需要”里写明下一步；不用看日志。会话里出了没预料到的
+  缺陷也会按失败结束、释放租约（原因在 `~/paoding-analysis/sessions/<会话>/cli.stderr.log`），不会一直显示在跑。
 
 ## 5. 收读数
 

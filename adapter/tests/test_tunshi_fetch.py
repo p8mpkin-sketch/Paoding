@@ -11,7 +11,7 @@ import threading
 import time
 
 import pytest
-from tunshi_rig import Site, cases, engine_gongfa, fixture_tar, trig  # noqa: F401
+from tunshi_rig import HotExec, LocalExec, Site, cases, engine_gongfa, fixture_tar, trig  # noqa: F401
 
 from paoding_adapter import tunshi
 
@@ -291,3 +291,68 @@ def test_fetch_plan_refuses_what_it_cannot_pin_down(src):
 def test_the_download_program_is_plain_stdlib_python():
     compile(tunshi.FETCH_PY, "fetch.py", "exec")
     assert "subprocess" not in tunshi.FETCH_PY and "os.system" not in tunshi.FETCH_PY
+
+
+# ---------- 执行层开不了批下来的出站目标（M0 只认本机题目容器：互联网上的主机连不了） ----------
+
+M0 = "M0 只支持本机题目容器作为出站目标：'codeload.github.com' 不是容器"
+
+
+class M0Hot(HotExec):
+    """真的 DockerExecutor（M0）在会话中途对齐到一个互联网主机时的样子：编不了这条授权就抛 ScopeError。"""
+
+    def reconcile(self, sid, spec):
+        from paoding_executor.contract import ScopeError
+
+        super().reconcile(sid, spec)  # 记下这次对齐（只在授权范围变了的时候来）
+        raise ScopeError(M0)
+
+
+class M0Launch(LocalExec):
+    """起执行容器时范围里已经有它连不了的主机（上一个会话批下来的）：launch 抛 ScopeError。"""
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.launched = 0
+
+    def launch(self, spec, *a, **kw):
+        from paoding_executor.contract import ScopeError
+
+        self.launched += 1
+        raise ScopeError(M0)
+
+
+def test_an_approved_target_the_executor_cannot_open_blocks_with_a_way_forward(trig, site):  # noqa: F811
+    """cz 2026-11-21 的实战阻断：批准后热对齐抛错曾让会话线程死掉、租约悬到过期（追问冲突“还没有交付”）。
+    现在：照实交付 blocked，写明执行层开不了、怎么绕（随题上传），租约按 done 释放，下一个会话能照常派。"""
+    rig = trig(cases.recording("alpha", "code"), local_exec=True)
+    rig.executor = rig.runner.executor = M0Hot(rig.graph, rig.blobs, rig.cfg.root)
+    rig.profile["access_wait_s"] = 15
+    rig.open(intake=repo(f"{site.url}/alpha.tar.gz"))
+    approve_when_asked(rig)
+    lid, rec = rig.session()
+    assert rec.release["ok"] and rec.release["outcome"] == "done", rig.stderr(lid)
+    assert not rig.graph.state["leases"][lid]["active"]
+    d = rig.deliveries()[-1]
+    needs = " ".join(d["needs"])
+    assert d["outcome"] == "blocked" and "执行层开不了这个出站目标" in needs and M0 in needs
+    assert "随题上传" in needs and site.seen == [] and rig.executor.calls == [] and rig.executor.aligned
+    (req,) = rig.requests()
+    assert req["status"] == "granted"
+    # 人照提示追问：交付已在，追问不冲突；下一个会话起得来、照实再说一遍，不再申请
+    rig.follow_up("继续")
+    lid2, rec2 = rig.session()
+    assert rec2.release["ok"] and rig.deliveries()[-1]["outcome"] == "blocked" and len(rig.requests()) == 1
+
+
+def test_a_driver_session_whose_sandbox_cannot_start_still_delivers(trig, site):  # noqa: F811
+    rig = trig(cases.recording("alpha", "code"))
+    ex = rig.executor = rig.runner.executor = M0Launch(rig.graph, rig.blobs, rig.cfg.root)
+    rig.open(intake=repo(f"{site.url}/alpha.tar.gz"))
+    lid = rig.lease("p1")
+    rec = rig.runner.run("p1", lid, statement=rig.statement, sandbox_id=None)  # 会话自己起执行容器
+    assert ex.launched == 1 and rec.release["ok"] and rec.release["outcome"] == "done", rig.stderr(lid)
+    d = rig.deliveries()[-1]
+    needs = " ".join(d["needs"])
+    assert d["outcome"] == "blocked" and "执行容器起不来" in needs and M0 in needs and "随题上传" in needs
+    assert rig.requests() == [] and site.seen == [] and ex.destroyed == []  # 没起来的容器不用销毁

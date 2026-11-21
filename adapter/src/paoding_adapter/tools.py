@@ -69,6 +69,7 @@ class Session:
     submitted: bool = False
     delivered: str | None = None  # 开放道：最近一次交付的 outcome（answered | partial | blocked）
     reviewed: bool = False  # 开放道的复核会话：读数已交回（体质修炼 002）
+    no_box: str = ""  # 执行容器起不来的原因（执行层编不了这道题的授权）；有沙箱时为空
     secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
     kb_cite: str = "grounds"  # 会话形态（功法 H1）：资料段落能进交付的 refs（refs），还是只能拿来找方向（grounds）
     tool_order: tuple[str, ...] | None = None  # 工具面的顺序（功法 H3），取自这道题开题时的那一版功法（FJ6）
@@ -238,6 +239,8 @@ class ToolHost:
             out["detail"] = "已批准，但它的风险高于本任务的风险上限，本任务的沙箱里不开"
         elif ready is None:
             out["detail"] = "已批准；本执行器不支持热加，下一个任务起沙箱时生效"
+        elif ready.get("unsupported"):
+            out["detail"] = f"已批准，但执行层开不了这个出站目标：{ready['unsupported']}"
         return out
 
     def _compiled(self, target: str) -> bool:
