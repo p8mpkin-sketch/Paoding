@@ -1,0 +1,23 @@
+{
+  "note": "三个验收用例对应的真外部系统（候选，跑之前 trial.py 会钉住提交并核对许可证，许可证不清楚的不开题）。可以改：repo 换成别的公开仓库，ref 写标签或提交（不写就取最新的标签，没有标签取默认分支此刻的提交）。",
+  "cases": [
+    {
+      "id": "trial-a",
+      "case": "甲：多阶段目标的证据确认",
+      "repo": "https://github.com/exiw-ai/proofloop",
+      "statement": "看看这个仓库怎么把一个目标拆成有先后的步骤、每一步要跑检查拿到证据才算完成，有什么值得我们集成的做法"
+    },
+    {
+      "id": "trial-b",
+      "case": "乙：长会话的上下文压缩与接力",
+      "repo": "https://github.com/OpenHands/software-agent-sdk",
+      "statement": "看看这个仓库里上下文快满时怎么把较早的过程压缩成摘要继续做、换会话时怎么接力，有什么值得我们集成的做法"
+    },
+    {
+      "id": "trial-c",
+      "case": "丙：证据自动留档与关联",
+      "repo": "https://github.com/dugarsumit/pydantic-ai-provenance",
+      "statement": "看看这个仓库怎么把工具调用的结果自动挂到最终回答的结论旁边、怎么核对引用，有什么值得我们集成的做法"
+    }
+  ]
+}
