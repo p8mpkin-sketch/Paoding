@@ -1,0 +1,26 @@
+{
+ "order": [
+  {
+   "candidate": "C1",
+   "position": 1,
+   "P": 4.0,
+   "why": "P = 4×1 ÷ (1×1) = 4.0，风险 R0"
+  },
+  {
+   "candidate": "C2",
+   "position": 2,
+   "P": 1.0,
+   "why": "P = 4×1 ÷ (2×2) = 1.0；与 C3 同 P、同风险，难度 2 < 3"
+  },
+  {
+   "candidate": "C3",
+   "position": 3,
+   "P": 1.0,
+   "waits_for": [
+    "C2"
+   ],
+   "why": "P = 6×1 ÷ (3×2) = 1.0；兼及 H1，与 C2 有先后边"
+  }
+ ],
+ "held": []
+}

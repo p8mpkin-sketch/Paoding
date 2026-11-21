@@ -1,0 +1,24 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "decision.schema.json",
+ "title": "闸点决定块解析后的形状（09 §2.4）：原文在 cz 的追问正文里，进事件账",
+ "type": "object",
+ "required": ["v", "gate"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "gate": { "enum": ["G1", "G2", "G3"] },
+  "pick": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/candId" }, "description": "G1 选" },
+  "exclude": { "type": "array", "items": { "type": "object", "required": ["candidate", "why"], "additionalProperties": false, "properties": { "candidate": { "$ref": "common.schema.json#/$defs/candId" }, "why": { "type": "string" } } } },
+  "confirm": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/candId" }, "description": "G2 确认" },
+  "edit": { "type": "array", "items": { "type": "object", "required": ["pointer", "value"], "additionalProperties": false, "properties": { "pointer": { "type": "string", "description": "候选编号.栏，例 C3.essence.statement" }, "value": {} } } },
+  "back": { "type": "array", "items": { "type": "string" }, "description": "退回：候选编号或闸点名" },
+  "drop": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/candId" } },
+  "to_implementation": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/candId" }, "description": "G3 交实现线" },
+  "hold": { "type": "array", "items": { "type": "object", "required": ["candidate"], "additionalProperties": false, "properties": { "candidate": { "$ref": "common.schema.json#/$defs/candId" }, "why": { "type": "string" } } } },
+  "library_import": { "type": "boolean" },
+  "redo": { "type": "string", "description": "重做本步的指示" },
+  "note": { "type": "string" },
+  "unparsed": { "type": "array", "items": { "type": "string" }, "description": "解析不了的行：引擎下一次交付列进 needs，不猜" }
+ }
+}

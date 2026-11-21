@@ -1,0 +1,61 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "handoff.schema.json",
+ "title": "交接包：引擎交给实现线的全部东西（12 §1）",
+ "type": "object",
+ "required": ["v", "run", "basis", "decided_by", "date", "order", "items", "bang_updates", "validator"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "run": { "type": "string", "description": "分析实例里的题号" },
+  "basis": { "$ref": "candidates.schema.json#/properties/basis" },
+  "decided_by": { "type": "string" },
+  "date": { "$ref": "common.schema.json#/$defs/date" },
+  "g3_follow_up_seq": { "type": "integer", "description": "闸点 3 的追问事件在分析实例里的 seq：cz 的裁决出处" },
+  "order": {
+   "type": "array",
+   "description": "火序（08 §6）",
+   "items": { "type": "object", "required": ["candidate", "position", "P", "why"], "additionalProperties": false,
+    "properties": { "candidate": { "$ref": "common.schema.json#/$defs/candId" }, "position": { "type": "integer", "minimum": 1 }, "P": { "type": "number" }, "waits_for": { "type": "array", "items": { "type": "string" } }, "why": { "$ref": "common.schema.json#/$defs/shortText" } } }
+  },
+  "held": { "type": "array", "items": { "type": "object", "required": ["candidate", "why"], "additionalProperties": false, "properties": { "candidate": { "$ref": "common.schema.json#/$defs/candId" }, "why": { "enum": ["exclusive_pending", "waits_structural", "waits_kernel_split", "cycle", "slot_locked"] }, "note": { "type": "string" } } } },
+  "items": {
+   "type": "array",
+   "description": "G3 决定“交实现线”的候选，每个一份",
+   "items": {
+    "type": "object",
+    "required": ["candidate", "decision", "seed", "cuiyi", "essence", "placement", "artifacts"],
+    "additionalProperties": false,
+    "properties": {
+     "candidate": { "$ref": "common.schema.json#/$defs/candId" },
+     "decision": { "enum": ["to_implementation"] },
+     "seed": { "$ref": "candidates.schema.json#/$defs/candidate/properties/seed" },
+     "cuiyi": {
+      "type": "object",
+      "description": "由火意按 12 §2.2 渲染的八栏字符串，喂给 lianhua.cuiyi()",
+      "required": ["yi", "premise", "cost", "overlap", "conflict", "hypothesis", "split", "masked"],
+      "additionalProperties": false,
+      "properties": { "yi": { "type": "string" }, "premise": { "type": "string" }, "cost": { "type": "string" }, "overlap": { "type": "string" }, "conflict": { "type": "string" }, "hypothesis": { "type": "string" }, "split": { "type": "string" }, "masked": { "type": "string" } }
+     },
+     "essence": { "$ref": "essence.schema.json" },
+     "placement": { "$ref": "placement.schema.json" },
+     "artifacts": {
+      "type": "object",
+      "description": "分析实例里各产物的 sha256：导入后炼档的 engine 块记下，供回查",
+      "required": ["candidates", "essence", "placement", "report"],
+      "additionalProperties": false,
+      "properties": { "candidates": { "$ref": "common.schema.json#/$defs/sha256" }, "essence": { "$ref": "common.schema.json#/$defs/sha256" }, "placement": { "$ref": "common.schema.json#/$defs/sha256" }, "report": { "$ref": "common.schema.json#/$defs/sha256" } }
+     }
+    }
+   }
+  },
+  "bang_updates": { "type": "array", "items": { "$ref": "bang.schema.json#/$defs/update" } },
+  "profile_proposals": {
+   "type": "array",
+   "description": "剖面修订提议（量具改动，cz 单独裁）",
+   "items": { "type": "object", "required": ["dim", "change", "why"], "additionalProperties": false, "properties": { "dim": { "type": "string" }, "change": { "enum": ["add_dim", "relevel", "reweight"] }, "level": { "$ref": "common.schema.json#/$defs/level" }, "why": { "type": "string" } } }
+  },
+  "library_import": { "type": "boolean", "description": "G3 勾了“报告存入资料库”：由界面以 cz 的身份导入" },
+  "validator": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/checkResult" }, "minItems": 12 }
+ }
+}
