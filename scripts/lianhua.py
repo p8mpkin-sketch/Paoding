@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from paoding_fenjue import lianhua as lh
-from paoding_fenjue.contract import check
+from paoding_fenjue.contract import check, digest, fire_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOSSIERS = ROOT / "docs" / "design" / "fenjue" / "dossiers"
@@ -100,6 +100,53 @@ def static_errors(f: dict[str, Any]) -> list[str]:
         if not p.exists() or hashlib.sha256(p.read_bytes()).hexdigest() != a["sha256"]:
             errs.append(f"{f['id']}: 资产 {a['name']} 的 sha256 与文件不符")
     return errs
+
+
+def _fire_file(r: str) -> dict[str, Any]:
+    fid, _, ver = r.partition("@")
+    p = PKG / "fires" / f"{fid}.json"
+    if p.exists():
+        f: dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
+        if f["ver"] == int(ver):
+            return f
+    a = PKG / "archive" / "fires" / f"{r}.json"
+    if not a.exists():
+        raise SystemExit(f"没有 {r} 的清单：既不是当前版本，存档里也没有")
+    old: dict[str, Any] = json.loads(a.read_text(encoding="utf-8"))
+    return old
+
+
+def archive(g: dict[str, Any]) -> str:
+    """把一版功法存档（FJ6）：archive/gongfa/<摘要>.json、它引用的每团火 archive/fires/<id>@<ver>.json、
+    火的资产 archive/assets/<sha256>。在跑的题按开题时记下的摘要从这里取功法，所以存档只增不改：
+    同名的已经在了，内容必须一样，不一样就停下（多半是改了清单却没升 ver）。返回这版功法的摘要。"""
+    refs = sorted({r for rs in [*g["fires"].values(), *(g.get("holdout") or {}).values()] for r in rs})
+    fires = {r: _fire_file(r) for r in refs}
+    body = {k: v for k, v in g.items() if k != "digest"}
+    dg = digest({"gongfa": body, "fires": {r: fire_digest(f) for r, f in fires.items()}})
+    root = PKG / "archive"
+    for sub in ("gongfa", "fires", "assets"):
+        (root / sub).mkdir(parents=True, exist_ok=True)
+    for r, f in fires.items():
+        p = root / "fires" / f"{r}.json"
+        if p.exists():
+            if fire_digest(json.loads(p.read_text(encoding="utf-8"))) != fire_digest(f):
+                raise SystemExit(f"存档里的 {r} 与此刻的清单不同：清单改了要升 ver，存档只增不改")
+        else:
+            _write_json(p, f)
+        for a in f["assets"]:
+            dst = root / "assets" / a["sha256"]
+            if dst.exists():
+                continue
+            src = ROOT / a["name"]
+            data = src.read_bytes() if src.exists() else b""
+            if hashlib.sha256(data).hexdigest() != a["sha256"]:
+                raise SystemExit(f"{r} 的资产 {a['name']} 与清单里的 sha256 不符，存不了档")
+            dst.write_bytes(data)
+    p = root / "gongfa" / f"{dg}.json"
+    if not p.exists():
+        _write_json(p, body)
+    return dg
 
 
 def candidate(d: dict[str, Any]) -> Path:
@@ -233,16 +280,24 @@ def cmd_jue(a: argparse.Namespace) -> None:
     d, g = lh.jue(load(a.no), gongfa_raw(), a.by, a.date or _today(), a.outcome, a.condition)
     save(d)
     if g != gongfa_raw():
+        dg = archive(g)  # 先存档再生效：新开的题记下的摘要，存档里一定有
         _write_json(GONGFA, g)
-        print(f"功法 → 第 {g['jie']} 阶；{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}")
+        print(f"功法 → 第 {g['jie']} 阶；{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；存档 {dg[:12]}")
     print(f"裁决：{lh.OUTCOMES[a.outcome]} → {path_of(d['dossier']).relative_to(ROOT)}")
 
 
 def cmd_sanhuo(a: argparse.Namespace) -> None:
     d, g = lh.sanhuo(load(a.no), gongfa_raw(), a.by, a.date or _today(), a.why)
     save(d)
+    dg = archive(g)
     _write_json(GONGFA, g)
-    print(f"散火：{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；功法 → 第 {g['jie']} 阶")
+    print(f"散火：{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；功法 → 第 {g['jie']} 阶；存档 {dg[:12]}")
+    print("在跑的题照开题时的那一版跑完（FJ6）；之后新开的题用散火后的功法")
+
+
+def cmd_archive(a: argparse.Namespace) -> None:
+    """手改了功法或修订了一团火（本火修订，不走炼档）之后补存档；已经存过的不动。"""
+    print(f"存档 {archive(gongfa_raw())}")
 
 
 def cmd_status(a: argparse.Namespace) -> None:
@@ -313,6 +368,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--why", required=True)
     p.add_argument("--date")
     p.set_defaults(fn=cmd_sanhuo)
+    p = sub.add_parser("archive", help="把此刻的功法存档（在跑的题按开题时的那一版取功法，FJ6）")
+    p.set_defaults(fn=cmd_archive)
     p = sub.add_parser("status", help="每份炼档走到哪一步")
     p.add_argument("no", nargs="?")
     p.set_defaults(fn=cmd_status)

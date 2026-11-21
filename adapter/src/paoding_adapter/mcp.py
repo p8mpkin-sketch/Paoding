@@ -57,7 +57,7 @@ class ToolEndpoint:
         if method == "ping":
             return {"jsonrpc": "2.0", "id": mid, "result": {}}
         if method == "tools/list":
-            return {"jsonrpc": "2.0", "id": mid, "result": {"tools": tool_schemas(host.s.tools)}}
+            return {"jsonrpc": "2.0", "id": mid, "result": {"tools": tool_schemas(host.s.tools, host.s.tool_order)}}
         if method == "tools/call":
             p = msg.get("params") or {}
             try:

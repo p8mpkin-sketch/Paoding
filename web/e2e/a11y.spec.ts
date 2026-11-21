@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const TOKEN = "mock-human-token";
-const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/models", "/knowledge", "/knowledge/memory", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
+const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/capability", "/models", "/knowledge", "/knowledge/memory", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
 const THEMES = ["light", "dark", "contrast"];
 
 test.beforeEach(async ({ page, request }) => {

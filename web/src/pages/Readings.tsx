@@ -18,7 +18,7 @@ import { LEASE_WORD } from "../ui/Sessions";
 import { Link, useProblems } from "./Problems";
 
 const AUTHORITIES = [["local", "本地判定"], ["external", "外部判定"], ["human", "人工验收"], ["self", "开放道"]] as const;
-const UNAVAILABLE = ["评测台四臂与消融结果", "结构归因表", "折损账（割与折）", "切口命中率", "校准曲线（预测账）", "常设留出", "退役距离", "学习曲线"];
+const UNAVAILABLE = ["评测台四臂与消融结果", "结构归因表", "折损账（割与折）", "切口命中率", "校准曲线（预测账）", "退役距离", "学习曲线"];
 const KIND_WORD: Record<string, string> = { ...LEASE_WORD, verify: "复核", recall: "回忆", other: "其他" };
 type Range = "7" | "30" | "all";
 const RANGE_WORD: Record<Range, string> = { "7": "近 7 天", "30": "近 30 天", all: "全部" };
@@ -164,6 +164,7 @@ export function Readings({ now = 0 }: { now?: number }) {
       <details className="rd-sec rd-na">
         <summary><h3>暂不可用</h3><span className="t2">{UNAVAILABLE.length} 项还没有读端点</span></summary>
         <ul>{UNAVAILABLE.map((u) => <li key={u}>{u}：暂不可用（还没有对应的读端点）</li>)}</ul>
+        <p className="t2">能力配置的版本历史、集成记录与 Holdout 对照在 <Link to={{ page: "evolution" }}>能力配置</Link> 页。</p>
       </details>
       <details className="rd-sec">
         <summary><h3>界面使用读数（本机）</h3></summary>

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
-from paoding_fenjue.contract import form, in_holdout, params
+from paoding_fenjue.contract import View, for_problem, params
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import activity as act
@@ -36,7 +36,7 @@ from . import creds
 from .mcp import ToolEndpoint
 from .package import MEDIA_TYPE, render
 from .proxy import EndpointProxy
-from .tools import KnowledgePort, Session, ToolHost, solve_ceiling
+from .tools import KnowledgePort, Session, ToolHost, solve_ceiling, tool_order
 
 LOG = logging.getLogger("adapter")
 CLI_STDERR = "cli.stderr.log"  # 会话目录里：CLI 的 stderr（两轮追加写）。CLI 出错时只在这里留话
@@ -180,21 +180,24 @@ class SessionRunner:
         (sdir / "home").mkdir(exist_ok=True)
         # 会话形态（功法 H1 的清单，paoding_fenjue）：带哪些工具、要不要接力、以什么收尾。
         # 独行（开放道，open-lane §3.2）一个会话做到底，交付即结束，接力时拷上一个会话的工作区；三段式写论断、交判官
-        shape = form(role, pid)
+        # 功法取这道题开题时记下的那一版（FJ6）：散火、换火之后，在跑的题照旧按原版本跑完
+        gf = for_problem(self.reader.state["problems"].get(pid))
+        shape = gf.form(role, pid)
         tools: tuple[str, ...] = tuple(shape["tools"])
         if shape["relay"]:
             self._relay(pid, lease_id, ws)
-        face = params("H3", "h3.base")
+        face = gf.params("H3", "h3.base")
         if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
             tools += (face["grant_tool"],)
         kb = self.cfg.knowledge
         if kb is not None and kb.available(pid):  # 知识选项不是“不用”、范围里有可检索的资料
-            tools += tuple(params("H3", "h3.kb")["tools"])
+            tools += tuple(gf.params("H3", "h3.kb")["tools"])
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
         if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
         s.kb_cite = shape["kb_cite"]
+        s.tool_order = tool_order(gf)
         s.secrets = creds.found(statement)  # 原话里的凭据：写进扩权申请与交付之前逐字遮盖（creds.py）
         host = ToolHost(
             s,
@@ -221,8 +224,8 @@ class SessionRunner:
             "role": role,
             # 入账与否：部署的开关（散火即 ledger_roles=()），再看这道题在 H6 上是否分在常设留出（F5，留出的是
             # #115 原样的 h6.activity，不入账）
-            "ledger": self._ledgered(pid, role),
-            "ledgered": self._ledgered(pid, role),
+            "ledger": self._ledgered(pid, role, gf),
+            "ledgered": self._ledgered(pid, role, gf),
             "anchor_at": self.clock(),
             "anchor_lock": threading.Lock(),
         }
@@ -434,10 +437,10 @@ class SessionRunner:
             return
         self._anchor(lease_id, pid, token)
 
-    def _ledgered(self, pid: str, role: str) -> bool:
+    def _ledgered(self, pid: str, role: str, gf: View) -> bool:
         roles = self.cfg.ledger_roles
-        if in_holdout(pid, "H6"):  # 留出的火（h6.activity）在这道题上顶替入账的那团：照它的清单
-            roles = tuple(r for r in roles if r in params("H6", "h6.activity-ledger", pid).get("ledger_roles", []))
+        if gf.in_holdout(pid, "H6"):  # 留出的火（h6.activity）在这道题上顶替入账的那团：照它的清单
+            roles = tuple(r for r in roles if r in gf.params("H6", "h6.activity-ledger", pid).get("ledger_roles", []))
         return role in roles
 
     def _segments_in(self, pid: str) -> int:
