@@ -3,6 +3,7 @@
 开题时 `open_problem.gongfa` 记下题开在哪一版功法之下（F3）；能力层每次派工都按这一版取功法（FJ6）。
 - T4-3：领租约时 `lease.form` 按这道题**生效的**那一版查 `Config.gongfa_archive` 抄，不再照抄启动时的配置；
 - T4-4：`repin` 只有人能提交，把一道在跑的题改钉到存档里更低的一版，下一次派工起生效，在跑的会话不受影响；
+- T4-5：也可以改回开题时的那一版（撤销误操作）；除此之外只许往低改。
 
 内核不认识任何一团火：版本只是 (摘要, 品阶) 两个不透明的值，形态表由组装根从功法存档取来，内核只查不解释。
 `apply` 不读配置（R2）：改钉记进题的 `repins`，开题时的 `gongfa` 不动，两样都留着备查。
@@ -55,8 +56,9 @@ def _v_repin(state: State, actor: Actor, pid: str, body: Obj, cfg: Config) -> Ok
         return Reject("unknown_ref", f"功法存档里没有第 {jie} 阶 {dg[:12]}…")
     if dg == now["digest"]:
         return Reject("conflict", "这道题已经在这一版上")
-    if jie >= now["jie"]:
-        return Reject("forbidden_op", f"只能改到更低的一阶（此刻第 {now['jie']} 阶）")
+    back = dg == opened["digest"] and jie == opened["jie"]  # T4-5：改回开题那一版
+    if not back and jie >= now["jie"]:
+        return Reject("forbidden_op", f"只能改到更低的一阶（此刻第 {now['jie']} 阶），或改回开题时的那一版")
     return Ok({"to": {"jie": jie, "digest": dg}, "reason": reason})
 
 

@@ -39,6 +39,7 @@
 | `repin` 只认人的令牌；只许改到存档里有的、更低的一版；同一版、品阶对不上、焚决之前的题、关过的题拒；提交体字段白名单 | `test_repin.py::test_t4_4_who_and_where_a_task_can_be_repinned`；`test_malformed.py`（每种操作都有合法样例与畸形样例） |
 | 能力层：`for_problem` 按最后一条改钉取功法（司南编排、会话形态、入账都只经它取，不用改）；`kernel_config` 带全部存档 | `fenjue/tests/test_pinning.py` 两条 |
 | 读数：改钉过的题单列一行，不进常设留出的任何一臂；`archive` 一栏 | `fenjue/tests/test_readings.py::test_repinned_tasks_get_their_own_row_and_stay_out_of_both_arms` |
+| T4-5：改钉可以撤回开题那一版，但不许升到开题之后才上线的版本（单独一个文件，否决即删） | `graph/tests/test_repin_back.py` |
 | `pd repin`：按品阶解析摘要、同阶几版要挑、经 HTTP 提议通道提交，被拒原样报出 | `pd/tests/test_pd_repin.py` |
 | R1 黄金日志逐字节回放（新录 repin 道，4 份日志 19 条事件）、R3 新旧混放、R5 信封不升版（权能表 human 一行多 `repin`） | `tests/fenjue/test_t4_zhang.py`、`test_repin.py::test_r1_r3_tasks_with_and_without_repins_replay_together`、`tests/fenjue/test_tables.py` |
 
@@ -49,7 +50,7 @@
 
 ## 五、体质改动行数
 
-`graph/src` 下 7 个文件，T4-3 与 T4-4 共 +88 −3 行（新文件 `reducer/pin.py` 67 行），T4-5 另 +4 −1 行。单列在这里，不算进任何一次吞噬。
+`graph/src` 下 7 个文件，T4-3 与 T4-4 共 +88 −3 行（新文件 `reducer/pin.py` 67 行），T4-5 另 +4 −2 行。单列在这里，不算进任何一次吞噬。
 
 ## 六、待裁
 
