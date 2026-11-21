@@ -216,6 +216,29 @@
     ],
     "answers": 0
    }
+  },
+  "raw": {
+   "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+   "out": {
+    "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "addr",
+      "start": 3,
+      "end": 10,
+      "text": "q3:8080"
+     },
+     {
+      "id": "s2",
+      "kind": "sentence",
+      "start": 0,
+      "end": 30,
+      "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。"
+     }
+    ],
+    "answers": 0
+   }
   }
  },
  "drafts": {
@@ -1801,6 +1824,240 @@
        },
        "goal": {
         "statement": "帮我比较三种排序算法在十万个整数上的速度，写一份结论。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": []
+      }
+     }
+    ]
+   }
+  },
+  "raw": {
+   "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "draft_unavailable",
+      "field": "draft",
+      "text": "起草不可用（起草模型连不上），按原话开题：题面与目标就是原话，题名取原话开头；原文里的地址只当材料、金额与时长不认，用默认预算；执行时要访问外部地址会按需申请",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "source": "span",
+      "spans": [
+       "s2"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "source": "span",
+      "spans": [
+       "s2"
+      ],
+      "note": "起草不可用：取原话开头"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "materials",
+      "value": "q3:8080",
+      "source": "span",
+      "spans": [
+       "s1"
+      ],
+      "note": "起草没有指认的地址：只当文字，不开通路"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     }
+    ],
+    "input": {
+     "title": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": [
+       "$references"
+      ]
+     },
+     "goal": {
+      "statement": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": []
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-a87ce3bcdab3",
+    "nonce": "fixture-raw",
+    "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "addr",
+      "start": 3,
+      "end": 10,
+      "text": "q3:8080"
+     },
+     {
+      "id": "s2",
+      "kind": "sentence",
+      "start": 0,
+      "end": 30,
+      "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。"
+     }
+    ],
+    "has_answer": false,
+    "draft": null,
+    "model": "heuristic",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "hash": "4e2dce6547ffd78054fef1453ea53f62bb051ee2a3cd51c1d186c541ae6354e6",
+      "size": 72
+     },
+     {
+      "name": "references",
+      "media_type": "text/uri-list",
+      "text": "q3:8080\n",
+      "hash": "44643340a2099b5378d2f218bfe71983be77a8e3ac43215eb37ac86634d1f228",
+      "size": 8
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},{\"field\":\"title\",\"note\":\"起草不可用：取原话开头\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"materials\",\"note\":\"起草没有指认的地址：只当文字，不开通路\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"q3:8080\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},\"judges\":[],\"origin\":{\"materials\":[\"$references\"],\"statement_ref\":\"$statement\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"draft_unavailable\",\"field\":\"draft\",\"lane\":\"confirm\",\"text\":\"起草不可用（起草模型连不上），按原话开题：题面与目标就是原话，题名取原话开头；原文里的地址只当材料、金额与时长不认，用默认预算；执行时要访问外部地址会按需申请\"}],\"pid\":\"kt-a87ce3bcdab3\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "5e29401f89f46ac42875acb5df4517421e897ffd2ae9d3ee7e1bfd96650b07b5",
+      "size": 2006
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "4e2dce6547ffd78054fef1453ea53f62bb051ee2a3cd51c1d186c541ae6354e6",
+       "size": 72,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "44643340a2099b5378d2f218bfe71983be77a8e3ac43215eb37ac86634d1f228",
+       "size": 8,
+       "media_type": "text/uri-list",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "5e29401f89f46ac42875acb5df4517421e897ffd2ae9d3ee7e1bfd96650b07b5",
+       "size": 2006,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [
+         "$1"
+        ],
+        "draft": {
+         "record": "$2",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
         "accept": "open"
        },
        "scope": [
@@ -5390,6 +5647,261 @@
           "s_team01"
          ]
         }
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "raw",
+   "overrides": {
+    "model": "light"
+   },
+   "out": {
+    "lane": "open",
+    "eligible": false,
+    "notes": [
+     {
+      "code": "draft_unavailable",
+      "field": "draft",
+      "text": "起草不可用（上一轮起草不可用，这一轮不再调起草模型），按原话开题：题面与目标就是原话，题名取原话开头；原文里的地址只当材料、金额与时长不认，用默认预算；执行时要访问外部地址会按需申请",
+      "lane": "confirm"
+     },
+     {
+      "code": "human_edit",
+      "field": "lane",
+      "text": "你在卡上改了 prefs.model",
+      "lane": "confirm"
+     }
+    ],
+    "derivation": [
+     {
+      "field": "goal.statement",
+      "value": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "source": "span",
+      "spans": [
+       "s2"
+      ]
+     },
+     {
+      "field": "title",
+      "value": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "source": "span",
+      "spans": [
+       "s2"
+      ],
+      "note": "起草不可用：取原话开头"
+     },
+     {
+      "field": "goal.check",
+      "value": "开放道 · 不登记判据",
+      "source": "table",
+      "note": "交付带证据，未经独立判定"
+     },
+     {
+      "field": "materials",
+      "value": "q3:8080",
+      "source": "span",
+      "spans": [
+       "s1"
+      ],
+      "note": "起草没有指认的地址：只当文字，不开通路"
+     },
+     {
+      "field": "scope[0]",
+      "value": "workspace（不开任何出站）",
+      "source": "table",
+      "note": "开题零出站，执行时按需申请"
+     },
+     {
+      "field": "budget.usd_milli",
+      "value": 2000,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.wall_s",
+      "value": 1800,
+      "source": "prior",
+      "note": "档位 medium（table）· placeholder:placeholder-0"
+     },
+     {
+      "field": "budget.shares",
+      "value": {
+       "verify_share": 0.2,
+       "bootstrap_share": 0.3
+      },
+      "source": "table"
+     },
+     {
+      "field": "prefs.model",
+      "value": "light",
+      "source": "human",
+      "note": "人在确认卡上选的执行模型档案"
+     }
+    ],
+    "input": {
+     "title": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+     "origin": {
+      "statement_ref": "$statement",
+      "materials": [
+       "$references"
+      ]
+     },
+     "goal": {
+      "statement": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "accept": "open"
+     },
+     "scope": [
+      {
+       "resource": "workspace",
+       "pattern": "",
+       "actions": [
+        "read",
+        "write"
+       ],
+       "risk": "r0"
+      }
+     ],
+     "budget": {
+      "usd_milli": 2000,
+      "wall_s": 1800,
+      "verify_share": 0.2,
+      "bootstrap_share": 0.3
+     },
+     "env": {
+      "base": "basic",
+      "baseline_ref": "basic@1"
+     },
+     "judges": [],
+     "prefs": {
+      "model": "light"
+     }
+    },
+    "priors": "placeholder:placeholder-0",
+    "external": null,
+    "needs_ack": null,
+    "pid": "kt-a87ce3bcdab3",
+    "nonce": "fixture-raw",
+    "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+    "spans": [
+     {
+      "id": "s1",
+      "kind": "addr",
+      "start": 3,
+      "end": 10,
+      "text": "q3:8080"
+     },
+     {
+      "id": "s2",
+      "kind": "sentence",
+      "start": 0,
+      "end": 30,
+      "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。"
+     }
+    ],
+    "has_answer": false,
+    "draft": null,
+    "model": "",
+    "zero_confirm": false,
+    "caps": {
+     "open_usd_milli": 20000,
+     "open_wall_s": 14400
+    },
+    "blobs": [
+     {
+      "name": "statement",
+      "media_type": "text/plain; charset=utf-8",
+      "text": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+      "hash": "4e2dce6547ffd78054fef1453ea53f62bb051ee2a3cd51c1d186c541ae6354e6",
+      "size": 72
+     },
+     {
+      "name": "references",
+      "media_type": "text/uri-list",
+      "text": "q3:8080\n",
+      "hash": "44643340a2099b5378d2f218bfe71983be77a8e3ac43215eb37ac86634d1f228",
+      "size": 8
+     },
+     {
+      "name": "derivation",
+      "media_type": "application/vnd.paoding.kaiti-derivation+json",
+      "text": "{\"derivation\":[{\"field\":\"goal.statement\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},{\"field\":\"title\",\"note\":\"起草不可用：取原话开头\",\"source\":\"span\",\"spans\":[\"s2\"],\"value\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},{\"field\":\"goal.check\",\"note\":\"交付带证据，未经独立判定\",\"source\":\"table\",\"value\":\"开放道 · 不登记判据\"},{\"field\":\"materials\",\"note\":\"起草没有指认的地址：只当文字，不开通路\",\"source\":\"span\",\"spans\":[\"s1\"],\"value\":\"q3:8080\"},{\"field\":\"scope[0]\",\"note\":\"开题零出站，执行时按需申请\",\"source\":\"table\",\"value\":\"workspace（不开任何出站）\"},{\"field\":\"budget.usd_milli\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":2000},{\"field\":\"budget.wall_s\",\"note\":\"档位 medium（table）· placeholder:placeholder-0\",\"source\":\"prior\",\"value\":1800},{\"field\":\"budget.shares\",\"source\":\"table\",\"value\":{\"bootstrap_share\":0.3,\"verify_share\":0.2}},{\"field\":\"prefs.model\",\"note\":\"人在确认卡上选的执行模型档案\",\"source\":\"human\",\"value\":\"light\"}],\"eligible\":false,\"external\":null,\"input\":{\"budget\":{\"bootstrap_share\":0.3,\"usd_milli\":2000,\"verify_share\":0.2,\"wall_s\":1800},\"env\":{\"base\":\"basic\",\"baseline_ref\":\"basic@1\"},\"goal\":{\"accept\":\"open\",\"statement\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},\"judges\":[],\"origin\":{\"materials\":[\"$references\"],\"statement_ref\":\"$statement\"},\"prefs\":{\"model\":\"light\"},\"scope\":[{\"actions\":[\"read\",\"write\"],\"pattern\":\"\",\"resource\":\"workspace\",\"risk\":\"r0\"}],\"title\":\"看看 q3:8080 上的服务为什么启动慢，给出原因和改法。\"},\"lane\":\"open\",\"needs_ack\":null,\"notes\":[{\"code\":\"draft_unavailable\",\"field\":\"draft\",\"lane\":\"confirm\",\"text\":\"起草不可用（上一轮起草不可用，这一轮不再调起草模型），按原话开题：题面与目标就是原话，题名取原话开头；原文里的地址只当材料、金额与时长不认，用默认预算；执行时要访问外部地址会按需申请\"},{\"code\":\"human_edit\",\"field\":\"lane\",\"lane\":\"confirm\",\"text\":\"你在卡上改了 prefs.model\"}],\"pid\":\"kt-a87ce3bcdab3\",\"priors\":\"placeholder:placeholder-0\"}",
+      "hash": "c41d502b6aa3236a312ea39ac01770b72188c4a8de9ac2c7d8948f7ec58c2089",
+      "size": 2271
+     }
+    ],
+    "ops": [
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "4e2dce6547ffd78054fef1453ea53f62bb051ee2a3cd51c1d186c541ae6354e6",
+       "size": 72,
+       "media_type": "text/plain; charset=utf-8",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "44643340a2099b5378d2f218bfe71983be77a8e3ac43215eb37ac86634d1f228",
+       "size": 8,
+       "media_type": "text/uri-list",
+       "class": "input"
+      }
+     },
+     {
+      "op": "register_artifact",
+      "body": {
+       "hash": "c41d502b6aa3236a312ea39ac01770b72188c4a8de9ac2c7d8948f7ec58c2089",
+       "size": 2271,
+       "media_type": "application/vnd.paoding.kaiti-derivation+json",
+       "class": "input"
+      }
+     },
+     {
+      "op": "open_problem",
+      "body": {
+       "title": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+       "origin": {
+        "statement_ref": "$0",
+        "materials": [
+         "$1"
+        ],
+        "draft": {
+         "record": "$2",
+         "lane": "open"
+        }
+       },
+       "goal": {
+        "statement": "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。",
+        "accept": "open"
+       },
+       "scope": [
+        {
+         "resource": "workspace",
+         "pattern": "",
+         "actions": [
+          "read",
+          "write"
+         ],
+         "risk": "r0"
+        }
+       ],
+       "budget": {
+        "usd_milli": 2000,
+        "wall_s": 1800,
+        "verify_share": 0.2,
+        "bootstrap_share": 0.3
+       },
+       "env": {
+        "base": "basic",
+        "baseline_ref": "basic@1"
+       },
+       "judges": [],
+       "prefs": {
+        "model": "light"
        }
       }
      }

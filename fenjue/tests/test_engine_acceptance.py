@@ -113,8 +113,12 @@ def test_combined_fixture_matches_the_design_example(g1_runs):
         ]
         assert c.get("dedupe", {}).get("bang") == w.get("dedupe", {}).get("bang")
         assert set(w["flags"]) <= set(c["flags"])
-    strip = [{k: a[k] for k in ("dim", "ours", "theirs", "by")} for a in doc["already_have"]]
-    assert strip == [{k: a[k] for k in ("dim", "ours", "theirs", "by")} for a in want["already_have"]]
+
+    # 设计样例按写稿时的功法记 id@ver；之后的本火修订（不升品阶）只改 ver，这里按火的 id 比
+    def strip(rows: list[dict]) -> list[tuple]:
+        return [(a["dim"], a["ours"], a["theirs"], a["by"].partition("@")[0]) for a in rows]
+
+    assert strip(doc["already_have"]) == strip(want["already_have"])
     assert [n["what"] for n in doc["not_fire"]] == [n["what"] for n in want["not_fire"]]
     assert doc["unseen_slots"] == want["unseen_slots"]
 
@@ -124,7 +128,7 @@ def test_gamma_splits_trace_from_auto_link(g1_runs):
     doc = g1_runs[("gamma", "code")][2]
     assert [c["name"] for c in doc["candidates"]] == ["dual-proof"]
     assert [(a["dim"], a["ours"], a["theirs"], a["by"]) for a in doc["already_have"]] == [
-        ("h3.exec-trace", 3, 2, "h3.base@1")
+        ("h3.exec-trace", 3, 2, "h3.base@2")
     ]
 
 

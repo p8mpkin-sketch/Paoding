@@ -121,17 +121,32 @@ def vet(
         note("multiple_answers", "goal.check", "原文里有不止一个答案行", "refuse")
     elif answers:
         secret = answers[0]
+    cat = catalog or defaults_catalog(dfl)
+    raw = False  # 起草不可用、按原话直开开放道（地图 Q38，D14；体质修炼 004）
     if d is None:
-        note("bad_draft", "draft", f"起草结果不可用：{draft_error or '没有草案'}", "refuse")
-        return _done(notes, der, None, ext, secret, [], None, nonce, priors, False, intake, zero_confirm)
+        why = draft_error or "没有草案"
+        d = _raw_draft(ext) if _raw_ok(ext, secret, acceptance, open_ok, cat) and not notes else None
+        if d is None:
+            note("bad_draft", "draft", f"起草结果不可用：{why}", "refuse")
+            return _done(notes, der, None, ext, secret, [], None, nonce, priors, False, intake, zero_confirm)
+        raw = True
+        note(
+            "draft_unavailable",
+            "draft",
+            f"起草不可用（{why}），按原话开题：题面与目标就是原话，题名取原话开头；原文里的地址只当材料、"
+            "金额与时长不认，用默认预算；"
+            + ("执行时要访问外部地址会按需申请" if settings.grants_runtime else "这次不开任何出站"),
+        )
 
     # ---------- 目标 ----------
     goal_text = "".join(ext.span(s).value for s in d.goal_sentence)  # type: ignore[union-attr]
     der.append(_src("goal.statement", goal_text, "span", list(d.goal_sentence)))
-    der.append(_src("title", d.title, "model"))
+    if raw:
+        der.append(_src("title", d.title, "span", [d.goal_sentence[0]], "起草不可用：取原话开头"))
+    else:
+        der.append(_src("title", d.title, "model"))
 
     # ---------- 判据（形态目录由注册表驱动，见 catalog.py） ----------
-    cat = catalog or defaults_catalog(dfl)
     judges: list[str]
     check: dict[str, Any]
     accept, items = "judge", []
@@ -363,7 +378,7 @@ def vet(
         else:
             wall = val
     for sp_kind, chosen, label in (("money", d.spend, "金额"), ("duration", d.deadline, "时长")):
-        if chosen is None and ext.of(sp_kind) and not (external is not None and sp_kind == "duration"):
+        if chosen is None and ext.of(sp_kind) and not raw and not (external is not None and sp_kind == "duration"):
             note(f"unclaimed_{sp_kind}", "budget", f"原文里有{label}，起草没有指认它；用的是默认值")
     if tier_src == "model":
         note("model_tier", "budget", f"档位 {tier} 是起草模型猜的")
@@ -441,6 +456,28 @@ def vet(
     if v.lane != "refuse":
         v.external, v.needs_ack = external, needs_ack
     return v
+
+
+RAW_TITLE_MAX = 40  # 与草案 title 的上限相同（draft.parse_draft）
+
+
+def _raw_ok(
+    ext: Extraction, secret: str | None, acceptance: list[Mapping[str, Any]] | None, open_ok: bool, cat: Catalog
+) -> bool:
+    """起草不可用时能不能按原话直开（D14）：只在会进开放道的题上。人给了答案（要判官比对）、给了验收清单、
+    选了严格判定或关了开放道、原文里认出已登记的平台（判定权在平台）时，都要草案里的结构，照旧拒绝。"""
+    if not open_ok or secret is not None or acceptance or not ext.of("sentence"):
+        return False
+    return not any(cat.platform_of(str(sp.value)) for sp in ext.of("url") + ext.of("addr") + ext.of("host"))
+
+
+def _raw_draft(ext: Extraction) -> Draft:
+    """按原话的草案：目标是原文的全部句子，题名取第一句的开头；不指认入口、交付物、检查命令、金额、时长与档位。
+    确定性代码，不调模型：同一段原文恒得同一份。"""
+    sents = ext.of("sentence")
+    first = " ".join(str(sents[0].value).split())
+    title = first if len(first) <= RAW_TITLE_MAX else first[: RAW_TITLE_MAX - 1] + "…"
+    return Draft(title=title or "按原话开题", goal_sentence=tuple(sp.id for sp in sents))
 
 
 ACCEPTANCE_MAX, ACCEPTANCE_TEXT_MAX = 32, 200  # 与内核 goal.acceptance 的上限相同

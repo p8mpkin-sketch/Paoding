@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import random
 import string
@@ -299,10 +300,54 @@ def test_title_leak():
     assert v.lane == "refuse"
 
 
-def test_bad_draft_refuses():
+def test_bad_draft_refuses_when_the_task_needs_the_draft():
+    """起草不可用时，有答案（要判官比对）、有验收清单、选了严格判定、关了开放道的题照旧拒绝（D14 只放开放道）。"""
     e = extract(T1, INTAKE.labels)
     v = vet(e, None, None, INTAKE, SETTINGS, PRIORS, draft_error="超时")
-    assert v.lane == "refuse" and "超时" in v.notes[0].text
+    assert v.lane == "refuse" and "超时" in v.notes[0].text and v.notes[0].code == "bad_draft"
+    e2 = extract(RAW, INTAKE.labels)
+    for kw in ({"strict": True}, {"acceptance": [{"text": "列出三个框架"}]}):
+        v = vet(e2, None, None, INTAKE, SETTINGS, PRIORS, draft_error="超时", **kw)
+        assert v.lane == "refuse" and [n.code for n in v.notes] == ["bad_draft"], kw
+    closed = dataclasses.replace(SETTINGS, lanes_open=False)
+    assert vet(e2, None, None, INTAKE, closed, PRIORS, draft_error="超时").lane == "refuse"
+    assert vet(e2, "42", None, INTAKE, SETTINGS, PRIORS, draft_error="超时").lane == "refuse"
+    blank = extract("   ", INTAKE.labels)
+    assert [n.code for n in vet(blank, None, None, INTAKE, SETTINGS, PRIORS).notes] == ["empty_text", "bad_draft"]
+
+
+RAW = (
+    "对比 LangGraph、AutoGen、CrewAI 三个框架的状态持久化方式，崩溃后能恢复到哪一步。"
+    "参考 https://github.com:443 上的文档，预算 2 美元。"
+)
+
+
+def test_without_a_draft_an_open_task_opens_on_the_raw_statement():
+    """地图 Q38（D14）：起草不可用、未选严格判定时，用原话直开开放道：题面与目标是原话，题名取原话开头，
+    地址只当材料，金额与时长不认（默认预算），出处账里没有一行来自模型。"""
+    e = extract(RAW, INTAKE.labels)
+    v = vet(e, None, None, INTAKE, SETTINGS, PRIORS, draft_error="起草模型超时")
+    assert v.lane == "open" and v.statement == e.text
+    assert [n.code for n in v.notes] == ["draft_unavailable"] and "起草模型超时" in v.notes[0].text
+    g = v.input["goal"]
+    assert g["accept"] == "open" and "self_checks" not in g
+    assert g["statement"] == "".join(str(sp.value) for sp in e.of("sentence"))
+    first = str(e.of("sentence")[0].value)
+    assert v.input["title"] == first[:39] + "…" and len(v.input["title"]) == 40  # 第一句超过 40 字：截断加省略号
+    assert v.input["scope"] == [{"resource": "workspace", "pattern": "", "actions": ["read", "write"], "risk": "r0"}]
+    assert v.references == ["https://github.com:443"]
+    assert v.input["budget"]["usd_milli"] == PRIORS.lookup(INTAKE.defaults["tier"], None).usd_milli  # 不认原文的金额
+    assert all(r["source"] != "model" for r in v.derivation)
+    assert next(r for r in v.derivation if r["field"] == "title")["source"] == "span"
+    again = vet(e, None, None, INTAKE, SETTINGS, PRIORS, draft_error="起草模型超时")
+    assert again.public() == v.public()  # 确定性：同一段原文恒得同一份
+
+
+def test_raw_open_with_runtime_grants_says_access_is_asked_for():
+    rt = dataclasses.replace(SETTINGS, grants_runtime=True)
+    e = extract(RAW, INTAKE.labels)
+    v = vet(e, None, None, INTAKE, rt, PRIORS)
+    assert v.lane == "open" and "按需申请" in v.notes[0].text and "没有草案" in v.notes[0].text
 
 
 def test_priors_pluggable_and_fallback():
