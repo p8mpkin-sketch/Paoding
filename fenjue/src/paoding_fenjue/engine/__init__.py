@@ -11,5 +11,7 @@
 - 丹：`dan`（模型调用接口；CI 回放录好的输出）。
 
 第二期（cz 2026-11-21）加了入位与闸点 3、交接包与 `lianhua.py import` / `bang`、试算模式与转正式时复用快照和勘察。
-还没有做的：接进内核（分析实例、`h1.tunshi` 形态与 `h3.tunshi-tools` 工具面、真模型适配器经端点代理）。
+第三期（cz 2026-11-21，docs/design/fenjue/13-kernel.md）接进内核：`kernel`（一个求解会话里的编排、立项单、材料备齐）、
+`materials`（材料定版）、`pills`（调用的渲染与解析）、`dan.Memo`（调用备忘）；会话跑适配器里的驱动程序
+（`paoding_adapter.tunshi_cli`），模型经端点代理按档位调用，碰信任边界的动作在宿主工具（`paoding_adapter.tunshi`）里。
 """

@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import cache
 from importlib import resources
 from pathlib import Path
@@ -41,6 +41,10 @@ TOOL_EVENTS: dict[str, tuple[str, ...]] = {
     "request_access": ("request_scope",),
     "kb_search": (),  # 查询词由书库记进事件账（M7），不经会话令牌
     "kb_read": (),
+    # 方案分析的工具面（h3.tunshi-tools，docs/design/fenjue/13-kernel.md §2）
+    "intake": (),  # 只读这道题的立项单、材料与追问（M4）
+    "fetch": ("request_scope",),  # 抓取在沙箱里跑（M2）；授权不够时发扩权申请
+    "check": ("register_artifact",),  # 结构化产物校验后登记为 authored 类
 }
 
 
@@ -81,6 +85,37 @@ def _unref(r: str) -> tuple[str, int]:
 
 
 GONGFA_ENV = "PAODING_FENJUE_GONGFA"  # 换一套功法：指一份功法文件（体质试炼 trials.py --gongfa 用它）
+
+
+ENGINE_GONGFA = "gongfa.engine.json"  # 分析实例的功法：solve 席位换成方案分析形态，工具面加它的三样工具
+ENGINE_FORM, ENGINE_TOOLS = "h1.tunshi", "h3.tunshi-tools"
+
+
+def engine_variant(
+    g: Mapping[str, Any],
+    fire_of: Callable[[str], Mapping[str, Any]] | None = None,
+    refs: tuple[str, str] | None = None,
+) -> dict[str, Any]:
+    """由一套功法推出分析实例用的那一套（13 §2）：H1 上绑定 solve 席位的那团火换成 h1.tunshi，H3 加上
+    h3.tunshi-tools；其余原样。`base` 记它是从哪一版推出来的。纯函数：主功法变了，重推一遍并存档即可。
+    fire_of、refs：炼化命令行在自己的清单目录上推（它读文件，不读已安装的包）；缺省读包内的清单。"""
+    fire_of = fire_of or fire_at
+    form, tools = refs or (ref(ENGINE_FORM), ref(ENGINE_TOOLS))
+    body = {k: v for k, v in g.items() if k not in ("digest", "variant", "base")}
+    fires = {slot: list(rs) for slot, rs in body["fires"].items()}
+    fires["H1"] = [form if "solve" in fire_of(r).get("seats", []) else r for r in fires["H1"]]
+    if form not in fires["H1"]:
+        fires["H1"].append(form)
+    if tools not in fires["H3"]:
+        fires["H3"] = [*fires["H3"], tools]
+    used = sorted({r for rs in [*body["fires"].values(), *(body.get("holdout") or {}).values()] for r in rs})
+    base = digest({"gongfa": body, "fires": {r: fire_digest(dict(fire_of(r))) for r in used}})
+    return {**body, "fires": fires, "variant": "engine", "base": base}
+
+
+def engine_gongfa_path() -> Path:
+    """包内那份分析实例功法的路径：组装根把它交给 PAODING_FENJUE_GONGFA。"""
+    return Path(str(resources.files(__package__).joinpath(ENGINE_GONGFA)))
 
 
 def _gongfa_source() -> dict[str, Any]:

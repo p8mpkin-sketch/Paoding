@@ -10,6 +10,10 @@ dialect 模拟别家 Anthropic 兼容端点（真实测试报告 P0-C，DeepSeek
 - no_usage：响应里不带 usage
 路径以 /chat/completions 结尾时按 OpenAI Chat Completions 回（openai_tool、error 两个 dialect 键见 _openai）。
 usage 原样回报：可以用 OpenAI 式或 DeepSeek 式的字段名，也可以带 null。
+
+reply 给出时（方案分析的测试：按请求回放录好的输出），非流式的 /v1/messages 先问它：它拿到请求体，交回
+None（照旧回 "hi"）或一个字典：text（回文）、usage、stop_reason、model 各自覆盖缺省；带 status 时回那个状态码，
+响应体取 body。它只是测试替身的出口，仍然不生成任何内容。
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import gzip
 import json
 import ssl
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -39,11 +44,13 @@ class FakeUpstream:
         port: int = 0,
         dialect: dict[str, Any] | None = None,
         tls: tuple[str, str] | None = None,
+        reply: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
     ):
         self.seen: list[dict[str, Any]] = []
         self.usage = dict(usage or DEFAULT_USAGE)
         self.model = model
         self.dialect = dict(dialect or {})
+        self.reply = reply
         up = self
 
         class H(BaseHTTPRequestHandler):
@@ -88,13 +95,23 @@ class FakeUpstream:
                     )
                     ctype = "text/event-stream"
                 else:
+                    said = (up.reply(body) if up.reply is not None else None) or {}
+                    if said.get("status"):
+                        data = json.dumps(said.get("body") or {}).encode()
+                        self.send_response(int(said["status"]))
+                        self.send_header("content-type", "application/json")
+                        self.send_header("content-length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return None
                     data = json.dumps(
                         {
                             "id": "m1",
                             "type": "message",
-                            "model": up.model,
-                            "content": [{"type": "text", "text": "hi"}],
-                            **({} if dl.get("no_usage") else {"usage": up.usage}),
+                            "model": said.get("model", up.model),
+                            "stop_reason": said.get("stop_reason", "end_turn"),
+                            "content": said.get("content") or [{"type": "text", "text": said.get("text", "hi")}],
+                            **({} if dl.get("no_usage") else {"usage": said.get("usage", up.usage)}),
                         }
                     ).encode()
                     ctype = "application/json"

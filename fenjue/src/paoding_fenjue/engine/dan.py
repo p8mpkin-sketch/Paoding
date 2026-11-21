@@ -9,7 +9,8 @@
   当场报“录音过期”，不悄悄用旧答案；
 - `Recorder`：包住任意一个真正出答案的函数（真模型的适配器，或夹具的脚本），边答边录，供重录夹具。
 
-真模型的适配器（经端点代理计量，T3）随引擎形态（E4）接入，不在这里。
+真模型的适配器在 `paoding_adapter.tunshi_cli`（经端点代理计量，T3；本组件不开网络）。这里另有 `Memo`：
+包住真模型的丹，把问过的调用记在工作区，会话被打断后重做的单元不再为同一问付钱。
 """
 
 from __future__ import annotations
@@ -35,6 +36,19 @@ class Reply:
 
 class Dan(Protocol):
     def call(self, role: str, key: str, payload: Mapping[str, Any]) -> Reply: ...
+
+
+class BudgetExhausted(RuntimeError):
+    """模型调用被预算挡下（端点代理到顶即拒，T3）。scope：task（这个会话的预留用完）| problem（整题预算用完）|
+    global（全局硬顶）。引擎收到后停在当前单元、存检查点，不再调模型。"""
+
+    def __init__(self, scope: str, detail: str = "") -> None:
+        super().__init__(detail or scope)
+        self.scope = scope
+
+
+class Unavailable(RuntimeError):
+    """模型端点此刻调不通（重试过了仍不行）。与预算无关：检查点留着，换一个会话接着做。"""
 
 
 class StaleRecording(LookupError):
@@ -93,6 +107,59 @@ class Recorder:
     def dump(self, path: Path) -> None:
         doc = {"v": 1, "entries": sorted(self.entries, key=lambda e: e["key"])}
         path.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+@dataclass
+class Memo:
+    """调用备忘（13 §6）：包住真模型的丹，把每次调用的回答按“键 + 输入指纹”记在工作区的 `calls.jsonl`。
+
+    会话随时可能被打断（软线、预留用完、端点调不通、进程被终止）：被打断的单元下次从头做，但它已经问过的调用
+    直接取备忘，不再花钱。输入变了（指纹对不上）就当没问过。备忘里的回答与录音同一个形状，token 数照原样交回，
+    所以被打断的单元补记花费时不多不少。`forget` 供“退回重做”用：那是要重新取样，不能拿旧回答充数。"""
+
+    inner: Dan
+    path: Path
+    hits: int = 0
+
+    def __post_init__(self) -> None:
+        self._seen: dict[tuple[str, str], dict[str, Any]] = {}
+        if self.path.exists():
+            for line in self.path.read_text(encoding="utf-8").splitlines():
+                try:
+                    e = json.loads(line)
+                    self._seen[(e["key"], e["input_sha256"])] = e
+                except (ValueError, KeyError, TypeError):
+                    continue  # 写到一半被打断的那一行：不认
+
+    def call(self, role: str, key: str, payload: Mapping[str, Any]) -> Reply:
+        sha = input_sha(role, payload)
+        e = self._seen.get((key, sha))
+        if e is not None and e.get("role") == role:
+            self.hits += 1
+            return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)))
+        r = self.inner.call(role, key, payload)
+        row = {
+            "key": key,
+            "role": role,
+            "input_sha256": sha,
+            "output": r.output,
+            "tokens_in": r.tokens_in,
+            "tokens_out": r.tokens_out,
+        }
+        self._seen[(key, sha)] = row
+        with self.path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        return r
+
+    def forget(self, prefixes: tuple[str, ...]) -> int:
+        """丢掉键以这些前缀开头的备忘，返回丢了几条。"""
+        drop = [k for k in self._seen if k[0].startswith(prefixes)]
+        for k in drop:
+            del self._seen[k]
+        if drop:
+            body = "".join(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n" for e in self._seen.values())
+            self.path.write_text(body, encoding="utf-8")
+        return len(drop)
 
 
 # ---------------------------------------------------------------- 定界包裹（08 §4.4 D2）

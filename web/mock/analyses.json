@@ -923,9 +923,6 @@
     },
     "v": 1
    },
-   "87ffe49e27d8734e158e0334412164937055f8f764502815abfeb1423cea87d3": [
-    "请在下列候选中挑选（闸点 1）"
-   ],
    "903437cfa2b335e706e365b1a285f1b654cc2624716e3732c20678a6eb45faa1": {
     "not_fire": [],
     "patterns": [
@@ -1040,6 +1037,9 @@
      "id": "V12",
      "ok": true
     }
+   ],
+   "e873d06b7923d0134b7d0708f7f95377772e84420c961ed2c279b676ae5f151a": [
+    "请在下列候选中挑选（第 1 次确认）"
    ],
    "e90cd55fd9897e8286e6c6c7c543cdd092478c96a264ec3fe0a37be66f120011": {
     "coverage": {
@@ -2198,9 +2198,6 @@
     "markdown": "# 方案分析：映射与集成顺序\n\n## 集成顺序\n\n1. C1 带锚压缩：P = 6×1 ÷ (3×2) = 1，风险 R1\n\n## C1：h4.anchored-fold（模块槽 H4）\n\n新增一个上下文管理模块：开放式任务里上下文快满时压缩，压缩要点带原始记录链接。和现有的上下文模块按任务类型分开用，内核不改。\n\n- 兼及：H1、H6；模块组：无\n- 替换：无，与现有模块并存\n- 内核改动：0 行（预判为空）；难度 3\n\n**对照组**：基线：当前配置原样（不压缩，NOTES.md 接力）；外部方案移植：照搬：到阈值折叠成不带锚点的摘要（anchor_kinds=[]）；融合方案：h4.anchored-fold：带锚折叠；基线复跑：第 2 阶重跑，估噪声\n\n| 指标 | 类别 | 方向 | 门槛 | 怎么量 |\n| --- | --- | --- | --- | --- |\n| 压缩后锚点可解析率 | 新增 | ↑ | 1.0 | adapter/tests/test_anchored_fold.py::test_every_anchor_resolves |\n| 有锚事实占比 | 新增 | ↑ | 0.9 | 真模型长任务（测试方跑） |\n| 跨接力重复执行率 | 通用 | ↓ | <= B − 噪声底 | 开放道前后同提示 |\n| 长任务交付率 | 外部方案优势 | ↑ | >= A1 − 噪声底 | 开放道前后同提示 |\n| 旧日志逐字节回放（必登） | 基线保障 | ↑ | 过 | tests/fenjue/test_t4_zhang.py |\n| 凭据泄漏数（必登） | 基线保障 | ↓ | 0 | tests/fenjue/trials.py T2 |\n| 严格道事件日志不变（必登） | 基线保障 | ↑ | 相同 | tests/fenjue/zero_diff.py --check（开关关时） |\n| 每次交付花费、墙钟 | 通用 | ↓ | <= max(B, A1) + 噪声底 | 开放道前后同提示 |\n\n**实现步骤**：\n1. 折叠的触发与保留规则：按端点代理的计量读数判断用量，最近四轮不折叠（H4，adapter/src/paoding_adapter/session.py、adapter/prompts/fold.md；验收：假会话剧本在阈值处触发一次）\n2. 摘要逐条带锚点，写入前过凭据遮盖，写进工作区的接力文件（H4，adapter/src/paoding_adapter/relay.py；验收：锚点全部可解析，金丝雀不出现）\n3. 按道分区：只在开放道启用（H4，fenjue/src/paoding_fenjue/fires/；验收：严格道事件日志与任务包不变）\n4. 外部方案移植组的配置：anchor_kinds=[]（H4，fenjue/src/paoding_fenjue/fires/；验收：外部方案移植组的锚点可解析率按构造为 0）\n\n**冲突**：h4.views-notes@1：按条件分开用；内核 T2：已在设计里化解；内核 T5：已在设计里化解\n",
     "v": 1
    },
-   "87ffe49e27d8734e158e0334412164937055f8f764502815abfeb1423cea87d3": [
-    "请在下列候选中挑选（闸点 1）"
-   ],
    "a77509318e317cf753edb106a6a8748d445c88ace26c167dae13163d41a48484": {
     "coverage": {
      "excerpts": 0,
@@ -2311,6 +2308,9 @@
      "id": "V12",
      "ok": true
     }
+   ],
+   "e873d06b7923d0134b7d0708f7f95377772e84420c961ed2c279b676ae5f151a": [
+    "请在下列候选中挑选（第 1 次确认）"
    ],
    "e90cd55fd9897e8286e6c6c7c543cdd092478c96a264ec3fe0a37be66f120011": {
     "coverage": {
@@ -3089,6 +3089,10 @@
     "observations": [],
     "reads": 0
    },
+   "1d9fcad09f6152420c074bcace21168dae20afe70cd12e90006df2118853f57f": [
+    "来源里有疑似写给智能体的指令，已忽略并在报告里单列",
+    "请在下列候选中挑选（第 1 次确认）"
+   ],
    "2f3aeea29f906a2672879a48f12e5422323568c6488447ba3d475538186d1670": {
     "already_have": [
      {
@@ -3672,10 +3676,6 @@
     ],
     "reads": 4
    },
-   "5a437ca206a36872b967b80b723d21628c2818b13704662ceeefda509a4c2852": [
-    "来源里有疑似写给智能体的指令，已忽略并在报告里单列",
-    "请在下列候选中挑选（闸点 1）"
-   ],
    "79ec7c7d7b23773cd5ee180d50a3ebf73b28e861625b6313576279eb7aad9521": {
     "coverage": {
      "excerpts": 1,
@@ -4533,6 +4533,10 @@
     "observations": [],
     "reads": 0
    },
+   "1d9fcad09f6152420c074bcace21168dae20afe70cd12e90006df2118853f57f": [
+    "来源里有疑似写给智能体的指令，已忽略并在报告里单列",
+    "请在下列候选中挑选（第 1 次确认）"
+   ],
    "3c84bcef3e768753bb5bbeebc7ece9e0a16e742aad1b1a35d6702edc6f54b55d": [
     {
      "id": "V1",
@@ -5859,10 +5863,6 @@
     ],
     "reads": 4
    },
-   "5a437ca206a36872b967b80b723d21628c2818b13704662ceeefda509a4c2852": [
-    "来源里有疑似写给智能体的指令，已忽略并在报告里单列",
-    "请在下列候选中挑选（闸点 1）"
-   ],
    "5a7a9c9fc27e2f1705ee6e700a64d35e9fa316837b954f9ba3544a1311a25b11": {
     "candidate": "C1",
     "checks": [
@@ -8374,9 +8374,6 @@
     ],
     "plain_summary": "在这个系统里找到一个值得集成的做法：结论旁自动关联执行记录。每次执行自动留档我们已有且更强。"
    },
-   "87ffe49e27d8734e158e0334412164937055f8f764502815abfeb1423cea87d3": [
-    "请在下列候选中挑选（闸点 1）"
-   ],
    "a77509318e317cf753edb106a6a8748d445c88ace26c167dae13163d41a48484": {
     "coverage": {
      "excerpts": 0,
@@ -8891,6 +8888,9 @@
     "markdown": "# 方案分析：映射与集成顺序\n\n## 集成顺序\n\n1. C1 证据自动关联：P = 4×1 ÷ (1×1) = 4，风险 R0\n\n## C1：h7.dual-proof（模块槽 H7）\n\n结果页新增一栏系统找到的相关执行记录，和作者引用对照显示。只读，不改内核。\n\n- 兼及：H6；模块组：无\n- 替换：无，与现有模块并存\n- 内核改动：0 行（预判为空）；难度 1\n\n**对照组**：基线：当前配置原样（只有作者引用）；外部方案移植：照搬：按先后自动挂执行记录，代替作者引用显示，不比对；融合方案：h7.dual-proof：并排比对，双证与引用存疑；基线复跑：第 2 阶重跑；结构读数确定性，噪声底 0\n\n| 指标 | 类别 | 方向 | 门槛 | 怎么量 |\n| --- | --- | --- | --- | --- |\n| 双证判定覆盖率 | 新增 | ↑ | 1.0 | web 单测与读端纯函数测试：test_dual_proof_covers_every_cited_claim |\n| 引用存疑检出率 | 新增 | ↑ | 1.0 | test_seeded_miscitation_is_flagged |\n| 作者引用显示不变 | 基线保障 | ↑ | 相同 | web 单测：作者引用一栏与 B 逐项相同 |\n| 读数分列不合并 | 基线保障 | ↑ | 过 | eval/tests/test_open_lane_isolation.py |\n| 旧日志逐字节回放（必登） | 基线保障 | ↑ | 过 | tests/fenjue/test_t4_zhang.py |\n| 凭据泄漏数（必登） | 基线保障 | ↓ | 0 | tests/fenjue/trials.py T2 |\n| 结果页加载时长 | 通用 | ↓ | <= B + 噪声底 | web e2e（mock） |\n\n**实现步骤**：\n1. 读端纯函数：按活动链给每条主张算关联窗口，与作者引用求交，出一致、存疑、无关联三种判定（H7，web/src/（结果页的数据层）；验收：两条新生维的结构读数为 100%）\n2. 结果页并排显示作者引用与系统关联，系统关联用叙述色、不着证据色（H7，web/src/（结果页组件）；验收：作者引用一栏与 B 相同）\n3. 外部方案移植组的配置：show=replace_refs、不比对（H7，fenjue/src/paoding_fenjue/fires/；验收：外部方案移植组的双证判定按构造为 0）\n\n**冲突**：h7.result@1：并存；内核 T5：已在设计里化解\n",
     "v": 1
    },
+   "e873d06b7923d0134b7d0708f7f95377772e84420c961ed2c279b676ae5f151a": [
+    "请在下列候选中挑选（第 1 次确认）"
+   ],
    "f699d3441f2d1500350053b83da955d6c65dfc10ae2350eca6dacb514e53bc92": {
     "coverage": {
      "excerpts": 0,
@@ -9478,11 +9478,11 @@
      "sha256": "903437cfa2b335e706e365b1a285f1b654cc2624716e3732c20678a6eb45faa1"
     },
     {
-     "artifact_id": "local:87ffe49e27d8734e",
-     "bytes": 49,
+     "artifact_id": "local:e873d06b7923d013",
+     "bytes": 56,
      "kind": "exec",
      "name": "candidates.needs",
-     "sha256": "87ffe49e27d8734e158e0334412164937055f8f764502815abfeb1423cea87d3"
+     "sha256": "e873d06b7923d0134b7d0708f7f95377772e84420c961ed2c279b676ae5f151a"
     },
     {
      "artifact_id": "local:de9195549e6c5ce0",
@@ -10205,7 +10205,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "e96c5fe1a4030b44cb146f763edc638fd5b2bce4225f38704e088299eb98ba95",
+      "nonce_sha256": "09d49cb182bd2e9dba61e2809786557b2c2ea37f89efae53c366a24228017fb0",
       "tier": "light"
      },
      "slot": "H1",
@@ -10238,7 +10238,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "376849bc7c61e19437c0865b81f85ed7c41355220dd475e62ab4ee41ab51b9e4",
+      "nonce_sha256": "94d44057388d46d14d4fb9f0b660cc13f22c14b92dfbdb8956521ab06404b920",
       "tier": "light"
      },
      "slot": "H1",
@@ -10270,7 +10270,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "db3b645f3b3912165d5f4ba80b8a800e7505f4b8c1693856b68273336555f793",
+      "nonce_sha256": "74995b360b56bb9fb9207f79cbb0460b5150fb4afc5896f4fb199ac43a33f2a4",
       "tier": "light"
      },
      "slot": "H1",
@@ -10303,7 +10303,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "622598628c3caa24a571b28ec6b41ccb9817b8459b8d5ed1abb6e5d0c5d74c51",
+      "nonce_sha256": "bf65af28d410dd0272f02a27b7d4304a9bc48a303e8a20c7a3a0cec88a557daa",
       "tier": "light"
      },
      "slot": "H1",
@@ -10336,7 +10336,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "7f03e551936db5f1b236955b5efd027bbc2b7e72a626c31baf5f4e8fce0d8d49",
+      "nonce_sha256": "cee638eca78d258dc30dc8b96b40d324fed65148e5c653b5fd54398ba38383ae",
       "tier": "light"
      },
      "slot": "H7",
@@ -10376,7 +10376,7 @@
    ],
    "spent": {
     "by_step": {
-     "S3": 229,
+     "S3": 230,
      "S4": 908
     },
     "tokens": {
@@ -10393,9 +10393,9 @@
       600
      ]
     },
-    "usd_milli": 1137
+    "usd_milli": 1138
    },
-   "spent_usd_milli": 1137,
+   "spent_usd_milli": 1138,
    "stage_share": {
     "S3": 0.45,
     "S4": 0.35,
@@ -10627,11 +10627,11 @@
      "sha256": "b54429b99f4ba948bc4647ed214a49204f6f5921615b29ce10bf5cf88e06c4af"
     },
     {
-     "artifact_id": "local:87ffe49e27d8734e",
-     "bytes": 49,
+     "artifact_id": "local:e873d06b7923d013",
+     "bytes": 56,
      "kind": "exec",
      "name": "candidates.needs",
-     "sha256": "87ffe49e27d8734e158e0334412164937055f8f764502815abfeb1423cea87d3"
+     "sha256": "e873d06b7923d0134b7d0708f7f95377772e84420c961ed2c279b676ae5f151a"
     },
     {
      "artifact_id": "local:de9195549e6c5ce0",
@@ -11491,7 +11491,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "9c00907699b44ff6563210200b369bb3e6c4d4fa319d45c3cb1b2204f46f721e",
+      "nonce_sha256": "c36571823373d2e0e97536c01e60b69e316a010e4cb1ff81a1c830d05e3a0a77",
       "tier": "light"
      },
      "slot": "H4",
@@ -11524,7 +11524,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "e5780fca3298e323727e5ea01b6ca54f62cc37ef73ca28ae1b11afd09e9e3131",
+      "nonce_sha256": "c74b2ea370cb6eaf744ec763f07f6f713cefc130e0f3b21c0fd4437d751376b9",
       "tier": "light"
      },
      "slot": "H4",
@@ -11557,7 +11557,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "dc0cb9ac878660f76d8c8c2ff154573f16e731e2a3e021038c1e81eeb1b01212",
+      "nonce_sha256": "c43105e771073e867a9a55b99867d2f679c34c3b33aad2a6ab2b0253fd38b955",
       "tier": "light"
      },
      "slot": "H4",
@@ -11908,7 +11908,7 @@
    ],
    "spent": {
     "by_step": {
-     "S3": 227,
+     "S3": 229,
      "S4": 908,
      "S5": 474
     },
@@ -11926,9 +11926,9 @@
       3100
      ]
     },
-    "usd_milli": 1609
+    "usd_milli": 1611
    },
-   "spent_usd_milli": 1609,
+   "spent_usd_milli": 1611,
    "stage_share": {
     "S3": 0.45,
     "S4": 0.35,
@@ -12166,11 +12166,11 @@
      "sha256": "7e31afcf537507bff36a795f82a59c5f0652cd6676fc9249aca9410ee3851e61"
     },
     {
-     "artifact_id": "local:5a437ca206a36872",
-     "bytes": 129,
+     "artifact_id": "local:1d9fcad09f615242",
+     "bytes": 136,
      "kind": "exec",
      "name": "candidates.needs",
-     "sha256": "5a437ca206a36872b967b80b723d21628c2818b13704662ceeefda509a4c2852"
+     "sha256": "1d9fcad09f6152420c074bcace21168dae20afe70cd12e90006df2118853f57f"
     }
    ],
    "budget_usd_milli": 16951,
@@ -12723,7 +12723,7 @@
    "mode": "formal",
    "needs": [
     "来源里有疑似写给智能体的指令，已忽略并在报告里单列",
-    "请在下列候选中挑选（闸点 1）"
+    "请在下列候选中挑选（第 1 次确认）"
    ],
    "observations": [
     {
@@ -12752,7 +12752,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "cd0ccdcf664c44e826a4692455af001929cdc7e9bcbc1505692b6f628eb5ee30",
+      "nonce_sha256": "a76f0299aee34f40afbfc165b8a69a44c98930263755983867633775bda79c43",
       "tier": "light"
      },
      "slot": "H1",
@@ -12785,7 +12785,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "51c780350615ac4b093e4357291bca8b78772c7a720010d284bfdba3edb1a794",
+      "nonce_sha256": "814b886d85eb92871eca9a34225bf0b23b68a72b53f07b5bf6197d935501ea44",
       "tier": "light"
      },
      "slot": "H1",
@@ -12817,7 +12817,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "b5d71078fa03e3b81844632d503613ca37632ca781e96a2e51fcbdd47bd690a9",
+      "nonce_sha256": "b6521ab030672feedb503e5e512d130d304ad4e9160264a865227e2db8600bf7",
       "tier": "light"
      },
      "slot": "H3",
@@ -12850,7 +12850,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "f0fe9138b2c4aaf1da37a6cee5832c33b5ad525a3219f30856a86b12767af43b",
+      "nonce_sha256": "9dfe6fa9a3ce17a636dd00254080a99a0ceeb152a9d1f5a761ef1c8af8c5bdde",
       "tier": "light"
      },
      "slot": "H4",
@@ -12883,7 +12883,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "50d706cf4d483447086c16f3cf5fcfcd1a7ebee00b1d4c523a9b7bc858578694",
+      "nonce_sha256": "30e21a7b4e0015209c9ff2d1cf0b8581fe44a9980bfa194737282023383c8e4c",
       "tier": "light"
      },
      "slot": "H4",
@@ -12915,7 +12915,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "04cae39e3b1890895cd779a00d0b42be571251d5023b676038fa6f220ce8fb31",
+      "nonce_sha256": "07aa091375a74734de97a358ca1ae3ddb8f192ec5867c2c94064213992cb134c",
       "tier": "light"
      },
      "slot": "H6",
@@ -12947,7 +12947,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "1eac36f95a87ef6256e801c2dac0750fbfb24c4d69798224fb5d94b995fe3004",
+      "nonce_sha256": "af413676c8d6c802965ce2de93d27c14cc6f6e711a52ae70de6cd8cfb3957ddc",
       "tier": "light"
      },
      "slot": "H7",
@@ -12979,7 +12979,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "1eac36f95a87ef6256e801c2dac0750fbfb24c4d69798224fb5d94b995fe3004",
+      "nonce_sha256": "af413676c8d6c802965ce2de93d27c14cc6f6e711a52ae70de6cd8cfb3957ddc",
       "tier": "light"
      },
      "slot": "H7",
@@ -13008,7 +13008,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "1eac36f95a87ef6256e801c2dac0750fbfb24c4d69798224fb5d94b995fe3004",
+      "nonce_sha256": "af413676c8d6c802965ce2de93d27c14cc6f6e711a52ae70de6cd8cfb3957ddc",
       "tier": "light"
      },
      "slot": "H7",
@@ -13040,7 +13040,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "5c0b25aafb7e7533beb42a29cec737f429f94c20284e077890ab1367574f8c30",
+      "nonce_sha256": "abc7f5827c707ed66033367e44466236cebdefc862409a8008419a449d1afe21",
       "tier": "light"
      },
      "slot": "H7",
@@ -13072,7 +13072,7 @@
    ],
    "spent": {
     "by_step": {
-     "S3": 231
+     "S3": 234
     },
     "tokens": {
      "heavy": [
@@ -13084,9 +13084,9 @@
       1540
      ]
     },
-    "usd_milli": 231
+    "usd_milli": 234
    },
-   "spent_usd_milli": 231,
+   "spent_usd_milli": 234,
    "stage_share": {
     "S3": 0.45,
     "S4": 0.35,
@@ -13308,11 +13308,11 @@
      "sha256": "7e31afcf537507bff36a795f82a59c5f0652cd6676fc9249aca9410ee3851e61"
     },
     {
-     "artifact_id": "local:5a437ca206a36872",
-     "bytes": 129,
+     "artifact_id": "local:1d9fcad09f615242",
+     "bytes": 136,
      "kind": "exec",
      "name": "candidates.needs",
-     "sha256": "5a437ca206a36872b967b80b723d21628c2818b13704662ceeefda509a4c2852"
+     "sha256": "1d9fcad09f6152420c074bcace21168dae20afe70cd12e90006df2118853f57f"
     },
     {
      "artifact_id": "local:b803a8a527852b72",
@@ -15050,7 +15050,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "3fb28f87b8f2c057b6f87f930148c3a6108f5646eaee6542e307d3219c6887c9",
+      "nonce_sha256": "4f1c16aaf9a0c94e5ca5b97e8de4fc2dcc03053db7cf6e670fc6bf1223f37c4d",
       "tier": "light"
      },
      "slot": "H1",
@@ -15083,7 +15083,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "9ddb0ebd886656686c443c37ed7184cf2da70d1b8170e9c589be5bc83fd4bb28",
+      "nonce_sha256": "eb2a32f481c276d069a11d7f7d799523b006700f77af1c405455b260f96f1b51",
       "tier": "light"
      },
      "slot": "H1",
@@ -15115,7 +15115,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "e6362cfdde0e725b60a334c1855eea6984a63b55b83d195d171db9138c995a42",
+      "nonce_sha256": "17aae0791824aeb10d4c5910ad04239dbbd972159bbaa6acfd95edf01ef7ab19",
       "tier": "light"
      },
      "slot": "H3",
@@ -15148,7 +15148,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "27077dcdb4e4372a5906f645c376c88b32607720ab146e7c3159803bdabef0eb",
+      "nonce_sha256": "c85fa79b487d98772a3c5f277d1d65a767700517df224f92f294696e1e9f0628",
       "tier": "light"
      },
      "slot": "H4",
@@ -15181,7 +15181,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "b1abe797f07defeef5b3e24adf5321b148e240cf1791376537333b39f6f1c0d6",
+      "nonce_sha256": "47300ac10cc3ce60168d79bb46f11ba4086a23e52da4da03c32e9d054ea1495a",
       "tier": "light"
      },
      "slot": "H4",
@@ -15213,7 +15213,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "1055f00fe20f8a7e8fd63f26b01f094cf663cd1bf3ef0f0d6c3f19af21f9e5f1",
+      "nonce_sha256": "e63aa188fd1aa06c8f5c8a377ae65ecf018e4991f0435f22c58e0c64a43a77e1",
       "tier": "light"
      },
      "slot": "H6",
@@ -15245,7 +15245,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "a4bfa7fc1eb4c14a01ed6542c051bd35310b78154798271d6f1e825453097414",
+      "nonce_sha256": "0cb894e66cffaa3b4fb1928d0f58ce6ad373370ac5be85ce28d5007c8373a997",
       "tier": "light"
      },
      "slot": "H7",
@@ -15277,7 +15277,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "a4bfa7fc1eb4c14a01ed6542c051bd35310b78154798271d6f1e825453097414",
+      "nonce_sha256": "0cb894e66cffaa3b4fb1928d0f58ce6ad373370ac5be85ce28d5007c8373a997",
       "tier": "light"
      },
      "slot": "H7",
@@ -15306,7 +15306,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "a4bfa7fc1eb4c14a01ed6542c051bd35310b78154798271d6f1e825453097414",
+      "nonce_sha256": "0cb894e66cffaa3b4fb1928d0f58ce6ad373370ac5be85ce28d5007c8373a997",
       "tier": "light"
      },
      "slot": "H7",
@@ -15338,7 +15338,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "1373fe9d5e8a0e2cf7b1a3d9f9590c1ab3cd1cb85c4a48f096614848c789c2ed",
+      "nonce_sha256": "43093b0efdce43e7148c2bc419e3c4c2145f7e952f298f5bdd789a846efbf831",
       "tier": "light"
      },
      "slot": "H7",
@@ -15764,9 +15764,9 @@
    ],
    "spent": {
     "by_step": {
-     "S3": 230,
+     "S3": 233,
      "S4": 1200,
-     "S5": 97
+     "S5": 98
     },
     "tokens": {
      "heavy": [
@@ -15782,9 +15782,9 @@
       10000
      ]
     },
-    "usd_milli": 1527
+    "usd_milli": 1531
    },
-   "spent_usd_milli": 1527,
+   "spent_usd_milli": 1531,
    "stage_share": {
     "S3": 0.45,
     "S4": 0.35,
@@ -16062,11 +16062,11 @@
      "sha256": "76422beadf9307cc43220ba4f4bdf78607490eaa5d2f172ae608f2ccd948fc08"
     },
     {
-     "artifact_id": "local:87ffe49e27d8734e",
-     "bytes": 49,
+     "artifact_id": "local:e873d06b7923d013",
+     "bytes": 56,
      "kind": "exec",
      "name": "candidates.needs",
-     "sha256": "87ffe49e27d8734e158e0334412164937055f8f764502815abfeb1423cea87d3"
+     "sha256": "e873d06b7923d0134b7d0708f7f95377772e84420c961ed2c279b676ae5f151a"
     },
     {
      "artifact_id": "local:de9195549e6c5ce0",
@@ -16760,7 +16760,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "bc0e76f9841bdf0dd4d14e63978fcdb88b1bcf697145f52140f45f1755765bfc",
+      "nonce_sha256": "d2d406295be4a1b5c3bdf9744cce884b63bc9b140be2bb37a15a69be8acbaa4a",
       "tier": "light"
      },
      "slot": "H3",
@@ -16793,7 +16793,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "a3c2c99eee24a14bcefd48956302e8b60bffb8fbf36bd39ddd1b6c766a97fd55",
+      "nonce_sha256": "3def8ea0bbc22c0ef237eea75c0e624a8bb692c96333eb71e2f686d29487ccb1",
       "tier": "light"
      },
      "slot": "H7",
@@ -16825,7 +16825,7 @@
      ],
      "reader": {
       "attempt": 1,
-      "nonce_sha256": "d0ff121095a85e79bf0eb69904f0e6503524be6633493f4fe04a61973983f296",
+      "nonce_sha256": "20608b5782ca2ed25e60bea0fbf5351022cc22d7b9fe3958af98a2c6ac5b9f99",
       "tier": "light"
      },
      "slot": "H7",
@@ -17120,7 +17120,7 @@
    ],
    "spent": {
     "by_step": {
-     "S3": 226,
+     "S3": 228,
      "S4": 908,
      "S5": 474
     },
@@ -17138,9 +17138,9 @@
       3100
      ]
     },
-    "usd_milli": 1608
+    "usd_milli": 1610
    },
-   "spent_usd_milli": 1608,
+   "spent_usd_milli": 1610,
    "stage_share": {
     "S3": 0.45,
     "S4": 0.35,
@@ -17319,7 +17319,7 @@
       "via": "upload"
      }
     ],
-    "spent_usd_milli": 231,
+    "spent_usd_milli": 234,
     "statement": "看看验收夹具丁里有什么值得我们集成的做法",
     "step": "G1",
     "updated_at": "2026-11-21T10:38:00Z",
@@ -17350,7 +17350,7 @@
       "via": "upload"
      }
     ],
-    "spent_usd_milli": 1137,
+    "spent_usd_milli": 1138,
     "statement": "看看验收夹具甲里有什么值得我们集成的做法",
     "step": "G2",
     "updated_at": "2026-11-21T09:47:00Z",
@@ -17381,7 +17381,7 @@
       "via": "upload"
      }
     ],
-    "spent_usd_milli": 1608,
+    "spent_usd_milli": 1610,
     "statement": "看看验收夹具丙里有什么值得我们集成的做法",
     "step": "G3",
     "updated_at": "2026-11-21T09:12:00Z",
@@ -17412,7 +17412,7 @@
       "via": "upload"
      }
     ],
-    "spent_usd_milli": 1609,
+    "spent_usd_milli": 1611,
     "statement": "看看验收夹具乙里有什么值得我们集成的做法",
     "step": "done",
     "updated_at": "2026-11-21T08:31:00Z",
@@ -17439,7 +17439,7 @@
       "via": "upload"
      }
     ],
-    "spent_usd_milli": 1527,
+    "spent_usd_milli": 1531,
     "statement": "看看验收夹具丁里有什么值得我们集成的做法",
     "step": "done",
     "updated_at": "2026-11-20T17:05:00Z",

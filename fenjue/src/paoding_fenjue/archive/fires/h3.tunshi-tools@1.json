@@ -1,0 +1,29 @@
+{
+ "id": "h3.tunshi-tools",
+ "ver": 1,
+ "slot": "H3",
+ "ports": [
+  "M1:register_artifact",
+  "M1:request_scope",
+  "M2",
+  "M4"
+ ],
+ "params": {
+  "tools": [
+   "intake",
+   "fetch",
+   "check"
+  ]
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "会话形态是方案分析（h1.tunshi）时",
+  "control_arm": "通用工具面（exec、show、deliver）加人工抓取材料",
+  "retire_signal": "fetch 的抓取成功率长期低于人工上传材料的立项成功率"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H3"
+}

@@ -66,6 +66,7 @@ from settings_hub import KEY_NOTE, SettingsHub, SettingsStore  # noqa: E402
 from settings_hub import defaults as settings_defaults  # noqa: E402
 
 from paoding_adapter.contract import (  # noqa: E402
+    DRIVER_LIB_IN_CONTAINER,
     FAKE_CLI,
     AdapterConfig,
     ChainBroken,
@@ -78,12 +79,21 @@ from paoding_adapter.contract import (  # noqa: E402
     ProxyConfig,
     SessionRunner,
     ToolEndpoint,
+    driver_mounts,
+    driver_program,
     fake_program,
     local_launcher,
 )
 from paoding_adapter.purge import purge_workspaces  # noqa: E402
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_fenjue.contract import evolution, kernel_config  # noqa: E402
+from paoding_fenjue.contract import (  # noqa: E402
+    GONGFA_ENV,
+    engine_gongfa_path,
+    evolution,
+    gongfa,
+    kernel_config,
+    slot_locks,
+)
 from paoding_graph.contract import (  # noqa: E402
     BadBody,
     BlobStore,
@@ -103,6 +113,9 @@ PRICES = ROOT / "adapter" / "config" / "prices.yaml"
 DOSSIERS = ROOT / "docs" / "design" / "fenjue" / "dossiers"  # 炼档（焚决 F5）：进化读数页读它的 JSON
 TASK_KINDS = ("bootstrap", "reason", "explore", "solve")  # solve：开放道的求解会话（docs/design/open-lane/）
 DEV_ORIGIN = "http://127.0.0.1:5173"  # web/ 的 vite 开发服务器（只监听回环）
+BANG = ROOT / "docs" / "design" / "fenjue" / "yihuobang.json"  # 外部方案榜（lianhua.py 维护）；还没有时用种子
+BANG_SEED = ROOT / "docs" / "design" / "fenjue" / "engine" / "examples" / "yihuobang.seed.json"
+ANALYSIS_TIERS = {"heavy": "strong", "mid": "mid", "light": "light"}  # 引擎的档位 → 设置层模型档案的 tier
 
 
 def log(component: str) -> logging.Logger:
@@ -147,6 +160,8 @@ class StackConfig:
     memory: dict = field(default_factory=lambda: memory_config(None))  # 通鉴：case_seal、model_epoch（v1.5）
     knowledge: dict = field(default_factory=lambda: knowledge_config(None))  # 书库：embedder（v5 第四期）
     kaiti: dict = field(default_factory=dict)  # 一句话开题的起草服务（scripts/kaiti_hub.py）
+    # 方案分析实例（焚决 13 §7）：开着时 solve 席位换成固定流程的分析会话（分析实例的功法），见 analysis_config
+    analysis: dict = field(default_factory=lambda: analysis_config(None))
     judges_dir: Path | None = None  # 判官注册表；缺省 judgebox/judges.d
     connectors_dir: Path | None = None  # 外部平台的连接器档案；缺省 judgebox/connectors.d（测试另给目录）
     analyses_dir: Path | None = None  # 方案分析：引擎工作区的根目录（一个运行一个目录）；缺省 <home>/analyses
@@ -210,6 +225,7 @@ class StackConfig:
         cfg.kaiti = kaiti_config(raw.get("kaiti"), base)
         if raw.get("analyses_dir"):
             cfg.analyses_dir = (base / str(raw["analyses_dir"])).resolve()
+        cfg.analysis = analysis_config(raw.get("analysis"))
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
@@ -222,6 +238,32 @@ class StackConfig:
 
 class StackError(RuntimeError):
     pass
+
+
+def analysis_config(raw: object) -> dict:
+    """配置的 analysis 一节（焚决 13 §7）。缺省关：这个实例照旧是通用的工作台。
+
+    enabled：开成方案分析实例——开题抄分析实例的功法，solve 席位的会话跑固定流程的驱动程序；
+    by：缺省立项单里的“谁要的”；pains：记录在案的痛点 [{dim, anchor}]（打分用）；canaries：产物里出现即判不过的串；
+    access_wait_s：取材时等人批访问申请的时限（秒，到了就交付“受阻”请人去批）。
+    外部方案榜与在途记录占着的模块槽取自仓库（docs/design/fenjue/），各档位的模型取自设置层的模型档案。"""
+    out = {"enabled": False, "by": "cz", "pains": [], "canaries": [], "access_wait_s": 600}
+    if raw is None:
+        return out
+    if not isinstance(raw, dict) or set(raw) - set(out):
+        raise ValueError(f"analysis 只认 {sorted(out)} 这几项")
+    out.update(raw)
+    if not isinstance(out["enabled"], bool) or not isinstance(out["by"], str) or not out["by"].strip():
+        raise ValueError("analysis.enabled 取 true/false，analysis.by 取非空字符串")
+    pains = out["pains"]
+    if not isinstance(pains, list) or not all(isinstance(x, dict) and {"dim", "anchor"} <= set(x) for x in pains):
+        raise ValueError("analysis.pains 是 [{dim, anchor}] 的列表")
+    if not isinstance(out["canaries"], list) or not all(isinstance(x, str) and x for x in out["canaries"]):
+        raise ValueError("analysis.canaries 是非空字符串的列表")
+    w = out["access_wait_s"]
+    if isinstance(w, bool) or not isinstance(w, (int, float)) or not 0 <= w <= 3600:
+        raise ValueError("analysis.access_wait_s 取 0 到 3600 秒")
+    return out
 
 
 def _host_program(program: list) -> tuple[list, tuple]:
@@ -330,6 +372,15 @@ class Stack:
             if os.environ.get(env, "").strip():
                 self.keyring.set(slot, os.environ[env], source="env")
         self.judges = kernel_judges(self.registry, self.connectors)
+        # 方案分析实例（焚决 13 §7）：功法换成由主功法推出的分析实例那一套（solve 席位是固定流程的分析会话）。
+        # 功法由环境变量选，是进程级的：一个进程只当一种实例；已经指了别的功法（试炼）就不替它做主
+        self.analysis = dict(cfg.analysis)
+        if self.analysis["enabled"]:
+            want, have = str(engine_gongfa_path()), os.environ.get(GONGFA_ENV)
+            if have and Path(have).resolve() != Path(want).resolve():
+                raise StackError(f"方案分析实例要用分析实例的功法，但 {GONGFA_ENV} 已经指向 {have}")
+            os.environ[GONGFA_ENV] = want
+            gongfa.cache_clear()
         # 焚决 F3：开题抄功法 (品阶, 摘要)、领租约抄会话形态；取自功法清单（paoding_fenjue），内核只抄不解释
         self.graph = GraphService(home / "g.sqlite", Config(judges=self.judges, **kernel_config()), self.tokens)
         self.blobs = BlobStore(home / "blobs")
@@ -418,16 +469,28 @@ class Stack:
         else:
             binding = CliBinding(program=fake_program(in_container=self.launch_mode == "container"))
             env_for = lambda lease: {"PD_FAKE_SCRIPT": cfg.scripts.get(lease["kind"], "")}  # noqa: E731
-        if self.launch_mode == "container":
+        in_box = self.launch_mode == "container"
+        drivers: dict = {}
+        if self.analysis["enabled"]:
+            # 分析会话的驱动程序：宿主子进程用本进程的解释器；模型容器里用镜像自带的 python3（≥3.12），
+            # 程序与它要的两个纯标准库的包只读挂进去
+            drivers["tunshi"] = driver_program("tunshi", in_container=in_box)
+            if real:
+                self.cfg.scripts = dict.fromkeys(TASK_KINDS, "real")
+            elif not cfg.scripts.get("solve"):
+                self.cfg.scripts["solve"] = "driver"  # 假后端也开 solve：分析会话不读脚本，模型由假上游回
+        if in_box:
             # 假 CLI + 容器：通用镜像里挂进假 CLI 与各类任务的脚本（只读）；真 CLI 的镜像自带 CLI，不挂任何东西
             mounts = (
                 ()
                 if real
                 else (
                     (str(FAKE_CLI), "/opt/paoding/fakecli.py"),
-                    *[(v, v) for v in sorted(set(cfg.scripts.values())) if v],
+                    *[(v, v) for v in sorted(set(cfg.scripts.values())) if v and os.path.isabs(v)],
                 )
             )
+            if drivers:
+                mounts = (*mounts, *driver_mounts("tunshi"))
             self.launcher = ContainerLauncher(
                 cfg.cli_image or cfg.bases.get("basic", "python:3.12-slim"), proxy_port, mcp_port, mounts=mounts
             )
@@ -445,6 +508,11 @@ class Stack:
             # 会话的模型档案（宪章 03 §3.2）：任务的 prefs.model 优先，否则按设置层的角色路由
             resolve_model=lambda role, want: self.settings.store.resolve(role, want),
             knowledge=self.knowledge.session,  # 执行中检索（资料库第二期）：kb_search / kb_read
+            drivers=drivers,
+            analysis=self._analysis_profile if drivers else None,
+            # 分析工作区导出到这里（界面的方案分析读端点按 <home>/analyses/<题号>/ 读）
+            analysis_export=(home / "analyses") if drivers else None,
+            extra_env={"PD_LIB": DRIVER_LIB_IN_CONTAINER} if drivers and in_box else {},
         )
         self.runner = SessionRunner(
             self.adapter_cfg,
@@ -497,6 +565,54 @@ class Stack:
         ds = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(DOSSIERS.glob("[0-9][0-9][0-9]-*.json"))]
         items = views.problems(st, self.http._ts_of)["items"]
         return {**evolution(ds, st["problems"], items), "as_of": st["seq"]}
+
+    def _analysis_profile(self, pid: str) -> dict:
+        """方案分析会话的参数（宿主 intake 工具交给驱动程序的那部分）。每个会话开头取一次，所以榜、模块槽占用、
+        模型档案改了，下一个会话就用新的。都是配置层的数据，不来自会话。"""
+        a = self.analysis
+        src = BANG if BANG.exists() else BANG_SEED
+        bang = json.loads(src.read_text(encoding="utf-8")).get("entries", []) if src.exists() else []
+        dossiers = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(DOSSIERS.glob("[0-9][0-9][0-9]-*.json"))]
+        locks = [{"slot": s, "dossier": d} for s, d in sorted(slot_locks(dossiers).items())]
+        models, prices = self._analysis_models()
+        return {
+            "by": a["by"],
+            "bang": bang,
+            "locks": locks,
+            "pains": list(a["pains"]),
+            "canaries": list(a["canaries"]),
+            "models": models,
+            "prices": prices,
+            "access_wait_s": a["access_wait_s"],
+            "access_poll_s": 5,
+        }
+
+    def _analysis_models(self) -> tuple[dict, dict]:
+        """各档位用哪个模型：设置层里与缺省档案同一端点、同一密钥槽、同一线格式的档案，按 tier 取
+        （strong → 重档，mid → 中档，light → 轻档）；缺的档位往上一档借，都没有就用缺省档案的模型。
+        单价取端点代理的价目表（美元 / 百万 token → 千分之一美元 / 百万 token），与计量同一份表。"""
+        profiles = self.settings.store.settings["models"]["profiles"]
+        base = next((p for p in profiles if p["name"] == "default"), profiles[0])
+        same = [
+            p
+            for p in profiles
+            if (p["endpoint"], p["key_slot"], p.get("format", "anthropic"))
+            == (base["endpoint"], base["key_slot"], base.get("format", "anthropic"))
+            and p["model"]
+        ]
+        by_tier = {t: next((p["model"] for p in same if p["tier"] == t), "") for t in ("strong", "mid", "light")}
+        fallback = base["model"] or self.cfg.model
+        order = ("light", "mid", "strong")
+        models: dict = {}
+        for tier, want in ANALYSIS_TIERS.items():
+            up = order[order.index(want) :]
+            models[tier] = next((by_tier[t] for t in up if by_tier[t]), "") or fallback
+        prices = {}
+        for tier, model in models.items():
+            row = self.proxy.prices.models.get(model) if model else None
+            if row is not None:
+                prices[tier] = [int(round(row["input"] * 1000)), int(round(row["output"] * 1000))]
+        return {k: v for k, v in models.items() if v}, prices
 
     def _activity(self, q: dict, body: object) -> dict:
         """GET /v1/leases/{id}/activity?after=N[&as_of=seq]：会话的工具调用、自述、耗时与花费。
