@@ -245,10 +245,21 @@ def at(dg: str) -> View | None:
     return View(v)
 
 
+def stamp_of(problem: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    """一道题此刻生效的功法 {jie, digest}：人改钉过（体质修炼 003 T4-4）就是最后一次改钉的那一版，
+    否则开题时记下的；焚决之前的题没有。与内核 reducer/pin.effective 同一规则。"""
+    repins = (problem or {}).get("repins") or []
+    if repins:
+        to: Mapping[str, Any] = repins[-1]["to"]
+        return to
+    g: Mapping[str, Any] | None = (problem or {}).get("gongfa")
+    return g
+
+
 def for_problem(problem: Mapping[str, Any] | None) -> View:
-    """一道题该用的功法：开题时记下的那一版（锁定，FJ6）。焚决之前开的题（没有摘要）与存档里找不到的摘要，
-    退回此刻的功法，View.pinned 为 False。"""
-    stamp = (problem or {}).get("gongfa")
+    """一道题该用的功法：开题时记下的那一版（锁定，FJ6），人改钉过就用改钉的那一版（体质修炼 003）。
+    焚决之前开的题（没有摘要）与存档里找不到的摘要，退回此刻的功法，View.pinned 为 False。"""
+    stamp = stamp_of(problem)
     if stamp and stamp.get("digest"):
         if stamp["digest"] == gongfa()["digest"]:
             return current()
@@ -288,7 +299,7 @@ def params(slot: str, fid: str | None = None, pid: str | None = None) -> dict[st
 def arm_of(problem: dict[str, Any], slot: str) -> str | None:
     """读端：一道题在这个火位上用的是哪一臂（"main" 或 "holdout"），按它开题时的那一版功法算。
     焚决之前开的题（没有摘要）与存档里找不到的摘要给 None。"""
-    stamp = problem.get("gongfa")
+    stamp = stamp_of(problem)
     if not stamp or not stamp.get("digest"):
         return None
     v = current() if stamp["digest"] == gongfa()["digest"] else at(stamp["digest"])
@@ -363,8 +374,22 @@ def form_of(lease: dict[str, Any]) -> str | None:
     return f.partition("@")[0] if f else SEAT_FORMS.get(lease["kind"])
 
 
+def _forms(v: View) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((seat, f"{f['id']}@{f['ver']}") for f in v.active("H1") for seat in f["seats"]))
+
+
+def archived_digests() -> list[str]:
+    root = resources.files(__package__).joinpath("archive/gongfa")
+    return sorted(p.name.removesuffix(".json") for p in root.iterdir() if p.name.endswith(".json"))
+
+
 def kernel_config() -> dict[str, Any]:
-    """组装根抄给内核 Config 的两样：功法 (品阶, 摘要) 与席位 → 形态 "id@ver"。内核只抄不解释。"""
+    """组装根抄给内核 Config 的三样：功法 (品阶, 摘要)；席位 → 形态 "id@ver"；功法存档里每一版的
+    (摘要, 品阶, 席位 → 形态)（体质修炼 003：租约按题的版本抄形态、人改钉只许改到存档里有的版本）。内核只抄不解释。"""
     g = gongfa()
-    forms = tuple(sorted((seat, ref(f["id"])) for f in active("H1") for seat in f["seats"]))
-    return {"gongfa": (g["jie"], g["digest"]), "forms": forms}
+    archive = []
+    for dg in archived_digests():
+        v = current() if dg == g["digest"] else at(dg)
+        if v is not None:
+            archive.append((dg, int(v.g["jie"]), _forms(v)))
+    return {"gongfa": (g["jie"], g["digest"]), "forms": _forms(current()), "gongfa_archive": tuple(archive)}

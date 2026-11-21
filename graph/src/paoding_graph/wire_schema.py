@@ -480,6 +480,13 @@ define(
 )
 define("Gongfa", obj({"jie": INT, "digest": STR}, doc="功法：品阶与摘要（焚决 F3）"))
 define(
+    "Repin",
+    obj(
+        {"seq": INT, "ts": INT, "to": ref("Gongfa"), "reason": STR},
+        doc="人改钉一道在跑的题的功法（体质修炼 003 T4-4）",
+    ),
+)
+define(
     "ProfileOverride",
     obj(
         {"axis": ref("ProfileAxis"), "value": STR, "derived": null(STR), "by": STR, "seq": INT, "reason": ref("Tagged")}
@@ -518,6 +525,7 @@ define(
                         {
                             "prefs": ref("TaskPrefs"),
                             "gongfa": doc(ref("Gongfa"), "开题时的功法（焚决 F3）；旧题没有，读作第 0 阶"),
+                            "repins": doc(arr(ref("Repin")), "人改钉的功法（体质修炼 003）；最后一条即此刻生效的"),
                         },
                     ),
                 ),
@@ -1057,6 +1065,7 @@ define(
             "curate",
             "follow_up",
             "halt",
+            "repin",
         ),
         "description": "add_intent 之后的几种随后续里程碑启用（规格 3.1.9）；M0 的图服务以 schema_error 拒绝。",
     },

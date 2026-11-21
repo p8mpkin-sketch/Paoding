@@ -86,3 +86,24 @@ def test_a_tampered_archive_is_refused(monkeypatch):
             shapes.at("0" * 64)
     finally:
         shapes.at.cache_clear()
+
+
+def test_a_repinned_problem_follows_its_last_repin():
+    """体质修炼 003：人改钉过的题从下一次派工起用改钉的那一版；开题时记下的摘要留着，只是不再生效。"""
+    old = "9770a71f87236df2e29e320e75b1c9a6c3bc2ef64d449fb54954dd25a390ace9"
+    live = shapes.gongfa()
+    p = {**stamp(live), "repins": [{"seq": 9, "ts": 0, "to": {"jie": 2, "digest": old}, "reason": "r"}]}
+    assert shapes.stamp_of(p) == {"jie": 2, "digest": old}
+    v = shapes.for_problem(p)
+    assert v.pinned and v.digest == old and v.holdout_permille() == 0  # 那一版没有常设留出
+    back = {**p, "repins": [*p["repins"], {"seq": 12, "ts": 0, "to": dict(p["gongfa"]), "reason": "改回"}]}
+    assert shapes.for_problem(back).digest == live["digest"]  # 看最后一条
+    assert shapes.stamp_of(stamp(live)) == p["gongfa"] and shapes.stamp_of(None) is None
+
+
+def test_kernel_config_carries_every_archived_version():
+    """组装根抄给内核的功法存档表：每一版的 (摘要, 品阶, 席位 → 形态)，此刻的那一版也在里面。"""
+    cfg = shapes.kernel_config()
+    archive = {dg: (jie, dict(forms)) for dg, jie, forms in cfg["gongfa_archive"]}
+    assert set(archive) == set(shapes.archived_digests())
+    assert archive[shapes.gongfa()["digest"]] == (cfg["gongfa"][0], dict(cfg["forms"]))

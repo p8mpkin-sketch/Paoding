@@ -243,8 +243,8 @@ export function Evolution() {
             <thead><tr><th>版本</th><th>配置摘要</th><th className="r">任务</th><th className="r">进行中</th><th className="r">做成率</th><th className="r">平均花费</th><th className="r">平均用时</th></tr></thead>
             <tbody>
               {doc.versions.map((v) => (
-                <tr key={`${v.jie}:${v.digest ?? "-"}`} data-ev-digest={v.digest ?? "none"}>
-                  <td className="k-mono">v{v.jie}{v.current ? <span className="t2"> · 当前</span> : null}</td>
+                <tr key={`${v.jie}:${v.digest ?? "-"}:${v.repinned ? 1 : 0}`} data-ev-digest={v.digest ?? "none"}>
+                  <td className="k-mono">v{v.jie}{v.current ? <span className="t2"> · 当前</span> : null}{v.repinned ? <span className="t2"> · 人工改回</span> : null}</td>
                   <td className="k-mono" title={v.digest ?? undefined}>{v.digest ? short(v.digest) : "开始时没有记录（焚决之前）"}</td>
                   <td className="r k-mono">{v.tasks}</td><td className="r k-mono">{v.open}</td><td className="r k-mono">{pct(v.done_rate)}</td>
                   <td className="r k-mono">{money(v.avg_spent_usd_milli)}</td><td className="r k-mono">{mins(v.avg_wall_s)}</td>

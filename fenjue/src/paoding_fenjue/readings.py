@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .shapes import fire_at, for_problem, gongfa
+from .shapes import archived_digests, at, current, fire_at, for_problem, gongfa, stamp_of
 
 OUTCOMES = ("huolian", "helian", "binghuo", "fanshi")  # 火莲、合炼、并火、反噬（03 §3）
 DONE = ("solved", "accepted", "delivered")  # 做成：本地或外部判定通过、人工验收、开放道交付
@@ -60,6 +60,15 @@ def _dossier_row(d: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _archive(live_digest: str) -> list[dict[str, Any]]:
+    out = []
+    for dg in archived_digests():
+        v = current() if dg == live_digest else at(dg)
+        if v is not None:
+            out.append({"jie": int(v.g["jie"]), "digest": dg, "current": dg == live_digest})
+    return sorted(out, key=lambda r: (r["jie"], r["digest"]))
+
+
 def evolution(
     dossiers: Iterable[Mapping[str, Any]],
     problems: Mapping[str, Mapping[str, Any]],
@@ -68,16 +77,18 @@ def evolution(
     live = gongfa()
     rows = {r["id"]: r for r in items}
 
-    # 每一版功法下开了几道题、做成几道（按开题时记下的品阶与摘要分组）
-    by_version: dict[tuple[int, str | None], list[Mapping[str, Any]]] = {}
+    # 每一版功法下开了几道题、做成几道（按开题时记下的品阶与摘要分组）。人改钉过的题（体质修炼 003）前后用了
+    # 两版，单列一行（按改钉到的那一版），不混进任何一版的读数
+    by_version: dict[tuple[int, str | None, bool], list[Mapping[str, Any]]] = {}
     for pid, p in problems.items():
         if pid not in rows:
             continue
-        s = p.get("gongfa") or {}
-        by_version.setdefault((int(s.get("jie", 0)), s.get("digest")), []).append(rows[pid])
+        moved = bool(p.get("repins"))
+        s = stamp_of(p) or {}
+        by_version.setdefault((int(s.get("jie", 0)), s.get("digest"), moved), []).append(rows[pid])
     versions = [
-        {"jie": jie, "digest": dg, "current": dg == live["digest"], **_arm_stats(rs)}
-        for (jie, dg), rs in sorted(by_version.items(), key=lambda kv: (kv[0][0], kv[0][1] or ""))
+        {"jie": jie, "digest": dg, "current": dg == live["digest"] and not moved, "repinned": moved, **_arm_stats(rs)}
+        for (jie, dg, moved), rs in sorted(by_version.items(), key=lambda kv: (kv[0][0], kv[0][1] or "", kv[0][2]))
     ]
 
     ds = sorted((_dossier_row(d) for d in dossiers), key=lambda d: d["dossier"])
@@ -98,7 +109,7 @@ def evolution(
         if pid not in rows:
             continue
         v = for_problem(p)
-        if not v.pinned:
+        if not v.pinned or p.get("repins"):  # 改钉过的题前后两版，不进任何一臂
             continue
         for slot in v.g.get("holdout") or {}:
             for active_id, h in v.stand_ins(slot).items():
@@ -136,6 +147,8 @@ def evolution(
             "fires": {k: list(v) for k, v in live["fires"].items()},
         },
         "history": [dict(h) for h in live.get("history") or []],
+        # 功法存档里的每一版（体质修炼 003：人改钉只许改到这里有的版本；pd repin 与回滚弹窗按它把品阶解析成摘要）
+        "archive": _archive(live["digest"]),
         "revisions": [dict(r) for r in live.get("revisions") or []],
         "versions": versions,
         "dossiers": ds,

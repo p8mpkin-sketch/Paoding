@@ -86,3 +86,20 @@ def test_tasks_are_grouped_by_the_version_they_were_opened_under():
 def test_a_live_holdout_is_listed_before_any_task_lands_in_it():
     [h] = run([])["holdout"]
     assert h["main"]["tasks"] == 0 and h["held"]["done_rate"] is None
+
+
+def test_repinned_tasks_get_their_own_row_and_stay_out_of_both_arms():
+    """体质修炼 003：改钉过的题前后用了两版，版本表里单列一行（按改钉到的那一版），不进常设留出的任何一臂。"""
+    main, held = split(40)
+    live = shapes.gongfa()["digest"]
+    moved = [task(i, live) for i in main[:2]] + [task(i, live) for i in held[:1]]
+    for p, _ in moved:
+        p["repins"] = [{"seq": 5, "ts": 0, "to": {"jie": 2, "digest": OLD}, "reason": "r"}]
+    out = run([task("a", live), *moved])
+    rows = {(v["jie"], v["digest"], v["repinned"]): v for v in out["versions"]}
+    assert rows[(2, live, False)]["tasks"] == 1 and rows[(2, live, False)]["current"]
+    assert rows[(2, OLD, True)]["tasks"] == 3 and not rows[(2, OLD, True)]["current"]
+    [h] = out["holdout"]
+    assert h["main"]["tasks"] + h["held"]["tasks"] == 1  # 只有没改钉的 a
+    assert {(r["jie"], r["digest"]) for r in out["archive"]} >= {(2, OLD), (2, live)}
+    assert [r["digest"] for r in out["archive"] if r["current"]] == [live]

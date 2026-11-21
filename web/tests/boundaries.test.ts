@@ -60,10 +60,12 @@ describe("HT-12 请求的去向", () => {
       // 整理（v5 第三期软删，cz 2026-11-20 裁决）：归档、回收站、恢复、改名、置顶
       "curate",
       // 开放道的追问与叫停（地图 v0.9 §3.2 ③ 草案，L3 线实现）
-      "follow_up", "halt"];
+      "follow_up", "halt",
+      // 体质修炼 003：在途降一阶
+      "repin"];
     for (const o of HUMAN_OPS) expect(SPEC_HUMAN).toContain(o);
     const seen = { seq: 1, card_hash: "x" };
-    const built: Op[] = [ops.registerInput("h", 1, "t"), ops.hintAdd("t"), ops.hintAdd("t", "f_1"), ops.hintClose("h_1"), ops.approve("i_1", seen), ops.deny("i_1", "r", seen), ops.abandonIntent("i_1"), ops.profileOverride("judge", "none", "r"), ops.closeProblem("r"), ops.extend(seen), ops.budgetAdd(1), ops.grantScope("r_1", seen), ops.grantScope("r_1", seen, ["r2"]), ops.denyScope("r_1", "r", seen), ops.revokeScope(1, "r"), ops.shelve("trash"), ops.rename("x"), ops.pin(true), ops.followUp("x", { seq: 1 }), ops.followUp("x", { seq: 1 }, 500), ops.halt(), ops.closeWithFeedback("adopted", "r")];
+    const built: Op[] = [ops.registerInput("h", 1, "t"), ops.hintAdd("t"), ops.hintAdd("t", "f_1"), ops.hintClose("h_1"), ops.approve("i_1", seen), ops.deny("i_1", "r", seen), ops.abandonIntent("i_1"), ops.profileOverride("judge", "none", "r"), ops.closeProblem("r"), ops.extend(seen), ops.budgetAdd(1), ops.grantScope("r_1", seen), ops.grantScope("r_1", seen, ["r2"]), ops.denyScope("r_1", "r", seen), ops.revokeScope(1, "r"), ops.shelve("trash"), ops.rename("x"), ops.pin(true), ops.followUp("x", { seq: 1 }), ops.followUp("x", { seq: 1 }, 500), ops.halt(), ops.repin({ jie: 1, digest: "a" }, "r"), ops.closeWithFeedback("adopted", "r")];
     for (const o of built) expect(HUMAN_OPS.has(o.op), o.op).toBe(true);
     expect(JSON.stringify(ops.closeProblem("r"))).not.toContain("terminal"); // 终态是派生量
     const r = rig();

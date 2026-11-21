@@ -146,6 +146,11 @@ def world():
     did7 = k.submit(solve7, "p7", "deliver", d7)
     vr = {"kind": "verify", "target": did7, "holder": "sn1", "reserve": {"usd_milli": 10, "wall_s": 60}, "ttl_s": 600}
     verify7 = {"kind": "adapter", "id": "ad1", "session": k.submit(SINAN, "p7", "lease", vr), "role": "verify"}
+    # 体质修炼 003：repin 要一道开题时记下了功法版本的题，存档表里要有更低的一版
+    k.cfg = dataclasses.replace(k.cfg, gongfa=(2, "b" * 64), gongfa_archive=(("b" * 64, 2, ()), ("a" * 64, 1, ())))
+    st8 = k.art("p8", "input", b"statement p8")
+    assert k.submit(HUMAN, "p8", "open_problem", {**open5, "origin": {"statement_ref": st8, "materials": []}}) == "ok"
+    k.cfg = dataclasses.replace(k.cfg, gongfa=None)
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -289,6 +294,7 @@ def world():
             },
         ),
         (HUMAN, "p5", "halt", {"reason": "先停一下"}),
+        (HUMAN, "p8", "repin", {"to": {"jie": 1, "digest": "a" * 64}, "reason": "新火在真实任务上出事"}),
         (
             HUMAN,
             "p4",

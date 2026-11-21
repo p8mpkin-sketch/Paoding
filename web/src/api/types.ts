@@ -239,6 +239,8 @@ export type ProblemHead = {
 };
 /** 功法：品阶与摘要（焚决 F3） */
 export type Gongfa = { jie: number; digest: string };
+/** 人改钉一道在跑的题的功法（体质修炼 003 T4-4） */
+export type Repin = { seq: number; ts: number; to: Gongfa; reason: string };
 export type ProfileOverride = { axis: ProfileAxis; value: string; derived: string | null; by: string; seq: number; reason: Tagged };
 export type JudgeRequestRow = {
   id: string;
@@ -260,6 +262,8 @@ export type StatusView = Envelope & {
     prefs?: TaskPrefs;
     /** 开题时的功法（焚决 F3）；旧题没有，读作第 0 阶 */
     gongfa?: Gongfa;
+    /** 人改钉的功法（体质修炼 003）；最后一条即此刻生效的 */
+    repins?: Repin[];
   };
   goal: {
     statement: Tagged;
@@ -591,7 +595,8 @@ export type HumanOpKind =
   | "revoke_scope"
   | "curate"
   | "follow_up"
-  | "halt";
+  | "halt"
+  | "repin";
 export type Op = { op: HumanOpKind; body: Record<string, unknown> };
 export type Seen = { seq: number; card_hash: string };
 export type OpResult = { ok: true; id: string | null; seq: number } | { ok: false; code: string; detail?: string; card?: unknown; as_of?: number };

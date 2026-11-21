@@ -50,6 +50,7 @@ ACTORS: dict[str, tuple[str, ...]] = {
         "open_problem",
         "profile_override",
         "register_artifact",
+        "repin",
         "request_judge",
         "request_scope",
         "revoke_scope",
