@@ -552,6 +552,7 @@ def status(state: State, pid: str) -> View:
             "now_ts": state["now"],
             "profile": dict(p["profile"]),
             **({"gongfa": dict(p["gongfa"])} if "gongfa" in p else {}),  # 焚决 F3：旧题没有，读端读作第 0 阶
+            **({"repins": [dict(r) for r in p["repins"]]} if p.get("repins") else {}),  # 体质修炼 003：人改钉功法
             "derived_profile": dict(p.get("derived_profile", p["profile"])),
             "profile_overrides": [
                 {

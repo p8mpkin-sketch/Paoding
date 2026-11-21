@@ -18,7 +18,7 @@ export type EvoStats = {
 
 export type EvoHistory = { jie: number; change: string; dossier?: string; replaces?: string; reverts?: string };
 export type EvoRevision = { fire: string; from: string | null; change: string };
-export type EvoVersion = EvoStats & { jie: number; digest: string | null; current: boolean };
+export type EvoVersion = EvoStats & { jie: number; digest: string | null; current: boolean; repinned?: boolean };
 
 export type EvoReading = { dim: string; kind: string; dir?: string; B?: number; A1?: number; F?: number; gate?: number; verdict?: string };
 export type EvoDossier = {
@@ -53,6 +53,8 @@ export type EvoHoldout = {
 export type Evolution = {
   current: { jie: number; digest: string; holdout_permille: number; fires: Record<string, string[]> };
   history: EvoHistory[];
+  /** 功法存档里的每一版（体质修炼 003：改钉只许改到这里有的版本）。 */
+  archive?: { jie: number; digest: string; current: boolean }[];
   revisions: EvoRevision[];
   versions: EvoVersion[];
   dossiers: EvoDossier[];

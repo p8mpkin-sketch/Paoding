@@ -7,6 +7,7 @@ from .shapes import (
     TOOL_EVENTS,
     View,
     active,
+    archived_digests,
     arm_of,
     asset_bytes,
     at,
@@ -28,6 +29,7 @@ from .shapes import (
     kernel_config,
     params,
     ref,
+    stamp_of,
 )
 from .tables import ACTORS, PORTS, SEATS
 
@@ -40,6 +42,7 @@ __all__ = [
     "TOOL_EVENTS",
     "View",
     "active",
+    "archived_digests",
     "arm_of",
     "asset_bytes",
     "at",
@@ -62,4 +65,5 @@ __all__ = [
     "kernel_config",
     "params",
     "ref",
+    "stamp_of",
 ]

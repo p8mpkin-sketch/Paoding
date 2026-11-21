@@ -6,7 +6,7 @@ import type { AcceptCheck, HumanOpKind, Op, Profile, Seen } from "./types";
 export const HUMAN_OPS: ReadonlySet<HumanOpKind> = new Set<HumanOpKind>([
   "open_problem", "register_artifact", "hint", "approve", "profile_override", "abandon_intent", "close_problem",
   "add_intent", "extend", "budget_add", "pause", "resume", "rule", "accept", "judge_revoke", "intent_done",
-  "grant_scope", "revoke_scope", "curate", "follow_up", "halt",
+  "grant_scope", "revoke_scope", "curate", "follow_up", "halt", "repin",
 ]);
 
 export const ops = {
@@ -43,6 +43,8 @@ export const ops = {
     ({ op: "follow_up", body: { text, seen, ...(budgetAdd ? { budget_add_usd_milli: budgetAdd } : {}) } }),
   /** 叫停：不再派新会话，在途的收到收尾轮，交出已有结果。 */
   halt: (reason?: string): Op => ({ op: "halt", body: reason ? { reason } : {} }),
+  // —— 体质修炼 003 T4-4：在跑的任务改钉到存档里更低的一版能力配置，下一次派工起生效（与 pd repin 同一组字段）——
+  repin: (to: { jie: number; digest: string }, reason: string): Op => ({ op: "repin", body: { to, reason } }),
   /** 采纳或不采纳交付并关题：终态由图服务算（开放道即 delivered）；有四顾项时带 closeout 与 seen。 */
   closeWithFeedback: (feedback: "adopted" | "rejected", reason: string, closeout?: { items: string[]; seen: Seen }): Op =>
     ({ op: "close_problem", body: { reason, feedback, ...(closeout ? { closeout: closeout.items, seen: closeout.seen } : {}) } }),

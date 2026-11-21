@@ -27,7 +27,7 @@ from .. import work as wk  # noqa: F401  —— 测试经 reducer.wk 替换内�
 from ..jcs import JCSError, canonicalize
 from ..parse import BadBody, Obj
 from ..state import Actor, Body, Event, State
-from . import close, curate, deliver, fact, grants, intent, judge, knowledge, lease, problem, recall, review
+from . import close, curate, deliver, fact, grants, intent, judge, knowledge, lease, pin, problem, recall, review
 from .common import Applier, Config, Ok, ReadonlyAllow, Reject, TimedValidator, Validator, empty_state
 from .fact import content_key
 
@@ -90,6 +90,8 @@ def _who(actor: Actor, kind: str) -> bool:
         return k == "adapter" and role == "solve"
     if kind in ("follow_up", "halt"):  # 开放道的追问与叫停（地图 v0.9 Q20、Q31）：只有人
         return k == "human"
+    if kind == "repin":  # 体质修炼 003 T4-4：在途降一阶，只有人
+        return k == "human"
     if kind == "review":  # 开放道的复核读数（地图 Q34，体质修炼 002）：只由复核会话提交，在途与归属另查
         return k == "adapter" and role == "verify"
     if kind == "kb_query":  # 会话查资料的记录（资料库第二期）：书库替会话记，令牌另查
@@ -126,6 +128,7 @@ KINDS = (
     "halt",
     "kb_query",
     "review",
+    "repin",
 )
 AFTER_CLOSE = ("cost", "release", "curate")  # 关题后在途任务仍可交回用量与释放租约；人仍可整理
 
@@ -173,6 +176,7 @@ _VALIDATORS: dict[str, Validator] = {
     "halt": deliver._v_halt,
     "kb_query": knowledge._v_kb_query,
     "review": review._v_review,
+    "repin": pin._v_repin,
 }
 
 _APPLIERS: dict[str, Applier] = {
@@ -204,6 +208,7 @@ _APPLIERS: dict[str, Applier] = {
     "halt": deliver._a_halt,
     "kb_query": knowledge._a_kb_query,
     "review": review._a_review,
+    "repin": pin._a_repin,
 }
 assert set(_VALIDATORS) | set(_TIMED) == set(KINDS) == set(_APPLIERS)
 

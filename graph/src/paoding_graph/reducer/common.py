@@ -67,6 +67,9 @@ class Config:
     # 领租约时抄进事件体。都由组装根从功法清单（paoding_fenjue）取来；内核不认识任何一团火，只抄不解释
     gongfa: tuple[int, str] | None = None
     forms: tuple[tuple[str, str], ...] = ()
+    # 体质修炼 003（T4-3、T4-4）：功法存档里每一版的 (摘要, 品阶, 席位 → 形态表)。领租约时按题生效的那一版抄形态；
+    # 人改钉（repin）只许改到表里有的版本。空即 F3 原样（形态照抄 forms，不收 repin）
+    gongfa_archive: tuple[tuple[str, int, tuple[tuple[str, str], ...]], ...] = ()
     # 练习道信封（一句话开题增量 13、15）：None 即本部署不接受 lane=practice 的开题。版本与摘要开题时抄进事件体
     practice: PracticePolicy | None = None
     # 运行时扩权（runtime-grants §4、§10.3）：设置层 grants 节与风险表，由组装根在设置变更时整体替换 Config。

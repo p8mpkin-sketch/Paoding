@@ -220,6 +220,7 @@ class Problem(TypedDict):
     pinned: NotRequired[bool]  # curate 置顶
     settings: NotRequired[Body]  # 宪章 D5：{version, digest}，开题时的设置快照；不进等级、消费门与画像
     gongfa: NotRequired[Body]  # 焚决 F3：{jie, digest}，开题时的功法；同 settings，只记不解释
+    repins: NotRequired[list[Body]]  # 体质修炼 003：人改钉 {seq, ts, to: {jie, digest}, reason}；gongfa 不动
 
 
 class Producer(TypedDict):

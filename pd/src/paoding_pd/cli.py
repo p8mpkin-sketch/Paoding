@@ -14,6 +14,8 @@
                                             关题（开放道可带采纳与否；扩过权的要逐条确认四顾）
     pd follow-up <pid> "<追问>" [--add <美元>]   开放道交付之后追问（剩余不够收尾时要 --add 追加预算）
     pd halt <pid> [--reason "<文本>"]       开放道叫停：不再派新会话，在途的交出已有结果
+    pd repin <pid> --to-jie N [--to-digest <摘要前缀>] --reason "<文本>"
+                                            在跑的题改钉到存档里更低的一版功法，下一次派工起生效（体质修炼 003）
     pd settings show                        pd settings set <键路径> <值>
       例：开放道只读白名单 pd settings set grants.readonly_allow '[{resource: net, pattern: "docs.python.org:443"}]'
     pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
@@ -21,7 +23,7 @@
 
 pid 取 --pid 或环境变量 PD_PROBLEM。数据目录取 --home 或 PD_HOME（g.sqlite 与 blobs/）。
 M0 的骨架以本机进程内方式打开图服务；图服务独立成进程后改走 HTTP/Unix socket 绑定（接口相同，D10）。
-settings、keys 与 connector 走运行中的全栈的 HTTP（--url 或 PD_URL，缺省 http://127.0.0.1:8100）：钥匙环只在端点代理的
+settings、keys、connector 与 repin 走运行中的全栈的 HTTP（--url 或 PD_URL，缺省 http://127.0.0.1:8100）：钥匙环只在端点代理的
 内存里（宪章 03 §4）。人的令牌取 PD_TOKEN，或 --token-file（缺省 <home>/human.token）。
 输出遵守四语域标记、等级词表与判据徽章（render.py）。不存在人填画像三轴的入口：画像只能事后覆盖。
 """
@@ -452,6 +454,31 @@ class Remote:
             return e.code, json.loads(e.read() or b"{}")
 
 
+def cmd_repin(r: Remote, a, w) -> int:
+    """在途降一阶（体质修炼 003 T4-4）：品阶按全栈的功法存档解析成摘要（同一阶有几版时用 --to-digest 前缀挑）。
+    走全栈而不是本机图服务：只有组装根装载了功法存档，本机 pd 打开的图服务没有。"""
+    code, evo = r.call("GET", "/v1/evolution")
+    if code != 200:
+        w(f"[证据] 读不到功法存档：HTTP {code}\n")
+        return 1
+    hits = [v for v in evo.get("archive") or [] if v["jie"] == a.to_jie and v["digest"].startswith(a.to_digest or "")]
+    if len(hits) != 1:
+        rows = "、".join(f"第 {v['jie']} 阶 {v['digest'][:12]}" for v in evo.get("archive") or []) or "（空）"
+        what = "没有这一版" if not hits else f"第 {a.to_jie} 阶有 {len(hits)} 版，用 --to-digest 挑一版"
+        w(f"[证据] {what}；存档里有：{rows}\n")
+        return 2
+    to = {"jie": hits[0]["jie"], "digest": hits[0]["digest"]}
+    op = {"op": "repin", "body": {"to": to, "reason": a.reason}}
+    body = {"idem_key": f"pd-repin:{a.target}:{to['digest']}:{a.reason}", "ops": [op]}
+    code, out = r.call("POST", f"/v1/problems/{a.target}/proposals", body)
+    if code != 200 or not out.get("ok"):
+        w(f"[证据] 改钉被拒：{_fail(out) if out.get('results') else out.get('code') or code}\n")
+        return 1
+    w(f"[人] 已把 {a.target} 改钉到第 {to['jie']} 阶（{to['digest'][:12]}）：")
+    w("下一次派工起生效，在跑的会话照原版本跑完这一轮\n")
+    return 0
+
+
 def _remote(a) -> Remote:
     token = os.environ.get("PD_TOKEN", "").strip()
     if not token:
@@ -585,6 +612,11 @@ def parser() -> argparse.ArgumentParser:
     ht = sp.add_parser("halt")
     ht.add_argument("target")
     ht.add_argument("--reason")
+    rp = sp.add_parser("repin")
+    rp.add_argument("target")
+    rp.add_argument("--to-jie", type=int, required=True)
+    rp.add_argument("--to-digest", help="同一阶有几版时，用摘要前缀挑一版")
+    rp.add_argument("--reason", required=True)
     sc = sp.add_parser("scope").add_subparsers(dest="sub", required=True)
     sc.add_parser("list")
     for name in ("grant", "deny", "revoke"):
@@ -621,6 +653,8 @@ def main(
         return cmd_keys(_remote(a), a, w, read_key or _read_key)
     if a.cmd == "connector":
         return connector.cmd_connector(_remote(a), a, w, read)
+    if a.cmd == "repin":
+        return cmd_repin(_remote(a), a, w)
     local = Local(Path(a.home), {"kind": "human", "id": a.actor}, judges)
     if a.cmd == "problem":
         return cmd_open(local, a, w)

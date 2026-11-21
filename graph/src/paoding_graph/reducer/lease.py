@@ -7,6 +7,7 @@ from typing import cast
 from .. import work as wk
 from ..parse import Obj
 from ..state import Actor, Cost, Event, Lease, State
+from . import pin
 from .common import Config, Ok, Reject, _amount
 
 # ---------- 校验 ----------
@@ -47,8 +48,9 @@ def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: i
     if not ok:
         return Reject("over_budget", "spent + reserved + reserve 超过上限")
     attempt = 1 + sum(1 for l in wk.leases_of(state, pid) if l["kind"] == kind and l.get("target") == target)
-    # 焚决 F3：这次会话用哪个形态。由图服务按席位从配置抄入，提交体里给的不认；旧事件没有，读端按席位推
-    form = dict(cfg.forms).get(kind)
+    # 焚决 F3：这次会话用哪个形态。由图服务按席位从配置抄入，提交体里给的不认；旧事件没有，读端按席位推。
+    # 体质修炼 003 T4-3：按这道题生效的功法版本查存档表（锁定与改钉之后，与会话实际用的一致）
+    form = pin.form_for(prob, kind, cfg)
     return Ok(
         {
             "kind": kind,
