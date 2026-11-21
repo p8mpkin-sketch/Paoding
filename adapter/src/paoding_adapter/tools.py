@@ -68,6 +68,7 @@ class Session:
     final: dict[str, Any] | None = None
     submitted: bool = False
     delivered: str | None = None  # 开放道：最近一次交付的 outcome（answered | partial | blocked）
+    reviewed: bool = False  # 开放道的复核会话：读数已交回（体质修炼 002）
     secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
     kb_cite: str = "grounds"  # 会话形态（功法 H1）：资料段落能进交付的 refs（refs），还是只能拿来找方向（grounds）
 
@@ -318,6 +319,38 @@ class ToolHost:
             res["answer"] = out["results"][0]["id"]  # 答案的产物编号（authored：它不是证据，不能当主张的依据）
         if masked:
             res["masked"] = "交付里有原话里的凭据，已遮盖"
+        return res
+
+    # ---------- review（开放道的复核会话） ----------
+
+    def _review(self, a: Obj) -> dict[str, Any]:
+        """交回复核读数（open-lane §3.6，体质修炼 002）。对的是租约的目标那次交付，会话不用自己填；
+        其余字段原样交内核校验：主张漏核或重复、依据不存在或类别不可采信、说重跑了却没附留档，都由内核拒绝并说明。"""
+        allowed = {"claims", "reruns", "counterexamples", "summary"}
+        extra = a.keys() - allowed
+        if extra:
+            raise BadBody(f"review 只收 {sorted(allowed)}，多了 {sorted(extra)}")
+        lease: Mapping[str, Any] = self.reader.state["leases"].get(self.s.lease_id) or {}
+        body: dict[str, Any] = {"delivery": lease.get("target"), **{k: a.get(k) for k in allowed if k in a}}
+        body, masked = _mask_deep(body, self.s.secrets)
+        self.s.submitted = True
+        out = self.graph.submit(
+            self.s.token,
+            self.s.pid,
+            f"review:{self.s.lease_id}:{self._nonce}:{self._n}",
+            [{"op": "review", "body": body}],
+        )
+        if not out["ok"]:
+            r = out["results"][0]
+            return _err(r.get("code", "schema_error"), r.get("detail", ""))
+        self.s.reviewed = True
+        res: dict[str, Any] = {
+            "ok": True,
+            "id": out["results"][0]["id"],
+            "detail": "读数已交回。人看结果时会看到它；本会话可以结束了。",
+        }
+        if masked:
+            res["masked"] = "读数里有原话里的凭据，已遮盖"
         return res
 
     # ---------- kb_search / kb_read（资料库第二期） ----------
@@ -625,6 +658,7 @@ class ToolHost:
         "show": _show,
         "request_access": _request_access,
         "deliver": _deliver,
+        "review": _review,
         "kb_search": _kb_search,
         "kb_read": _kb_read,
     }
@@ -735,6 +769,49 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
             },
         },
     }
+    s["review"] = {
+        "description": "交回复核读数（开放道的复核会话）：交付的每条主张核一次（claim 是主张的序号，从 0 起），"
+        "verdict 取 supported（引用确实支撑）、unsupported（引用与主张不符）、unclear（看不出）；"
+        "自检能重跑的重跑（check 是自检的序号，从 0 起），重跑了 refs 必须填这次 exec 的留档编号，跑不了写 not_rerun。"
+        "读数不改变任务的状态，只给看结果的人参考。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["claims", "summary"],
+            "additionalProperties": False,
+            "properties": {
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["claim", "verdict", "note"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "claim": {"type": "integer", "minimum": 0},
+                            "verdict": {"enum": ["supported", "unsupported", "unclear"]},
+                            "note": {"type": "string", "description": "你看到了什么，一两句话"},
+                            "refs": ref_list,
+                        },
+                    },
+                },
+                "reruns": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["check", "result"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "check": {"type": "integer", "minimum": 0},
+                            "result": {"enum": ["pass", "fail", "not_rerun"]},
+                            "note": {"type": "string"},
+                            "refs": ref_list,
+                        },
+                    },
+                },
+                "counterexamples": {"type": "array", "items": {"type": "string"}},
+                "summary": {"type": "string", "description": "依据整体怎样，一两句话；不打分"},
+            },
+        },
+    }
     s["kb_search"] = {
         "description": "查人导入的资料（手册、说明、笔记）。返回段落编号、资料名、位置、开头约 200 字与得分；"
         f"k 缺省 8、至多 {KB_K_MAX}。本会话至多 {KB_SEARCH_MAX} 次。",
@@ -761,8 +838,9 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
 
 def solve_ceiling(lease: Mapping[str, Any] | None) -> str:
     """不服务于 Intent 的会话编译授权时的风险上限：bootstrap 取 r0；开放道的 solve 取 r1——它碰得到的规则只有
-    人在扩权卡上批过的（开题零出站），r2 仍要逐次批准，solve 不编入（open-lane §3.2、§9）。"""
-    return "r1" if lease is not None and lease.get("kind") == "solve" else "r0"
+    人在扩权卡上批过的（开题零出站），r2 仍要逐次批准，solve 不编入（open-lane §3.2、§9）。
+    复核会话（verify）与求解会话同一个上限：重跑自检要碰得到求解时用过的那些规则，碰不到更多。"""
+    return "r1" if lease is not None and lease.get("kind") in ("solve", "verify") else "r0"
 
 
 def _same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:

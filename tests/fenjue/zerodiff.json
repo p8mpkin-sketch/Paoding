@@ -2,11 +2,17 @@
  "@surface": {
   "events": "",
   "n_events": 0,
-  "packages": "5432468579adb83313311dbd7c1f7f9c421bd6da09f6c27cf3e672055ca2d4cd",
+  "packages": "2b8fd0405f34e4cd4b9c166a566cb8b054f3c928b64549d5ce8579ed49bfaccb",
   "n_packages": 16
  },
  "adapter/tests/test_activity.py::test_solve_session_activity_is_readable_live_and_after_it_ends": {
   "events": "6f155fbd0e9d1e318e659fdbc207268b52aaa83f299cfcbd641ea5337cb3d23d",
+  "n_events": 13,
+  "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
+  "n_packages": 2
+ },
+ "adapter/tests/test_activity_ledger.py::test_a_problem_in_the_standing_holdout_runs_the_previous_fire": {
+  "events": "565eddb0d82763b95c3f147bf55a342254ed3c379ce87c16bf8ced2fee40c765",
   "n_events": 13,
   "packages": "f5506e89923ddf61a1087bdcb65565e939af423a3ef78f6b557a7c3363196414",
   "n_packages": 2
@@ -437,6 +443,24 @@
   "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "n_packages": 0
  },
+ "adapter/tests/test_review_session.py::test_a_review_session_that_never_reviews_gets_one_closing_round_then_ends": {
+  "events": "23a3837c8bb929e7cf9b4b242025030749adb7ddaeb79b40b89d2af1ac8e0f47",
+  "n_events": 20,
+  "packages": "2f6c047ee3b38d319b908ab004bac16102dca02a7d4b998f0108f2207c0b723c",
+  "n_packages": 5
+ },
+ "adapter/tests/test_review_session.py::test_review_session_reruns_in_a_copy_and_hands_back_readings": {
+  "events": "0ea9f3a057e3e4ad7a730c1dd06e0d2d4d1eb50bfa56c36ae4947adc337c3add",
+  "n_events": 23,
+  "packages": "6c0916ea10c57446679e67747d4cb734214dd3393f489a5b434e7c521460696a",
+  "n_packages": 4
+ },
+ "adapter/tests/test_review_session.py::test_review_tool_fills_in_the_delivery_and_passes_kernel_rejections_back": {
+  "events": "67d6a72667937e3dc1ef2726f3d4351c5e3fa289df7bcd59b84da05d1adfb819",
+  "n_events": 21,
+  "packages": "6c0916ea10c57446679e67747d4cb734214dd3393f489a5b434e7c521460696a",
+  "n_packages": 4
+ },
  "adapter/tests/test_session.py::test_authored_as_ground_is_inadmissible": {
   "events": "4832e9d9ec7ef3c726622eadf5f4c54255e1cc033478756e27b8d0dec8df9477",
   "n_events": 11,
@@ -629,12 +653,6 @@
   "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "n_packages": 0
  },
- "sinan/tests/test_loop.py::test_finished_but_uncollected_session_still_blocks_its_intent": {
-  "events": "fe43bf4f817930eaa341ad31773a5b6c7c3603266f80caa184453e63726efa09",
-  "n_events": 23,
-  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-  "n_packages": 0
- },
  "sinan/tests/test_loop.py::test_first_step_is_bootstrap_with_the_statement": {
   "events": "26232ae9dfc8e38ce520e64bdcf86d55f8851afd2dd545f95fd018ded070d995",
   "n_events": 7,
@@ -740,6 +758,36 @@
  "sinan/tests/test_resource_queue.py::test_two_sessions_writing_the_same_rule_second_queues": {
   "events": "3aabe7b84260537f8ab79a08a056e310778baa11dc77ea8f790e3f879611b1c2",
   "n_events": 24,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_review.py::test_a_delivery_is_reviewed_before_sinan_stops_for_the_human": {
+  "events": "86d5bf3a870946b7586f4d0120d74fff7bd5602a1342f1f704da3defa3c43f35",
+  "n_events": 11,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_review.py::test_a_spent_verify_share_means_no_review": {
+  "events": "30b83368b9f1b87cbe26a034621a8ffeb4f30b89ea3f239a3f87cca703380d0f",
+  "n_events": 18,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_review.py::test_a_tiny_verify_share_caps_the_review_reserve": {
+  "events": "d85360ad5e3ce4725c3eb670c9d7e5ad4ca3f35037e3527a9f3c4ecbfd11dc5c",
+  "n_events": 12,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_review.py::test_solve_leaves_the_verify_share_and_verify_draws_on_it": {
+  "events": "86d5bf3a870946b7586f4d0120d74fff7bd5602a1342f1f704da3defa3c43f35",
+  "n_events": 11,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "sinan/tests/test_review.py::test_without_the_switch_nothing_is_reviewed": {
+  "events": "6cfa7f1c6896f3155bf4b310a84f96ee5c14b5b0e1102a8a4f77f3e87d239745",
+  "n_events": 7,
   "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "n_packages": 0
  },
@@ -912,7 +960,7 @@
   "n_packages": 8
  },
  "tests/integration/test_session_activity.py::test_activity_endpoint_reads_the_session_log": {
-  "events": "1246b69d85b9b5815eb539dd20f3a2ede4aa307ce854a1a73a64ae274f181f44",
+  "events": "6a0e1aa133bbe1bcb8cde368c6cfc99b57221787b2d1f54e189d528afb599dc4",
   "n_events": 3,
   "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "n_packages": 0
@@ -942,6 +990,12 @@
   "n_packages": 0
  },
  "tests/integration/test_settings_keys.py::test_pd_settings_and_keys": {
+  "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
+  "n_events": 0,
+  "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "n_packages": 0
+ },
+ "tests/integration/test_settings_keys.py::test_pd_writes_the_readonly_allowlist_and_the_graph_takes_it": {
   "events": "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05",
   "n_events": 0,
   "packages": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

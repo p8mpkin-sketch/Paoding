@@ -36,6 +36,7 @@ TOOL_EVENTS: dict[str, tuple[str, ...]] = {
     "show": (),  # 只读（M4）
     "submit": ("add_fact",),
     "deliver": ("deliver",),
+    "review": ("review",),  # 复核会话交回读数（体质修炼 002）
     "request_access": ("request_scope",),
     "kb_search": (),  # 查询词由书库记进事件账（M7），不经会话令牌
     "kb_read": (),
@@ -238,6 +239,7 @@ SEAT_FORMS = {
     "explore": "h1.triad",
     "solve": "h1.solo",
     "recall": "h1.recall",
+    "verify": "h1.review",
 }
 
 

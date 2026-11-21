@@ -1,9 +1,11 @@
 // 读数（v6 运营看板，docs/design/pages-v6 §4；HMI 设计 §3.8）。量具只显示，不驱动任何按钮的默认值。
 // 数据：/v1/problems（终态、判定来源、花费、用时、服务端算的每解成本与按判定来源分列）、各任务的 /budget（按会话种类、
 // 按会话的模型）与 /budget/series（花费随时间，#123）。时间范围只在本机筛；服务端口径的数字照原样排、旁注口径。
+// 开放道单独成表（/v1/readings/open，地图 Q35）：交付、反馈、复核读数，不进做成率与每解成本。
 // 评测台四臂、归因、折损、切口、校准、留出等还没有读端点：收在一处写“暂不可用”，不编数字。
-import { useMemo, useRef, useState } from "react";
-import type { ProblemItem } from "../api/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { OpenReadingsView, ProblemItem } from "../api/types";
+import { useServices } from "../app/context";
 import { navigate } from "../app/router";
 import { readUsage } from "../app/usage";
 import { Mast } from "../kit";
@@ -31,6 +33,37 @@ const OUT_CATS = [
 ];
 
 type SortKey = "id" | "terminal" | "spent" | "verify" | "wall";
+
+/** 开放道（判定来源 self）的读数：没有判官，所以只数交付、人的反馈与复核读数；全部时间、服务端口径。
+ * 链头变了才重读。复核读数是另一个会话核出来的参考，不是判定，这里也只是计数。 */
+function OpenLane({ head }: { head: number | null }) {
+  const { api } = useServices();
+  const [r, setR] = useState<OpenReadingsView | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.openReadings().then((v) => { if (live) { setR(v); setErr(null); } }, (e: Error) => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, [api, head]);
+  if (err && !r) return <section className="rd-sec" data-open-readings><h3>开放道</h3><p className="t2">读不到开放道读数：<Plain text={err} /></p></section>;
+  if (!r) return null;
+  const rv = r.review;
+  const reran = rv.reruns.pass + rv.reruns.fail + rv.reruns.not_rerun;
+  return (
+    <section className="rd-sec" data-open-readings>
+      <h3>开放道（服务端口径，全部时间）</h3>
+      <p className="t2">没有判定器，也没有标准答案：交付是智能体自己的结论，不进做成率、每解成本与任何对照读数。采纳率只数给了反馈的任务；复核是另起一个会话逐条核对的读数，不是判定。</p>
+      <div className="rd-tiles" aria-label="开放道指标">
+        <Tile label="开放道任务" value={r.problems} sub={`进行中 ${r.terminals.open} · 已交付 ${r.terminals.delivered} · 没做成 ${r.terminals.unsolved}`} data="open-problems" />
+        <Tile label="交付" value={r.deliveries} sub={`完整 ${r.outcomes.answered} · 部分 ${r.outcomes.partial} · 受阻 ${r.outcomes.blocked} · 追问 ${r.follow_ups}`} data="open-deliveries" />
+        <Tile label="采纳率" value={pct(r.adoption_rate)} sub={`采纳 ${r.feedback.adopted} · 不采纳 ${r.feedback.rejected} · 没给反馈 ${r.feedback.none}`} data="open-adoption" />
+        <Tile label="每次交付花费" value={r.usd_milli_per_delivery === null ? "—" : usd(r.usd_milli_per_delivery)} sub={`开放道合计 ${usd(r.spent_usd_milli)}`} data="open-per-delivery" />
+        <Tile label="复核过的交付" value={rv.deliveries} sub={rv.deliveries ? `${rv.claims} 条主张：有据 ${rv.supported} · 引用不符 ${rv.unsupported} · 看不出 ${rv.unclear}` : "还没有复核读数"} data="open-review" />
+        <Tile label="自检重跑" value={reran} sub={reran ? `通过 ${rv.reruns.pass} · 不过 ${rv.reruns.fail} · 没能重跑 ${rv.reruns.not_rerun}` : "还没有重跑"} data="open-reruns" />
+      </div>
+    </section>
+  );
+}
 
 export function Readings({ now = 0 }: { now?: number }) {
   const { view, error } = useProblems();
@@ -132,6 +165,8 @@ export function Readings({ now = 0 }: { now?: number }) {
         </table>
         </div>
       </section>
+
+      <OpenLane head={view.head ?? null} />
 
       <section className="rd-sec">
         <div className="rd-sec-h">

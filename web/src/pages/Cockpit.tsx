@@ -131,7 +131,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const flowIn = {
     accept: vm.goal.accept, closed: vm.closed, terminal: vm.terminal, active: vm.leases.filter((l) => l.active).map((l) => l.kind), started: vm.leases.length > 0,
     todo: vm.todo.map((t) => t.why), deliveries: vm.open.deliveries.length, lastDeliverySeq: last?.seq ?? 0, lastHadSelfCheck: (last?.self_check.length ?? 0) > 0,
-    lastFollowUpSeq: vm.open.followUps.at(-1)?.seq ?? 0, judged: vm.goal.predicate.verdicts.length > 0,
+    lastFollowUpSeq: vm.open.followUps.at(-1)?.seq ?? 0, judged: vm.goal.predicate.verdicts.length > 0, lastReviewed: !!last?.review,
   };
   const solves = vm.leases.filter((l) => l.kind === "solve");
   // 回放时也给面板（可回放的实时性）：只排那一刻已入账的活动

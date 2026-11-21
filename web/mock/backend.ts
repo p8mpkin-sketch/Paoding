@@ -10,11 +10,11 @@
 import { createHash } from "node:crypto";
 import type {
   AcceptanceItem, AcceptCheck, AcceptRecord, ApprovalDisplay, Authority, ApprovalFields, ArtifactClass, ArtifactView, Badge, BudgetResponse, Budget, CardKind, Catalog, Event,
-  ExecRecord, ExtensionFields, FactNode, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, KnowledgeRef, LeaseRow, Level,
+  ExecRecord, ExtensionFields, FactNode, GroundBrief, ScopeCardFields, ScopeDisplay, GraphView, HintNode, HintTrace, IntentNode, IntentState, JudgeEntry, KnowledgeRef, LeaseRow, Level,
   OpResult, Predicate, ProblemInput, ProblemItem, Profile, ProposalResponse, RegisterName, Risk, ScopeRule, StatusView,
   Tagged, Terminal, WorkItem,
 } from "../src/api/types";
-import { activityDemo, demoScript, staticScripts, type Script } from "./scenario";
+import { activityDemo, demoScript, reviewActivityDemo, staticScripts, type Script } from "./scenario";
 import { kaitiDraft, kaitiExtract, platformRoute } from "./kaiti";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
@@ -40,7 +40,7 @@ const LEVEL_WORDS: Record<Level, string> = { E3: "判定通过", E3d: "相符", 
 const REGISTER: Record<string, RegisterName> = {
   "artifact:exec": "证据", "artifact:judge": "证据", "artifact:input": "证据", "artifact:authored": "叙述", "artifact:knowledge": "人",
   title: "叙述", summary: "叙述", hint: "人", human_reason: "人", statement: "人", estimate: "估",
-  delivery: "叙述", follow_up: "人",
+  delivery: "叙述", follow_up: "人", review: "叙述",
 };
 const tag = <T>(src: string, value: T): Tagged<T> => ({ src, register: REGISTER[src], value });
 
@@ -79,6 +79,7 @@ type Problem = ProblemInput & { profile: Profile; derived_profile: Profile; open
 const TRASH_MS = 30 * 86_400_000;
 const trashUntil = (p: Problem) => (p.shelf?.state === "trash" ? p.shelf.ts + TRASH_MS : null);
 const shelfOf = (p: Problem, now: number) => { const u = trashUntil(p); return u !== null && now >= u ? "purged" as const : p.shelf?.state ?? "active"; };
+type MockReview = { id: string; seq: number; lease: string; claims: { claim: number; verdict: "supported" | "unsupported" | "unclear"; note: string; refs: string[] }[]; reruns: { check: number; result: "pass" | "fail" | "not_rerun"; refs: string[]; note?: string }[]; counterexamples: string[]; summary: string };
 type State = {
   seq: number; now: number; problem?: Problem; overrides: StatusView["problem"]["profile_overrides"];
   artifacts: Map<string, Art>; facts: Map<string, Fact>; intents: Map<string, Intent>; hints: Map<string, Hint>;
@@ -89,7 +90,7 @@ type State = {
   scopeReqs: Map<string, ScopeReq>;
   acceptLog: AcceptRecord[]; accepted: boolean;
   /** 开放道（open-lane §3.4–§3.5；地图 v0.9 §3.2 ③ 草案）：与图服务同形 */
-  deliveries: { id: string; seq: number; lease: string; outcome: "answered" | "partial" | "blocked"; answer?: string; claims: { text: string; refs: string[] }[]; self_check: { what: string; result: "pass" | "fail" | "skipped"; refs: string[]; item?: string }[]; unverified: string[]; needs: string[] }[];
+  deliveries: { id: string; seq: number; lease: string; outcome: "answered" | "partial" | "blocked"; answer?: string; claims: { text: string; refs: string[] }[]; self_check: { what: string; result: "pass" | "fail" | "skipped"; refs: string[]; item?: string }[]; unverified: string[]; needs: string[]; review?: MockReview }[];
   followUps: { id: string; seq: number; text: string; after_delivery: string | null }[];
   halted: { seq: number } | null; feedback: "adopted" | "rejected" | "none" | null;
 };
@@ -162,6 +163,7 @@ function project(events: Event[], pid: string, asOf: number): State {
         break;
       case "close_problem": if (s.problem) { s.problem.closed_seq = ev.seq; s.problem.closed_ts = ev.ts; s.problem.terminal = b.terminal; if (b.feedback) s.feedback = b.feedback; } break;
       case "deliver": s.deliveries.push({ id: `d_${ev.seq}`, seq: ev.seq, ...b }); break;
+      case "review": { const d = s.deliveries.find((x) => x.id === b.delivery); if (d) d.review = { id: `rv_${ev.seq}`, seq: ev.seq, lease: ev.actor.session ?? "", claims: b.claims, reruns: b.reruns ?? [], counterexamples: b.counterexamples ?? [], summary: b.summary }; break; }
       case "follow_up": s.followUps.push({ id: `u_${ev.seq}`, seq: ev.seq, text: b.text, after_delivery: s.deliveries.at(-1)?.id ?? null }); s.capAdd += b.budget_add_usd_milli ?? 0; break;
       case "halt": s.halted = { seq: ev.seq }; break;
       case "curate":
@@ -322,6 +324,19 @@ function head(s: State, pid: string, now = s.now): ProblemItem {
   };
 }
 
+/** 与图服务 views._review 同一规则：读数由确定性代码数出，意见按叙述语域标。 */
+function reviewView(r: MockReview, brief: (id: string) => GroundBrief) {
+  const n = (v: string) => r.claims.filter((c) => c.verdict === v).length;
+  const m = (v: string) => r.reruns.filter((x) => x.result === v).length;
+  return {
+    id: r.id, seq: r.seq, lease: r.lease,
+    readings: { claims: r.claims.length, supported: n("supported"), unsupported: n("unsupported"), unclear: n("unclear"), reruns: { pass: m("pass"), fail: m("fail"), not_rerun: m("not_rerun") }, counterexamples: r.counterexamples.length },
+    claims: r.claims.map((c) => ({ claim: c.claim, verdict: c.verdict, note: tag("review", c.note), refs: c.refs.map(brief) })),
+    reruns: r.reruns.map((x) => ({ check: x.check, result: x.result, refs: x.refs.map(brief), ...(x.note ? { note: tag("review", x.note) } : {}) })),
+    counterexamples: r.counterexamples.map((t) => tag("review", t)), summary: tag("review", r.summary),
+  };
+}
+
 function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | "view_hash"> {
   const p = s.problem!;
   const brief = (id: string) => ({ id, class: s.artifacts.get(id)?.class ?? "exec" });
@@ -340,6 +355,7 @@ function statusView(s: State, pid: string): Omit<StatusView, "as_of" | "head" | 
           claims: d.claims.map((c) => ({ text: tag("delivery", c.text), refs: c.refs.map(brief), supported: c.refs.some((r) => brief(r).class !== "knowledge"), cited: c.refs.some((r) => brief(r).class === "knowledge") })),
           self_check: d.self_check.map((c) => ({ what: tag("delivery", c.what), result: c.result, refs: c.refs.map(brief), ...(c.item ? { item: c.item } : {}) })),
           unverified: d.unverified.map((x) => tag("delivery", x)), needs: d.needs.map((x) => tag("delivery", x)),
+          ...(d.review ? { review: reviewView(d.review, brief) } : {}),
         })),
         follow_ups: s.followUps.map((u) => ({ ...u, text: tag("follow_up", u.text) })),
         ...(s.halted ? { halted: s.halted } : {}), ...(s.feedback ? { feedback: s.feedback } : {}),
@@ -1121,7 +1137,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         const active = l.ended_seq === undefined && !closed(s);
         // 可回放的实时性（炼档 001）：exec 的结果带那次执行的留档；入账点是每次 exec 返回（段紧跟留档登记）与会话收尾。
         const execs = [...s.artifacts.values()].filter((a) => a.class === "exec" && a.producer?.session === lid);
-        const demo = l.kind === "solve" ? activityDemo(active, pid) : [];
+        const demo = l.kind === "solve" ? activityDemo(active, pid) : l.kind === "verify" ? reviewActivityDemo() : [];
         const cmd = (id: unknown) => demo.find((y) => y.kind === "call" && y.tool === "exec" && y.id === id)?.gist;
         const full = demo.map((x) => {
           const a = x.kind === "result" ? execs.find((e) => e.exec?.command === cmd(x.id)) : undefined;
@@ -1209,6 +1225,27 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
       const solved = by_authority.local.solved;
       const spent = items.reduce((a, i) => a + i.spent_usd_milli, 0);
       return wrap({ items, totals: { problems: items.length, solved, spent_usd_milli: spent, cost_per_solve_usd_milli: solved ? Math.floor(spent / solved) : null, by_authority } });
+    }
+    if (path === "/v1/readings/open") {
+      // 开放道单独成表（地图 Q35，与图服务 views.open_readings 同一口径）：只数开放道的题
+      const xs = pids().map((pid) => ({ pid, s: stateOf(pid, asOf) })).filter((x) => x.s.problem?.goal.accept === "open");
+      const ds = xs.flatMap((x) => x.s.deliveries);
+      const heads = xs.map((x) => head(x.s, x.pid, clock));
+      const fb = (v: string) => xs.filter((x) => closed(x.s) && (x.s.feedback ?? "none") === v).length;
+      const adopted = fb("adopted"), rejected = fb("rejected");
+      const spent = heads.reduce((a, h) => a + h.spent_usd_milli, 0);
+      const rv = ds.flatMap((d) => (d.review ? [d.review] : []));
+      const cl = (v: string) => rv.reduce((a, r) => a + r.claims.filter((c) => c.verdict === v).length, 0);
+      const rr = (v: string) => rv.reduce((a, r) => a + r.reruns.filter((c) => c.result === v).length, 0);
+      return wrap({
+        problems: xs.length,
+        terminals: { delivered: heads.filter((h) => h.closed && h.terminal === "delivered").length, unsolved: heads.filter((h) => h.closed && h.terminal === "unsolved").length, open: heads.filter((h) => !h.closed).length },
+        deliveries: ds.length, outcomes: { answered: ds.filter((d) => d.outcome === "answered").length, partial: ds.filter((d) => d.outcome === "partial").length, blocked: ds.filter((d) => d.outcome === "blocked").length },
+        follow_ups: xs.reduce((a, x) => a + x.s.followUps.length, 0),
+        feedback: { adopted, rejected, none: fb("none") }, adoption_rate: adopted + rejected ? adopted / (adopted + rejected) : null,
+        spent_usd_milli: spent, usd_milli_per_delivery: ds.length ? Math.floor(spent / ds.length) : null,
+        review: { deliveries: rv.length, claims: rv.reduce((a, r) => a + r.claims.length, 0), supported: cl("supported"), unsupported: cl("unsupported"), unclear: cl("unclear"), reruns: { pass: rr("pass"), fail: rr("fail"), not_rerun: rr("not_rerun") } },
+      });
     }
     if ((m = path.match(/^\/v1\/artifacts\/([^/]+)$/))) {
       const pid = ownerOf(m[1]);

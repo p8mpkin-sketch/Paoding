@@ -23,7 +23,9 @@ from paoding_graph.contract import BlobError, BlobPort, GraphPort, GraphReader
 # 编排（功法 H2 的清单 h2.sinan）：先做哪类事项、每类怎么预留。solve 是开放道的求解会话（docs/design/open-lane/）
 ORCH = params("H2")
 TASK_ORDER: tuple[str, ...] = tuple(ORCH["order"])
-RESERVE: dict[str, str] = dict(ORCH["reserve"])  # 事项种类 → 预留规则：remainder | intent_capped | fixed
+RESERVE: dict[str, str] = dict(ORCH["reserve"])  # 事项种类 → 预留规则：remainder | intent_capped | fixed | verify_share
+# 开了复核的题，求解会话的余额预留让出验证份额里还没花的部分：不然求解会话花到收尾线，复核就没钱可用（地图 Q34）
+KEEP_VERIFY_SHARE: bool = bool(ORCH.get("keep_verify_share"))
 
 
 @dataclass
@@ -35,6 +37,7 @@ class SinanConfig:
         default_factory=lambda: {
             "bootstrap": {"usd_milli": 500, "wall_s": 600},
             "reason": {"usd_milli": 300, "wall_s": 300},
+            "verify": {"usd_milli": 500, "wall_s": 600},  # 复核会话的上限；实际再压到验证份额里剩下的
         }
     )
     explore_cap: dict = field(default_factory=lambda: {"usd_milli": 1000, "wall_s": 900})
@@ -94,6 +97,8 @@ class Sinan:
         reasoning = any(l["kind"] == "reason" for l in leases) or ("reason", None) in mine
         if reasoning or any(w["kind"] == "reason" for w in tasks):
             tasks = [w for w in tasks if w["kind"] != "explore"]
+        if self._verify_room(st, pid) <= 0:  # 验证份额花完了：交付照常等人看，只是不复核
+            tasks = [w for w in tasks if w["kind"] != "verify"]
         if not tasks:
             if judging:
                 return {"wait": "judge"}
@@ -111,6 +116,18 @@ class Sinan:
             gain = float(st["intents"][w["target"]].get("expected_gain") or 0.0)
         return (TASK_ORDER.index(w["kind"]), -gain, tasks.index(w))
 
+    def _verify_room(self, st: dict, pid: str) -> int:
+        """验证份额里还能预留多少（金额轨）：verify_share × cap − 已花 − 判官与复核在途的预留。"""
+        b = self.reader.budget(pid)
+        cap = b["cap"].get("usd_milli", 0)
+        share = float(st["problems"][pid]["budget"].get("verify_share") or 0)
+        pool = sum(
+            l["reserve"].get("usd_milli", 0)
+            for l in st["leases"].values()
+            if l["problem_id"] == pid and l["active"] and l["kind"] in ("judge", "verify")
+        )
+        return int(share * cap) - int(b["verify_spent"]["usd_milli"]) - int(pool)
+
     def _reserve(self, st: dict, pid: str, w: dict) -> dict:
         rule = RESERVE[w["kind"]]
         if rule == "remainder":
@@ -118,7 +135,13 @@ class Sinan:
             # 所以最后 10% 是收尾保留。接力的下一个会话拿到的是上一个用剩的
             b = self.reader.budget(pid)
             left = b["cap"].get("usd_milli", 0) - b["spent"]["usd_milli"] - b["reserved"]["usd_milli"]
+            if KEEP_VERIFY_SHARE and st["problems"][pid].get("review"):
+                left -= max(0, self._verify_room(st, pid))
             return {"usd_milli": max(1, int(left)), "wall_s": int(st["problems"][pid]["budget"]["wall_s"])}
+        if rule == "verify_share":
+            want = dict(self.cfg.reserve[w["kind"]])
+            want["usd_milli"] = max(1, min(int(want["usd_milli"]), self._verify_room(st, pid)))
+            return want
         if rule == "intent_capped":
             want = st["intents"][w["target"]].get("budget") or self.cfg.explore_cap
             return {k: min(int(want.get(k, v)), v) for k, v in self.cfg.explore_cap.items()}

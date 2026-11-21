@@ -122,6 +122,40 @@ def open_brief(state: State, pid: str, statement: str) -> str:
     return "\n".join(lines)
 
 
+def review_brief(state: State, pid: str, statement: str, did: str) -> str:
+    """复核会话的题目简报（open-lane §3.6，体质修炼 002）：原话、必做自检项，与要复核的那次交付的全文——主张与
+    自检按序号列出（review 里的 claim、check 就是这些序号），依据编号原样给出，会话用 show 去读。"""
+    p = state["problems"][pid]
+    d = next(x for x in p.get("deliveries") or [] if x["id"] == did)
+    lines = [
+        f"题目：{p['title']}",
+        "原话：",
+        statement.rstrip(),
+        f"目标：{p['goal']['statement']}",
+        "完成方式：开放道，没有判官。你复核的是另一个会话交的结果，做完用 review 交回读数。",
+    ]
+    checks = p["goal"].get("self_checks") or []
+    if checks:
+        lines.append("题目要求的必做自检项：")
+        lines += [f"- {c['id']}：{c['text']}" for c in checks]
+    lines.append(f"要复核的交付 {did}（outcome={d['outcome']}）：")
+    if d.get("answer"):
+        lines.append(f"答案：留档 {d['answer']}（用 show 读）")
+    lines.append("主张（claim 序号：内容；依据）：")
+    lines += [f"- {i}：{c['text']}；依据 {_j(c.get('refs') or [])}" for i, c in enumerate(d["claims"])] or ["（无）"]
+    lines.append("自检（check 序号：查了什么；结果；依据）：")
+    lines += [
+        f"- {i}：{c['what']}；{c['result']}；依据 {_j(c.get('refs') or [])}"
+        + (f"；对应 {c['item']}" if c.get("item") else "")
+        for i, c in enumerate(d["self_check"])
+    ] or ["（无）"]
+    if d.get("unverified"):
+        lines.append("交付自己说没验证的：")
+        lines += [f"- {u}" for u in d["unverified"]]
+    lines.append(f"授权范围：{_j(p['scope'])}")
+    return "\n".join(lines)
+
+
 def memory_notes(state: State, pid: str) -> str:
     """开题时随召回清单登记的叙述（v1.5，01-memory §4）：排除路径、花费画像，以及消融臂 recall_noverify
     里不复核的事实。它们是叙述或估值，不是节点，不能作前提；复核过的召回事实在④里，是本题自己的节点。
@@ -180,6 +214,8 @@ def render(
     if "relay" in shape["focus"]:  # 独行：第几个接力的会话（open-lane §3.2）；前面的会话留下的笔记在工作区 NOTES.md
         earlier = [l for l in state["leases"].values() if l["problem_id"] == pid and l["kind"] == role]
         focus.setdefault("relay", len([l for l in earlier if l["id"] != lease["id"]]) + 1)
+    if "delivery" in shape["focus"]:  # 复核会话：核哪一次交付（体质修炼 002）
+        focus.setdefault("delivery", lease["target"])
     focus.setdefault("restate", shape["restate"])
     hint_text = [{"id": h, "text": state["hints"][h]["text"]} for h in focus["hints"]]
     sections = [
@@ -192,7 +228,12 @@ def render(
                 pid,
             ),
         ),
-        ("② 题目", problem_brief(state, pid, statement, judges_cfg)),
+        (
+            "② 题目",
+            review_brief(state, pid, statement, lease["target"])
+            if shape["ends_on"] == "review"
+            else problem_brief(state, pid, statement, judges_cfg),
+        ),
         ("③ 锦囊", _j(kit_index) + memory_notes(state, pid)),
         ("④ 节点", listing(state, pid)),
     ]

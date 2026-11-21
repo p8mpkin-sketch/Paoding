@@ -1,11 +1,12 @@
 {
  "id": "h3.base",
- "ver": 1,
+ "ver": 2,
  "slot": "H3",
  "ports": [
   "M1:add_fact",
   "M1:deliver",
   "M1:request_scope",
+  "M1:review",
   "M2",
   "M4"
  ],
@@ -15,7 +16,8 @@
    "submit",
    "show",
    "request_access",
-   "deliver"
+   "deliver",
+   "review"
   ],
   "grant_tool": "request_access"
  },

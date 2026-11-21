@@ -15,13 +15,16 @@ const base: FlowInput = { accept: "open", closed: false, terminal: null, active:
 const states = (x: Partial<FlowInput>) => Object.fromEntries(flowOf({ ...base, ...x }).map((s) => [s.key, s.state]));
 
 describe("执行流程条（纯函数）", () => {
-  it("开放道：还没会话在“理解任务”；在做在“动手做”；交付后在“你来看”；追问之后回到“动手做”；复核一直未开启", () => {
+  it("开放道：还没会话在“理解任务”；在做在“动手做”；交付后在“你来看”；追问之后回到“动手做”；复核在核为进行中、有读数为做完、否则未开启", () => {
     expect(states({})).toMatchObject({ understand: "cur", work: "todo", review: "off" });
     expect(states({ started: true, active: ["solve"] })).toMatchObject({ understand: "done", work: "cur" });
     expect(states({ started: true, deliveries: 1, lastDeliverySeq: 9, lastHadSelfCheck: true, todo: ["delivered"] })).toMatchObject({ work: "done", self: "done", deliver: "done", review: "off", you: "cur" });
     expect(states({ started: true, deliveries: 1, lastDeliverySeq: 9, lastHadSelfCheck: false })).toMatchObject({ self: "todo", you: "cur" });
     expect(states({ started: true, active: ["solve"], deliveries: 1, lastDeliverySeq: 9, lastFollowUpSeq: 12 })).toMatchObject({ work: "cur", you: "todo" });
     expect(states({ closed: true, terminal: "delivered", deliveries: 1, lastDeliverySeq: 9, lastHadSelfCheck: true })).toMatchObject({ you: "done", review: "off" });
+    expect(states({ started: true, active: ["verify"], deliveries: 1, lastDeliverySeq: 9, lastHadSelfCheck: true, todo: ["delivered"] })).toMatchObject({ review: "cur", you: "cur" });
+    expect(states({ started: true, deliveries: 1, lastDeliverySeq: 9, lastHadSelfCheck: true, lastReviewed: true })).toMatchObject({ review: "done", you: "cur" });
+    expect(states({ started: true, active: ["solve"], deliveries: 1, lastDeliverySeq: 9, lastFollowUpSeq: 12, lastReviewed: true })).toMatchObject({ review: "off", work: "cur" });
   });
   it("判定道与人工验收道：判定器判定 / 结构检查，最后一步各不相同", () => {
     expect(flowOf({ ...base, accept: "judge", started: true, active: ["judge"] }).map((s) => s.word)).toEqual(["理解任务", "动手做", "判定器判定", "结束"]);
@@ -45,6 +48,13 @@ describe("开放道任务页（假后端 demo-6）", () => {
     expect($(container, "[data-claims] h2")!.textContent).toContain("6 条里 4 条有执行记录；1 条引用了资料");
     expect(container.querySelectorAll('[data-self-check] [data-check="fail"]')).toHaveLength(1);
     expect(container.querySelectorAll("[data-unverified] li")).toHaveLength(2);
+    // 独立复核（地图 Q34）：读数由确定性代码数出，意见按叙述语域标；不改终态，你照样在“你来看”
+    const rv = $(container, "[data-review]")!;
+    expect($(rv, "[data-review-readings]")!.textContent).toContain("6 条主张里 4 条有据、1 条引用不符、1 条看不出");
+    expect($(rv, "[data-review-readings]")!.textContent).toContain("自检重跑 1 过、0 不过、1 条没能重跑");
+    expect(rv.querySelectorAll("[data-review-claim]")).toHaveLength(6);
+    expect($(rv, '[data-register="narrative"]')!.textContent).toContain("复核会话撰写");
+    expect($(container, '[data-flow-step="review"]')!.getAttribute("data-state")).toBe("done");
     fireEvent.click($(container, "[data-claim] [data-ref]")!);
     await waitFor(() => expect(document.querySelector('[data-evidence] [data-class="exec"]')).not.toBeNull());
     expect(document.querySelector("[data-evidence]")!.textContent).toContain("python repro/crash_test.py --fw langgraph");
