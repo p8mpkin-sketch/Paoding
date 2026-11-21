@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from paoding_fenjue import lianhua as lh
 from paoding_fenjue.shapes import fire, fire_ids, gongfa
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,10 +38,9 @@ KEYS = (
     "verdict",
     "reverts",
 )
-# 识火中 → 设计已裁（前三节过了“值不值得炼”）→ 读数已出 → 已裁决收下 / 不收 → 入功法后散火
-STATUSES = ("identified", "design_approved", "readings_ready", "adopted", "rejected", "reverted")
-OUTCOMES = ("huolian", "helian", "binghuo", "fanshi")  # 火莲、合炼、并火、反噬
-TAKEN = ("huolian", "helian")  # 只有这两种可以入功法（03 §3）
+STATUSES = lh.STATUSES  # 识火 → 萃意 → 入位 → 设计已裁 → 验体 → 读数已出 → 收下 / 不收 → 散火
+OUTCOMES = tuple(lh.OUTCOMES)  # 火莲、合炼、并火、反噬
+TAKEN = lh.TAKEN  # 只有这两种可以入功法（03 §3）
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -70,6 +70,8 @@ def test_each_dossier_is_complete(path: Path):
     assert md.exists(), f"{md.name} 不在：炼档是 .md 与 .json 一对"
     text = md.read_text(encoding="utf-8")
     assert [s for s in SECTIONS if f"## {s}" not in text] == [], "炼档的七节要齐（02 §9）"
+    if d.get("generated"):  # 由 scripts/lianhua.py 写的：.md 就是 JSON 生成的那份，手改了会在这里红
+        assert text == lh.render(d), f"{md.name} 与 {path.name} 生成的不一致：改 JSON 后 lianhua.py render"
     assert d["status"] in STATUSES
     assert DATE.match(d["identified"])
     assert d["outcome_proposed"] in (None, *OUTCOMES)
@@ -135,15 +137,18 @@ def test_grade_history_matches_the_verdicts():
 
 
 def test_every_manifest_on_disk_is_accounted_for():
-    """包里的每份清单要么在功法里，要么是某份炼档的对照臂或上一团火（lineage.from 里提到它），不留孤儿。"""
+    """包里的每份清单要么在功法里，要么是谁的上一团火（lineage.from 里提到它），要么有一份炼档，不留孤儿。"""
     live = set(in_gongfa())
     named = {x for fid in fire_ids() for x in fire(fid)["lineage"]["from"]}
-    orphans = [fid for fid in fire_ids() if fid not in live and fid not in named]
-    assert orphans == [], f"这几份清单既不在功法里，也不是谁的上一团火：{orphans}"
+    drafted = {d["fire"].get("id") for d in dossiers().values()}  # 入位时写下、还没定阶的草稿，或不收的
+    orphans = [fid for fid in fire_ids() if fid not in live | named | drafted]
+    assert orphans == [], f"这几份清单既不在功法里，也不是谁的上一团火，也没有炼档：{orphans}"
 
 
 def test_template_has_every_key_and_section():
     t = load(DOSSIERS / "TEMPLATE.json")
-    assert list(t) == list(KEYS)
+    assert set(KEYS) <= set(t)
+    demo = lh.new("999", "demo", "演示", "2026-11-21", {"source": "s", "phenomenon": "p", "gap": "g", "is_fire": "是"})
+    assert set(KEYS) <= set(demo), "命令开的档也要有全部必填键"
     text = (DOSSIERS / "TEMPLATE.md").read_text(encoding="utf-8")
     assert all(f"## {s}" in text for s in SECTIONS)

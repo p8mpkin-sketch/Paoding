@@ -55,7 +55,7 @@ def test_the_arm_is_readable_from_the_log():
 def test_ratio_and_holdout_are_in_the_gongfa_digest():
     g = {k: v for k, v in gongfa().items() if k != "digest"}
     base = shapes.gongfa_digest(g)
-    assert shapes.gongfa_digest({**g, "holdout_permille": 100}) != base
+    assert shapes.gongfa_digest({**g, "holdout_permille": g["holdout_permille"] + 1}) != base
     assert shapes.gongfa_digest({**g, "holdout": {}}) != base
 
 
