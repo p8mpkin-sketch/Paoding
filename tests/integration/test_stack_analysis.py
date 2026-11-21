@@ -203,13 +203,16 @@ def test_the_helper_script_opens_an_analysis_over_http_and_the_engine_takes_it_u
         tar.write_bytes(fixture_tar("alpha"))
         tf = str(s.cfg.home / "human.token")
         r = run_script(
-            "--url", url, "--token-file", tf, "--pid", "ph1", "--statement", "看看验收夹具甲", "--upload", str(tar)
-        )
+            "--url", url, "--token-file", tf, "--pid", "ph1", "--statement", "看看验收夹具甲", "--upload", str(tar),
+            "--upload-origin", "https://github.com/o/alpha@" + "a" * 40,
+        )  # fmt: skip
         assert r.returncode == 0, r.stderr
         out = json.loads(r.stdout)
         assert out["ok"] and out["intake"]["mode"] == "formal"
         (src,) = out["intake"]["sources"]
+        # 上传的归档带着出处（试算在本机下载钉住的提交再上传）：只登记，不当地址类来源去抓
         assert src["via"] == "upload" and src["form"] == "code"
+        assert (src["url"], src["ref"]) == ("https://github.com/o/alpha", "a" * 40)
         p = s.graph.state["problems"]["ph1"]
         arts = s.graph.state["artifacts"]
         media = [arts[a]["media_type"] for a in p["origin"]["materials"]]
@@ -221,6 +224,14 @@ def test_the_helper_script_opens_an_analysis_over_http_and_the_engine_takes_it_u
             "--url", url, "--token-file", tf, "--pid", "ph2", "--statement", "x", "--repo", "https://github.com/o/r"
         )
         assert r.returncode != 0 and "提交或标签" in r.stderr and "ph2" not in s.graph.state["problems"]
+        r = run_script(
+            "--url", url, "--token-file", tf, "--pid", "ph4", "--statement", "x", "--upload-origin", "https://github.com/o/r@v1",
+        )  # fmt: skip
+        assert (
+            r.returncode != 0
+            and "--upload-origin 比 --upload 多" in r.stderr
+            and "ph4" not in s.graph.state["problems"]
+        )
         r = run_script(
             "--url", url, "--token-file", tf, "--pid", "ph3", "--statement", "看看这个仓库",
             "--repo", "https://github.com/o/r@v1.2.0", "--doc", "https://example.org/guide.md", "--dry-run",

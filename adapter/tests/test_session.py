@@ -5,6 +5,7 @@
 真 CLI 的同一组断言留到密钥到位（D4 真机）。
 """
 
+import pytest
 from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: F401  fixture
 
 R = {"usd_milli": 1000, "wall_s": 600}
@@ -395,3 +396,57 @@ def test_default_max_turns_is_100(rig):
     assert sum(1 for e in rec.events if e["type"] == "assistant") > 40
     pkg = rig.blobs.get(rig.graph.state["artifacts"][rec.package_ref]["hash"]).decode()
     assert '"max_turns":100' in pkg.replace(" ", "")
+
+
+# ---------- 会话边界：起不来、或中途出缺陷，租约都按失败释放，不悬到过期（cz 2026-11-21 实战阻断） ----------
+
+
+@pytest.mark.parametrize("where", ["compile", "launch"])
+def test_sandbox_that_cannot_start_releases_the_lease_as_failed(rig, monkeypatch, where):
+    """要 exec 干活的会话，执行层编不了或起不了这道题的授权（例如范围里有 M0 连不了的外部主机）：
+    不起 CLI，按失败释放，原因写进会话目录。编译那一步（compile_spec）与起容器那一步（launch）都可能拒。"""
+    from paoding_executor.contract import ScopeError
+
+    why = "M0 只支持本机题目容器作为出站目标：'example.org' 不是容器"
+
+    def refuse(*a, **kw):
+        raise ScopeError(why)
+
+    rig.executor.launch = refuse if where == "launch" else (lambda spec, lid: "sb-never")
+    monkeypatch.setattr(rig.runner, "_spec", refuse if where == "compile" else (lambda *a: object()))
+    lid = lease_bootstrap(rig.graph)
+    rig.script([sub(final={"outcome": "nothing"})])
+    rec = rig.runner.run("p1", lid, statement=rig.statement)  # 不给 sandbox_id：会话自己起执行容器
+    lease = lease_of(rig, lid)
+    assert rec.status == "failed(error)" and rec.release["ok"] and f"执行容器起不来：{why}" == rec.release["why"]
+    assert not lease["active"] and lease["outcome"] == "failed"
+    assert rig.upstream.seen == [] and rig.endpoint._hosts == {} and rig.executor.destroyed == []
+    assert why in (rig.cfg.root / lid / "cli.stderr.log").read_text(encoding="utf-8")
+
+
+def test_a_defect_mid_session_kills_the_cli_and_releases_the_lease(rig, monkeypatch):
+    """会话线程里任何没预料到的异常（这里：续租时图服务的调用抛错）：杀掉 CLI，按失败释放租约，收掉令牌与端点。
+    以前这会让线程死在线程池里、租约悬到过期，题目一直显示有会话在跑。"""
+    import time
+
+    lid = lease_bootstrap(rig.graph)
+    rig.cfg.renew_s = 0.2
+    rig.script([{"hang": 30}])
+    real = rig.graph.submit
+
+    def submit(token, pid, idem, ops):
+        if ops and ops[0]["op"] == "renew":
+            raise RuntimeError("图服务断了")
+        return real(token, pid, idem, ops)
+
+    monkeypatch.setattr(rig.graph, "submit", submit)
+    t0 = time.monotonic()
+    rec = rig.run(lid)
+    assert time.monotonic() - t0 < 15  # 没等 CLI 自己挂完 30 秒
+    lease = lease_of(rig, lid)
+    assert rec.status == "failed(error)" and "RuntimeError: 图服务断了" in rec.release["why"]
+    assert not lease["active"] and lease["outcome"] == "failed"
+    assert all(t.revoked for t in rig.proxy._tasks.values()) and rig.endpoint._hosts == {}
+    assert rig.runner.live == {}
+    # 题目上不再有在途租约：司南的 /work 照常按规则再派（或转人），不必等租约过期
+    assert not any(x["active"] for x in rig.graph.state["leases"].values() if x["problem_id"] == "p1")

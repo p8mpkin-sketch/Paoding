@@ -46,6 +46,8 @@ PROBE_ITEMS, PROBE_BODY = 20, 256 * 1024
 FETCH_TIMEOUT_S = 600
 FETCH_MAX, CHECK_MAX = 16, 400  # 一个会话至多真的下载这么多次、登记这么多份产物
 FETCH_DIR = f"{analysis.MATERIALS}/fetch"
+# 执行层（M0）只能连本机的题目容器，连不了互联网上的主机：那时请人把定版的归档下载下来随题上传
+UPLOAD_INSTEAD = "可以把这个版本的归档下载下来随题上传（scripts/trial/trial.py 缺省就这样开题），再追问一句“继续”"
 _REF = re.compile(r"^[A-Za-z0-9._/-]{1,100}$")
 _NAME = re.compile(r"^[A-Za-z0-9_.:\-]{1,80}$")
 _PRODUCT_PATH = re.compile(rf"^{analysis.ANALYSIS}/artifacts/([0-9a-f]{{64}})\.json$")
@@ -380,6 +382,8 @@ def _ready(h: ToolHost, target: str) -> str | None:
     hot = h.access() if h.access else None
     if not h._compiled(target):
         return f"{target} 已批准，但它的风险高于本会话的风险上限，沙箱里不开"
+    if hot is not None and hot.get("unsupported"):
+        return f"{target} 已批准，但执行层开不了这个出站目标（{hot['unsupported']}）。{UPLOAD_INSTEAD}"
     if hot is not None:
         return None
     st = h.reader.state
@@ -420,7 +424,8 @@ def fetch(h: ToolHost, a: Obj) -> dict[str, Any]:
     if refused:
         return {"status": "refused", "detail": refused}
     if h.executor is None or h.s.sandbox_id is None:
-        return {"status": "failed", "detail": "本会话没有执行容器，抓不了地址类来源"}
+        no_box = f"执行容器起不来（{h.s.no_box}）" if h.s.no_box else "本会话没有执行容器"
+        return {"status": "failed", "detail": f"{no_box}，抓不了地址类来源。{UPLOAD_INSTEAD}"}
     try:
         plan = fetch_plan(src)
     except BadSource as e:
