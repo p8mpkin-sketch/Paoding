@@ -15,6 +15,8 @@ import { Knowledge } from "./pages/Knowledge";
 import { ModelsPage } from "./pages/Models";
 import { Problems, useProblems } from "./pages/Problems";
 import { Evolution } from "./pages/Evolution";
+import { Analyses, Analysis } from "./pages/Analyses";
+import { Candidates } from "./pages/Candidates";
 import { Readings } from "./pages/Readings";
 import { SettingsPage } from "./pages/Settings";
 import { Wizard } from "./pages/Wizard";
@@ -69,6 +71,9 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
       {route.page === "platform" && <PlatformImport key={route.id ?? ""} id={route.id} />}
       {route.page === "readings" && <ReadingsPage />}
       {route.page === "evolution" && <Evolution />}
+      {route.page === "analyses" && <Analyses />}
+      {route.page === "analysis" && <Analysis key={route.run} run={route.run} tab={route.tab} />}
+      {route.page === "candidates" && <Candidates id={route.id} />}
       {route.page === "inbox" && <Inbox />}
       {route.page === "settings" && <SettingsPage />}
       {route.page === "models" && <ModelsPage />}

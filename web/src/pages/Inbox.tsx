@@ -8,6 +8,9 @@ import { Empty, Mark, Mast, SectionHead, btnClass } from "../kit";
 import { HAS_CARD, IN_RESULT, WHY } from "../ui/Todo";
 import { Plain, Text } from "../ui/registers";
 import { Link, useProblems } from "./Problems";
+import { useAnalyses, waitingOf } from "./Analyses";
+import { GATE_N, titleOf } from "../model/analysis";
+import type { AnalysisRow } from "../api/analysis-types";
 
 export const INBOX_POLL_MS = 8000;
 
@@ -20,6 +23,8 @@ export function Inbox() {
   const { api } = useServices();
   const { view, error } = useProblems(INBOX_POLL_MS);
   const [groups, setGroups] = useState<Group[] | null>(null);
+  const an = useAnalyses(INBOX_POLL_MS);
+  const anWaiting = an.data ? waitingOf(an.data.items) : [];
   const key = view ? `${view.head}|${runningOf(view.items).filter((p) => p.human_todo > 0).map((p) => `${p.id}:${p.human_todo}`).join("|")}` : null;
 
   useEffect(() => {
@@ -36,14 +41,14 @@ export function Inbox() {
   }, [api, key]);
 
   if (!view) return <p className={error ? "error" : "muted"}>{error ? <>读不到任务列表：<Plain text={error} /></> : "读取中…"}</p>;
-  const total = runningOf(view.items).reduce((a, p) => a + p.human_todo, 0);
+  const total = runningOf(view.items).reduce((a, p) => a + p.human_todo, 0) + anWaiting.length;
   return (
     <div className="inbox" data-page="inbox">
       <Mast cap="待办" title={total > 0 ? `${total} 件事等你处理` : "没有事等你处理"} dek="审批、申请访问、续期、争议裁决、验收与停滞，都集中在这里。点“去处理”进入任务的工作区，卡片在左栏打开。" />
       {error && <p className="error">刷新失败，显示的是上一次读到的：<Plain text={error} /></p>}
       {total === 0 ? (
         <Empty title="都处理完了">任务需要你拍板时（例如要扩大授权范围、预算将尽要续期、判定有争议），会出现在这里，左侧栏的“待办”也会标出数量。</Empty>
-      ) : !groups ? <p className="muted">读取每个任务的待办…</p> : groups.map(({ p, items, error: e }) => (
+      ) : <>{anWaiting.length > 0 && <AnalysisGroup rows={anWaiting} />}{!groups ? <p className="muted">读取每个任务的待办…</p> : groups.map(({ p, items, error: e }) => (
         <section key={p.id} className="today-sec" data-inbox-problem={p.id}>
           <SectionHead title={<Text t={p.title} block={false} />} note={<span className="k-mono">{p.id}</span>} right={<Link to={{ page: "problem", pid: p.id, asOf: null, node: null }} className="k-link">打开工作区</Link>} />
           {e ? <p className="error">读不到这个任务的待办：<Plain text={e} /></p> : (
@@ -61,7 +66,28 @@ export function Inbox() {
             </ol>
           )}
         </section>
-      ))}
+      ))}</>}
     </div>
+  );
+}
+
+/** 方案分析的确认点（docs/design/engine-ui §1）：每件直达那次分析的“待你确认”。 */
+function AnalysisGroup({ rows }: { rows: AnalysisRow[] }) {
+  return (
+    <section className="today-sec" data-inbox-analyses>
+      <SectionHead title="方案分析" note="能力配置 › 方案分析" right={<Link to={{ page: "analyses" }} className="k-link">全部分析</Link>} />
+      <ol className="asks">
+        {rows.map((r) => (
+          <li key={r.run} className="ask-row" data-inbox-analysis={r.run}>
+            <Mark ch="确" tone="dai" />
+            <div className="grow">
+              <div>第 {GATE_N[r.waiting!.gate]} 次确认 · <Plain text={titleOf(r.statement)} /></div>
+              <div className="t2">{r.waiting!.gate === "G1" ? `${r.candidates} 个候选做法，勾选要继续抽象的` : "核心机制逐个确认（界面二期）"}</div>
+            </div>
+            <Link to={{ page: "analysis", run: r.run, tab: "now" }} className={btnClass("line", "sm")}>去处理</Link>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

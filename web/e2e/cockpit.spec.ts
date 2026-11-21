@@ -194,7 +194,9 @@ test("待办：侧栏数量与页面一致，去处理进工作区并定位节�
   await expect(page).toHaveURL(/\/inbox$/);
   const items = page.locator("[data-inbox-item]");
   await expect(items.first()).toBeVisible();
-  await expect(page.locator('[data-nav="inbox"] .ct')).toHaveText(new RegExp(`^${await items.count()}\\D`));
+  await expect(page.locator("[data-inbox-analysis]").first()).toBeVisible(); // 方案分析的确认点也算进待办
+  const n = (await items.count()) + (await page.locator("[data-inbox-analysis]").count());
+  await expect(page.locator('[data-nav="inbox"] .ct')).toHaveText(new RegExp(`^${n}\\D`));
   await items.first().locator("a").click();
   await expect(page).toHaveURL(/\/p\/.+node=/);
   await expect(page.locator(".cockpit")).toBeVisible();
