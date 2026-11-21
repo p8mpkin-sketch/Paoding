@@ -16,6 +16,7 @@ import type {
 } from "../src/api/types";
 import { activityDemo, demoScript, staticScripts, type Script } from "./scenario";
 import { kaitiDraft, kaitiExtract, platformRoute } from "./kaiti";
+import { evolutionDoc } from "./evolution";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
 
@@ -1049,6 +1050,7 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     let m: RegExpMatchArray | null;
 
     if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
+    if (path === "/v1/evolution") return req.method === "GET" ? json(200, evolutionDoc(0)) : err(405, "schema_error", "只读");
     if (path === "/v1/memory" || path.startsWith("/v1/memory/items/")) return memoryRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/knowledge/")) return knowledgeRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {

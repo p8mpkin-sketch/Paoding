@@ -18,6 +18,7 @@ const PAGES: { word: string; to: Route; key?: string }[] = [
   { word: "知识", to: { page: "knowledge", tab: "sources" } },
   { word: "记忆", to: { page: "knowledge", tab: "memory" } },
   { word: "模型", to: { page: "models" } },
+  { word: "能力配置", to: { page: "evolution" } },
   { word: "读数", to: { page: "readings" } },
   { word: "设置", to: { page: "settings" } },
 ];

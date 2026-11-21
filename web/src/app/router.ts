@@ -17,6 +17,7 @@ export type Route =
   /** 从已登记的外部平台导入（external-verdict §5.8）；task 给了即直接领那一题。 */
   | { page: "platform"; id?: string }
   | { page: "readings" }
+  | { page: "evolution" }
   | { page: "inbox" }
   | { page: "settings" }
   | { page: "models" }
@@ -37,6 +38,7 @@ export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/import/platform") return q.get("id") ? { page: "platform", id: q.get("id")! } : { page: "platform" };
   if (pathname === "/today") return { page: "today" };
   if (pathname === "/readings") return { page: "readings" };
+  if (pathname === "/capability") return { page: "evolution" };
   if (pathname === "/inbox") return { page: "inbox" };
   if (pathname === "/settings") return { page: "settings" };
   if (pathname === "/models") return { page: "models" };
@@ -61,6 +63,7 @@ export function hrefOf(r: Route): string {
     case "import": return "/import";
     case "platform": return `/import/platform${r.id ? `?id=${encodeURIComponent(r.id)}` : ""}`;
     case "readings": return "/readings";
+    case "evolution": return "/capability";
     case "inbox": return "/inbox";
     case "settings": return "/settings";
     case "models": return "/models";

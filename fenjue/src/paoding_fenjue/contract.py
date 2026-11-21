@@ -1,5 +1,6 @@
 """paoding_fenjue 对其他组件的契约（EDR-001 D-4：跨组件只经 contract）。"""
 
+from .readings import evolution
 from .shapes import (
     GONGFA_ENV,
     SLOTS,
@@ -45,6 +46,7 @@ __all__ = [
     "check",
     "current",
     "digest",
+    "evolution",
     "fire",
     "fire_at",
     "fire_digest",
