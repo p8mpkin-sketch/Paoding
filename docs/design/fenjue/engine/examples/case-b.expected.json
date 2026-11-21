@@ -1,0 +1,710 @@
+{
+ "case": "B",
+ "name": "anchored-fold",
+ "fixture": "fenjue/tests/engine_fixtures/beta/",
+ "form": "code",
+ "expected": {
+  "candidate": {
+   "id": "C1",
+   "name": "anchored-fold",
+   "title": "带锚压缩",
+   "slot": "H4",
+   "also_slots": [
+    "H1",
+    "H6"
+   ],
+   "gaps": [
+    {
+     "dim": "h4.compress",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 2,
+     "pain_basis": "docs/design/fenjue/05-cases.md#2-异火榜（第 2 行，Y-002）",
+     "observations": [
+      "o8308adaa105e",
+      "obb119fb8a8f8"
+     ]
+    },
+    {
+     "dim": "h4.relay-notes",
+     "ours": 1,
+     "ours_by": "h4.views-notes@1",
+     "theirs": 2,
+     "gap": 1,
+     "type": "weaker",
+     "weight": 1,
+     "pain": 2,
+     "pain_basis": "同上",
+     "observations": [
+      "o48c707d262d4",
+      "o8fae44130f78"
+     ]
+    }
+   ],
+   "value": 6,
+   "confidence": 1.0,
+   "confidence_parts": {
+    "c0": 1.0,
+    "cover": 1.0,
+    "corro": 1.0,
+    "cap": 1.0
+   },
+   "difficulty": 3,
+   "difficulty_basis": "estimated",
+   "difficulty_parts": {
+    "base": 1,
+    "behavior_slots_minus_1": 0,
+    "extra_ports": 1,
+    "new_tool": 0,
+    "kernel_split": 0,
+    "a1_infeasible": 0,
+    "run_only_emergent": 1
+   },
+   "risk": "R1",
+   "priority": 1.0,
+   "dedupe": {
+    "bang": "Y-002",
+    "note": "证据并入已有条目"
+   },
+   "seed": {
+    "name": "anchored-fold",
+    "title": "带锚压缩",
+    "identified": "2026-11-21",
+    "shihuo": {
+     "source": "验收夹具乙（合成的外部智能体框架，代码形态，Apache-2.0）",
+     "phenomenon": "会话的上下文快满时自动把较早的过程折叠成摘要继续干，换会话时只交摘要",
+     "gap": "我们没有会话内压缩，上下文用完只能接力；接力笔记由模型自由书写，事实追不回原文（剖面 h4.compress = 0、h4.relay-notes = 1）",
+     "is_fire": "是：按上下文用量折叠历史并以摘要接力是一类做法"
+    }
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "2ce383523c5d2cbfcea3809aa7105cfd38d79512e48eda6ee999727598bab713"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "permissive",
+       "spdx": "Apache-2.0",
+       "detected": "LICENSE",
+       "reuse": "may_consult_code"
+      }
+     }
+    ],
+    "observations": [
+     "o8308adaa105e",
+     "obb119fb8a8f8",
+     "o48c707d262d4",
+     "o8fae44130f78"
+    ],
+    "source_label": "验收夹具乙"
+   },
+   "recommend": {
+    "level": "recommend",
+    "why": "长任务里接力次数与重复执行是明确的成本；体质改动预计为 0"
+   }
+  },
+  "essence": {
+   "v": 1,
+   "candidate": "C1",
+   "masked": {
+    "statement": "上下文快满时把较早的过程折叠成摘要，之后以摘要代替原文继续，接力时只交摘要",
+    "mechanism": [
+     {
+      "step": 1,
+      "trigger": "上下文用量到阈值",
+      "input": "会话历史",
+      "transform": "选出较早的轮次，最近若干轮保留原文",
+      "output": "待折叠段",
+      "invariant": "最近若干轮不折叠",
+      "primitives": [
+       "计量",
+       "截断"
+      ]
+     },
+     {
+      "step": 2,
+      "trigger": "待折叠段就绪",
+      "input": "待折叠段",
+      "transform": "生成摘要替换这些轮次",
+      "output": "摘要",
+      "primitives": [
+       "摘要",
+       "折叠"
+      ],
+      "features": [
+       "secret_in_content",
+       "narrative_as_evidence"
+      ]
+     },
+     {
+      "step": 3,
+      "trigger": "会话结束或交棒",
+      "input": "最新摘要",
+      "transform": "把摘要交给下一个会话作为起点",
+      "output": "接力包",
+      "primitives": [
+       "接力",
+       "交接"
+      ]
+     }
+    ],
+    "premises": [
+     {
+      "id": "p1",
+      "statement": "模型写的摘要不丢关键事实",
+      "holds_here": "partial",
+      "why": "摘要是叙述，没有机制保证保真",
+      "replaced_by": "每条保留的事实带锚点，可回原文核对"
+     },
+     {
+      "id": "p2",
+      "statement": "折叠之后原文不再需要",
+      "holds_here": "no",
+      "why": "我们的原文仍在事件账与活动链里",
+      "replaced_by": "凭锚点取回原文"
+     },
+     {
+      "id": "p3",
+      "statement": "上下文用量能准确计量",
+      "holds_here": "yes",
+      "why": "端点代理已计量每次请求的 token"
+     }
+    ],
+    "costs": [
+     {
+      "id": "c1",
+      "cost": "摘要丢信息，导致重复执行",
+      "kind": "spend",
+      "here": "avoided_by_fusion"
+     },
+     {
+      "id": "c2",
+      "cost": "摘要可能带出命令行里的凭据",
+      "kind": "security",
+      "here": "would_pay",
+      "kernel": "T2"
+     },
+     {
+      "id": "c3",
+      "cost": "每次折叠一次模型调用",
+      "kind": "spend",
+      "here": "would_pay",
+      "kernel": "T3"
+     }
+    ],
+    "overlaps": [
+     {
+      "fire": "h4.views-notes@1",
+      "dims": [
+       "h4.relay-notes"
+      ],
+      "relation": "partial",
+      "note": "接力笔记由模型自由书写"
+     },
+     {
+      "fire": "h1.solo@2",
+      "dims": [
+       "h1.relay"
+      ],
+      "relation": "partial",
+      "note": "接力拷贝工作区"
+     },
+     {
+      "fire": "h6.activity-ledger@1",
+      "dims": [
+       "h6.live-replay"
+      ],
+      "relation": "complement",
+      "note": "活动条目序号可作锚点"
+     }
+    ],
+    "conflicts": [
+     {
+      "with": "T2",
+      "kind": "kernel",
+      "features": [
+       "secret_in_content"
+      ],
+      "statement": "摘要可能把凭据带进工作区与下一会话",
+      "resolution": "fused_away",
+      "how": "摘要写入前过既有的凭据遮盖，金丝雀密钥试炼覆盖摘要"
+     },
+     {
+      "with": "T5",
+      "kind": "kernel",
+      "features": [
+       "narrative_as_evidence"
+      ],
+      "statement": "摘要可能被当作依据",
+      "resolution": "fused_away",
+      "how": "摘要是 authored 叙述，锚点指向的执行留档才是依据"
+     },
+     {
+      "with": "h4.views-notes@1",
+      "kind": "parametric",
+      "statement": "接力笔记的格式不同",
+      "resolution": "partition",
+      "how": "开放道用带锚摘要，严格道照旧"
+     }
+    ],
+    "fusion": {
+     "statement": "压缩摘要里每一条保留的事实都带锚点（执行留档、事件序号或活动条目序号），后续会话凭锚点能取回原文核对",
+     "emergent": [
+      {
+       "dim": "压缩后锚点可解析率",
+       "dir": "up",
+       "why_zero_B": "本火不压缩，没有摘要",
+       "why_zero_A1": "照搬的摘要不带锚点",
+       "measure": "structural",
+       "how": "假会话剧本触发折叠，逐个解析摘要里的锚点",
+       "gate": 1.0
+      },
+      {
+       "dim": "有锚事实占比",
+       "dir": "up",
+       "why_zero_B": "没有摘要",
+       "why_zero_A1": "摘要不带锚点",
+       "measure": "run",
+       "how": "真模型长任务上统计摘要里带锚的事实条数 ÷ 事实条数",
+       "gate": 0.9
+      }
+     ],
+     "outcome_cap": "huolian"
+    },
+    "split": [],
+    "implementations": [
+     {
+      "sketch": "折叠由会话外的固定流程触发，摘要按条目写，每条附锚点，写进工作区的接力文件",
+      "primitives": [
+       "计量",
+       "摘要",
+       "锚点",
+       "接力"
+      ]
+     },
+     {
+      "sketch": "不在会话内折叠，只在交棒时生成带锚摘要，新会话按锚点按需检索原文",
+      "primitives": [
+       "接力",
+       "锚点",
+       "检索"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "2ce383523c5d2cbfcea3809aa7105cfd38d79512e48eda6ee999727598bab713"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "permissive",
+       "spdx": "Apache-2.0",
+       "detected": "LICENSE",
+       "reuse": "may_consult_code"
+      }
+     }
+    ],
+    "observations": [
+     "o8308adaa105e",
+     "obb119fb8a8f8",
+     "o48c707d262d4",
+     "o8fae44130f78"
+    ],
+    "source_label": "验收夹具乙"
+   },
+   "field_refs": {
+    "/premises/0": [
+     "obb119fb8a8f8"
+    ],
+    "/premises/1": [
+     "obb119fb8a8f8"
+    ],
+    "/premises/2": [
+     "o8308adaa105e"
+    ],
+    "/costs/0": [
+     "o48c707d262d4"
+    ],
+    "/costs/1": [
+     "obb119fb8a8f8"
+    ],
+    "/costs/2": [
+     "o8308adaa105e"
+    ],
+    "/conflicts/0": [
+     "obb119fb8a8f8"
+    ],
+    "/conflicts/1": [
+     "obb119fb8a8f8"
+    ],
+    "/conflicts/2": [
+     "o8fae44130f78"
+    ]
+   },
+   "drafts": {
+    "n": 3,
+    "chosen": "main",
+    "agreement": 1.8,
+    "disagreements": []
+   },
+   "checks": [
+    {
+     "id": "K1",
+     "ok": true
+    },
+    {
+     "id": "K2",
+     "ok": true
+    },
+    {
+     "id": "K3",
+     "ok": true
+    },
+    {
+     "id": "K4",
+     "ok": true
+    },
+    {
+     "id": "K5",
+     "ok": true
+    },
+    {
+     "id": "K6",
+     "ok": true,
+     "advisory": true,
+     "detail": "盲审未猜中出处"
+    },
+    {
+     "id": "K7",
+     "ok": true
+    },
+    {
+     "id": "K8",
+     "ok": true
+    }
+   ],
+   "plain_summary": "上下文快用完时自动压缩较早的过程；压缩出的每条要点都带回原始记录的链接，换会话时只交这份摘要。只在开放式任务里启用。"
+  },
+  "placement": {
+   "v": 1,
+   "candidate": "C1",
+   "atoms": [
+    {
+     "atom": "ctx.compress",
+     "home": "H4",
+     "mechanism_steps": [
+      1,
+      2
+     ],
+     "params": {
+      "trigger_at_context": 0.7,
+      "keep_recent_turns": 4
+     }
+    },
+    {
+     "atom": "ctx.relay_notes",
+     "home": "H4",
+     "mechanism_steps": [
+      3
+     ],
+     "params": {
+      "format": "anchored_digest"
+     },
+     "owner_now": "h4.views-notes@1"
+    }
+   ],
+   "fire": {
+    "id": "h4.anchored-fold",
+    "ver": 1,
+    "slot": "H4",
+    "also_touches": [
+     "H1",
+     "H6"
+    ],
+    "ports": [
+     "M3",
+     "M4"
+    ],
+    "params": {
+     "trigger_at_context": 0.7,
+     "keep_recent_turns": 4,
+     "anchor_kinds": [
+      "exec",
+      "seq",
+      "activity"
+     ],
+     "lanes": [
+      "open"
+     ]
+    },
+    "assets": [
+     {
+      "name": "adapter/prompts/fold.md"
+     }
+    ],
+    "organ": {
+     "class": "感知官",
+     "retire_signal": "模型上下文变长后，不折叠的长任务交付率与折叠的落在噪声底内（占位）",
+     "enable_when": "开放道",
+     "control_arm": "不折叠（h4.views-notes@1 原样）"
+    },
+    "lineage": {
+     "dossier": null,
+     "from": []
+    },
+    "switch": "fires.H4"
+   },
+   "group": [],
+   "replaces": null,
+   "arms": {
+    "B": "功法第 2 阶原样（不压缩，NOTES.md 接力）",
+    "A1": "照搬：到阈值折叠成不带锚点的摘要（anchor_kinds=[]）",
+    "F": "h4.anchored-fold：带锚折叠",
+    "B1": "第 2 阶重跑，估噪声"
+   },
+   "readings": [
+    {
+     "dim": "压缩后锚点可解析率",
+     "kind": "新生",
+     "dir": "up",
+     "gate": 1.0,
+     "test": "adapter/tests/test_anchored_fold.py::test_every_anchor_resolves"
+    },
+    {
+     "dim": "有锚事实占比",
+     "kind": "新生",
+     "dir": "up",
+     "gate": 0.9,
+     "run": "真模型长任务（测试方跑）"
+    },
+    {
+     "dim": "跨接力重复执行率",
+     "kind": "共有",
+     "dir": "down",
+     "gate": "<= B − 噪声底",
+     "run": "开放道前后同提示"
+    },
+    {
+     "dim": "长任务交付率",
+     "kind": "异火",
+     "dir": "up",
+     "gate": ">= A1 − 噪声底",
+     "run": "开放道前后同提示"
+    },
+    {
+     "dim": "旧日志逐字节回放",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "过",
+     "test": "tests/fenjue/test_t4_zhang.py",
+     "mandatory": true
+    },
+    {
+     "dim": "凭据泄漏数",
+     "kind": "本火",
+     "dir": "down",
+     "gate": 0,
+     "test": "tests/fenjue/trials.py T2",
+     "mandatory": true
+    },
+    {
+     "dim": "严格道事件日志不变",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "相同",
+     "test": "tests/fenjue/zero_diff.py --check（开关关时）",
+     "mandatory": true
+    },
+    {
+     "dim": "每次交付花费、墙钟",
+     "kind": "共有",
+     "dir": "down",
+     "gate": "<= max(B, A1) + 噪声底",
+     "run": "开放道前后同提示"
+    }
+   ],
+   "conflicts": {
+    "fires": [
+     {
+      "fire": "h4.views-notes@1",
+      "atom": "ctx.relay_notes",
+      "kind": "parametric",
+      "resolution": "partition",
+      "partition_by": "题的道（goal.accept = open）",
+      "note": "严格道的接力笔记照旧"
+     }
+    ],
+    "kernel": [
+     {
+      "kernel": "T2",
+      "resolution": "fused_away",
+      "note": "摘要过既有遮盖"
+     },
+     {
+      "kernel": "T5",
+      "resolution": "fused_away",
+      "note": "摘要是 authored，不作依据"
+     }
+    ],
+    "candidates": [
+     {
+      "other": "staged-proof",
+      "relation": "sequential",
+      "note": "对方顶替 H1 的独行形态，本火兼及 H1 的接力"
+     }
+    ],
+    "slot_locks": []
+   },
+   "steps": [
+    {
+     "n": 1,
+     "do": "折叠的触发与保留规则：按端点代理的计量读数判断用量，最近四轮不折叠",
+     "slot": "H4",
+     "where": [
+      "adapter/src/paoding_adapter/session.py",
+      "adapter/prompts/fold.md"
+     ],
+     "tests": [
+      "adapter/tests/test_anchored_fold.py::test_trigger"
+     ],
+     "kernel_lines": 0,
+     "accept": "假会话剧本在阈值处触发一次"
+    },
+    {
+     "n": 2,
+     "do": "摘要逐条带锚点，写入前过凭据遮盖，写进工作区的接力文件",
+     "slot": "H4",
+     "where": [
+      "adapter/src/paoding_adapter/relay.py"
+     ],
+     "tests": [
+      "adapter/tests/test_anchored_fold.py::test_every_anchor_resolves",
+      "tests/fenjue/trials.py T2"
+     ],
+     "kernel_lines": 0,
+     "accept": "锚点全部可解析，金丝雀不出现"
+    },
+    {
+     "n": 3,
+     "do": "按道分区：只在开放道启用",
+     "slot": "H4",
+     "where": [
+      "fenjue/src/paoding_fenjue/fires/"
+     ],
+     "tests": [
+      "tests/fenjue/zero_diff.py --check"
+     ],
+     "kernel_lines": 0,
+     "accept": "严格道事件日志与任务包不变"
+    },
+    {
+     "n": 4,
+     "do": "A′ 臂配置：anchor_kinds=[]",
+     "slot": "H4",
+     "where": [
+      "fenjue/src/paoding_fenjue/fires/"
+     ],
+     "tests": [
+      "adapter/tests/test_anchored_fold.py"
+     ],
+     "kernel_lines": 0,
+     "accept": "A′ 的锚点可解析率按构造为 0"
+    }
+   ],
+   "kernel_forecast": [],
+   "split": [],
+   "new_slot": null,
+   "difficulty": {
+    "value": 3,
+    "parts": {
+     "base": 1,
+     "behavior_slots_minus_1": 0,
+     "extra_ports": 1,
+     "new_tool": 0,
+     "kernel_split": 0,
+     "a1_infeasible": 0,
+     "run_only_emergent": 1
+    }
+   },
+   "checks": [
+    {
+     "id": "V1",
+     "ok": true
+    },
+    {
+     "id": "V2",
+     "ok": true
+    },
+    {
+     "id": "V3",
+     "ok": true
+    },
+    {
+     "id": "V4",
+     "ok": true
+    },
+    {
+     "id": "V5",
+     "ok": true
+    },
+    {
+     "id": "V6",
+     "ok": true
+    },
+    {
+     "id": "V7",
+     "ok": true
+    },
+    {
+     "id": "V8",
+     "ok": true
+    },
+    {
+     "id": "V9",
+     "ok": true
+    },
+    {
+     "id": "V10",
+     "ok": true
+    },
+    {
+     "id": "V11",
+     "ok": true
+    },
+    {
+     "id": "V12",
+     "ok": true
+    }
+   ],
+   "plain_summary": "新增一个上下文管理模块：开放式任务里上下文快满时压缩，压缩要点带原始记录链接。和现有的上下文模块按任务类型分开用，内核不改。"
+  }
+ },
+ "tolerance": {
+  "confidence": [
+   0.8,
+   1.0
+  ],
+  "value": "精确",
+  "difficulty": "精确（入位后）",
+  "priority": "精确",
+  "slot": "精确",
+  "group": "精确（id 可不同，火位与替换关系精确）",
+  "gaps": "维与类型精确，theirs 允许 ±1",
+  "essence": "K1–K5、K7、K8 必过；新生维集合须包含 dim 列出的各维（名称按语义比对，由 cz 在验收时核）",
+  "readings": "必登维齐全；新生维门槛精确"
+ }
+}

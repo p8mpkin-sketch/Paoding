@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from paoding_executor.contract import ExecPort
-from paoding_fenjue.contract import params
+from paoding_fenjue.contract import View, current
 from paoding_graph.contract import (
     BadBody,
     BlobPort,
@@ -71,6 +71,7 @@ class Session:
     reviewed: bool = False  # 开放道的复核会话：读数已交回（体质修炼 002）
     secrets: tuple[str, ...] = ()  # 原话里认出的凭据（creds.found）：扩权申请与交付写出去之前逐字遮盖
     kb_cite: str = "grounds"  # 会话形态（功法 H1）：资料段落能进交付的 refs（refs），还是只能拿来找方向（grounds）
+    tool_order: tuple[str, ...] | None = None  # 工具面的顺序（功法 H3），取自这道题开题时的那一版功法（FJ6）
 
 
 class KnowledgePort(Protocol):
@@ -664,8 +665,9 @@ class ToolHost:
     }
 
 
-def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
-    """MCP tools/list 的条目。参数 Schema 由工具定义强制（3.4.4）。"""
+def tool_schemas(tools: tuple[Any, ...], order: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """MCP tools/list 的条目。参数 Schema 由工具定义强制（3.4.4）。
+    order：工具面的顺序；会话给的是它这道题锁定的那一版功法的 H3（FJ6），不给就用此刻的功法。"""
     s = {
         "exec": {
             "description": "在执行容器里运行一条命令。返回 ArtifactId、退出码与回显；回显超过 8 KB 只给头尾，"
@@ -832,7 +834,8 @@ def tool_schemas(tools: tuple[Any, ...]) -> list[dict[str, Any]]:
             "properties": {"chunk": {"type": "string", "description": "kb_search 返回的段落编号，形如 k_…"}},
         },
     }
-    order = (*params("H3", "h3.base")["order"], *params("H3", "h3.kb")["tools"])  # 工具面（功法 H3）
+    if order is None:
+        order = tool_order(current())
     return [{"name": n, **s[n]} for n in order if n in tools]
 
 
@@ -849,3 +852,8 @@ def _same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
 
 def as_text(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True)
+
+
+def tool_order(gf: View) -> tuple[str, ...]:
+    """一版功法的工具面顺序（H3：基础工具面，接资料库的两样）。"""
+    return (*gf.params("H3", "h3.base")["order"], *gf.params("H3", "h3.kb")["tools"])

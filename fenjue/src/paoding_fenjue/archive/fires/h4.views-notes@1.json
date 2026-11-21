@@ -1,0 +1,23 @@
+{
+ "id": "h4.views-notes",
+ "ver": 1,
+ "slot": "H4",
+ "ports": [
+  "M4"
+ ],
+ "params": {
+  "package": "三层视图（任务包①–⑦）",
+  "relay_notes": "NOTES.md"
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "常开",
+  "control_arm": "只给题目简报，不给节点清单与状态",
+  "retire_signal": "去掉③④⑤后读数落在噪声底内"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H4"
+}

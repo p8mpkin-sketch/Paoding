@@ -1,0 +1,31 @@
+{
+ "id": "h1.recall",
+ "ver": 1,
+ "slot": "H1",
+ "seats": [
+  "recall"
+ ],
+ "ports": [
+  "M1:add_fact",
+  "M4"
+ ],
+ "params": {
+  "forms": {
+   "recall": {
+    "model": false,
+    "runner": "tongjian"
+   }
+  }
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开题带召回清单（v1.5）",
+  "control_arm": "不召回（recall 关）",
+  "retire_signal": "召回臂与不召回臂的严格道读数落在噪声底内"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H1"
+}

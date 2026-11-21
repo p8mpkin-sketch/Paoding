@@ -1,0 +1,473 @@
+{
+ "v": 1,
+ "mode": "formal",
+ "run": "p_fixture_delta",
+ "basis": {
+  "gongfa_jie": 2,
+  "gongfa_digest": "2e567dbc8395651f5675b8d7ccf901fce4b31909bff53e36a7fea55c9c48de21",
+  "profile_sha256": "4b290b277c33929b58ddeb897a8dd9e73559d42fb9902ad7461ad9223b5494e2",
+  "snapshots": [
+   {
+    "id": "s1",
+    "form": "code",
+    "identity": {
+     "archive_sha256": "8ef7570623ae49cc3ac186309bab531c3ca98f55f137eb73993f7b8e3354476d"
+    },
+    "artifact": "a_1",
+    "size_tier": "S",
+    "license": {
+     "status": "strong_copyleft",
+     "spdx": "GPL-3.0-only",
+     "detected": "LICENSE",
+     "reuse": "idea_only"
+    }
+   }
+  ]
+ },
+ "candidates": [
+  {
+   "id": "C1",
+   "name": "dual-proof",
+   "title": "证据自动关联",
+   "slot": "H7",
+   "also_slots": [
+    "H6"
+   ],
+   "gaps": [
+    {
+     "dim": "h7.auto-link",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 2,
+     "pain_basis": "docs/design/fenjue/05-cases.md#2-异火榜（第 3 行，Y-003）",
+     "observations": [
+      "of2070e89e718",
+      "o3bb28c6ba49e"
+     ]
+    }
+   ],
+   "value": 4,
+   "confidence": 1.0,
+   "confidence_parts": {
+    "c0": 1.0,
+    "cover": 1.0,
+    "corro": 1.0,
+    "cap": 1.0
+   },
+   "difficulty": 1,
+   "difficulty_basis": "estimated",
+   "difficulty_parts": {
+    "base": 1,
+    "behavior_slots_minus_1": 0,
+    "extra_ports": 0,
+    "new_tool": 0,
+    "kernel_split": 0,
+    "a1_infeasible": 0,
+    "run_only_emergent": 0
+   },
+   "risk": "R0",
+   "priority": 4.0,
+   "dedupe": {
+    "bang": "Y-003",
+    "note": "证据并入已有条目"
+   },
+   "seed": {
+    "name": "dual-proof",
+    "title": "证据自动关联",
+    "identified": "2026-11-21",
+    "shihuo": {
+     "source": "验收夹具丁（合成的组合夹具，代码形态，GPL-3.0）",
+     "phenomenon": "每次工具执行自动留档，交付时系统按先后把每条结论前后的执行记录挂到结论旁边",
+     "gap": "执行留档我们已经有且更强（哈希成链）；但主张与留档的连线只靠模型自己引用，系统不做关联（剖面 h7.auto-link = 0）",
+     "is_fire": "是：由系统而不是作者把执行记录关联到结论是一类做法"
+    }
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "8ef7570623ae49cc3ac186309bab531c3ca98f55f137eb73993f7b8e3354476d"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "strong_copyleft",
+       "spdx": "GPL-3.0-only",
+       "detected": "LICENSE",
+       "reuse": "idea_only"
+      }
+     }
+    ],
+    "observations": [
+     "oe100286c53a0",
+     "of2070e89e718",
+     "o3bb28c6ba49e",
+     "o1d14759c566c"
+    ],
+    "source_label": "验收夹具丁"
+   },
+   "recommend": {
+    "level": "recommend",
+    "why": "只动结果页的读端，风险最低；新生维是结构读数"
+   },
+   "flags": [
+    "license_restricted",
+    "injection_flagged_sources"
+   ]
+  },
+  {
+   "id": "C2",
+   "name": "staged-proof",
+   "title": "阶段证据确认",
+   "slot": "H1",
+   "also_slots": [
+    "H7",
+    "H6"
+   ],
+   "gaps": [
+    {
+     "dim": "h1.staged",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 1,
+     "pain_basis": "无记录在案的失败；不在异火榜上（首次登记为 Y-007）",
+     "observations": [
+      "oa0466f6ca013",
+      "o0a29a59be8f8",
+      "ofd72775395c9"
+     ]
+    },
+    {
+     "dim": "h7.stage-report",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 1,
+     "pain_basis": "同上",
+     "observations": [
+      "o555e155d317e"
+     ]
+    }
+   ],
+   "value": 4,
+   "confidence": 1.0,
+   "confidence_parts": {
+    "c0": 1.0,
+    "cover": 1.0,
+    "corro": 1.0,
+    "cap": 1.0
+   },
+   "difficulty": 2,
+   "difficulty_basis": "estimated",
+   "difficulty_parts": {
+    "base": 1,
+    "behavior_slots_minus_1": 1,
+    "extra_ports": 0,
+    "new_tool": 0,
+    "kernel_split": 0,
+    "a1_infeasible": 0,
+    "run_only_emergent": 0
+   },
+   "risk": "R1",
+   "priority": 1.0,
+   "seed": {
+    "name": "staged-proof",
+    "title": "阶段证据确认",
+    "identified": "2026-11-21",
+    "shihuo": {
+     "source": "验收夹具丁（合成的组合夹具，代码形态，GPL-3.0）",
+     "phenomenon": "目标被拆成有序阶段，每个阶段附上检查命令的输出才算完成，下一阶段等上一阶段确认后才开始",
+     "gap": "开放道的独行会话只在最后交付一次，中间没有阶段，也没有阶段完成的确认；结果页只能看到一张平铺的主张表（剖面 h1.staged = 0、h7.stage-report = 0）",
+     "is_fire": "是：分阶段推进并以执行留档确认阶段完成是一类做法，不绑定某个界面或某家实现"
+    }
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "8ef7570623ae49cc3ac186309bab531c3ca98f55f137eb73993f7b8e3354476d"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "strong_copyleft",
+       "spdx": "GPL-3.0-only",
+       "detected": "LICENSE",
+       "reuse": "idea_only"
+      }
+     }
+    ],
+    "observations": [
+     "oa0466f6ca013",
+     "o0a29a59be8f8",
+     "ofd72775395c9",
+     "o555e155d317e"
+    ],
+    "source_label": "验收夹具丁"
+   },
+   "recommend": {
+    "level": "recommend",
+    "why": "体质改动预计为 0，新生维是结构读数，CI 就能证；与已入功法的活动链直接相接"
+   },
+   "flags": [
+    "license_restricted",
+    "injection_flagged_sources"
+   ]
+  },
+  {
+   "id": "C3",
+   "name": "anchored-fold",
+   "title": "带锚压缩",
+   "slot": "H4",
+   "also_slots": [
+    "H1",
+    "H6"
+   ],
+   "gaps": [
+    {
+     "dim": "h4.compress",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 2,
+     "pain_basis": "docs/design/fenjue/05-cases.md#2-异火榜（第 2 行，Y-002）",
+     "observations": [
+      "o80a07de5af33",
+      "o3b83f1d6d332"
+     ]
+    },
+    {
+     "dim": "h4.relay-notes",
+     "ours": 1,
+     "ours_by": "h4.views-notes@1",
+     "theirs": 2,
+     "gap": 1,
+     "type": "weaker",
+     "weight": 1,
+     "pain": 2,
+     "pain_basis": "同上",
+     "observations": [
+      "od4e0a638f550",
+      "odf71c7f3f185"
+     ]
+    }
+   ],
+   "value": 6,
+   "confidence": 1.0,
+   "confidence_parts": {
+    "c0": 1.0,
+    "cover": 1.0,
+    "corro": 1.0,
+    "cap": 1.0
+   },
+   "difficulty": 3,
+   "difficulty_basis": "estimated",
+   "difficulty_parts": {
+    "base": 1,
+    "behavior_slots_minus_1": 0,
+    "extra_ports": 1,
+    "new_tool": 0,
+    "kernel_split": 0,
+    "a1_infeasible": 0,
+    "run_only_emergent": 1
+   },
+   "risk": "R1",
+   "priority": 1.0,
+   "dedupe": {
+    "bang": "Y-002",
+    "note": "证据并入已有条目"
+   },
+   "seed": {
+    "name": "anchored-fold",
+    "title": "带锚压缩",
+    "identified": "2026-11-21",
+    "shihuo": {
+     "source": "验收夹具丁（合成的组合夹具，代码形态，GPL-3.0）",
+     "phenomenon": "会话的上下文快满时自动把较早的过程折叠成摘要继续干，换会话时只交摘要",
+     "gap": "我们没有会话内压缩，上下文用完只能接力；接力笔记由模型自由书写，事实追不回原文（剖面 h4.compress = 0、h4.relay-notes = 1）",
+     "is_fire": "是：按上下文用量折叠历史并以摘要接力是一类做法"
+    }
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "8ef7570623ae49cc3ac186309bab531c3ca98f55f137eb73993f7b8e3354476d"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "strong_copyleft",
+       "spdx": "GPL-3.0-only",
+       "detected": "LICENSE",
+       "reuse": "idea_only"
+      }
+     }
+    ],
+    "observations": [
+     "o80a07de5af33",
+     "o3b83f1d6d332",
+     "od4e0a638f550",
+     "odf71c7f3f185"
+    ],
+    "source_label": "验收夹具丁"
+   },
+   "recommend": {
+    "level": "recommend",
+    "why": "长任务里接力次数与重复执行是明确的成本；体质改动预计为 0"
+   },
+   "flags": [
+    "license_restricted",
+    "injection_flagged_sources"
+   ]
+  }
+ ],
+ "already_have": [
+  {
+   "dim": "h3.exec-trace",
+   "ours": 3,
+   "theirs": 2,
+   "by": "h3.base@1",
+   "observations": [
+    "o804b15126dcf"
+   ]
+  },
+  {
+   "dim": "h6.replay",
+   "ours": 3,
+   "theirs": 1,
+   "by": "h6.workbench@1",
+   "observations": [
+    "o39560db44c80"
+   ]
+  }
+ ],
+ "not_fire": [
+  {
+   "what": "结果页多一个导出为表格的按钮",
+   "why": "单个界面功能点，没有可复用的机制"
+  }
+ ],
+ "unseen_slots": [
+  "H2",
+  "H5",
+  "H8"
+ ],
+ "coverage": [
+  {
+   "slot": "H1",
+   "excerpts": 6,
+   "tokens_in": 30000,
+   "stop": "saturated"
+  },
+  {
+   "slot": "H2",
+   "excerpts": 2,
+   "tokens_in": 10000,
+   "stop": "weak_signal"
+  },
+  {
+   "slot": "H3",
+   "excerpts": 3,
+   "tokens_in": 15000,
+   "stop": "saturated"
+  },
+  {
+   "slot": "H4",
+   "excerpts": 6,
+   "tokens_in": 30000,
+   "stop": "saturated"
+  },
+  {
+   "slot": "H5",
+   "excerpts": 2,
+   "tokens_in": 10000,
+   "stop": "weak_signal"
+  },
+  {
+   "slot": "H6",
+   "excerpts": 4,
+   "tokens_in": 20000,
+   "stop": "saturated"
+  },
+  {
+   "slot": "H7",
+   "excerpts": 5,
+   "tokens_in": 25000,
+   "stop": "saturated"
+  },
+  {
+   "slot": "H8",
+   "excerpts": 2,
+   "tokens_in": 10000,
+   "stop": "weak_signal"
+  }
+ ],
+ "checks": [
+  {
+   "id": "V1",
+   "ok": true
+  },
+  {
+   "id": "V2",
+   "ok": true
+  },
+  {
+   "id": "V3",
+   "ok": true
+  },
+  {
+   "id": "V4",
+   "ok": true
+  },
+  {
+   "id": "V5",
+   "ok": true
+  },
+  {
+   "id": "V6",
+   "ok": true
+  },
+  {
+   "id": "V7",
+   "ok": true
+  },
+  {
+   "id": "V8",
+   "ok": true
+  },
+  {
+   "id": "V9",
+   "ok": true
+  },
+  {
+   "id": "V10",
+   "ok": true
+  },
+  {
+   "id": "V11",
+   "ok": true
+  },
+  {
+   "id": "V12",
+   "ok": true
+  }
+ ],
+ "plain_summary": "在这个系统里找到三个值得集成的做法：结论旁自动关联执行记录、分阶段并以检查输出确认、上下文压缩带原始记录链接。执行记录与回放我们已有且更强。来源是 GPL-3.0，只借思路。来源里有一段疑似写给智能体的指令，已忽略并标出。"
+}

@@ -26,6 +26,7 @@ TaskControl）交互，跨进程部署时把端口换成 HTTP 客户端即可，
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 import re
@@ -81,7 +82,7 @@ from paoding_adapter.contract import (  # noqa: E402
 )
 from paoding_adapter.purge import purge_workspaces  # noqa: E402
 from paoding_executor.contract import DockerExecutor, sweep_orphans  # noqa: E402
-from paoding_fenjue.contract import kernel_config  # noqa: E402
+from paoding_fenjue.contract import evolution, kernel_config  # noqa: E402
 from paoding_graph.contract import (  # noqa: E402
     BadBody,
     BlobStore,
@@ -92,11 +93,13 @@ from paoding_graph.contract import (  # noqa: E402
     MountError,
     TokenRegistry,
     load_policy,
+    views,
 )
 from paoding_qicao.contract import catalog_of  # noqa: E402
 from paoding_sinan.contract import Sinan, SinanConfig  # noqa: E402
 
 PRICES = ROOT / "adapter" / "config" / "prices.yaml"
+DOSSIERS = ROOT / "docs" / "design" / "fenjue" / "dossiers"  # 炼档（焚决 F5）：进化读数页读它的 JSON
 TASK_KINDS = ("bootstrap", "reason", "explore", "solve")  # solve：开放道的求解会话（docs/design/open-lane/）
 DEV_ORIGIN = "http://127.0.0.1:5173"  # web/ 的 vite 开发服务器（只监听回环）
 
@@ -448,6 +451,8 @@ class Stack:
 
         # 会话的实时活动（开放道进度可见性）：工作台的“会话活动”面板按游标轮询
         self.http.mount("GET", r"/v1/leases/(?P<id>l_[0-9]+)/activity", self._activity)
+        # 进化读数（焚决 04 §7）：品阶史、已裁炼档与结局统计、常设留出两臂的读数。只读
+        self.http.mount("GET", r"/v1/evolution", self._evolution)
 
         # 判官运行器、哮天犬
         self.judge = JudgeRunner(
@@ -476,6 +481,13 @@ class Stack:
             sweep=sweep_orphans if self.executor is not None else None,
         )
         self.url = ""
+
+    def _evolution(self, q: dict, body: object) -> dict:
+        """GET /v1/evolution：读端（paoding_fenjue.evolution）。题按开题时记下的功法分臂（FJ6），炼档读包外的 JSON。"""
+        st = self.graph.state
+        ds = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(DOSSIERS.glob("[0-9][0-9][0-9]-*.json"))]
+        items = views.problems(st, self.http._ts_of)["items"]
+        return {**evolution(ds, st["problems"], items), "as_of": st["seq"]}
 
     def _activity(self, q: dict, body: object) -> dict:
         """GET /v1/leases/{id}/activity?after=N[&as_of=seq]：会话的工具调用、自述、耗时与花费。

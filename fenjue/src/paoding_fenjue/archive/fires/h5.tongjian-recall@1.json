@@ -1,0 +1,22 @@
+{
+ "id": "h5.tongjian-recall",
+ "ver": 1,
+ "slot": "H5",
+ "ports": [
+  "M4"
+ ],
+ "params": {
+  "verify": true
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开题选了召回",
+  "control_arm": "recall_noverify（召回不复核）",
+  "retire_signal": "召回臂与不召回臂的读数落在噪声底内"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H5"
+}

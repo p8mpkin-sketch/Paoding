@@ -12,6 +12,7 @@ import type {
 import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
 import type { SessionActivity } from "./activity-types";
+import type { Evolution } from "./evolution-types";
 import type { KeySlot, KeysView, ModelProbe, ModelProfile, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
 
 export type ApiConfig = {
@@ -158,6 +159,8 @@ export function createApi(cfg: ApiConfig) {
     knSearch: (q: string, k = 8) => post<KnSearch>("/v1/knowledge/search", { q, k }),
     /** 一段的原文与位置（证据抽屉里引用的资料）。 */
     knChunk: (id: string) => get<KnChunk>(`/v1/knowledge/chunks/${enc(id)}`),
+    // ---- 能力配置的演进读数（焚决 04 §7）：只读 ----
+    evolution: () => get<Evolution>("/v1/evolution"),
     // ---- 设置层 ----
     settings: () => get<SettingsDoc>("/v1/settings"),
     settingsLog: () => get<{ items: SettingsLogEntry[] }>("/v1/settings/log"),

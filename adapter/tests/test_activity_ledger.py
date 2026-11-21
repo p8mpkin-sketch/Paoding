@@ -222,3 +222,35 @@ def test_a_problem_in_the_standing_holdout_runs_the_previous_fire(tmp_path, grap
         rig.close()
         monkeypatch.delenv(GONGFA_ENV)
         gongfa.cache_clear()
+
+
+def test_a_running_problem_keeps_the_gongfa_it_was_opened_under(tmp_path, upstream, monkeypatch):  # noqa: F811
+    """任务锁定开题时的功法版本（FJ6）：开题事件记下了功法摘要；之后功法换了（这里把常设留出拉满，散火同一情形），
+    在跑的题的会话照开题时那一版走：p1 在 10% 的留出之外，照旧入账。没记摘要的旧题跟着此刻的功法。"""
+    import dataclasses
+
+    from adapter_rig import CFG, make_graph
+
+    from paoding_fenjue.contract import GONGFA_ENV, for_problem, gongfa, kernel_config
+
+    kc = kernel_config()
+    g = make_graph(tmp_path, dataclasses.replace(CFG, gongfa=kc["gongfa"], forms=kc["forms"]))
+    rig = make(tmp_path, g, upstream)  # 开题：事件体带上此刻功法的 (品阶, 摘要)
+    p1 = g.state["problems"]["p1"]
+    assert p1["gongfa"]["digest"] == gongfa()["digest"]
+    live = {k: v for k, v in gongfa().items() if k != "digest"}
+    (tmp_path / "gongfa.json").write_text(json.dumps({**live, "holdout_permille": 1000}), encoding="utf-8")
+    monkeypatch.setenv(GONGFA_ENV, str(tmp_path / "gongfa.json"))
+    gongfa.cache_clear()
+    try:
+        assert gongfa()["digest"] != p1["gongfa"]["digest"]
+        assert for_problem(p1).pinned and not for_problem(p1).in_holdout("p1", "H6")
+        assert for_problem({"id": "p1"}).in_holdout("p1", "H6")  # 没记摘要的题：此刻的功法，落进留出
+        lid = lease_solve(g)
+        rig.script(SCRIPT)
+        assert rig.run(lid).release["outcome"] == "done"
+        assert segments(g, lid) != []  # 照开题时那一版：入账
+    finally:
+        rig.close()
+        monkeypatch.delenv(GONGFA_ENV)
+        gongfa.cache_clear()

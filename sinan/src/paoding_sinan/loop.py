@@ -17,15 +17,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from paoding_adapter.contract import SessionPort
-from paoding_fenjue.contract import params
+from paoding_fenjue.contract import for_problem, params
 from paoding_graph.contract import BlobError, BlobPort, GraphPort, GraphReader
 
 # 编排（功法 H2 的清单 h2.sinan）：先做哪类事项、每类怎么预留。solve 是开放道的求解会话（docs/design/open-lane/）
-ORCH = params("H2")
+ORCH = params("H2")  # 此刻的功法；每道题派工时用它开题时那一版的 H2（FJ6，_orch）
 TASK_ORDER: tuple[str, ...] = tuple(ORCH["order"])
 RESERVE: dict[str, str] = dict(ORCH["reserve"])  # 事项种类 → 预留规则：remainder | intent_capped | fixed | verify_share
-# 开了复核的题，求解会话的余额预留让出验证份额里还没花的部分：不然求解会话花到收尾线，复核就没钱可用（地图 Q34）
-KEEP_VERIFY_SHARE: bool = bool(ORCH.get("keep_verify_share"))
+
+
+def _orch(problem: dict | None) -> dict:
+    """这道题的编排参数（功法 H2：事项顺序、预留规则），取它开题时那一版功法（FJ6）。"""
+    return for_problem(problem).params("H2")
 
 
 @dataclass
@@ -91,7 +94,8 @@ class Sinan:
         if self.cfg.wait_for_judges and judging:
             return {"wait": "judge"}
         mine = {(f["item"]["kind"], f["item"].get("target")) for f in self.in_flight(pid)}
-        tasks = [w for w in work if w["kind"] in TASK_ORDER and (w["kind"], w.get("target")) not in mine]
+        order = _orch(p)["order"]
+        tasks = [w for w in work if w["kind"] in order and (w["kind"], w.get("target")) not in mine]
         # Reason 先于新的 Explore：Reason 该跑或正在跑时不开新的 Explore（它会改写 Intent 的格局），
         # 已在途的 Explore 不受影响。串行时这条由排序保证，并发时要显式守住。
         reasoning = any(l["kind"] == "reason" for l in leases) or ("reason", None) in mine
@@ -108,13 +112,13 @@ class Sinan:
                 return {"wait": "in_flight"}
             humans = [w for w in work if w["kind"] == "human"]
             return {"stop": "needs_human", "items": humans} if humans else {"stop": "idle"}
-        return {"do": min(tasks, key=lambda w: self._rank(st, w, tasks))}
+        return {"do": min(tasks, key=lambda w: self._rank(st, w, tasks, order))}
 
-    def _rank(self, st: dict, w: dict, tasks: list) -> tuple:
+    def _rank(self, st: dict, w: dict, tasks: list, order: list) -> tuple:
         gain = 0.0
         if w["kind"] == "explore" and self.cfg.order_by_gain:
             gain = float(st["intents"][w["target"]].get("expected_gain") or 0.0)
-        return (TASK_ORDER.index(w["kind"]), -gain, tasks.index(w))
+        return (order.index(w["kind"]), -gain, tasks.index(w))
 
     def _verify_room(self, st: dict, pid: str) -> int:
         """验证份额里还能预留多少（金额轨）：verify_share × cap − 已花 − 判官与复核在途的预留。"""
@@ -129,13 +133,15 @@ class Sinan:
         return int(share * cap) - int(b["verify_spent"]["usd_milli"]) - int(pool)
 
     def _reserve(self, st: dict, pid: str, w: dict) -> dict:
-        rule = RESERVE[w["kind"]]
+        rule = _orch(st["problems"][pid])["reserve"][w["kind"]]
+        # 开了复核的题（h2.sinan@2 的 keep_verify_share），求解会话的余额预留让出验证份额里还没花的部分：
+        # 不然求解会话花到收尾线，复核就没钱可用（地图 Q34）
         if rule == "remainder":
             # 开放道（open-lane §3.3）：一个会话做到底，预留题里剩下的全部金额；哮天犬在预留的 90% 处叫它收尾交付，
             # 所以最后 10% 是收尾保留。接力的下一个会话拿到的是上一个用剩的
             b = self.reader.budget(pid)
             left = b["cap"].get("usd_milli", 0) - b["spent"]["usd_milli"] - b["reserved"]["usd_milli"]
-            if KEEP_VERIFY_SHARE and st["problems"][pid].get("review"):
+            if _orch(st["problems"][pid]).get("keep_verify_share") and st["problems"][pid].get("review"):
                 left -= max(0, self._verify_room(st, pid))
             return {"usd_milli": max(1, int(left)), "wall_s": int(st["problems"][pid]["budget"]["wall_s"])}
         if rule == "verify_share":

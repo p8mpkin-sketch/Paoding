@@ -1,7 +1,7 @@
 // 应用外壳（v5）：左侧栏（标志、新任务、⌘K、导航、进行中、主题与连接状态）、顶栏（位置与本页主操作）、内容区。
 // 工作区（/p/…）把侧栏收成图标栏，把宽度让给图。
 import { useEffect, useState, type ReactNode } from "react";
-import { BookOpen, Boxes, FileUp, Gauge, Inbox, LayoutList, Plus, Search, Settings, Sun } from "lucide-react";
+import { BookOpen, Boxes, FileUp, Flame, Gauge, Inbox, LayoutList, Plus, Search, Settings, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ProblemsView } from "../api/types";
 import { navigate, type Route } from "../app/router";
@@ -12,7 +12,7 @@ import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
 
-export type NavKey = "today" | "inbox" | "tasks" | "knowledge" | "models" | "readings" | "settings";
+export type NavKey = "today" | "inbox" | "tasks" | "knowledge" | "models" | "evolution" | "readings" | "settings";
 type NavItem = { key: NavKey; word: string; icon: LucideIcon; to: Route };
 export const NAV: NavItem[] = [
   { key: "today", word: "今日", icon: Sun, to: { page: "today" } },
@@ -20,6 +20,7 @@ export const NAV: NavItem[] = [
   { key: "inbox", word: "待你处理", icon: Inbox, to: { page: "inbox" } },
   { key: "knowledge", word: "知识", icon: BookOpen, to: { page: "knowledge", tab: "sources" } },
   { key: "models", word: "模型", icon: Boxes, to: { page: "models" } },
+  { key: "evolution", word: "能力配置", icon: Flame, to: { page: "evolution" } },
   { key: "readings", word: "读数", icon: Gauge, to: { page: "readings" } },
 ];
 const SETTINGS: NavItem = { key: "settings", word: "设置", icon: Settings, to: { page: "settings" } };
@@ -35,6 +36,7 @@ export function navOf(r: Route): { key: NavKey | null; crumbs: string[] } {
     case "import": return { key: "tasks", crumbs: ["任务", "导入任务集"] };
     case "platform": return { key: "tasks", crumbs: ["任务", "从平台导入"] };
     case "readings": return { key: "readings", crumbs: ["读数"] };
+    case "evolution": return { key: "evolution", crumbs: ["能力配置"] };
     case "settings": return { key: "settings", crumbs: ["设置"] };
     case "models": return { key: "models", crumbs: ["模型"] };
     case "knowledge": return { key: "knowledge", crumbs: ["知识", r.tab === "memory" ? "记忆" : "资料"] };

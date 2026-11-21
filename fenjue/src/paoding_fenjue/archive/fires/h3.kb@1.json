@@ -1,0 +1,26 @@
+{
+ "id": "h3.kb",
+ "ver": 1,
+ "slot": "H3",
+ "ports": [
+  "M4",
+  "M7"
+ ],
+ "params": {
+  "tools": [
+   "kb_search",
+   "kb_read"
+  ]
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "知识选项不是“不用”、范围里有可检索的资料（#114）",
+  "control_arm": "不给资料工具",
+  "retire_signal": "会话调用 kb_search 的比例低于 5%（占位）"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H3"
+}

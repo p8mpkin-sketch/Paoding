@@ -1,0 +1,593 @@
+{
+ "case": "C",
+ "name": "dual-proof",
+ "fixture": "fenjue/tests/engine_fixtures/gamma/",
+ "form": "code",
+ "expected": {
+  "candidate": {
+   "id": "C1",
+   "name": "dual-proof",
+   "title": "证据自动关联",
+   "slot": "H7",
+   "also_slots": [
+    "H6"
+   ],
+   "gaps": [
+    {
+     "dim": "h7.auto-link",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 2,
+     "pain_basis": "docs/design/fenjue/05-cases.md#2-异火榜（第 3 行，Y-003）",
+     "observations": [
+      "o1ca11d08f295",
+      "oad943483e4f2"
+     ]
+    }
+   ],
+   "value": 4,
+   "confidence": 1.0,
+   "confidence_parts": {
+    "c0": 1.0,
+    "cover": 1.0,
+    "corro": 1.0,
+    "cap": 1.0
+   },
+   "difficulty": 1,
+   "difficulty_basis": "estimated",
+   "difficulty_parts": {
+    "base": 1,
+    "behavior_slots_minus_1": 0,
+    "extra_ports": 0,
+    "new_tool": 0,
+    "kernel_split": 0,
+    "a1_infeasible": 0,
+    "run_only_emergent": 0
+   },
+   "risk": "R0",
+   "priority": 4.0,
+   "dedupe": {
+    "bang": "Y-003",
+    "note": "证据并入已有条目"
+   },
+   "seed": {
+    "name": "dual-proof",
+    "title": "证据自动关联",
+    "identified": "2026-11-21",
+    "shihuo": {
+     "source": "验收夹具丙（合成的外部智能体框架，代码形态，Apache-2.0）",
+     "phenomenon": "每次工具执行自动留档，交付时系统按先后把每条结论前后的执行记录挂到结论旁边",
+     "gap": "执行留档我们已经有且更强（哈希成链）；但主张与留档的连线只靠模型自己引用，系统不做关联（剖面 h7.auto-link = 0）",
+     "is_fire": "是：由系统而不是作者把执行记录关联到结论是一类做法"
+    }
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "3526a50b5a3cf08b61c5e206aae0566ab4246cd5111675179b657e1203a9d3fa"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "permissive",
+       "spdx": "Apache-2.0",
+       "detected": "LICENSE",
+       "reuse": "may_consult_code"
+      }
+     }
+    ],
+    "observations": [
+     "o0947fbcbf963",
+     "o1ca11d08f295",
+     "oad943483e4f2",
+     "o632ffdd70c56"
+    ],
+    "source_label": "验收夹具丙"
+   },
+   "recommend": {
+    "level": "recommend",
+    "why": "只动结果页的读端，风险最低；新生维是结构读数"
+   }
+  },
+  "essence": {
+   "v": 1,
+   "candidate": "C1",
+   "masked": {
+    "statement": "系统按执行发生的先后，把结论前后的执行记录自动挂到结论旁边，不靠作者自己引用",
+    "mechanism": [
+     {
+      "step": 1,
+      "trigger": "每次工具执行",
+      "input": "执行",
+      "transform": "记录执行及其先后",
+      "output": "执行留档",
+      "primitives": [
+       "记录",
+       "留档"
+      ]
+     },
+     {
+      "step": 2,
+      "trigger": "交付",
+      "input": "结论与执行留档",
+      "transform": "按先后把每条结论之前最近的执行记录关联到结论",
+      "output": "结论—执行关联",
+      "primitives": [
+       "关联",
+       "排序"
+      ],
+      "features": [
+       "merge_readings"
+      ]
+     },
+     {
+      "step": 3,
+      "trigger": "人看结果",
+      "input": "关联",
+      "transform": "在结论旁列出关联的执行记录",
+      "output": "结果视图",
+      "primitives": [
+       "派生视图"
+      ]
+     }
+    ],
+    "premises": [
+     {
+      "id": "p1",
+      "statement": "支撑结论的执行在先后上与结论相邻",
+      "holds_here": "partial",
+      "why": "相邻不等于支撑",
+      "replaced_by": "关联只作读数，与作者引用并排比对，不替代引用"
+     },
+     {
+      "id": "p2",
+      "statement": "执行记录完整且不可改",
+      "holds_here": "yes",
+      "why": "执行输出自动登记为 exec 类，按题哈希成链"
+     }
+    ],
+    "costs": [
+     {
+      "id": "c1",
+      "cost": "先后相邻被误当作支撑，误挂",
+      "kind": "auditability",
+      "here": "avoided_by_fusion"
+     },
+     {
+      "id": "c2",
+      "cost": "读者把系统关联当成作者核实过的引用",
+      "kind": "auditability",
+      "here": "avoided_by_fusion",
+      "kernel": "T5"
+     }
+    ],
+    "overlaps": [
+     {
+      "fire": "h3.base@1",
+      "dims": [
+       "h3.exec-trace"
+      ],
+      "relation": "duplicate",
+      "note": "执行自动留档已有，且哈希成链"
+     },
+     {
+      "fire": "h7.result@1",
+      "dims": [
+       "h7.claim-refs"
+      ],
+      "relation": "complement",
+      "note": "作者引用已有"
+     },
+     {
+      "fire": "h6.activity-ledger@1",
+      "dims": [
+       "h6.exec-drill"
+      ],
+      "relation": "partial",
+      "note": "执行行可点到留档；活动链给出先后"
+     }
+    ],
+    "conflicts": [
+     {
+      "with": "T5",
+      "kind": "kernel",
+      "features": [
+       "merge_readings"
+      ],
+      "statement": "系统关联若计入有据率，就把两类读数合并了",
+      "resolution": "fused_away",
+      "how": "系统关联与作者引用分列，不合成一个有据率；关联不提升任何证据等级"
+     }
+    ],
+    "fusion": {
+     "statement": "每条结论旁同时有作者引用与系统按活动链推出的关联：两者一致记双证，作者引用落在关联窗口之外的标为引用存疑；系统关联只作读数",
+     "emergent": [
+      {
+       "dim": "双证判定覆盖率",
+       "dir": "up",
+       "why_zero_B": "本火只有作者引用，没有系统关联可比",
+       "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
+       "measure": "structural",
+       "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
+       "gate": 1.0
+      },
+      {
+       "dim": "引用存疑检出率",
+       "dir": "up",
+       "why_zero_B": "没有比对",
+       "why_zero_A1": "没有比对",
+       "measure": "structural",
+       "how": "夹具里埋的错引全部被标为存疑",
+       "gate": 1.0
+      }
+     ],
+     "outcome_cap": "huolian"
+    },
+    "split": [],
+    "implementations": [
+     {
+      "sketch": "读端按活动链的先后为每条主张算一个关联窗口，与作者引用求交，结果页并排显示",
+      "primitives": [
+       "派生视图",
+       "关联",
+       "对照"
+      ]
+     },
+     {
+      "sketch": "交付时由固定流程把关联写成一份 authored 附件，结果页读附件",
+      "primitives": [
+       "记录",
+       "关联",
+       "留档"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "3526a50b5a3cf08b61c5e206aae0566ab4246cd5111675179b657e1203a9d3fa"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "permissive",
+       "spdx": "Apache-2.0",
+       "detected": "LICENSE",
+       "reuse": "may_consult_code"
+      }
+     }
+    ],
+    "observations": [
+     "o0947fbcbf963",
+     "o1ca11d08f295",
+     "oad943483e4f2",
+     "o632ffdd70c56"
+    ],
+    "source_label": "验收夹具丙"
+   },
+   "field_refs": {
+    "/premises/0": [
+     "oad943483e4f2"
+    ],
+    "/premises/1": [
+     "o0947fbcbf963"
+    ],
+    "/costs/0": [
+     "oad943483e4f2"
+    ],
+    "/costs/1": [
+     "o632ffdd70c56"
+    ],
+    "/conflicts/0": [
+     "o632ffdd70c56"
+    ]
+   },
+   "drafts": {
+    "n": 3,
+    "chosen": "extra1",
+    "agreement": 1.7,
+    "disagreements": [
+     "主丹稿把“执行自动留档”也列为新生维，二稿、三稿没有（它是已有不差）"
+    ]
+   },
+   "checks": [
+    {
+     "id": "K1",
+     "ok": true
+    },
+    {
+     "id": "K2",
+     "ok": true
+    },
+    {
+     "id": "K3",
+     "ok": true
+    },
+    {
+     "id": "K4",
+     "ok": true
+    },
+    {
+     "id": "K5",
+     "ok": true
+    },
+    {
+     "id": "K6",
+     "ok": true,
+     "advisory": true,
+     "detail": "盲审未猜中出处"
+    },
+    {
+     "id": "K7",
+     "ok": true
+    },
+    {
+     "id": "K8",
+     "ok": true
+    }
+   ],
+   "plain_summary": "结果页里每条结论旁边，除了作者自己引用的执行记录，再列出系统按时间顺序找到的相关记录；两者一致标“双重印证”，作者引用对不上的标“引用存疑”。只改展示，不改证据等级。"
+  },
+  "placement": {
+   "v": 1,
+   "candidate": "C1",
+   "atoms": [
+    {
+     "atom": "report.claim_link",
+     "home": "H7",
+     "mechanism_steps": [
+      2,
+      3
+     ],
+     "params": {
+      "window": "previous_delivery_to_claim_turn",
+      "show": "side_by_side"
+     }
+    }
+   ],
+   "fire": {
+    "id": "h7.dual-proof",
+    "ver": 1,
+    "slot": "H7",
+    "also_touches": [
+     "H6"
+    ],
+    "ports": [
+     "M4"
+    ],
+    "params": {
+     "window": "previous_delivery_to_claim_turn",
+     "show": "side_by_side",
+     "lanes": [
+      "open"
+     ]
+    },
+    "assets": [],
+    "organ": {
+     "class": "感知官",
+     "retire_signal": "连续 30 份交付的作者引用与系统关联全部一致（占位）",
+     "enable_when": "开放道交付带活动链时",
+     "control_arm": "h7.result@1（只有作者引用）"
+    },
+    "lineage": {
+     "dossier": null,
+     "from": []
+    },
+    "switch": "fires.H7"
+   },
+   "group": [],
+   "replaces": null,
+   "arms": {
+    "B": "功法第 2 阶原样（只有作者引用）",
+    "A1": "照搬：按先后自动挂执行记录，代替作者引用显示，不比对",
+    "F": "h7.dual-proof：并排比对，双证与引用存疑",
+    "B1": "第 2 阶重跑；结构读数确定性，噪声底 0"
+   },
+   "readings": [
+    {
+     "dim": "双证判定覆盖率",
+     "kind": "新生",
+     "dir": "up",
+     "gate": 1.0,
+     "test": "web 单测与读端纯函数测试：test_dual_proof_covers_every_cited_claim"
+    },
+    {
+     "dim": "引用存疑检出率",
+     "kind": "新生",
+     "dir": "up",
+     "gate": 1.0,
+     "test": "test_seeded_miscitation_is_flagged"
+    },
+    {
+     "dim": "作者引用显示不变",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "相同",
+     "test": "web 单测：作者引用一栏与 B 逐项相同"
+    },
+    {
+     "dim": "读数分列不合并",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "过",
+     "test": "eval/tests/test_open_lane_isolation.py"
+    },
+    {
+     "dim": "旧日志逐字节回放",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "过",
+     "test": "tests/fenjue/test_t4_zhang.py",
+     "mandatory": true
+    },
+    {
+     "dim": "凭据泄漏数",
+     "kind": "本火",
+     "dir": "down",
+     "gate": 0,
+     "test": "tests/fenjue/trials.py T2",
+     "mandatory": true
+    },
+    {
+     "dim": "结果页加载时长",
+     "kind": "共有",
+     "dir": "down",
+     "gate": "<= B + 噪声底",
+     "test": "web e2e（mock）"
+    }
+   ],
+   "conflicts": {
+    "fires": [
+     {
+      "fire": "h7.result@1",
+      "atom": "report.layout",
+      "kind": "none",
+      "resolution": "coexist",
+      "note": "新火只拥有 report.claim_link，并排加一栏"
+     }
+    ],
+    "kernel": [
+     {
+      "kernel": "T5",
+      "resolution": "fused_away",
+      "note": "关联只作读数，不提升证据等级；若要计入证据须另走体质修炼"
+     }
+    ],
+    "candidates": [],
+    "slot_locks": []
+   },
+   "steps": [
+    {
+     "n": 1,
+     "do": "读端纯函数：按活动链给每条主张算关联窗口，与作者引用求交，出一致、存疑、无关联三种判定",
+     "slot": "H7",
+     "where": [
+      "web/src/（结果页的数据层）"
+     ],
+     "tests": [
+      "test_dual_proof_covers_every_cited_claim",
+      "test_seeded_miscitation_is_flagged"
+     ],
+     "kernel_lines": 0,
+     "accept": "两条新生维的结构读数为 100%"
+    },
+    {
+     "n": 2,
+     "do": "结果页并排显示作者引用与系统关联，系统关联用叙述色、不着证据色",
+     "slot": "H7",
+     "where": [
+      "web/src/（结果页组件）"
+     ],
+     "tests": [
+      "web 单测"
+     ],
+     "kernel_lines": 0,
+     "accept": "作者引用一栏与 B 相同"
+    },
+    {
+     "n": 3,
+     "do": "A′ 臂配置：show=replace_refs、不比对",
+     "slot": "H7",
+     "where": [
+      "fenjue/src/paoding_fenjue/fires/"
+     ],
+     "tests": [
+      "web 单测"
+     ],
+     "kernel_lines": 0,
+     "accept": "A′ 的双证判定按构造为 0"
+    }
+   ],
+   "kernel_forecast": [],
+   "split": [],
+   "new_slot": null,
+   "difficulty": {
+    "value": 1,
+    "parts": {
+     "base": 1,
+     "behavior_slots_minus_1": 0,
+     "extra_ports": 0,
+     "new_tool": 0,
+     "kernel_split": 0,
+     "a1_infeasible": 0,
+     "run_only_emergent": 0
+    }
+   },
+   "checks": [
+    {
+     "id": "V1",
+     "ok": true
+    },
+    {
+     "id": "V2",
+     "ok": true
+    },
+    {
+     "id": "V3",
+     "ok": true
+    },
+    {
+     "id": "V4",
+     "ok": true
+    },
+    {
+     "id": "V5",
+     "ok": true
+    },
+    {
+     "id": "V6",
+     "ok": true
+    },
+    {
+     "id": "V7",
+     "ok": true
+    },
+    {
+     "id": "V8",
+     "ok": true
+    },
+    {
+     "id": "V9",
+     "ok": true
+    },
+    {
+     "id": "V10",
+     "ok": true
+    },
+    {
+     "id": "V11",
+     "ok": true
+    },
+    {
+     "id": "V12",
+     "ok": true
+    }
+   ],
+   "plain_summary": "结果页新增一栏系统找到的相关执行记录，和作者引用对照显示。只读，不改内核。"
+  }
+ },
+ "tolerance": {
+  "confidence": [
+   0.8,
+   1.0
+  ],
+  "value": "精确",
+  "difficulty": "精确（入位后）",
+  "priority": "精确",
+  "slot": "精确",
+  "group": "精确（id 可不同，火位与替换关系精确）",
+  "gaps": "维与类型精确，theirs 允许 ±1",
+  "essence": "K1–K5、K7、K8 必过；新生维集合须包含 dim 列出的各维（名称按语义比对，由 cz 在验收时核）",
+  "readings": "必登维齐全；新生维门槛精确"
+ }
+}

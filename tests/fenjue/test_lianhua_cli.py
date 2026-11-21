@@ -28,6 +28,7 @@ def cli(tmp_path, monkeypatch):
     shutil.copytree(ROOT / "docs/design/fenjue/dossiers", dossiers)
     pkg = tmp_path / "pkg"
     shutil.copytree(ROOT / "fenjue/src/paoding_fenjue/fires", pkg / "fires")
+    shutil.copytree(ROOT / "fenjue/src/paoding_fenjue/archive", pkg / "archive")
     shutil.copy(ROOT / "fenjue/src/paoding_fenjue/gongfa.json", pkg / "gongfa.json")
     monkeypatch.setattr(mod, "DOSSIERS", dossiers)
     monkeypatch.setattr(mod, "PKG", pkg)
@@ -74,15 +75,33 @@ def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path
     assert d["status"] == "readings_ready" and d["outcome_proposed"] == "huolian"
     run(mod, "status")
     assert "下一步：jue" in capsys.readouterr().out
+    kept = len(list((pkg / "archive/gongfa").iterdir()))  # 已存档的功法版本数（随本火修订增长，不写死）
     run(mod, "jue", no, "--by", "cz", "--outcome", "huolian", "--condition", "演示", "--date", "2026-11-21")
     g = json.loads((pkg / "gongfa.json").read_text(encoding="utf-8"))
     assert "h7.result-first@1" in g["fires"]["H7"] and g["holdout"]["H7"] == ["h7.result@1"] and g["jie"] == 3
+    # 定阶先存档（FJ6）：新功法与新火进了存档，旧的一份不少
+    assert (pkg / "archive/fires/h7.result-first@1.json").exists()
+    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 1
     md = (dossiers / f"{no}-result-first.md").read_text(encoding="utf-8")
     d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
     assert md == lh.render(d) and "| 结局 | 火莲 |" in md
     run(mod, "sanhuo", no, "--by", "cz", "--why", "演示散火", "--date", "2026-11-21")
     g = json.loads((pkg / "gongfa.json").read_text(encoding="utf-8"))
     assert "h7.result@1" in g["fires"]["H7"] and g["jie"] == 2 and g["history"][-1]["reverts"] == no
+    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 2  # 散火后的功法也存档；在跑的题仍取得到定阶那一版
+    run(mod, "archive")  # 已经存过：不动
+    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 2
     # 手写的首炼档，命令不碰
     with pytest.raises(SystemExit, match="手写"):
         mod.load("001")
+
+
+def test_the_archive_only_grows(cli):
+    """存档只增不改：清单改了内容却没升 ver，存档命令停下。"""
+    mod, _, pkg = cli
+    p = pkg / "fires" / "h7.result.json"
+    f = json.loads(p.read_text(encoding="utf-8"))
+    f["params"] = {**f["params"], "偷改": 1}
+    p.write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(SystemExit, match="只增不改"):
+        mod.main(["archive"])

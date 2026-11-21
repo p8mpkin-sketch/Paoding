@@ -1,0 +1,28 @@
+{
+ "id": "h7.result",
+ "ver": 1,
+ "slot": "H7",
+ "ports": [
+  "M4"
+ ],
+ "params": {
+  "sections": [
+   "answer",
+   "claims",
+   "self_check",
+   "unverified",
+   "needs"
+  ]
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开放道交付后",
+  "control_arm": "只给交付原文",
+  "retire_signal": "人在结果页上的停留时间与只给原文时持平"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H7"
+}

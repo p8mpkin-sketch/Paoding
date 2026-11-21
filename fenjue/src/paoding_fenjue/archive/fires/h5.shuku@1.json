@@ -1,0 +1,24 @@
+{
+ "id": "h5.shuku",
+ "ver": 1,
+ "slot": "H5",
+ "ports": [
+  "M4",
+  "M7"
+ ],
+ "params": {
+  "index": "hybrid",
+  "vectorizer": "hash"
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "人导入了资料",
+  "control_arm": "只按关键词检索",
+  "retire_signal": "混合检索与关键词检索的命中率落在噪声底内"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H5"
+}

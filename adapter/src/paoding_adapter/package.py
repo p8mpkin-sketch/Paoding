@@ -16,10 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from paoding_fenjue.contract import form
+from paoding_fenjue.contract import View, current, for_problem
 from paoding_graph.contract import State, as_of_seq, intent_status, node_levels
 
 PROMPTS = Path(__file__).resolve().parents[2] / "prompts"
+PROMPTS_ASSET = "adapter/prompts"  # 火的清单里提示词资产的名字前缀（相对仓库根）
 MEDIA_TYPE = "application/vnd.paoding.task-package+json"
 
 
@@ -56,16 +57,21 @@ KB_CITE = {  # 形态清单的 kb_cite：资料段落在这个形态里能不能
 }
 
 
-def role_prompt(role: str, access: bool = False, kb: bool = False, pid: str | None = None) -> str:
+def role_prompt(
+    role: str, access: bool = False, kb: bool = False, pid: str | None = None, gf: View | None = None
+) -> str:
     """提示词按这个席位的会话形态（功法 H1 的清单，paoding_fenjue）拼：清单列出几份提示词文件，按序以空行相接。
     三段式是公共段加角色段；独行（开放道，docs/design/open-lane/ §4.1）只有自己一份，因为公共段讲的是“把答案交给
     判官比对”，开放道没有判官。
     access：运行时扩权开着、会话有 request_access 工具时（设计 docs/design/runtime-grants/ §6.2）补一段。
     kb：任务有可用资料、会话有 kb_search / kb_read 时（资料库第二期）补一段，接在 access 那段之后。
     两段都插在第一份文件里清单 insert_after 所指那一行（工具清单的最后一行）之后。
-    pid：这道题若在 H1 上分在常设留出（F5），用留出的那团火的形态。"""
-    f = form(role, pid)
-    first, *rest = [(PROMPTS / n).read_text(encoding="utf-8") for n in f["prompt"]["files"]]
+    pid：这道题若在 H1 上分在常设留出（F5），用留出的那团火的形态。
+    gf：这道题开题时的那一版功法（FJ6）；提示词原文按那一版清单里的 sha256 从功法存档取，所以提示词文件
+    后来改了，在跑的题拿到的仍是开题时那一份。不给就用此刻的功法。"""
+    gf = gf or current()
+    f = gf.form(role, pid)
+    first, *rest = [gf.asset(f["ref"], f"{PROMPTS_ASSET}/{n}").decode("utf-8") for n in f["prompt"]["files"]]
     if access or kb:
         at = first.index("\n", first.index(f["prompt"]["insert_after"])) + 1
         note = (ACCESS_NOTE if access else "") + (KB_NOTE + KB_CITE[f["kb_cite"]] if kb else "")
@@ -197,7 +203,8 @@ def render(
     limits: dict[str, Any] | None = None,
 ) -> Rendered:
     role = lease["kind"]
-    shape = form(role, pid)  # 会话形态（功法 H1，分在常设留出的题用留出的那团）：焦点里带什么、默认复述哪句
+    gf = for_problem(state["problems"].get(pid))  # 这道题开题时的那一版功法（FJ6）
+    shape = gf.form(role, pid)  # 会话形态（功法 H1，分在常设留出的题用留出的那团）：焦点里带什么、默认复述哪句
     kit_index = sorted(
         ({"name": k["name"], "description": k["description"], "path": k["path"]} for k in (kits or [])),
         key=lambda k: k["name"],
@@ -226,6 +233,7 @@ def render(
                 "request_access" in (limits or {}).get("tools", ()),
                 "kb_search" in (limits or {}).get("tools", ()),
                 pid,
+                gf,
             ),
         ),
         (

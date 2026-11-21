@@ -1,0 +1,56 @@
+{
+ "id": "h1.solo",
+ "ver": 2,
+ "slot": "H1",
+ "seats": [
+  "solve"
+ ],
+ "ports": [
+  "M1:deliver",
+  "M1:request_scope",
+  "M2",
+  "M3",
+  "M4",
+  "M7"
+ ],
+ "params": {
+  "forms": {
+   "solve": {
+    "tools": [
+     "exec",
+     "show",
+     "deliver"
+    ],
+    "prompt": {
+     "files": [
+      "solve.md"
+     ],
+     "insert_after": "- deliver："
+    },
+    "kb_cite": "refs",
+    "focus": [
+     "relay"
+    ],
+    "restate": "从原话出发把答案找出来，做完用 deliver 交付，附上证据、自检与没验证的部分。",
+    "relay": true,
+    "ends_on": "deliver"
+   }
+  }
+ },
+ "assets": [
+  {
+   "name": "adapter/prompts/solve.md",
+   "sha256": "f09738266a5280f261cdc6881e63d1be9fb2863037d69b69ff7e28b393724cdb"
+  }
+ ],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开放道",
+  "control_arm": "接力上限为 1 的独行（不接力）",
+  "retire_signal": "接力会话的交付率与首个会话持平"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H1"
+}

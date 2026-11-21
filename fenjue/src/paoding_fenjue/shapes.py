@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Mapping
 from functools import cache
 from importlib import resources
 from pathlib import Path
@@ -90,22 +91,44 @@ def _gongfa_source() -> dict[str, Any]:
     return data
 
 
+def fire_at(r: str) -> dict[str, Any]:
+    """按 "id@ver" 取一团火的清单：当前版本在 fires/，旧版本在 archive/fires/（存档只增不改）。"""
+    fid, ver = _unref(r)
+    try:
+        f = fire(fid)
+    except FileNotFoundError:
+        f = None
+    if f is not None and f["ver"] == ver:
+        return f
+    return _archived_fire(r)
+
+
 @cache
-def gongfa() -> dict[str, Any]:
-    """此刻生效的功法（包内 gongfa.json；环境变量 PAODING_FENJUE_GONGFA 指了文件就用那份），带算出的摘要。
-    换了功法，摘要随之变，开题事件里记下的就是换过的那套（F3），所以换没换、换成什么都可查。
-    火的清单始终来自包内：换功法只是换一种组合，不能凭空多出一团没有清单的火。"""
-    g = _gongfa_source()
+def _archived_fire(r: str) -> dict[str, Any]:
+    try:
+        f = _read(f"archive/fires/{r}.json")
+    except FileNotFoundError:
+        raise KeyError(f"没有 {r} 的清单：既不是当前版本，存档里也没有") from None
+    if _unref(r) != (f.get("id"), f.get("ver")):
+        raise ValueError(f"存档 {r}.json 的 id@ver 对不上")
+    return f
+
+
+def _validate(g: dict[str, Any]) -> dict[str, Any]:
+    """校验一套功法并带上算出的摘要。"""
     for part in ("fires", "holdout"):
         for slot, refs in (g.get(part) or {}).items():
             for r in refs:
-                fid, ver = _unref(r)
-                if fire(fid)["slot"] != slot or fire(fid)["ver"] != ver:
+                try:
+                    ok = fire_at(r)["slot"] == slot
+                except KeyError:
+                    ok = False
+                if not ok:
                     raise ValueError(f"功法里 {slot} 的 {r} 与清单不符")
     for slot, refs in (g.get("holdout") or {}).items():
         for r in refs:  # 留出的火要顶替恰好一团生效的火（那团火的出身里有它）
             hid = _unref(r)[0]
-            n = sum(hid in fire(_unref(x)[0])["lineage"]["from"] for x in g["fires"].get(slot, []))
+            n = sum(hid in fire_at(x)["lineage"]["from"] for x in g["fires"].get(slot, []))
             if n != 1:
                 raise ValueError(f"留出的 {r} 顶替了 {n} 团生效的火（要恰好一团）")
     pm = g.get("holdout_permille", 0)
@@ -114,79 +137,164 @@ def gongfa() -> dict[str, Any]:
     return {**g, "digest": gongfa_digest(g)}
 
 
+@cache
+def gongfa() -> dict[str, Any]:
+    """此刻生效的功法（包内 gongfa.json；环境变量 PAODING_FENJUE_GONGFA 指了文件就用那份），带算出的摘要。
+    换了功法，摘要随之变，开题事件里记下的就是换过的那套（F3），所以换没换、换成什么都可查。
+    火的清单始终来自包内：换功法只是换一种组合，不能凭空多出一团没有清单的火。"""
+    return _validate(_gongfa_source())
+
+
 def gongfa_digest(g: dict[str, Any]) -> str:
     body = {k: v for k, v in g.items() if k != "digest"}
     refs = sorted({r for rs in [*g["fires"].values(), *(g.get("holdout") or {}).values()] for r in rs})
-    return digest({"gongfa": body, "fires": {r: fire_digest(fire(_unref(r)[0])) for r in refs}})
+    return digest({"gongfa": body, "fires": {r: fire_digest(fire_at(r)) for r in refs}})
 
 
-# ---------------------------------------------------------------- 常设留出（F5，04 §5）
+# ---------------------------------------------------------------- 一套功法的视图；按题锁定开题时的功法（FJ6）
 #
-# 吞噬裁决通过后，上一团火不删，进常设留出：新开的题按题号的确定性哈希，以 holdout_permille / 1000 的比例分给它。
-# 留出的火写在功法的 holdout 里（火位 → ["id@ver"]），它顶替的是功法里 lineage.from 提到它的那团火。
-# 比例与留出的火都算进功法摘要，开题时摘要进事件（F3），所以一道题分到了哪边，由日志里的题号与摘要就能复算。
-# 分配只在能力层：内核不知道有留出这回事（体质改动 0 行）。
+# 开题时功法摘要进了事件（F3）。在跑的题后续每一次派工、每一个会话，都要按这个摘要取功法，而不是取此刻最新的：
+# 散火或换火只影响之后新开的题，在跑的题按开题时的版本跑完（02 §8、FJ6）。
+# 为此每一版上线过的功法按摘要存档（archive/gongfa/<摘要>.json），连同它引用的每团火（archive/fires/<id>@<ver>.json）
+# 与火的资产（archive/assets/<sha256>，即提示词原文）。存档只增不改，CI 核对（tests/fenjue/test_archive.py）。
+
+
+class View:
+    """一套功法：火位上生效的火、常设留出、形态与参数、资产原文。"""
+
+    def __init__(self, g: dict[str, Any], pinned: bool = True) -> None:
+        self.g = g
+        self.digest: str = g["digest"]
+        self.pinned = pinned  # False：题开在存档里找不到的功法下（或焚决之前），退回此刻的功法
+
+    def holdout_permille(self) -> int:
+        return int(self.g.get("holdout_permille", 0))
+
+    def in_holdout(self, pid: str, slot: str) -> bool:
+        """这道题在这个火位上是否分给留出的火。按火位加盐：同一道题不会在每个火位上都落进留出。"""
+        if not self.g.get("holdout", {}).get(slot):
+            return False
+        h = int(hashlib.sha256(f"{slot}:{pid}".encode()).hexdigest()[:8], 16)
+        return h % 1000 < self.holdout_permille()
+
+    def stand_ins(self, slot: str) -> dict[str, dict[str, Any]]:
+        """被顶替的那团生效的火 → 留出的火：生效的火的 lineage.from 里提到它。"""
+        out = {}
+        for r in self.g.get("holdout", {}).get(slot, []):
+            h = fire_at(r)
+            for f in [fire_at(x) for x in self.g["fires"].get(slot, [])]:
+                if h["id"] in f["lineage"]["from"]:
+                    out[f["id"]] = h
+        return out
+
+    def active(self, slot: str, pid: str | None = None) -> list[dict[str, Any]]:
+        """火位上生效的火；给了题号且这道题分在留出，被顶替的那团换成留出的火。"""
+        fs = [fire_at(r) for r in self.g["fires"].get(slot, [])]
+        if pid is None or not self.in_holdout(pid, slot):
+            return fs
+        sub = self.stand_ins(slot)
+        return [sub.get(f["id"], f) for f in fs]
+
+    def form(self, seat: str, pid: str | None = None) -> dict[str, Any]:
+        """H1：这个席位上的会话形态（工具、提示词、收尾与接力规则）。席位没有形态时报 KeyError。"""
+        for f in self.active("H1", pid):
+            if seat in f["params"].get("forms", {}):
+                return {"fire": f["id"], "ref": f"{f['id']}@{f['ver']}", **f["params"]["forms"][seat]}
+        raise KeyError(f"功法里没有绑定席位 {seat} 的会话形态")
+
+    def params(self, slot: str, fid: str | None = None, pid: str | None = None) -> dict[str, Any]:
+        """H2–H8：某个火位上那团火的参数；同一火位有几团火时用 fid 指名。
+        给了题号且这道题分在留出时，指名的那团火若被顶替，给的是留出的那团的参数。"""
+        if pid is not None and fid is not None and self.in_holdout(pid, slot) and fid in self.stand_ins(slot):
+            return dict(self.stand_ins(slot)[fid]["params"])
+        fs = [f for f in self.active(slot) if fid is None or f["id"] == fid]
+        if len(fs) != 1:
+            raise KeyError(f"{slot} 上{'没有' if not fs else '不止一团'}火{f' {fid}' if fid else ''}")
+        p: dict[str, Any] = fs[0]["params"]
+        return p
+
+    def asset(self, r: str, name: str) -> bytes:
+        """火 r（"id@ver"）的资产 name 在这一版里的原文：按清单里的 sha256 从存档取。"""
+        for a in fire_at(r)["assets"]:
+            if a["name"] == name:
+                return asset_bytes(a["sha256"])
+        raise KeyError(f"{r} 没有资产 {name}")
+
+
+def asset_bytes(sha: str) -> bytes:
+    data = resources.files(__package__).joinpath(f"archive/assets/{sha}").read_bytes()
+    if hashlib.sha256(data).hexdigest() != sha:
+        raise ValueError(f"存档里的资产 {sha} 内容对不上摘要")
+    return data
+
+
+def current() -> View:
+    return View(gongfa())
+
+
+@cache
+def at(dg: str) -> View | None:
+    """按摘要取存档里的那一版功法；没存档时 None。取出来重算一遍摘要，对不上就报错（存档被改过）。"""
+    try:
+        g = _read(f"archive/gongfa/{dg}.json")
+    except FileNotFoundError:
+        return None
+    v = _validate(g)
+    if v["digest"] != dg:
+        raise ValueError(f"存档 {dg} 重算出的摘要是 {v['digest']}：存档被改过")
+    return View(v)
+
+
+def for_problem(problem: Mapping[str, Any] | None) -> View:
+    """一道题该用的功法：开题时记下的那一版（锁定，FJ6）。焚决之前开的题（没有摘要）与存档里找不到的摘要，
+    退回此刻的功法，View.pinned 为 False。"""
+    stamp = (problem or {}).get("gongfa")
+    if stamp and stamp.get("digest"):
+        if stamp["digest"] == gongfa()["digest"]:
+            return current()
+        v = at(stamp["digest"])
+        if v is not None:
+            return v
+    return View(gongfa(), pinned=False)
+
+
+# 此刻的功法上的同名函数（新题、不针对某道题的读端用它们）
 
 
 def holdout_permille() -> int:
-    return int(gongfa().get("holdout_permille", 0))
+    return current().holdout_permille()
 
 
 def in_holdout(pid: str, slot: str) -> bool:
-    """这道题在这个火位上是否分给留出的火。按火位加盐：同一道题不会在每个火位上都落进留出。"""
-    if not gongfa().get("holdout", {}).get(slot):
-        return False
-    h = int(hashlib.sha256(f"{slot}:{pid}".encode()).hexdigest()[:8], 16)
-    return h % 1000 < holdout_permille()
+    return current().in_holdout(pid, slot)
 
 
 def stand_ins(slot: str) -> dict[str, dict[str, Any]]:
-    """留出的火 → 它顶替的那团生效的火：生效的火的 lineage.from 里提到它。"""
-    out = {}
-    for r in gongfa().get("holdout", {}).get(slot, []):
-        h = fire(_unref(r)[0])
-        for f in [fire(_unref(x)[0]) for x in gongfa()["fires"].get(slot, [])]:
-            if h["id"] in f["lineage"]["from"]:
-                out[f["id"]] = h
-    return out
+    return current().stand_ins(slot)
 
 
 def active(slot: str, pid: str | None = None) -> list[dict[str, Any]]:
-    """火位上生效的火；给了题号且这道题分在留出，被顶替的那团换成留出的火。"""
-    fs = [fire(_unref(r)[0]) for r in gongfa()["fires"].get(slot, [])]
-    if pid is None or not in_holdout(pid, slot):
-        return fs
-    sub = stand_ins(slot)
-    return [sub.get(f["id"], f) for f in fs]
+    return current().active(slot, pid)
 
 
 def form(seat: str, pid: str | None = None) -> dict[str, Any]:
-    """H1：这个席位上的会话形态（工具、提示词、收尾与接力规则）。席位没有形态时报 KeyError。"""
-    for f in active("H1", pid):
-        if seat in f["params"].get("forms", {}):
-            return {"fire": f["id"], **f["params"]["forms"][seat]}
-    raise KeyError(f"功法里没有绑定席位 {seat} 的会话形态")
+    return current().form(seat, pid)
 
 
 def params(slot: str, fid: str | None = None, pid: str | None = None) -> dict[str, Any]:
-    """H2–H8：某个火位上那团火的参数；同一火位有几团火时用 fid 指名。
-    给了题号且这道题分在留出时，指名的那团火若被顶替，给的是留出的那团的参数。"""
-    if pid is not None and fid is not None and in_holdout(pid, slot) and fid in stand_ins(slot):
-        return dict(stand_ins(slot)[fid]["params"])
-    fs = [f for f in active(slot) if fid is None or f["id"] == fid]
-    if len(fs) != 1:
-        raise KeyError(f"{slot} 上{'没有' if not fs else '不止一团'}火{f' {fid}' if fid else ''}")
-    p: dict[str, Any] = fs[0]["params"]
-    return p
+    return current().params(slot, fid, pid)
 
 
 def arm_of(problem: dict[str, Any], slot: str) -> str | None:
-    """读端：一道题在这个火位上用的是哪一臂（"main" 或 "holdout"）。题开在今天这套功法之下才算得出；
-    开在别的功法下（摘要不同）或焚决之前（没有摘要）时 None：那套功法的留出要拿它自己的清单算。"""
-    g = problem.get("gongfa")
-    if not g or g.get("digest") != gongfa()["digest"]:
+    """读端：一道题在这个火位上用的是哪一臂（"main" 或 "holdout"），按它开题时的那一版功法算。
+    焚决之前开的题（没有摘要）与存档里找不到的摘要给 None。"""
+    stamp = problem.get("gongfa")
+    if not stamp or not stamp.get("digest"):
         return None
-    return "holdout" if in_holdout(problem["id"], slot) else "main"
+    v = current() if stamp["digest"] == gongfa()["digest"] else at(stamp["digest"])
+    if v is None:
+        return None
+    return "holdout" if v.in_holdout(problem["id"], slot) else "main"
 
 
 def check(f: dict[str, Any]) -> list[str]:
