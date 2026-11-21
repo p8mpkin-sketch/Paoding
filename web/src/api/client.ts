@@ -122,7 +122,8 @@ export function createApi(cfg: ApiConfig) {
     /** 一句话开题的前置抽取：确定性，不调模型；输入时实时显示。 */
     draftExtract: (text: string) => post<KaitiExtract>("/v1/drafts/extract", { text }),
     /** 起草并校验。交回 draft（与 nonce）即不再调模型，只重新校验；overrides 是确认卡上人改的风险与预算。 */
-    draftVet: (body: { text: string; answer?: string; profile?: string; draft?: Record<string, unknown>; model?: string; nonce?: string; overrides?: KaitiOverrides; acceptance?: KaitiAcceptance[] }) =>
+    /** raw：上一轮起草不可用、已按原话开题（地图 Q38）；交回人选的项时不再调起草模型。不能与 draft 同给。 */
+    draftVet: (body: { text: string; answer?: string; profile?: string; draft?: Record<string, unknown>; raw?: boolean; model?: string; nonce?: string; overrides?: KaitiOverrides; acceptance?: KaitiAcceptance[]; strict?: boolean }) =>
       post<KaitiVetted>("/v1/drafts", body),
     // ---- 从平台导入（external-verdict §5.8）----
     // 读也要人的令牌（服务端只对人开放）
