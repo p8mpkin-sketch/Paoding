@@ -75,7 +75,7 @@
     "yi": "系统按执行发生的先后，把结论前后的执行记录自动挂到结论旁边，不靠作者自己引用",
     "premise": "支撑结论的执行在先后上与结论相邻（部分成立：相邻不等于支撑；替代：关联只作读数，与作者引用并排比对，不替代引用）；执行记录完整且不可改（成立：执行输出自动登记为 exec 类，按题哈希成链）",
     "cost": "先后相邻被误当作支撑，误挂；读者把系统关联当成作者核实过的引用",
-    "overlap": "h3.base@1（h3.exec-trace，duplicate）；h7.result@1（h7.claim-refs，complement）；h6.activity-ledger@1（h6.exec-drill，partial）",
+    "overlap": "h3.base@2（h3.exec-trace，duplicate）；h7.result@1（h7.claim-refs，complement）；h6.activity-ledger@1（h6.exec-drill，partial）",
     "conflict": "T5：系统关联若计入有据率，就把两类读数合并了 → 系统关联与作者引用分列，不合成一个有据率；关联不提升任何证据等级",
     "hypothesis": "每条结论旁同时有作者引用与系统按活动链推出的关联：两者一致记双证，作者引用落在关联窗口之外的标为引用存疑；系统关联只作读数。新生维：双证判定覆盖率、引用存疑检出率",
     "split": "无",
@@ -155,7 +155,7 @@
      ],
      "overlaps": [
       {
-       "fire": "h3.base@1",
+       "fire": "h3.base@2",
        "dims": [
         "h3.exec-trace"
        ],

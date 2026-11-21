@@ -347,7 +347,7 @@
     "dim": "h3.exec-trace",
     "ours": 3,
     "theirs": 2,
-    "by": "h3.base@1",
+    "by": "h3.base@2",
     "observations": [
      "o804b15126dcf"
     ]
@@ -554,7 +554,7 @@
     ],
     "overlaps": [
      {
-      "fire": "h3.base@1",
+      "fire": "h3.base@2",
       "dims": [
        "h3.exec-trace"
       ],
