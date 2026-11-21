@@ -71,7 +71,7 @@ def test_list_and_detail_read_the_engine_workspace(stack):
     state = json.loads((root / RUN / "run.json").read_text(encoding="utf-8"))
     assert d["units"] == state["units"] and d["spent"] == state["spent"] and d["gates"] == state["gates"]
     assert d["candidates_doc"]["candidates"][0]["id"] == "C1"
-    assert d["needs"] == ["请在下列候选中挑选（闸点 1）"]
+    assert len(d["needs"]) == 1 and d["needs"][0].startswith("请在下列候选中挑选")  # 括号里的说法归引擎
     [rep] = d["reports"]
     assert rep["gate"] == "G1" and rep["text"].startswith("# 方案分析：候选做法")
     assert d["observations"] and all(o["id"].startswith("o") for o in d["observations"])
