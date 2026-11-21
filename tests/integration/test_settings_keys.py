@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "e2e"))
 
 import oplog  # noqa: E402
 from drive import open_problem  # noqa: E402
-from settings_hub import KEY_NOTE, BadBody, defaults, digest_of, grants_of  # noqa: E402
+from settings_hub import KEY_NOTE, BadBody, defaults, digest_of, grants_of, readonly_of  # noqa: E402
 from settings_hub import validate as validate_settings  # noqa: E402
 from stack import Stack, StackConfig  # noqa: E402
 
@@ -338,3 +338,49 @@ def test_lanes_idle_close_days_is_optional_and_checked():
             validate_settings({**d, "lanes": {"open": True, "idle_close_days": bad}})
     with pytest.raises(BadBody):
         validate_settings({**d, "lanes": {"open": True, "idle": 3}})
+
+
+def test_grants_readonly_allow_is_optional_and_checked():
+    """开放道只读白名单（地图 Q36）：grants.readonly_allow 可缺（缺即空，旧快照摘要不变）；每行是 net 的 主机:端口。"""
+    d = defaults()
+    assert "readonly_allow" not in d["grants"]
+    assert digest_of(validate_settings(d)) == digest_of(d)
+    assert readonly_of(d, 1) is None
+    rows = [
+        {"resource": "net", "pattern": "docs.python.org:443"},
+        {"resource": "net", "pattern": "*.wikipedia.org:443"},
+    ]
+    ok = {**d, "grants": {**d["grants"], "readonly_allow": rows}}
+    assert validate_settings(ok)["grants"]["readonly_allow"] == rows
+    allow = readonly_of(validate_settings(ok), 5)
+    assert (
+        allow is not None
+        and allow.version == 5
+        and allow.rows == (("net", "docs.python.org:443"), ("net", "*.wikipedia.org:443"))
+    )
+    assert readonly_of({**d, "grants": {**d["grants"], "readonly_allow": []}}, 5) is None
+    for bad in (
+        "docs.python.org:443",
+        [{"resource": "net", "pattern": "docs.python.org"}],  # 端口必须写明
+        [{"resource": "net", "pattern": "*:443"}],  # 主机名不能整个是通配
+        [{"resource": "net", "pattern": "docs.python.org:*"}],
+        [{"resource": "workspace", "pattern": "x:1"}],
+        [{"resource": "net", "pattern": "a.b:443", "actions": ["connect"]}],
+        [rows[0], rows[0]],
+    ):
+        with pytest.raises(BadBody):
+            validate_settings({**d, "grants": {**d["grants"], "readonly_allow": bad}})
+
+
+def test_pd_writes_the_readonly_allowlist_and_the_graph_takes_it(stack, monkeypatch):
+    """地图 Q36：pd settings set grants.readonly_allow 写进设置存储，图服务的 Config 随之换上；清空即回到一事一卡。"""
+    monkeypatch.setenv("PD_TOKEN", stack.human_token)
+    assert stack.graph.cfg.readonly_allow is None
+    out = io.StringIO()
+    rows = '[{resource: net, pattern: "docs.python.org:443"}]'
+    assert pd(["--url", stack.url, "settings", "set", "grants.readonly_allow", rows], out=out) == 0, out.getvalue()
+    allow = stack.graph.cfg.readonly_allow
+    assert allow is not None and allow.rows == (("net", "docs.python.org:443"),)
+    assert pd(["--url", stack.url, "settings", "set", "grants.readonly_allow", '[{resource: net, pattern: "x"}]']) == 1
+    assert pd(["--url", stack.url, "settings", "set", "grants.readonly_allow", "[]"]) == 0
+    assert stack.graph.cfg.readonly_allow is None

@@ -23,7 +23,7 @@
 | Q12 | S5 | 开题事件体带 `settings_digest`、`settings_version`；任务级模型偏好 `prefs.model` | ● | —（#87 的 `settings.{version, digest}`；`prefs.model` 随 v5 第二期 #110 合入，→ K41） | 本图 03 §3 | L1（digest）、L3（prefs，#110） |
 | Q13 | S5 | `goal.accept: human` 与验收清单 `goal.acceptance[]` | ● | —（L2：内核放开 `accept: human`，必须带清单，编号 a1… 由图服务分配、开题后不可改；起草服务 `acceptance` 入参，→ K34） | 放开归 kaiti 增量 16；清单归本图 02 §3.3 | L2 |
 | Q14 | S6 | 按任务选模型档案（司南与 Adapter 按 `prefs.model` 解析） | ● | —（#110：适配器按 `prefs.model` 选会话模型、新建页“执行模型”，→ K42） | 本图 | L3（#110） |
-| Q15 | S6 | 按租约花费（C1）与花费序列（C2） | ◐ | 按租约花费（C1）已有：`/budget` 的 `by_lease`、`pd status` 每会话一行（L3 第三步）、任务页会话行金额（#112）；缺花费序列（C2） | 工作台设计 C1、C2 | L3 |
+| Q15 | S6 | 按租约花费（C1）与花费序列（C2） | ◐ | 后端已全：按租约花费（C1）`/budget` 的 `by_lease`、`pd status` 每会话一行（L3 第三步）；花费序列（C2）`GET /budget/series?step=`（L3 ⑤，v0.11）。网页：会话行金额已有（#112），花费随时间的曲线未画（归 v5） | 工作台设计 C1、C2 | L3 |
 | Q16 | S7 | 结构检查类 advisory 判官（交付物存在、格式合法） | ● | —（L2：内建 `structure_check`，`expect {format, min_bytes}`，只给读数、Goal 停在 E0，→ K35） | 本图 02 §3.3 | L2 |
 | Q17 | S7 | 召回复核的墙钟上限 60 秒 | ◐ | 只有至多 8 条的条数限界 | 2026-11-19 cz 记的 follow-up | L0 |
 | Q18 | S8 | 续期门（严格道） | ◐ | 前端对话框已有；图服务返回 `not_enabled`。#105 已做（续期卡、`extend`、`budget_add`），待验收；“门关着而人不决定时”的时限已裁（D11：不加时限，墙钟与哮天犬兜底）。开放道不设续期门（D10） | 规格 3.5.2 | L3（#105） |
@@ -44,12 +44,13 @@
 | Q33 | S9 | 交付后闲置自动关（缺省 7 天，不记反馈） | ● | —（L3 第三步：设置 `lanes.idle_close_days`（缺省 7）开题时抄为 `idle_close_s`；哮天犬从最后一次交付起计，期间追问即停表，关题原因 `idle`、不带反馈；墙钟改按轮计，交付之后等人的时间不算，→ K46） | 开放道 §12 第 8 条 | L3 |
 | Q34 | S7 | 开放道复核会话（默认开，花验证份额，只给读数） | ○ | 全部 | 开放道 §3.6、§12 第 4 条 | L3b |
 | Q35 | S11 | 开放道读数表（创建、交付、结局占比、采纳率、每次交付花费、复核读数） | ◐ | `by_authority` 的 `self` 行已有；缺单独成表与读数页一节 | 开放道 §5.2 | L3b |
-| Q36 | S6、S8 | 开放道只读白名单：设置层人维护、默认空，命中即由图服务确定性自动批 | ○ | 全部：设置 `grants.readonly_allow`、`request_scope` 自动批的判定（`actor = graph`，与练习道白名单同法，只认只读动作）、设置页一节 | 开放道 §12 第 5 条 | L3 |
+| Q36 | S6、S8 | 开放道只读白名单：设置层人维护、默认空，命中即由图服务确定性自动批 | ◐ | 后端与 `pd` 已做（L3 ④，v0.11）：设置 `grants.readonly_allow`（`pd settings set` 可写）、`request_scope` 的只读判定与 `grant_scope via=readonly`（`actor = graph`，validate 当场重算，事件体戳白名单版本与摘要）；缺设置页一节（归 v5） | 开放道 §12 第 5 条 | L3 |
 | Q37 | 横切 | 待办与站位条认开放道的人工项：`delivered`（等你看）、`blocked`（要你补什么）进待办计数；站位条亮 S10 | ● | —（`/work` 的 `delivered`、`blocked` 人工项；待办“看”“补”两种记号与站位条 `delivered` 落 S10（#112），→ K47） | 本图 02 §4 | L3 |
 | Q38 | S3 | 起草不可用时用原话直开开放道 | ○ | 今天 `bad_draft` 拒题；开放道不需要草案的权威字段，原话即题面 | 开放道 §1.1；本图 01 S3 | L3b |
 | Q39 | S11 | 采纳的开放道结果一键转存为严格道练习题 | ○ | 全部 | 开放道 §5.3、第五步 | L4 |
 
-状态合计（v0.10，2026-11-20 L3 第三步之后）：● 25 项（Q1、Q2、Q3、Q5、Q6、Q7、Q8、Q9、Q10、Q11、Q12、Q13、Q14、Q16、Q19、Q21、Q22、Q23、Q27、Q28、Q30、Q31、Q32、Q33、Q37，已记为 K21–K38、K41–K47），◐ 9 项（Q4、Q15、Q17、Q18、Q20、Q25、Q26、Q29、Q35），○ 5 项（Q24、Q34、Q36、Q38、Q39）。L2 全部完整。
+状态合计（v0.11，2026-11-20 L3 ④⑤ 之后）：● 25 项（Q1、Q2、Q3、Q5、Q6、Q7、Q8、Q9、Q10、Q11、Q12、Q13、Q14、Q16、Q19、Q21、Q22、Q23、Q27、Q28、Q30、Q31、Q32、Q33、Q37，已记为 K21–K38、K41–K47），◐ 10 项（Q4、Q15、Q17、Q18、Q20、Q25、Q26、Q29、Q35、Q36），○ 4 项（Q24、Q34、Q38、Q39）。L2 全部完整；L3 的后端只剩严格道一侧（Q18 续期门 #105、Q20 严格道叫停挂异议），其余缺的都是网页（归 v5）。
+此前（v0.10）：● 25、◐ 9、○ 5。
 此前（v0.9）：● 18、◐ 11、○ 10。
 此前（2026-11-19 L2 收口后）：● 18、◐ 8、○ 3。
 初版：○ 16 项、◐ 12 项。
@@ -142,8 +143,8 @@ L3 原来的三项（续期门、模型偏好、会话花费）有两项已经�
 | ① | 续期门（严格道）；开放道接入时补：开放道没有门 | Q18 | #105 | 待 cz 验收；时限 D11 |
 | ② | 任务级模型偏好与按任务选模型 | Q12、Q14 | #110（v5 第二期） | 已合入 |
 | ③ | 开放道人的点位后端：`follow_up`（剩余低于收尾保留时须附 `budget_add`）、`halt`（叫停 → 收尾轮，60 秒内不交付则终止租约）、采纳与不采纳关题带四顾、闲置自动关、交付的结构化读端点；`pd follow-up`、`pd halt`；金丝雀覆盖新路径 | Q20（开放道）、Q30（后端）、Q31、Q32（后端）、Q33 | 本线 | 已做（#111，按 D10、D12 的推荐项；裁决若改再调） |
-| ④ | 只读白名单：设置 `grants.readonly_allow`、图服务按白名单自动批只读访问、`pd settings` 可写；设置页一节 | Q36 | 本线（设置页一节跟 v5） | ③ 之后 |
-| ⑤ | 会话花费：按租约花费端点（C1）与花费序列（C2），`pd status` 每会话一行 | Q15（后端） | 本线 | C1 已随 ③ 做（`by_lease`、`pd status`）；C2 待做 |
+| ④ | 只读白名单：设置 `grants.readonly_allow`、图服务按白名单自动批只读访问、`pd settings` 可写；设置页一节 | Q36 | 本线（设置页一节跟 v5） | 后端与 `pd` 已做（v0.11）；设置页一节待 v5 |
+| ⑤ | 会话花费：按租约花费端点（C1）与花费序列（C2），`pd status` 每会话一行 | Q15（后端） | 本线 | C1 已随 ③ 做（`by_lease`、`pd status`）；C2 已做（v0.11，`/budget/series`） |
 | ⑥ | 网页：任务页“结果”一栏（交付、主张与证据、自检、未验证）、追问框、采纳 / 不采纳 / 叫停按钮、待办“等你看”、站位条认 `delivered`、会话行金额 | Q30、Q31、Q32、Q37、Q15（网页） | v5 第三期 | 已合入（#112，照 ③ 的接口草案） |
 
 **③⑤ 给 v5 第三期的接口**（2026-11-20 起草，随 ③ 在 #111 定稿；#112 照它实现）：
@@ -156,6 +157,8 @@ L3 原来的三项（续期门、模型偏好、会话花费）有两项已经�
 | 采纳与不采纳（Q32） | 同上（已有 `close_problem.feedback`） | `{op: "close_problem", body: {feedback: "adopted"\|"rejected", reason?, closeout?, seen?}}`；有四顾项时必须带 `closeout`（已确认的四顾项名单）与 `seen`（`closeout` 卡），与 `accept` 同法；人不带 `terminal`（派生量，由图服务算） |
 | 待办（Q37，已有） | `GET /v1/problems/{pid}/work` | 人工项 `why: "delivered"`（等你看）、`"blocked"`（要你补什么）、`"stalled"`、`"scope_request"` |
 | 会话花费（Q15） | `GET /v1/problems/{pid}/budget` | 加 `by_lease[]`：`{lease, kind, role, model, usd_milli, tokens, active}`，各行之和等于 `spent` |
+| 花费序列（Q15 C2，v0.11） | `GET /v1/problems/{pid}/budget/series?step=` | `{step, n_costs, points[]}`，点 `{seq, ts, usd_milli, tokens, by_lease{会话: 累计}}`，都是累计；每 `step` 条计量一点、最后一条总在，末点等于 `spent`；至多 500 点，超出时 `step` 自动放大（`BudgetSeriesResponse`） |
+| 只读白名单（Q36，v0.11） | `GET /v1/problems/{pid}/cards/scope/{rid}`；`/ticks` | 扩权卡 `display.readonly`（命中时的白名单戳 `{version, digest}`）；`decision.via`、时间轴 `via` 取 `readonly` 即“图服务按只读白名单批准” |
 
 每一步的验收都含金丝雀（AC-M5）与“开放道读数不进严格道统计”的既有断言（开放道裁决附加 1）。
 

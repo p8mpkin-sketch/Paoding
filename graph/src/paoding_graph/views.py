@@ -691,6 +691,40 @@ def _by_lease(state: State, pid: str) -> list[View]:
     return sorted(rows.values(), key=lambda r: r["lease"])
 
 
+SERIES_MAX = 500  # 花费序列最多的点数：计量条数更多时按 step 自动放大
+
+
+def budget_series(state: State, pid: str, step: int = 1, ts_of: Callable[[int], int | None] | None = None) -> View:
+    """GET /budget/series（地图 Q15、工作台设计 C2）：花费随 seq 的累计序列，从计量折叠。
+
+    每 `step` 条计量取一个点（最后一条总在），点上是到这一条为止的累计花费与各会话的累计；末点的累计等于
+    /budget 的 spent。计量条数超过 SERIES_MAX × step 时 step 自动放大，应答里写实际用的 step。
+    `ts` 由调用方经 `ts_of(seq)` 从日志取（状态里不存计量时刻），不给时为 null。"""
+    _problem(state, pid)
+    if step < 1:
+        raise ValueError("step 至少为 1")
+    costs = [c for c in state["costs"] if c["problem_id"] == pid]
+    step = max(step, -(-len(costs) // SERIES_MAX))
+    points: list[View] = []
+    total = tokens = 0
+    per: dict[str, int] = {}
+    for i, c in enumerate(costs):
+        total += c["usd_milli"]
+        tokens += c["tokens_in"] + c["tokens_cached"] + c["tokens_out"]
+        per[c["task_id"]] = per.get(c["task_id"], 0) + c["usd_milli"]
+        if (i + 1) % step == 0 or i == len(costs) - 1:
+            points.append(
+                {
+                    "seq": c["seq"],
+                    "ts": ts_of(c["seq"]) if ts_of is not None else None,
+                    "usd_milli": total,
+                    "tokens": tokens,
+                    "by_lease": dict(sorted(per.items())),
+                }
+            )
+    return {"step": step, "n_costs": len(costs), "points": points}
+
+
 def work(state: State, pid: str) -> View:
     _problem(state, pid)
     return {"items": wk.work(state, pid)}
@@ -770,6 +804,7 @@ def card(state: State, pid: str, kind: str, target: str, cfg: Config | None = No
             "intent": x.get("intent"),
             "auto": x["auto"],
             "blockers": list(x.get("blockers") or []),
+            **({"readonly": dict(x["readonly"])} if "readonly" in x else {}),
             # 风险从哪来：风险表第几行（从 1 起，给人读），未命中为 null（按缺省 r2）；旧事件没有这一项时也是 null
             "risk_rows": [None if i is None else i + 1 for i in froms] if "risk_from" in x else None,
             "profile": _scope_profiles(p, x["rules"], cfg) if cfg is not None and x["status"] == "pending" else None,

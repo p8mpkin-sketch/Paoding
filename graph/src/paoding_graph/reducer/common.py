@@ -26,6 +26,19 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
+class ReadonlyAllow:
+    """人维护的只读白名单（地图 Q36，设置 grants.readonly_allow）：开放道的扩权申请命中即由图服务自动批。
+    rows 是 (resource, pattern)，pattern 按 fnmatch 匹配；版本取设置存储的版本，摘要是白名单本身的。"""
+
+    rows: tuple[tuple[str, str], ...]
+    version: int
+    digest: str
+
+    def stamp(self) -> dict[str, Any]:
+        return {"version": self.version, "digest": self.digest}
+
+
+@dataclass(frozen=True)
 class Ok:
     body: Body
 
@@ -62,14 +75,16 @@ class Config:
     grants_auto_practice: bool = True
     risk_table: tuple[RiskRow, ...] = ()
     scope_request_quota: int = 4  # 每个会话的扩权申请数
+    # 只读白名单（地图 Q36）：None 或空即开放道的扩权一事一卡（缺省）
+    readonly_allow: ReadonlyAllow | None = None
     # 时限与花费分开（external-verdict §5.6）：elapsed 为旧行为（哮天犬按开题墙钟关题）；spend 时 budget.wall_s 只管
     # 花费墙钟，另由 deadline 与题的最长存活 life_s 兜底。开题时把取值抄进事件体，重放不读设置
     wall_mode: str = "elapsed"
     life_s: int = 7 * 86400
     # 设置层已登记的模型档案名（宪章 03 §3.1）：开题的 prefs.model 只能取其中之一；空即本部署不接受任务级模型偏好
     model_profiles: frozenset[str] = frozenset()
-    # 开放道交付后闲置多久自动关（地图 Q33，设置 lanes.idle_close_days）：开放道开题时抄进事件体；None 即不抄，
-    # 开放道开题时抄进事件体；没抄入的题（更早的日志）不闲置自动关
+    # 开放道交付后闲置多久自动关（地图 Q33，设置 lanes.idle_close_days）：开放道开题时抄进事件体；None 即不抄。
+    # 没抄入的题（更早的日志）不闲置自动关
     idle_close_s: int | None = 7 * 86400
 
 

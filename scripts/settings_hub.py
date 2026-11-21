@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from paoding_adapter.contract import EndpointProxy, KeyRing
-from paoding_graph.contract import BadBody, GraphHttp, GraphService, MountError, canonicalize
+from paoding_graph.contract import BadBody, GraphHttp, GraphService, MountError, ReadonlyAllow, canonicalize
 
 KEY_NOTE = "密钥重启后失效，可用环境变量持久注入"  # 裁决附加 2：设置页常显
 CAP_KEYS = ("global_usd_milli", "open_usd_milli", "open_wall_s", "practice_usd_milli", "practice_wall_s")
@@ -171,14 +171,16 @@ def validate(raw: object) -> dict[str, Any]:
         g = raw["grants"]
         if (
             not isinstance(g, dict)
-            or set(g) != {"runtime", "auto"}
+            or not {"runtime", "auto"} <= set(g) <= {"runtime", "auto", "readonly_allow"}
             or not isinstance(g["runtime"], bool)
             or not isinstance(g["auto"], dict)
             or set(g["auto"]) != {"practice"}
             or not isinstance(g["auto"]["practice"], bool)
         ):
-            raise BadBody("grants 是 {runtime: bool, auto: {practice: bool}}")
+            raise BadBody("grants 是 {runtime: bool, auto: {practice: bool}, readonly_allow?: [...]}")
         out["grants"] = {"runtime": g["runtime"], "auto": {"practice": g["auto"]["practice"]}}
+        if "readonly_allow" in g:  # 开放道只读白名单（地图 Q36）：可缺，缺即空
+            out["grants"]["readonly_allow"] = _readonly_allow(g["readonly_allow"])
     if "lanes" in raw:
         ln = raw["lanes"]
         if (
@@ -197,6 +199,40 @@ def validate(raw: object) -> dict[str, Any]:
             raise BadBody(f"budget 是 {{wall_mode: {'|'.join(WALL_MODES)}, life_s: 正整数}}")
         out["budget"] = {"wall_mode": bd["wall_mode"], "life_s": _pos_int(bd["life_s"], "budget.life_s")}
     return out
+
+
+# 只读白名单的一行：net 的 host:port，主机名可用 fnmatch 通配（*、?），端口必须写明
+# （与扩权申请同一形状，异议 006 第 1 项）
+READONLY_NET = re.compile(r"^[^\s:/\[\]]+:(?:6553[0-5]|655[0-2]\d|65[0-4]\d{2}|6[0-4]\d{3}|[1-5]\d{4}|[1-9]\d{0,3})$")
+READONLY_MAX = 200
+
+
+def _readonly_allow(v: object) -> list[dict[str, str]]:
+    if not isinstance(v, list) or len(v) > READONLY_MAX:
+        raise BadBody(f"grants.readonly_allow 是至多 {READONLY_MAX} 行的列表")
+    out: list[dict[str, str]] = []
+    for i, r in enumerate(v):
+        if not isinstance(r, dict) or set(r) != {"resource", "pattern"} or r["resource"] != "net":
+            raise BadBody(f"grants.readonly_allow[{i}] 是 {{resource: net, pattern: 主机:端口}}")
+        if not isinstance(r["pattern"], str) or not READONLY_NET.match(r["pattern"]) or r["pattern"].startswith("*:"):
+            raise BadBody(f"grants.readonly_allow[{i}].pattern 要写成 主机:端口，主机名不能整个是 *：{r['pattern']!r}")
+        row = {"resource": "net", "pattern": r["pattern"]}
+        if row in out:
+            raise BadBody(f"grants.readonly_allow[{i}] 重复")
+        out.append(row)
+    return out
+
+
+def readonly_of(settings: dict[str, Any], version: int) -> ReadonlyAllow | None:
+    """设置里的只读白名单；缺或空即 None（开放道的扩权一事一卡）。摘要只算白名单本身，版本取设置版本。"""
+    rows = (settings.get("grants") or {}).get("readonly_allow") or []
+    if not rows:
+        return None
+    return ReadonlyAllow(
+        rows=tuple((r["resource"], r["pattern"]) for r in rows),
+        version=version,
+        digest=hashlib.sha256(canonicalize(rows)).hexdigest(),
+    )
 
 
 WALL_MODES = ("elapsed", "spend")
@@ -406,6 +442,7 @@ class SettingsHub:
             wall_mode=budget_of(self.store.settings)["wall_mode"],
             life_s=budget_of(self.store.settings)["life_s"],
             model_profiles=frozenset(p["name"] for p in self.store.settings["models"]["profiles"]),
+            readonly_allow=readonly_of(self.store.settings, self.store.version),
             idle_close_s=int((self.store.settings.get("lanes") or {}).get("idle_close_days", 7)) * 86400,
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]

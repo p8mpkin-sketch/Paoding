@@ -430,6 +430,8 @@ export type ScopeDisplay = {
   risk_choices: Risk[];
   approve_enabled: boolean;
   decision: ScopeDecision | null;
+  /** 命中只读白名单（地图 Q36）时的白名单戳；没命中不出现 */
+  readonly?: { version: number; digest: string };
 };
 /** 续期卡随 M1 落地（真图服务现在返回 not_enabled）；字段形状是 F1 的暂行约定。 */
 export type ExtensionFields = { progress_since_50: string[]; spent_usd_milli: number; cap_usd_milli: number };
@@ -514,6 +516,10 @@ export type LeaseCost = {
   role?: string;
   model?: string;
 };
+/** 花费序列的一点：到这条计量为止的累计花费、累计令牌与各会话的累计（毫美元）。 */
+export type BudgetPoint = { seq: number; ts: number | null; usd_milli: number; tokens: number; by_lease: Record<string, number> };
+/** GET /v1/problems/{pid}/budget/series?step=（地图 Q15、工作台设计 C2）：每 step 条计量一个点，末点等于 /budget 的 spent；点数上限 500，超出时 step 自动放大。 */
+export type BudgetSeriesResponse = Envelope & { step: number; n_costs: number; points: BudgetPoint[] };
 /** 事件流里一批事件之后的具名帧。 */
 export type ViewFrame = { as_of: number; parts_hash: PartsHash };
 

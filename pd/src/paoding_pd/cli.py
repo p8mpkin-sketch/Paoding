@@ -15,6 +15,7 @@
     pd follow-up <pid> "<追问>" [--add <美元>]   开放道交付之后追问（剩余不够收尾时要 --add 追加预算）
     pd halt <pid> [--reason "<文本>"]       开放道叫停：不再派新会话，在途的交出已有结果
     pd settings show                        pd settings set <键路径> <值>
+      例：开放道只读白名单 pd settings set grants.readonly_allow '[{resource: net, pattern: "docs.python.org:443"}]'
     pd keys show    pd keys set <槽>（从标准输入读密钥）    pd keys clear <槽> | --all
     pd connector list    pd connector tasks <平台>    pd connector import <平台> <任务号> [--yes]   从平台导入
 
@@ -453,6 +454,10 @@ def _remote(a) -> Remote:
     return Remote(a.url, token)
 
 
+# 可缺的叶子：快照里没有也能 set（设置存储在写入时校验形状）
+OPTIONAL_LEAVES = frozenset({"grants.readonly_allow", "lanes.idle_close_days"})
+
+
 def _set_path(doc: dict, path: str, value: object) -> None:
     keys = path.split(".")
     cur = doc
@@ -460,7 +465,7 @@ def _set_path(doc: dict, path: str, value: object) -> None:
         if not isinstance(cur, dict) or k not in cur:
             raise KeyError(path)
         cur = cur[k]
-    if not isinstance(cur, dict) or keys[-1] not in cur:
+    if not isinstance(cur, dict) or (keys[-1] not in cur and path not in OPTIONAL_LEAVES):
         raise KeyError(path)
     cur[keys[-1]] = value
 
