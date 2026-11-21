@@ -1,0 +1,23 @@
+# 方案分析实例的配置（docs/design/fenjue/13-kernel.md §7；运行手册 scripts/trial/README.md）。
+# 用法：ANTHROPIC_API_KEY=… uv run python scripts/run.py --home ~/paoding-analysis --port 8200 --config scripts/trial/analysis.yaml
+# 数据目录用一个新的、只给分析实例用的目录；不要指到任何题库或校准目录。
+
+backend:
+  kind: real
+  # 分析实例的求解会话跑的是驱动程序（只用 Python 标准库），不起 CLI，所以模型容器用通用 Python 镜像（≥3.12）
+  image: python:3.12-slim
+  upstream: https://api.anthropic.com
+  api_key_env: ANTHROPIC_API_KEY     # 密钥只经环境变量给，不写进本文件
+  model: claude-sonnet-5-5           # 缺省档案的模型；三个档位都用它，除非在设置里另配 heavy/mid/light 档案
+
+executor:
+  kind: docker                       # 抓取在沙箱里跑，要本机 Docker
+  bases:
+    basic: python:3.12-slim
+
+analysis:
+  enabled: true
+  by: cz
+  access_wait_s: 900                 # 等你在权限卡上批抓取的时限（秒）
+
+poll_s: 0.5
