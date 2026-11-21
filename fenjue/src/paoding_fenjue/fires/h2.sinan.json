@@ -1,6 +1,6 @@
 {
  "id": "h2.sinan",
- "ver": 1,
+ "ver": 2,
  "slot": "H2",
  "ports": [
   "M1:lease",
@@ -11,16 +11,19 @@
    "bootstrap",
    "reason",
    "explore",
-   "solve"
+   "solve",
+   "verify"
   ],
   "reserve": {
    "bootstrap": "fixed",
    "reason": "fixed",
    "explore": "intent_capped",
-   "solve": "remainder"
+   "solve": "remainder",
+   "verify": "verify_share"
   },
   "explore_rank": "expected_gain",
-  "reason_before_explore": true
+  "reason_before_explore": true,
+  "keep_verify_share": true
  },
  "assets": [],
  "organ": {

@@ -4,13 +4,14 @@
   "H1": [
    "h1.triad@1",
    "h1.solo@2",
-   "h1.recall@1"
+   "h1.recall@1",
+   "h1.review@1"
   ],
   "H2": [
-   "h2.sinan@1"
+   "h2.sinan@2"
   ],
   "H3": [
-   "h3.base@1",
+   "h3.base@2",
    "h3.kb@1"
   ],
   "H4": [
@@ -59,6 +60,21 @@
    "fire": "h1.solo@2",
    "from": "h1.solo@1",
    "change": "本火修订，不升品阶：solve.md 加追问一句（#111 地图 Q31）"
+  },
+  {
+   "fire": "h1.review@1",
+   "from": null,
+   "change": "本火新立，不升品阶：开放道交付的复核会话绑定 verify 席位（open-lane §12 第 4 条 a、体质修炼 002，地图 Q34）"
+  },
+  {
+   "fire": "h2.sinan@2",
+   "from": "h2.sinan@1",
+   "change": "本火修订，不升品阶：编排加 verify 一类，预留从验证份额出；求解会话的余额预留让出验证份额（地图 Q34）"
+  },
+  {
+   "fire": "h3.base@2",
+   "from": "h3.base@1",
+   "change": "本火修订，不升品阶：工具面加 review（复核会话交回读数，地图 Q34）"
   }
  ]
 }

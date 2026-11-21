@@ -7,7 +7,7 @@ import type { KnChunk, KnJob, KnPut, KnSearch, KnSourceVerb, KnSources } from ".
 import type { MemCard, MemDecision, MemRow, MemSeen } from "./memory-types";
 import type {
   ArtifactView, BudgetResponse, BudgetSeriesResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
-  NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, VaultRef, WorkView,
+  NodeEvidence, Op, OpResult, OpenReadingsView, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, VaultRef, WorkView,
 } from "./types";
 import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
 import { HUMAN_OPS } from "./ops";
@@ -83,6 +83,8 @@ export function createApi(cfg: ApiConfig) {
 
   return {
     problems: () => get<ProblemsView>("/v1/problems"),
+    /** 开放道读数表（地图 Q35）：交付、反馈、复核读数单独成表，不进解出率。 */
+    openReadings: () => get<OpenReadingsView>("/v1/readings/open"),
     status: (pid: string, asOf?: number) => get<StatusView>(withAsOf(`/v1/problems/${enc(pid)}/status`, asOf, { state_hash: "1" })),
     /** 只取前沿：节点本身在 status 里已经有了。 */
     view: (pid: string, asOf?: number) => get<GraphView>(withAsOf(`/v1/problems/${enc(pid)}/view`, asOf, { layer: "title" })),

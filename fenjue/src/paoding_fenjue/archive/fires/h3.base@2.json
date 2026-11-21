@@ -1,0 +1,35 @@
+{
+ "id": "h3.base",
+ "ver": 2,
+ "slot": "H3",
+ "ports": [
+  "M1:add_fact",
+  "M1:deliver",
+  "M1:request_scope",
+  "M1:review",
+  "M2",
+  "M4"
+ ],
+ "params": {
+  "order": [
+   "exec",
+   "submit",
+   "show",
+   "request_access",
+   "deliver",
+   "review"
+  ],
+  "grant_tool": "request_access"
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "常开；request_access 只在运行时扩权开着时给",
+  "control_arm": "无 request_access（开题时一次给全授权）",
+  "retire_signal": "扩权申请的批准率与申请次数长期为 0"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H3"
+}

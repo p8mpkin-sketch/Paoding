@@ -38,10 +38,11 @@ def test_gongfa_fills_all_eight_slots_and_names_every_seat_with_a_form():
     g = gongfa()
     assert sorted(g["fires"]) == list(SLOTS) and all(g["fires"][s] for s in SLOTS)
     bound = sorted(s for r in g["fires"]["H1"] for s in fire(r.split("@")[0])["seats"])
-    assert bound == ["bootstrap", "explore", "reason", "recall", "solve"]
+    assert bound == ["bootstrap", "explore", "reason", "recall", "solve", "verify"]
     assert form("solve")["fire"] == "h1.solo" and form("explore")["fire"] == "h1.triad"
+    assert form("verify")["fire"] == "h1.review"  # 复核会话（地图 Q34）：体质修炼 002 给了席位能交的事件，这里是形态
     with pytest.raises(KeyError):
-        form("verify")  # 复核还没有形态：席位在内核里，形态没落地
+        form("judge")  # 判官不是会话，没有形态
     js = [h["jie"] for h in g["history"]]  # 品阶史只追加：每一步升一阶（收下）或降一阶（散火，带 reverts）
     assert js[0] == 0 and js[-1] == g["jie"]
     for h0, h in zip(g["history"], g["history"][1:], strict=False):
@@ -90,7 +91,7 @@ def test_seat_table_is_the_kernel_one():
 
 
 def test_params_names_the_fire_when_a_slot_holds_several():
-    assert params("H2")["order"][-1] == "solve"
+    assert params("H2")["order"][-2:] == ["solve", "verify"]
     assert params("H6", "h6.activity-ledger")["ledger_roles"] == ["solve"]
     with pytest.raises(KeyError):
         params("H6")

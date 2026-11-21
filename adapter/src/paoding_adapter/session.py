@@ -185,7 +185,7 @@ class SessionRunner:
         shape = gf.form(role, pid)
         tools: tuple[str, ...] = tuple(shape["tools"])
         if shape["relay"]:
-            self._relay(pid, lease_id, ws)
+            self._relay(pid, lease_id, ws, shape["relay"])
         face = gf.params("H3", "h3.base")
         if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
             tools += (face["grant_tool"],)
@@ -282,11 +282,17 @@ class SessionRunner:
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
             delivers = shape["ends_on"] == "deliver"
+            reviews = shape["ends_on"] == "review"
             if delivers:
                 # 开放道的收尾轮（open-lane §3.3）：软线（预算或墙钟到 90%）→ 立即交付；没交付就结束 → 交付或留笔记接力
                 if exit_status is None and not lv["killed"] and (lv["closing"] or not s.delivered):
                     plan.resume = True
                     plan.user_prompt = be.SOLVE_CLOSING_BUDGET if lv["closing"] else be.SOLVE_CLOSING_RELAY
+                    exit_status = self._round(plan, rec, pid, token)
+            elif reviews:
+                # 复核会话（体质修炼 002）：软线或没交回读数就结束 → 一轮收尾，交回已核到的部分。不接力、不重试
+                if exit_status is None and not lv["killed"] and (lv["closing"] or not s.reviewed):
+                    plan.resume, plan.user_prompt = True, be.REVIEW_CLOSING
                     exit_status = self._round(plan, rec, pid, token)
             elif exit_status is None and not lv["killed"] and (lv["closing"] or not s.submitted):
                 plan.resume, plan.user_prompt = True, be.CLOSING_PROMPT  # 软线或从未 submit：收尾轮
@@ -305,6 +311,8 @@ class SessionRunner:
                 exit_status, outcome = "killed(budget)", "budget_exhausted"
             elif delivers:  # 交付了即 done；没交付即 nothing，司南按接力上限再派下一个求解会话
                 outcome = "done" if s.delivered else "nothing"
+            elif reviews:  # 交回读数即 done；没交回即 nothing，这次交付不再复核（/work 不再派）
+                outcome = "done" if s.reviewed else "nothing"
             elif not s.submitted:
                 exit_status, outcome = "failed(no_output)", "failed"  # 容错第三级
             else:
@@ -320,6 +328,7 @@ class SessionRunner:
                 "tool_calls": s.calls,
                 "final": s.final,
                 **({"delivered": s.delivered} if delivers else {}),
+                **({"reviewed": s.reviewed} if reviews else {}),
                 "package_ref": rec.package_ref,
                 "proxy": {"requests": t.requests if t else 0, "usd_milli": t.spent_usd_milli if t else 0},
             }
@@ -510,18 +519,26 @@ class SessionRunner:
         except OSError:
             pass
 
-    def _relay(self, pid: str, lease_id: str, ws: Path) -> None:
+    def _relay(self, pid: str, lease_id: str, ws: Path, how: bool | str = True) -> None:
         """开放道的接力（open-lane §3.2）：把本题上一个求解会话的工作区（含它的 NOTES.md）拷进新会话的工作区。
-        每个会话仍有自己的会话目录与工作区（容器启动器按目录名认租约），接力只是拷贝，不共用目录。"""
-        kind = self.reader.state["leases"][lease_id]["kind"]  # 同一席位的上一个会话
-        prev = sorted(
-            (
-                l
-                for l in self.reader.state["leases"].values()
-                if l["problem_id"] == pid and l["kind"] == kind and l["id"] != lease_id and not l["active"]
-            ),
-            key=lambda l: l["ended_seq"],
-        )
+        每个会话仍有自己的会话目录与工作区（容器启动器按目录名认租约），接力只是拷贝，不共用目录。
+        how="delivery"（复核会话）：拷的是交出租约目标那次交付的求解会话的工作区，复核在副本上重跑，不碰原件。"""
+        st = self.reader.state
+        lease = st["leases"][lease_id]
+        if how == "delivery":
+            d = next((x for x in st["problems"][pid].get("deliveries") or [] if x["id"] == lease.get("target")), None)
+            src_id = d.get("lease") if d else None
+            prev = [st["leases"][src_id]] if src_id and src_id in st["leases"] else []
+        else:
+            kind = lease["kind"]  # 同一席位的上一个会话
+            prev = sorted(
+                (
+                    l
+                    for l in st["leases"].values()
+                    if l["problem_id"] == pid and l["kind"] == kind and l["id"] != lease_id and not l["active"]
+                ),
+                key=lambda l: l["ended_seq"],
+            )
         if not prev:
             return
         src = self.cfg.root / prev[-1]["id"] / "workspace"

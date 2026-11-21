@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { KnChunk } from "../api/knowledge-types";
-import type { ArtifactView, Delivery, GroundBrief } from "../api/types";
+import type { ArtifactView, Delivery, GroundBrief, Review } from "../api/types";
 import { useServices } from "../app/context";
 import { btnClass } from "../kit";
 import type { ViewModel } from "../model/viewmodel";
@@ -144,6 +144,43 @@ function Answer({ id, seq }: { id: string; seq: number }) {
   );
 }
 
+const VERDICT_WORD = { supported: "有据", unsupported: "引用不符", unclear: "看不出" } as const;
+const RERUN_WORD = { pass: "重跑通过", fail: "重跑不过", not_rerun: "没能重跑" } as const;
+
+/** 复核读数（地图 Q34）：另一个会话逐条核过这次交付。读数由确定性代码数出；逐条意见是复核会话写的（叙述），
+ * 不是判定，不改变任务的状态。 */
+function ReviewView({ r, d, onRef }: { r: Review; d: Delivery; onRef: (id: string) => void }) {
+  const n = r.readings;
+  const rr = n.reruns;
+  const reran = rr.pass + rr.fail + rr.not_rerun;
+  return (
+    <section className="tk-sec tk-review" data-review={r.id}>
+      <h2>独立复核<small data-review-readings>{n.claims} 条主张里 {n.supported} 条有据、{n.unsupported} 条引用不符、{n.unclear} 条看不出{reran > 0 && <>；自检重跑 {rr.pass} 过、{rr.fail} 不过、{rr.not_rerun} 条没能重跑</>}{n.counterexamples > 0 && <>；{n.counterexamples} 条反例</>}</small></h2>
+      <p className="tk-review-note t2">另起一个会话，没有参与求解，只读交付与留档逐条核对。这是参考读数，不是判定，不改变任务的状态。</p>
+      <div className="reg-narrative" data-register="narrative"><span className="reg-label">复核会话撰写</span><Text t={r.summary} block={false} /></div>
+      <ul className="tk-li">
+        {r.claims.map((c) => (
+          <li key={`c${c.claim}`} data-review-claim={c.claim} data-verdict={c.verdict}>
+            <span className={`tk-res rv-${c.verdict}`}>{VERDICT_WORD[c.verdict]}</span>
+            <span className="grow"><span className="t2">主张 {c.claim + 1}</span>{d.claims[c.claim] && <> · <Text t={d.claims[c.claim].text} block={false} /></>}<br /><Text t={c.note} block={false} /></span>
+            {c.refs.length > 0 && <Refs refs={c.refs} onRef={onRef} />}
+          </li>
+        ))}
+        {r.reruns.map((x) => (
+          <li key={`r${x.check}`} data-review-rerun={x.check} data-rerun={x.result}>
+            <span className={`tk-res rv-${x.result}`}>{RERUN_WORD[x.result]}</span>
+            <span className="grow"><span className="t2">自检 {x.check + 1}</span>{d.self_check[x.check] && <> · <Text t={d.self_check[x.check].what} block={false} /></>}{x.note && <><br /><Text t={x.note} block={false} /></>}</span>
+            {x.refs.length > 0 && <Refs refs={x.refs} onRef={onRef} />}
+          </li>
+        ))}
+        {r.counterexamples.map((t, i) => (
+          <li key={`x${i}`} data-counterexample={i}><span className="tk-res rv-unsupported">反例</span><span className="grow"><Text t={t} block={false} /></span></li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id: string) => void }) {
   // “N 条里 M 条有执行记录”只数执行记录与材料；引用资料另计“K 条引用了资料”，不进 M（cz 验收附加条件 1）
   const backed = d.claims.filter((c) => c.supported).length;
@@ -190,6 +227,7 @@ function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id:
           <ul className="tk-li">{d.unverified.map((u, i) => <li key={i}><span className="tk-mk">·</span><Text t={u} block={false} /></li>)}</ul>
         </section>
       )}
+      {d.review && <ReviewView r={d.review} d={d} onRef={onRef} />}
     </div>
   );
 }

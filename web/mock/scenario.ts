@@ -26,7 +26,7 @@ class Builder {
   constructor(readonly pid: string) {}
   /** 追加一步；name 给出时把新对象的 id（前缀_seq）记下来供后面引用。 */
   ev(actorIn: Actor | ((ids: Record<string, string>) => Actor), kind: string, body: (ids: Record<string, string>, api: Api) => Record<string, unknown>, name?: string, waitFor?: Step["waitFor"]) {
-    const prefix = { register_artifact: "a", add_fact: "f", add_intent: "i", request_judge: "j", hint: "h", lease: "l", request_scope: "r" }[kind];
+    const prefix = { register_artifact: "a", add_fact: "f", add_intent: "i", request_judge: "j", hint: "h", lease: "l", request_scope: "r", deliver: "d" }[kind];
     this.steps.push({
       waitFor,
       run: (api) => {
@@ -264,11 +264,32 @@ export function staticScripts(): Script[] {
     ],
     unverified: ["只测了 SQLite 后端；Postgres 和 Redis 的行为是按文档推的", "用的是各仓库今天的主分支，没测已发布的旧版本"],
     needs: [],
-  }));
+  }), "dlv");
   // 端点代理按请求记账：前四次模型调用各一条，第五条随会话收尾（release）记
   for (const [u, ti, tc, to] of [[230, 5200, 0, 610], [250, 5900, 4800, 520], [290, 6800, 5700, 660], [300, 7400, 6600, 700]] as const)
     o.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: ti, tokens_cached: tc, tokens_out: to, usd_milli: u, wall_s: 8, price_table: "prices@1" }));
   o.release("S1", "solve", 300);
+  // 复核（地图 Q34）：另起一个会话逐条核这次交付，只给读数，不改终态
+  o.lease("V1", "verify", "dlv");
+  o.exec("e_rr", "V1", "shell", "python repro/crash_test.py --fw langgraph", "step1 done\nstep2 killed (SIGKILL)\n--- restart, same thread_id ---\nresume -> next=('step2',)\nstep2 done · step3 done\n");
+  o.ev(adapter("V1", "verify"), "review", (i) => ({
+    delivery: i.dlv,
+    claims: [
+      { claim: 0, verdict: "supported", note: "重启后 next=('step2',)，确是从没做完的那一步接着跑", refs: [i.e_lg] },
+      { claim: 1, verdict: "supported", note: "没保存时重启报 FileNotFoundError 并从头开始", refs: [i.e_ag] },
+      { claim: 2, verdict: "supported", note: "加 --save-each-step 后从 step2 继续", refs: [i.e_ag2] },
+      { claim: 3, verdict: "supported", note: "输出里 Crew 从 task 1/3 重跑", refs: [i.e_cr] },
+      { claim: 4, verdict: "unclear", note: "没有引用；另外两家是否支持分叉没有执行记录", refs: [] },
+      { claim: 5, verdict: "unsupported", note: "引用的是团队上线约定，与框架选型的恢复能力无关", refs: [] },
+    ],
+    reruns: [
+      { check: 0, result: "pass", refs: [i.e_rr] },
+      { check: 1, result: "not_rerun", note: "对照原话是读的，不是能重跑的命令", refs: [] },
+    ],
+    counterexamples: [],
+    summary: "6 条主张里 4 条有执行输出直接支撑；“任意检查点分叉”没有依据，引用团队约定的一条与问题无关。",
+  }));
+  o.release("V1", "verify", 120);
   // demo-7：开放道，求解会话在跑（会话活动面板的示例）。图台按设计是空的，进度只在会话活动里。
   const r = new Builder("demo-7");
   const ask = "把仓库里的单元测试跑起来，找出最近一次提交让哪些测试变红了，给出原因。";
@@ -286,6 +307,22 @@ export function staticScripts(): Script[] {
   for (const [u, w, ti, to, tc] of [[52, 6, 4200, 600, 0], [61, 7, 4700, 640, 3800], [58, 6, 5600, 690, 4500], [65, 7, 6500, 670, 5800]] as const)
     r.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: ti, tokens_cached: tc, tokens_out: to, usd_milli: u, wall_s: w, price_table: "prices@1" }));
   return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }, { pid: r.pid, steps: r.steps }];
+}
+
+/** 复核会话（地图 Q34）的示例活动：读交付里的依据、重跑一条自检、交回读数。 */
+export function reviewActivityDemo(): Record<string, unknown>[] {
+  return [
+    { kind: "think", text: "逐条读主张引用的留档，看输出里有没有直接支撑；复现脚本能重跑的重跑一遍。" },
+    { ...turn(4100, 180, 0) },
+    { kind: "call", tool: "show", gist: "artifact 留档", id: "v1" },
+    { kind: "result", id: "v1", ok: true, gist: "resume -> next=('step2',)", size: 96 },
+    { kind: "call", tool: "exec", gist: "python repro/crash_test.py --fw langgraph", id: "v2" },
+    { kind: "result", id: "v2", ok: true, gist: "exit 0", size: 120 },
+    { ...turn(5200, 420, 3900) },
+    { kind: "call", tool: "review", gist: "6 条主张，2 条自检", id: "v3" },
+    { kind: "result", id: "v3", ok: true, gist: "{\"id\": \"rv_1\"}", size: 14 },
+    { ...turn(5400, 60, 5000, "end_turn") },
+  ];
 }
 
 /** 会话活动（GET /v1/leases/{id}/activity）的示例条目：假后端不跑 CLI，按会话种类与在途与否给一份固定的流水。

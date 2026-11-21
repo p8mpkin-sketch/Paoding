@@ -34,6 +34,12 @@ SOLVE_CLOSING_RELAY = (
     "下一个会话会读这份笔记接着做。"
 )
 
+# 复核会话的收尾（体质修炼 002）：只有一轮，不接力
+REVIEW_CLOSING = (
+    "收尾：现在就用 review 交回读数。已经核到的主张照实写，还没核到的标 unclear 并在 note 里说没来得及核；"
+    "没能重跑的自检写 not_rerun。不要再开新的检查。"
+)
+
 
 def session_uuid(lease_id: str) -> str:
     """--session-id 取租约派生的 UUID：同一租约恒得同一 UUID，收尾轮据此 --resume。"""

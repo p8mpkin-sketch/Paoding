@@ -340,6 +340,20 @@ def test_lanes_idle_close_days_is_optional_and_checked():
         validate_settings({**d, "lanes": {"open": True, "idle": 3}})
 
 
+def test_lanes_review_is_optional_and_defaults_on():
+    """开放道的复核（地图 Q34，open-lane §12 第 4 条）：lanes.review 可缺（缺即开，旧快照摘要不变）；给了须为布尔。"""
+    d = defaults()
+    assert "review" not in d["lanes"]
+    assert digest_of(validate_settings(d)) == digest_of(d)
+    assert validate_settings({**d, "lanes": {"open": True, "review": False}})["lanes"] == {
+        "open": True,
+        "review": False,
+    }
+    for bad in (0, "false", None):
+        with pytest.raises(BadBody):
+            validate_settings({**d, "lanes": {"open": True, "review": bad}})
+
+
 def test_grants_readonly_allow_is_optional_and_checked():
     """开放道只读白名单（地图 Q36）：grants.readonly_allow 可缺（缺即空，旧快照摘要不变）；每行是 net 的 主机:端口。"""
     d = defaults()

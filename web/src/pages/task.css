@@ -88,6 +88,8 @@
 .tk-kn-note { margin: 0; font-size: var(--fs-sm); color: var(--ink-2); }
 .tk-res { flex: none; min-width: 48px; font-size: var(--fs-xs); font-weight: 600; }
 .tk-res.pass { color: var(--qing); } .tk-res.fail { color: var(--zhu-ink); } .tk-res.skipped { color: var(--ink-3); }
+.tk-res.rv-supported, .tk-res.rv-pass { color: var(--qing); } .tk-res.rv-unsupported, .tk-res.rv-fail { color: var(--zhu-ink); } .tk-res.rv-unclear, .tk-res.rv-not_rerun { color: var(--ink-3); }
+.tk-review-note { margin: 0 0 8px; font-size: var(--fs-xs); }
 .tk-delivery { display: grid; gap: 18px; }
 
 /* 过程 */

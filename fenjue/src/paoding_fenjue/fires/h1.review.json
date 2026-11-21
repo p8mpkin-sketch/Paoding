@@ -1,0 +1,53 @@
+{
+ "id": "h1.review",
+ "ver": 1,
+ "slot": "H1",
+ "seats": [
+  "verify"
+ ],
+ "ports": [
+  "M1:review",
+  "M2",
+  "M4"
+ ],
+ "params": {
+  "forms": {
+   "verify": {
+    "tools": [
+     "exec",
+     "show",
+     "review"
+    ],
+    "prompt": {
+     "files": [
+      "review.md"
+     ],
+     "insert_after": "- review："
+    },
+    "kb_cite": "refs",
+    "focus": [
+     "delivery"
+    ],
+    "restate": "逐条核对这次交付：每条主张的引用是否真的支撑它，能重跑的自检重跑一遍，做完用 review 交回读数。",
+    "relay": "delivery",
+    "ends_on": "review"
+   }
+  }
+ },
+ "assets": [
+  {
+   "name": "adapter/prompts/review.md",
+   "sha256": "496676db7f62f5e0503f2528a2062e77c4c16e27fb73c5bfcc7a2ce8b761b85a"
+  }
+ ],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "开放道，且开题时抄入了 review（设置 lanes.review，缺省开）",
+  "control_arm": "lanes.review 关（交付不复核）",
+  "retire_signal": "复核读数（不符、看不出、重跑不过）与人采纳与否长期不相关"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H1"
+}

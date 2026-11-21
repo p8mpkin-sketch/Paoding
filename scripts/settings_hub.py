@@ -185,13 +185,16 @@ def validate(raw: object) -> dict[str, Any]:
         ln = raw["lanes"]
         if (
             not isinstance(ln, dict)
-            or not {"open"} <= set(ln) <= {"open", "idle_close_days"}
+            or not {"open"} <= set(ln) <= {"open", "idle_close_days", "review"}
             or not isinstance(ln["open"], bool)
+            or not isinstance(ln.get("review", True), bool)
         ):
-            raise BadBody("lanes 是 {open: bool, idle_close_days?: 正整数}")
+            raise BadBody("lanes 是 {open: bool, idle_close_days?: 正整数, review?: bool}")
         out["lanes"] = {"open": ln["open"]}
         if "idle_close_days" in ln:  # 开放道交付后闲置多久自动关（地图 Q33）；缺省 7 天
             out["lanes"]["idle_close_days"] = _pos_int(ln["idle_close_days"], "lanes.idle_close_days")
+        if "review" in ln:  # 开放道交付后起复核会话（地图 Q34，open-lane §12 第 4 条：缺省开，花费在验证份额内）
+            out["lanes"]["review"] = ln["review"]
     if "budget" in raw:
         # 时限与花费分开的开关（docs/design/external-verdict/ §5.6）：缺省 elapsed 即旧行为
         bd = raw["budget"]
@@ -444,6 +447,7 @@ class SettingsHub:
             model_profiles=frozenset(p["name"] for p in self.store.settings["models"]["profiles"]),
             readonly_allow=readonly_of(self.store.settings, self.store.version),
             idle_close_s=int((self.store.settings.get("lanes") or {}).get("idle_close_days", 7)) * 86400,
+            review_open=bool((self.store.settings.get("lanes") or {}).get("review", True)),
         )
         self.proxy.cfg.global_cap_usd_milli = caps["global_usd_milli"]
         for fn in self.listeners:

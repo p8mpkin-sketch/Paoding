@@ -461,7 +461,7 @@ def _remote(a) -> Remote:
 
 
 # 可缺的叶子：快照里没有也能 set（设置存储在写入时校验形状）
-OPTIONAL_LEAVES = frozenset({"grants.readonly_allow", "lanes.idle_close_days"})
+OPTIONAL_LEAVES = frozenset({"grants.readonly_allow", "lanes.idle_close_days", "lanes.review"})
 
 
 def _set_path(doc: dict, path: str, value: object) -> None:

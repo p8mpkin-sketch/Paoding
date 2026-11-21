@@ -22,6 +22,8 @@ export type FlowInput = {
   lastFollowUpSeq: number;
   /** 判定道：有过判定裁决。 */
   judged: boolean;
+  /** 开放道：最后一次交付已有复核读数（地图 Q34）。没开复核的题、旧日志里没有这一项。 */
+  lastReviewed?: boolean;
 };
 
 const step = (key: string, word: string, state: FlowState, note?: string): FlowStep => ({ key, word, state, ...(note ? { note } : {}) });
@@ -34,9 +36,11 @@ function line(keys: [string, string][], cur: number, done: boolean, extra: Recor
 export function flowOf(x: FlowInput): FlowStep[] {
   if (x.accept === "open") {
     const keys: [string, string][] = [["understand", "理解任务"], ["work", "动手做"], ["self", "自己查一遍"], ["deliver", "交付"], ["review", "另一个模型复核"], ["you", "你来看"]];
-    // 复核会话（地图 Q34）还没有：一直标“未开启”，不算进度
-    const extra: Record<string, FlowState> = { review: "off" };
     const asked = x.lastFollowUpSeq > x.lastDeliverySeq; // 追问之后回到动手做
+    // 复核会话（地图 Q34）：在核即“进行中”，最后一次交付有读数即“做完”；没开复核或没复核标“未开启”。
+    // 复核不拦人看结果，所以它不挪“当前步”，只标自己这一格
+    const review: FlowState = !asked && x.active.includes("verify") ? "cur" : !asked && x.lastReviewed ? "done" : "off";
+    const extra: Record<string, FlowState> = { review };
     if (x.closed) return line(keys, keys.length, true, { ...extra, ...(x.lastHadSelfCheck ? {} : { self: "todo" }) });
     if (x.deliveries > 0 && !asked) return line(keys, 5, false, { ...extra, ...(x.lastHadSelfCheck ? {} : { self: "todo" }) });
     if (!x.started) return line(keys, 0, false, extra);

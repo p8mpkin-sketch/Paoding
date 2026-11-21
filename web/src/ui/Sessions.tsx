@@ -2,7 +2,7 @@
 import type { LeaseRow } from "../api/types";
 import { usd } from "../model/text";
 
-export const LEASE_WORD: Record<string, string> = { bootstrap: "起步", reason: "推理", explore: "探索", judge: "判定", rejudge: "复判", solve: "求解" };
+export const LEASE_WORD: Record<string, string> = { bootstrap: "起步", reason: "推理", explore: "探索", judge: "判定", rejudge: "复判", solve: "求解", verify: "复核" };
 
 /** 开放道的会话：点开看它的实时活动（工作区的“会话活动”面板）。严格道不传，行上就没有这个按钮。 */
 type Open = { onOpen?: (id: string) => void; openId?: string | null };
