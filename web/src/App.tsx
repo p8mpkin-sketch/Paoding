@@ -44,6 +44,12 @@ function TokenBox({ token, expiresAt, onSave }: { token: string | null; expiresA
 function Today() {
   return <Dashboard now={useNow()} />;
 }
+function Bank({ filter }: { filter: { q: string; terminal: string; judge: string } }) {
+  return <Problems filter={filter} now={useNow()} />;
+}
+function ReadingsPage() {
+  return <Readings now={useNow()} />;
+}
 
 /** 外壳要的题目列表：正在运行、状态行与命令面板用。15 秒一次，页面不可见时不读。 */
 const SHELL_POLL_MS = 15_000;
@@ -55,12 +61,12 @@ function Shell({ cfg, token }: { cfg: ApiConfig; token: React.ReactNode }) {
     <AppShell route={route} problems={view} problemsError={error} canWrite={!!cfg.token} token={token}>
       {route.page === "home" && <Kaiti home />}
       {route.page === "today" && <Today />}
-      {route.page === "problems" && <Problems filter={{ q: route.q ?? "", terminal: route.terminal ?? "", judge: route.judge ?? "" }} />}
+      {route.page === "problems" && <Bank filter={{ q: route.q ?? "", terminal: route.terminal ?? "", judge: route.judge ?? "" }} />}
       {route.page === "new" && !route.advanced && <Kaiti />}
       {route.page === "new" && route.advanced && <Wizard key={route.from ?? ""} from={route.from} />}
       {route.page === "import" && <Import />}
       {route.page === "platform" && <PlatformImport key={route.id ?? ""} id={route.id} />}
-      {route.page === "readings" && <Readings />}
+      {route.page === "readings" && <ReadingsPage />}
       {route.page === "inbox" && <Inbox />}
       {route.page === "settings" && <SettingsPage />}
       {route.page === "models" && <ModelsPage />}

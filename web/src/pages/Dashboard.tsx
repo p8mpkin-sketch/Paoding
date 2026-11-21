@@ -1,9 +1,17 @@
-// 今日（视觉重做第二期，阅读质量轮收焦点）：标题是唯一焦点，紧跟等你处理的清单；运行中其次；概况、近七日、最近完成退到右栏。
-// 全部读自 GET /v1/problems（每 5 秒轮询）。“阶段”不由前端推断：运行中一行列出在途会话的种类（异议 web-workbench 第 4 条）。
-import { useState } from "react";
+// 今日（v6 实时指挥台，docs/design/pages-v6 §2）：标题是唯一焦点；等你处理按种类列出、直达那张卡；
+// 正在跑的每个任务写出智能体此刻在做什么（在途会话的“正在做”与最近自述，与任务页“过程”同一来源）；右栏是今天、近七日与最近完成。
+// 列表读自 GET /v1/problems（每 5 秒）；待办读 /work，正在做读 /status 与会话活动的摘要；花费读 /budget/series。不推断阶段。
+import { useRef, useState } from "react";
 import type { ProblemItem, ProblemsView, Terminal } from "../api/types";
 import { countUsage } from "../app/usage";
-import { dailySeries, leaseKinds, minutes, ratio, recentOf, runningOf, solvedToday, terminalCounts, type DayBucket } from "../model/dashboard";
+import { dailySeries, dayStart, leaseKinds, minutes, ratio, recentOf, runningOf, solvedToday, spendByDay, spendSince, terminalCounts, type DayBucket } from "../model/dashboard";
+import type { HumanWorkItem } from "../api/types";
+import { useAgents, useCosts, useTodos, MAX_LIVE, type Agent } from "../ui/live";
+import { useRowKeys } from "../ui/keys";
+import { VBars } from "../ui/Charts";
+import { WHY } from "../ui/Todo";
+import { LEASE_WORD } from "../ui/Sessions";
+import { tok } from "../model/trace";
 import { LEVEL_GLYPH, terminalWord } from "../model/levels";
 import { usd } from "../model/text";
 import { Empty, Mark, Mast, Meter, SectionHead, btnClass } from "../kit";
@@ -36,6 +44,9 @@ export function Dashboard({ now }: { now: number }) {
   return <DashboardView view={view} now={now} error={error} />;
 }
 
+/** 待办类别的单字印（与待办页同一套）。 */
+const WHY_MARK: Record<string, string> = { needs_human: "批", extension: "续", dispute: "裁", closeout: "验", acceptance: "验", stalled: "停", scope_request: "权", delivered: "看", blocked: "补" };
+
 function DashboardView({ view, now, error }: { view: ProblemsView; now: number; error: string | null }) {
   const running = runningOf(view.items);
   const waiting = running.filter((p) => p.human_todo > 0);
@@ -43,6 +54,11 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
   const sessions = running.reduce((a, p) => a + p.active.length, 0);
   const today = solvedToday(view.items, now);
   const t = view.totals;
+  const todos = useTodos(view.items, view.head);
+  const agents = useAgents(running);
+  const costs = useCosts(view.items, view.head, { series: true });
+  const root = useRef<HTMLDivElement>(null);
+  useRowKeys(root);
 
   if (view.items.length === 0) return <FirstRun />;
 
@@ -52,8 +68,15 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
   // 导语只说“下一步做什么”，不复述下面已有的数字（阅读质量轮第 1、2 条）
   const dek = asks > 0 ? "按任务列在下面，从第一项开始；处理完的会自动消失。"
     : running.length > 0 ? "任务需要审批、验收或裁决时，会出现在这里。" : "新建一个任务，或从任务库克隆一个。";
+  // 待办按种类计数（服务端给的 why）
+  const byWhy = new Map<string, number>();
+  for (const xs of Object.values(todos)) for (const x of xs) byWhy.set(x.why, (byWhy.get(x.why) ?? 0) + 1);
+  const series = Object.values(costs.series).map((x) => x.points);
+  const spentToday = spendSince(series, dayStart(now));
+  const closedToday = view.items.filter((p) => p.closed && p.closed_ts !== null && dayStart(p.closed_ts) === dayStart(now)).length;
+  const days = spendByDay(series, now, 7);
   return (
-    <div className="today" data-page="today">
+    <div className="today" data-page="today" ref={root}>
       <Mast cap={dateLine(now)} title={title} dek={dek} />
       {error && <p className="error">刷新失败，显示的是上一次读到的：<Plain text={error} /></p>}
 
@@ -61,39 +84,58 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
         <div className="today-main">
           {waiting.length > 0 && (
             <section className="today-sec today-focus" data-waiting aria-label="等你处理">
+              {byWhy.size > 0 && (
+                <p className="ask-kinds t2" data-ask-kinds>{[...byWhy].map(([w, n], i) => <span key={w} data-ask-kind={w}>{i > 0 && " · "}{WHY[w] ?? w} <b className="k-mono">{n}</b></span>)}</p>
+              )}
               <ol className="asks">
-                {waiting.map((p) => (
-                  <li key={p.id} className="ask-row">
-                    <Mark ch="待" tone="dai" label="等你处理" />
-                    <div className="grow">
-                      <div className="ell"><Text t={p.title} block={false} /></div>
-                      <div className="t2">{p.human_todo} 项待处理 · <span className="k-mono">{p.id}</span></div>
-                    </div>
-                    <Link to={{ page: "problem", pid: p.id, asOf: null, node: null }} className={btnClass("line", "sm")}>去处理</Link>
-                  </li>
-                ))}
+                {waiting.map((p) => {
+                  const items: HumanWorkItem[] = todos[p.id] ?? [];
+                  return (
+                    <li key={p.id} className="ask-row" data-ask={p.id}>
+                      <Mark ch={WHY_MARK[items[0]?.why ?? ""] ?? "待"} tone="dai" label="等你处理" />
+                      <div className="grow">
+                        <div className="ell"><Text t={p.title} block={false} /></div>
+                        {items.length > 0 ? (
+                          <ul className="ask-items">
+                            {items.map((x) => (
+                              <li key={`${x.why}:${x.target}`} data-ask-item={`${x.why}:${x.target}`}>
+                                <span>{WHY[x.why] ?? x.why}</span> <span className="k-mono t2">{x.target}</span>
+                                <Link to={{ page: "problem", pid: p.id, asOf: null, node: x.why === "delivered" || x.why === "blocked" ? null : x.target }} className="k-link" data-krow="">去处理</Link>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : <div className="t2">{p.human_todo} 项待处理 · <span className="k-mono">{p.id}</span></div>}
+                      </div>
+                      <Link to={{ page: "problem", pid: p.id, asOf: null, node: null }} className={btnClass("line", "sm")} data-krow="">去处理</Link>
+                    </li>
+                  );
+                })}
               </ol>
               <div className="today-more"><Link to={{ page: "inbox" }} className="k-link">在待办里逐件看</Link></div>
             </section>
           )}
 
           <section className="today-sec dash-running" aria-labelledby="h-running">
-            <SectionHead id="h-running" title="运行中" right={<span className="k-sh-note">会话 · 目标结论 · 花费 · 用时</span>} />
-            {running.length === 0 ? <Empty title="没有运行中的任务" action={<Link to={{ page: "home" }} className={btnClass("line", "sm")}>新建任务</Link>}>任务运行时会列在这里。</Empty> : running.map((p) => <RunningRow key={p.id} p={p} />)}
+            <SectionHead id="h-running" title="运行中" right={<span className="k-sh-note">智能体在做什么 · 花费 · 用时{running.length > MAX_LIVE ? ` · 只读前 ${MAX_LIVE} 个的会话` : ""}</span>} />
+            {running.length === 0 ? <Empty title="没有运行中的任务" action={<Link to={{ page: "home" }} className={btnClass("line", "sm")}>新建任务</Link>}>任务运行时会列在这里。</Empty> : running.map((p) => <RunningRow key={p.id} p={p} a={agents[p.id]} />)}
           </section>
         </div>
 
         <aside className="today-side">
           <section className="today-sec" aria-labelledby="h-ledger">
-            <SectionHead id="h-ledger" title="概况" />
-            <div className="ledger" aria-label="概况读数">
+            <SectionHead id="h-ledger" title="今天" />
+            <div className="ledger" aria-label="今天的读数">
+              <Cell label="今天花费" value={costs.loading ? "…" : usd(spentToday.usd)} sub={costs.loading ? "读取花费…" : `${spentToday.tasks} 个任务有花费${spentToday.untimed > 0 ? ` · 另有 ${usd(spentToday.untimed)} 没有时刻` : ""}`} data="today-spend" />
+              <Cell label="今天结束" value={closedToday} sub={`其中判定通过 ${today}`} />
               <Cell label="运行中" value={running.length} sub={`${sessions} 个会话在途`} />
-              <Cell label="今日解决" value={today} sub={`累计 ${t.solved} / ${t.problems} 个任务`} />
-              <Cell label="累计花费" value={usd(t.spent_usd_milli)} sub="全部任务" />
-              <Cell label="平均每解" value={t.cost_per_solve_usd_milli === null ? "—" : usd(t.cost_per_solve_usd_milli)} sub={t.cost_per_solve_usd_milli === null ? "还没有解决的任务" : "累计花费 ÷ 已解"} />
+              <Cell label="平均每解" value={t.cost_per_solve_usd_milli === null ? "—" : usd(t.cost_per_solve_usd_milli)} sub={t.cost_per_solve_usd_milli === null ? "还没有解决的任务" : `累计 ${usd(t.spent_usd_milli)} ÷ ${t.solved}`} />
             </div>
           </section>
           <Stats view={view} now={now} />
+          <section className="today-sec dash-spend" aria-labelledby="h-spend">
+            <VBars title="近七日花费" data="spend7" note={costs.loading ? "读取中…" : `合计 ${usd(days.reduce((a, d) => a + d.usd, 0))}`} empty="近七日没有花费。"
+              bars={days.map((d) => ({ key: String(d.day), label: dayLabel(d.day), value: d.usd, text: usd(d.usd), title: `${dayLabel(d.day)} · ${d.tasks} 个任务 · token ${tok(d.tokens)}` }))} />
+          </section>
           <Recent items={view.items} now={now} />
         </aside>
       </div>
@@ -101,9 +143,9 @@ function DashboardView({ view, now, error }: { view: ProblemsView; now: number; 
   );
 }
 
-function Cell({ label, value, sub, hot }: { label: string; value: number | string; sub: string; hot?: boolean }) {
+function Cell({ label, value, sub, hot, data }: { label: string; value: number | string; sub: string; hot?: boolean; data?: string }) {
   return (
-    <div className="cell">
+    <div className="cell" data-cell={data ?? label}>
       <div className="k-cap">{label}</div>
       <div className={`big num${hot ? " hot" : ""}`}>{value}</div>
       <div className="t2">{sub}</div>
@@ -111,7 +153,7 @@ function Cell({ label, value, sub, hot }: { label: string; value: number | strin
   );
 }
 
-function RunningRow({ p }: { p: ProblemItem }) {
+function RunningRow({ p, a }: { p: ProblemItem; a?: Agent }) {
   const kinds = leaseKinds(p);
   const cap = p.cap_usd_milli;
   const hot = !!cap && p.spent_usd_milli >= cap * 0.8;
@@ -120,15 +162,25 @@ function RunningRow({ p }: { p: ProblemItem }) {
       <div className="grow">
         <div className="row">
           <span className={`pulse${p.human_todo > 0 ? " hot" : ""}`} aria-hidden="true" />
-          <Link to={{ page: "problem", pid: p.id, asOf: null, node: null }} className="run-title" onClick={() => countUsage("dashboard")}><Text t={p.title} block={false} /></Link>
+          <Link to={{ page: "problem", pid: p.id, asOf: null, node: null }} className="run-title" onClick={() => countUsage("dashboard")} data-krow=""><Text t={p.title} block={false} /></Link>
           {p.human_todo > 0 && <span className="k-tag hot" data-human-todo>等你处理</span>}
           {hot && <span className="k-tag" data-budget-tight>预算已用八成</span>}
         </div>
         <div className="t2 leases" data-active>
-          {kinds.length ? kinds.map((k, i) => <span key={k.kind} data-lease-kind={k.kind}>{i > 0 && " · "}<b>{k.kind}</b>{k.n > 1 ? ` ×${k.n}` : ""}</span>) : "无在途会话"}
+          {kinds.length ? kinds.map((k, i) => <span key={k.kind} data-lease-kind={k.kind}>{i > 0 && " · "}<b>{LEASE_WORD[k.kind] ?? k.kind}</b>{k.n > 1 ? ` ×${k.n}` : ""}</span>) : "无在途会话"}
+          {a && (a.turns > 0 || a.calls > 0) && <span className="k-mono" data-agent-counts> · 模型调用 {a.turns} · 工具调用 {a.calls}</span>}
         </div>
+        {a && kinds.length > 0 && (
+          <div className="run-now" data-agent-now>
+            <span className="t2">正在做</span>
+            {a.error ? <span className="t2">读不到会话活动</span>
+              : a.now ? <span className="run-now-b"><span className="live-dot" aria-hidden="true" /><b className="k-mono">{a.now.tool}</b> <code><Plain text={a.now.gist} /></code></span>
+                : <span className="t2">{a.leases.length ? "在想下一步" : "会话正在起来"}</span>}
+          </div>
+        )}
+        {a?.say && <p className="run-say reg reg-narrative" data-register="narrative" data-agent-say><Plain text={a.say.text} /></p>}
         <div className="lvl" data-goal-level={p.goal_level ?? "none"}>
-          {p.goal_level ? <span className={`badge level level-${p.goal_level}`}><Glyph g={LEVEL_GLYPH[p.goal_level]} />{p.goal_level}</span> : <span className="muted">—</span>}
+          {p.goal_level ? <span className={`badge level level-${p.goal_level}`}><Glyph g={LEVEL_GLYPH[p.goal_level]} />{p.goal_level}</span> : null}
           <CriterionBadge badge={p.terminal_badge} />
         </div>
       </div>
@@ -246,7 +298,7 @@ export function Trend({ series }: { series: DayBucket[] }) {
 function FirstRun() {
   return (
     <div className="today first-run" data-page="today">
-      <Mast cap="开始" title="四步上手" dek="交给庖丁一个任务，它会沿着事实的纹理拆开、尝试、验证；需要你拍板的时候，会在“待办”里找你。" />
+      <Mast cap="开始" title="四步上手" dek="交给焚决一个任务，它会拆解、执行、验证；需要你拍板的时候，会在“待办”里找你。" />
       <ol className="steps4">
         <li><span className="no">一</span><div className="grow"><b>连上服务</b><p className="t2">左下角配置人的令牌；没有令牌时整站只读。</p></div></li>
         <li><span className="no hot">二</span><div className="grow"><b>建第一个任务</b><p className="t2">说清楚要达成什么、怎样算完成，约两分钟。可以从模板开始。</p></div><Link to={{ page: "home" }} className={btnClass("ink", "sm")}>新建任务</Link></li>

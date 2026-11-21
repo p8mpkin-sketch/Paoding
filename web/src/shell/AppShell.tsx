@@ -115,7 +115,7 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
       <aside className="shell-side" aria-label="主导航">
         <div className="shell-brand">
           <Logo size={20} />
-          {!narrow && <b>庖丁</b>}
+          {!narrow && <b>焚决</b>}
         </div>
         {!narrow && (
           <>

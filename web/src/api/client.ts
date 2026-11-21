@@ -6,7 +6,7 @@
 import type { KnChunk, KnJob, KnPut, KnSearch, KnSourceVerb, KnSources } from "./knowledge-types";
 import type { MemCard, MemDecision, MemRow, MemSeen } from "./memory-types";
 import type {
-  ArtifactView, BudgetResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
+  ArtifactView, BudgetResponse, BudgetSeriesResponse, SnapshotPart, SnapshotResponse, TicksResponse, CardKind, CardResponse, Catalog, ErrorBody, EventsResponse, GraphView, HintTrace, JudgeEntry,
   NodeEvidence, Op, OpResult, ProblemInput, ProblemsView, ProfilePreview, ProposalResponse, ScopeRule, StatusView, VaultRef, WorkView,
 } from "./types";
 import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiVetted, PlatformEntry, PlatformTask } from "./kaiti";
@@ -86,6 +86,8 @@ export function createApi(cfg: ApiConfig) {
     /** 只取前沿：节点本身在 status 里已经有了。 */
     view: (pid: string, asOf?: number) => get<GraphView>(withAsOf(`/v1/problems/${enc(pid)}/view`, asOf, { layer: "title" })),
     budget: (pid: string, asOf?: number) => get<BudgetResponse>(withAsOf(`/v1/problems/${enc(pid)}/budget`, asOf)),
+    /** 花费序列（地图 Q15 C2）：点上带累计花费、令牌与时刻。 */
+    budgetSeries: (pid: string, step = 1) => get<BudgetSeriesResponse>(`/v1/problems/${enc(pid)}/budget/series?step=${step}`),
     work: (pid: string, asOf?: number) => get<WorkView>(withAsOf(`/v1/problems/${enc(pid)}/work`, asOf)),
     /** 合并读：一次取 status（带 state_hash）、view（layer=title）、budget、work；parts 只要其中几份。 */
     snapshot: (pid: string, asOf?: number, parts?: readonly SnapshotPart[]) =>

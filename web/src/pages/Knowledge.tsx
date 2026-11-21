@@ -197,7 +197,7 @@ export function Knowledge({ tab }: { tab: "sources" | "memory" }) {
   const [importOpen, setImportOpen] = useState(false);
   return (
     <div className="knowledge" data-page="knowledge" data-tab={tab}>
-      <Mast title="知识" dek="庖丁不训练模型。这里放的是它干活时能查的资料，和它从做过的任务里记下的事。"
+      <Mast title="知识" dek="焚决不训练模型。这里放的是它干活时能查的资料，和它从做过的任务里记下的事。"
         actions={tab === "sources" ? <Button tone="ink" disabled={!cfg.token} onClick={() => setImportOpen(true)} data-action="kn-import"><Plus aria-hidden="true" />导入资料</Button> : undefined} />
       <Tabs tab={tab} memCount={count} srcCount={srcCount} />
       {tab === "sources" ? <Sources importOpen={importOpen} setImportOpen={setImportOpen} onCount={setSrcCount} /> : <Memory rows={rows} error={error} reload={() => setTick((n) => n + 1)} />}

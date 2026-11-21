@@ -1275,6 +1275,22 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
         case "status": return wrap(statusView(s, pid), pid);
         case "view": return wrap(graphView(s, pid));
         case "budget": return wrap(budgetView(s));
+        case "budget/series": {
+          // 花费序列（#123 的同名端点）：每 step 条计量一个点，末点等于 spent；点数上限 500
+          const costs = eventsOf(pid, asOf).filter((e) => e.kind === "cost");
+          let step = Math.max(1, Number(q.get("step") ?? 1) || 1);
+          step = Math.max(step, Math.ceil(costs.length / 500));
+          let total = 0, tokens = 0;
+          const per: Record<string, number> = {};
+          const points: Record<string, unknown>[] = [];
+          costs.forEach((e, i) => {
+            const b = e.body as { task_id: string; usd_milli: number; tokens_in: number; tokens_cached?: number; tokens_out: number };
+            total += b.usd_milli; tokens += b.tokens_in + (b.tokens_cached ?? 0) + b.tokens_out;
+            per[b.task_id] = (per[b.task_id] ?? 0) + b.usd_milli;
+            if ((i + 1) % step === 0 || i === costs.length - 1) points.push({ seq: e.seq, ts: e.ts, usd_milli: total, tokens, by_lease: Object.fromEntries(Object.entries(per).sort()) });
+          });
+          return wrap({ step, n_costs: costs.length, points });
+        }
         case "work": return wrap({ items: work(s, pid) });
         case "invalidations": return wrap({ node: q.get("node"), invalidated: [] });
       }
