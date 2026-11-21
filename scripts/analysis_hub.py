@@ -239,11 +239,13 @@ class AnalysisHub:
         p = ws / "obs.jsonl"
         if p.exists():
             obs = [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        registered = _read_json(ws / "registered.json") or {}
         arts = [
             {
                 "name": n,
                 "sha256": sha,
-                "artifact_id": local_artifact_id(n, sha),  # E-U5 对照表里的那个 id（没接内核时的占位）
+                # E-U5 对照表里的那个 id：交付时登记过的用内核给的，没登记过的（或没接内核）用引擎的本地占位
+                "artifact_id": registered.get(sha) or local_artifact_id(n, sha),
                 "kind": _kind(n),
                 "bytes": _size(ws / "artifacts" / f"{sha}.json"),
             }

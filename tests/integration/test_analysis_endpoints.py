@@ -193,6 +193,12 @@ def test_gate_3_is_read_only_and_shows_the_placements(later):
     for a in d["artifacts"]:
         assert f"| {a['name']} | {a['artifact_id']} | {a['sha256']} |" in table
     assert [u["id"] for u in d["units"] if u["step"] == "S5"] == ["ruwei:C1"]
+    # 引擎接进内核后，交付时登记过的产物在 registered.json 里有真的 id；没登记过的仍用占位
+    sha = eng.state["artifacts"]["order.json"]
+    (eng.ws / "registered.json").write_text(json.dumps({sha: "a_42"}), encoding="utf-8")
+    ids = {a["name"]: a["artifact_id"] for a in call(url, f"/v1/analyses/{run}")["artifacts"]}
+    assert ids["order.json"] == "a_42" and ids["report:G3"].startswith("local:")
+    (eng.ws / "registered.json").unlink()
     status, e = _err(
         url, f"/v1/analyses/{run}/decision", {"block": cases.g3_block(["C1"], "gamma"), "deliver_seq": 5}, s.human_token
     )
