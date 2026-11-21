@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from paoding_fenjue import lianhua as lh
+from paoding_fenjue import shapes
 from paoding_fenjue.shapes import fire, fire_ids, gongfa
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -142,9 +143,34 @@ def test_grade_history_matches_the_verdicts():
             assert d["verdict"]["jie"] == h["jie"]
 
 
+def engine_gongfa():
+    return json.loads(Path(shapes.engine_gongfa_path()).read_text(encoding="utf-8"))
+
+
+def unref(r):
+    return r.partition("@")[0]
+
+
+def test_engine_gongfa_is_derived_from_the_main_one_and_archived():
+    """分析实例的功法不是手写的：由主功法推出（solve 席位换成方案分析形态，工具面加它的三样），并已按摘要存档。
+    主功法变了而没有重推（scripts/lianhua.py archive），这里就红。"""
+    main = json.loads(Path(shapes.engine_gongfa_path()).with_name("gongfa.json").read_text(encoding="utf-8"))
+    want = shapes.engine_variant(main)
+    got = engine_gongfa()
+    assert got == want
+    dg = shapes.gongfa_digest(dict(got))
+    assert dg in shapes.archived_digests()
+    v = shapes.at(dg)
+    assert v is not None and v.form("solve")["fire"] == shapes.ENGINE_FORM
+    assert v.form("solve")["driver"] == "tunshi" and v.form("solve")["fixed_tools"] is True
+    for seat in ("bootstrap", "reason", "explore", "verify"):  # 其余席位与主功法逐项相同
+        assert v.form(seat) == shapes.View(shapes._validate(main)).form(seat)
+
+
 def test_every_manifest_on_disk_is_accounted_for():
-    """包里的每份清单要么在功法里，要么是谁的上一团火（lineage.from 里提到它），要么有一份炼档，不留孤儿。"""
-    live = set(in_gongfa())
+    """包里的每份清单要么在功法里，要么是谁的上一团火（lineage.from 里提到它），要么有一份炼档，不留孤儿。
+    分析实例的功法（gongfa.engine.json，13 §2）也是包里提交的一套功法：它绑的火同样算“在功法里”。"""
+    live = set(in_gongfa()) | {unref(r) for refs in engine_gongfa()["fires"].values() for r in refs}
     named = {x for fid in fire_ids() for x in fire(fid)["lineage"]["from"]}
     drafted = {
         f.get("id") for d in dossiers().values() for f in [d["fire"], *[m["fire"] for m in d.get("group") or []]]

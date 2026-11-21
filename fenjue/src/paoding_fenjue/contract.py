@@ -1,7 +1,16 @@
 """paoding_fenjue 对其他组件的契约（EDR-001 D-4：跨组件只经 contract）。"""
 
+from .engine import kernel as analysis
+from .engine import materials, pills
+from .engine.dan import ROLES as DAN_ROLES
+from .engine.dan import BudgetExhausted, Reply, Unavailable
+from .engine.handoff import slot_locks
+from .engine.run import EngineError
+from .engine.survey import refusal as source_refusal
 from .readings import evolution
 from .shapes import (
+    ENGINE_FORM,
+    ENGINE_GONGFA,
     GONGFA_ENV,
     SLOTS,
     TOOL_EVENTS,
@@ -14,6 +23,8 @@ from .shapes import (
     check,
     current,
     digest,
+    engine_gongfa_path,
+    engine_variant,
     fire,
     fire_at,
     fire_digest,
@@ -34,8 +45,22 @@ from .shapes import (
 from .tables import ACTORS, PORTS, SEATS
 
 __all__ = [
+    "DAN_ROLES",
+    "ENGINE_FORM",
+    "ENGINE_GONGFA",
     "GONGFA_ENV",
     "ACTORS",
+    "BudgetExhausted",
+    "EngineError",
+    "Reply",
+    "Unavailable",
+    "analysis",
+    "engine_gongfa_path",
+    "engine_variant",
+    "materials",
+    "pills",
+    "slot_locks",
+    "source_refusal",
     "PORTS",
     "SEATS",
     "SLOTS",

@@ -32,7 +32,7 @@ from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, Toke
 
 from . import activity as act
 from . import backend as be
-from . import creds
+from . import creds, tunshi
 from .mcp import ToolEndpoint
 from .package import MEDIA_TYPE, render
 from .proxy import EndpointProxy
@@ -83,6 +83,13 @@ class AdapterConfig:
     ledger_roles: tuple[str, ...] = field(default_factory=lambda: tuple(_LEDGER["ledger_roles"]))
     anchor_interval_s: float = float(_LEDGER["anchor_interval_s"])  # 两次入账至多隔这么久（cz 2026-11-20 定）
     anchor_cap: int = int(_LEDGER["anchor_cap"])  # 每题因入账新增的事件上限（cz 2026-11-20 定）；到了只在轮末与收尾入账
+    # 驱动程序（焚决 13 §3）：会话形态写了 driver 的席位，跑的不是 CLI 而是这里登记的程序（接受与 CLI 同一组参数）。
+    # 没登记的按宿主子进程起包内的那一份（be.driver_program）；模型容器里的路径由组装根给
+    drivers: dict[str, list[str]] = field(default_factory=dict)
+    # 方案分析的参数（题号 → 榜、火位锁、痛点、金丝雀、各档位的模型与单价、等人批的时限）：组装根从设置层给
+    analysis: Callable[[str], Mapping[str, Any]] | None = None
+    # 分析工作区的导出目录：每轮结束把 <工作区>/analysis 镜像到 <这里>/<题号>/，界面的读端点从那里读
+    analysis_export: Path | None = None
 
 
 @dataclass
@@ -187,15 +194,20 @@ class SessionRunner:
         if shape["relay"]:
             self._relay(pid, lease_id, ws, shape["relay"])
         face = gf.params("H3", "h3.base")
-        if self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
+        driver: str | None = shape.get("driver")  # 固定流程的驱动程序代替 CLI（方案分析，焚决 13 §3）
+        fixed = bool(shape.get("fixed_tools"))  # 工具面由形态写死：不追加申请工具与资料工具
+        if not fixed and self.cfg.grants_runtime and self.cfg.grants_runtime():  # 运行时扩权开着才给申请工具
             tools += (face["grant_tool"],)
         kb = self.cfg.knowledge
-        if kb is not None and kb.available(pid):  # 知识选项不是“不用”、范围里有可检索的资料
+        if not fixed and kb is not None and kb.available(pid):  # 知识选项不是“不用”、范围里有可检索的资料
             tools += tuple(gf.params("H3", "h3.kb")["tools"])
+        boxed = "exec" in tools or bool(shape.get("sandbox"))  # 形态可以要沙箱而不给模型 exec（宿主工具自己用）
         owned = None  # 本会话自己起的执行容器：会话结束即销毁（3.5.5 的 3）
-        if "exec" in tools and sandbox_id is None and hasattr(self.executor, "launch"):
+        if boxed and sandbox_id is None and hasattr(self.executor, "launch"):
             sandbox_id = owned = self._launch_sandbox(pid, lease, ws)
-        s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if "exec" in tools else None)
+        s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if boxed else None)
+        an = tunshi.Analysis(shape["ref"], self.cfg.analysis or (lambda _pid: {})) if driver else None
+        max_turns = int(shape.get("max_turns") or self.cfg.max_turns)
         s.kb_cite = shape["kb_cite"]
         s.tool_order = tool_order(gf)
         s.secrets = creds.found(statement)  # 原话里的凭据：写进扩权申请与交付之前逐字遮盖（creds.py）
@@ -207,6 +219,7 @@ class SessionRunner:
             self.executor,
             access=lambda: self.reconcile(lease_id),
             knowledge=kb if "kb_search" in tools else None,
+            analysis=an,
         )
         url = self.endpoint.mount(host)
         log = act.ActivityLog(sdir, s.secrets, lease_id)  # 实时活动（工作台轮询 activity()；原话里的凭据先遮盖）
@@ -232,7 +245,7 @@ class SessionRunner:
         try:
             limits = {
                 "budget": lease["reserve"],
-                "max_turns": self.cfg.max_turns,
+                "max_turns": max_turns,
                 "ops_quota": {"facts": 20, "intents": 8},
                 "tools": list(tools),
             }
@@ -276,8 +289,9 @@ class SessionRunner:
                 proxy_url=getattr(self.launcher, "proxy_url", None) or self.proxy.url,
                 task_token=task_token,
                 max_budget_usd=lease["reserve"]["usd_milli"] / 1000,
-                max_turns=self.cfg.max_turns,
+                max_turns=max_turns,
                 model=str(prof.get("model") or ""),
+                program=(self.cfg.drivers.get(driver) or be.driver_program(driver)) if driver else None,
             )
             rec.status = "running"
             exit_status = self._round(plan, rec, pid, token)
@@ -285,10 +299,17 @@ class SessionRunner:
             reviews = shape["ends_on"] == "review"
             if delivers:
                 # 开放道的收尾轮（open-lane §3.3）：软线（预算或墙钟到 90%）→ 立即交付；没交付就结束 → 交付或留笔记接力
-                if exit_status is None and not lv["killed"] and (lv["closing"] or not s.delivered):
+                # 驱动程序的会话：检查点每个单元都落在工作区，没交付就结束时不用再跑一轮“写笔记”；
+                # 只有软线要一轮收尾——停在当前单元，把已有的结果连同检查点交付
+                again = lv["closing"] or (not s.delivered and an is None)
+                if exit_status is None and not lv["killed"] and again and not (an and s.delivered):
                     plan.resume = True
                     plan.user_prompt = be.SOLVE_CLOSING_BUDGET if lv["closing"] else be.SOLVE_CLOSING_RELAY
+                    if an is not None:
+                        an.phase = "budget"
                     exit_status = self._round(plan, rec, pid, token)
+                if an is not None:
+                    self._export(pid, ws)
             elif reviews:
                 # 复核会话（体质修炼 002）：软线或没交回读数就结束 → 一轮收尾，交回已核到的部分。不接力、不重试
                 if exit_status is None and not lv["killed"] and (lv["closing"] or not s.reviewed):
@@ -545,6 +566,25 @@ class SessionRunner:
         if src.is_dir():
             shutil.copytree(src, ws, dirs_exist_ok=True, symlinks=True)
 
+    def _export(self, pid: str, ws: Path) -> None:
+        """方案分析：把工作区里引擎的目录镜像到导出目录，界面的读端点从那里读（会话目录会被清理，导出的留着）。
+        先拷到旁边再换名，读的一方看不到拷了一半的目录。导出失败只记日志：它不是事件账的一部分。"""
+        src, root = ws / "analysis", self.cfg.analysis_export
+        if root is None or not src.is_dir():
+            return
+        dest, tmp, old = root / pid, root / f".{pid}.new", root / f".{pid}.old"
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            for stale in (tmp, old):
+                shutil.rmtree(stale, ignore_errors=True)
+            shutil.copytree(src, tmp, symlinks=False, ignore=shutil.ignore_patterns(".*.tmp"))
+            if dest.exists():
+                os.replace(dest, old)
+            os.replace(tmp, dest)
+            shutil.rmtree(old, ignore_errors=True)
+        except OSError as e:
+            LOG.warning("分析工作区没有导出成（%s）：%s", pid, e)
+
     def _model(self, pid: str, role: str) -> Mapping[str, Any]:
         """这个会话用哪个模型档案：任务的 prefs.model 优先，否则按设置层的角色路由（宪章 03 §3.2）。
         没有接设置层（resolve_model 为 None）或解析不到时返回空，沿用 CliBinding 与代理的缺省。"""
@@ -650,7 +690,7 @@ class SessionRunner:
             now = self.clock()
             if now - last[0] > self.cfg.stall_s:
                 status = "failed(stalled)"
-            elif turns[0] > self.cfg.max_turns:
+            elif turns[0] > (plan.max_turns or self.cfg.max_turns):
                 status = "failed(max_turns)"  # 回合上限由 Adapter 计数执行（见 backend.py）
             if status:
                 _terminate(proc)

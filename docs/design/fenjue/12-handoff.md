@@ -150,3 +150,5 @@ uv run python scripts/lianhua.py import <handoff.json> [--only C2] [--queue]
 - **试算模式**：读预算与花费份额各减半，自动取火序前三，萃意单稿（不出第二稿与盲评；K8 有指令痕迹时仍重写），入位只做骨架不调主丹；产物 `dry_run.json` 与异火榜更新提议。转正式时 `start(intake, reuse=试算工作区)` 复用快照、勘察、精读与候选，核对快照一致，不再调模型。
 - **界面要用的两项**（E-U4、E-U5）：界面会显示的所有自由文本（候选、火意、入位、试算、交接包）都过一遍内部词校验（V5），词表加了十个词；每次交付的回答末尾附“产物对照”表（产物｜Artifact id｜sha256），Artifact id 缺省 `local:<sha256 前 16 位>`，接内核后由 `Config.artifact_id` 换成真 id。
 - 验收录音 14 份（含组合夹具的试算一份）重录；体质改动 0 行。还没做的：分析实例与 `h1.tunshi`、`h3.tunshi-tools` 接入内核，真模型适配器。
+
+**进度（2026-11-21，第三期：接进内核与真模型，cz 选“固定流程程序驱动”）**：E3、E4 做完，做法与偏离 09 的地方见 [13](./13-kernel.md)。分析实例（配置 `analysis.enabled`，功法 `gongfa.engine.json` 由 `lianhua.py` 从主功法推出）；`h1.tunshi` 的会话跑驱动程序 `paoding_adapter/tunshi_cli.py`，模型经端点代理按档位调用；宿主工具 `intake`、`fetch`、`check` 与交付闸；调用备忘与原子检查点；工作区导出到 `<home>/analyses/<题号>/`；开带立项单的题用 `scripts/tunshi.py`。体质改动 0 行。还没做的：E6 界面（#137）、E7 首次真跑（三个验收用例，先试算）。

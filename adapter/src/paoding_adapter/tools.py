@@ -42,7 +42,7 @@ from paoding_graph.contract import (
     node_levels,
 )
 
-from . import creds
+from . import creds, tunshi
 
 MAX_SAME_REJECT = 3
 KB_SEARCH_MAX = 40  # 每个会话至多检索 40 次、读 200 段（资料库设计“执行中检索”：检索不花钱，但占上下文）
@@ -122,11 +122,13 @@ class ToolHost:
         executor: ExecPort | None = None,
         access: Callable[[], Any] | None = None,
         knowledge: KnowledgePort | None = None,
+        analysis: tunshi.Analysis | None = None,
     ):
         """access：把本会话在跑的沙箱对齐到当前授权范围（会话运行器的 reconcile），request_access 批下来时调用。
-        knowledge：查资料的端口；会话有 kb_search / kb_read 工具时才用。"""
+        knowledge：查资料的端口；会话有 kb_search / kb_read 工具时才用。
+        analysis：方案分析会话在宿主一侧的状态（tunshi.py）；别的会话没有。"""
         self.s, self.graph, self.reader, self.blobs, self.executor = s, graph, reader, blobs, executor
-        self.access, self.knowledge = access, knowledge
+        self.access, self.knowledge, self.analysis = access, knowledge, analysis
         self._kb = {"search": 0, "read": 0}
         self._asked: dict[str, str] = {}  # 本会话提过的扩权申请 → 上次告诉模型的状态
         self._n = 0
@@ -275,9 +277,12 @@ class ToolHost:
         """交付（open-lane §3.4）。答案：answer（文字）或 answer_path（工作区文件），登记为 authored。
         其余字段原样交内核校验：依据不存在、类别不可采信、受阻却不写 needs，都由内核拒绝并说明。"""
         allowed = {"outcome", "answer", "answer_path", "claims", "self_check", "unverified", "needs"}
+        if self.analysis is not None:  # 方案分析会话：随交付列出的产物须经 check 登记过（tunshi.gate）
+            allowed = allowed | {"artifacts"}
         extra = a.keys() - allowed
         if extra:
             raise BadBody(f"deliver 只收 {sorted(allowed)}，多了 {sorted(extra)}")
+        products = tunshi.gate(self, a.get("artifacts")) if a.get("artifacts") is not None else []
         keys = ("outcome", "claims", "self_check", "unverified", "needs")
         body: dict[str, Any] = {k: a.get(k) for k in keys if k in a}
         body, masked = _mask_deep(body, self.s.secrets)  # 交付进事件账、给人看：凭据不进交付（creds.py）
@@ -320,6 +325,8 @@ class ToolHost:
             res["answer"] = out["results"][0]["id"]  # 答案的产物编号（authored：它不是证据，不能当主张的依据）
         if masked:
             res["masked"] = "交付里有原话里的凭据，已遮盖"
+        if products:
+            res["artifacts"] = len(products)
         return res
 
     # ---------- review（开放道的复核会话） ----------
@@ -662,6 +669,9 @@ class ToolHost:
         "review": _review,
         "kb_search": _kb_search,
         "kb_read": _kb_read,
+        "intake": tunshi.intake,
+        "fetch": tunshi.fetch,
+        "check": tunshi.check,
     }
 
 
@@ -834,6 +844,31 @@ def tool_schemas(tools: tuple[Any, ...], order: tuple[str, ...] | None = None) -
             "properties": {"chunk": {"type": "string", "description": "kb_search 返回的段落编号，形如 k_…"}},
         },
     }
+    s["intake"] = {
+        "description": "方案分析会话：取这道题的简报（立项单、材料在工作区里的位置、追问、预算、各档位的模型）。"
+        "不收参数。",
+        "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}},
+    }
+    s["fetch"] = {
+        "description": "方案分析会话：抓取立项单里登记的一个地址类来源。只给来源编号；抓哪个地址由宿主按立项单定。"
+        "没有授权时发出访问申请并返回 pending；抓到后返回工作区里的文件位置与执行留档的编号。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["source"],
+            "additionalProperties": False,
+            "properties": {"source": {"type": "integer", "minimum": 1}},
+        },
+    }
+    s["check"] = {
+        "description": "方案分析会话：检查工作区里的一份结构化产物（Schema、摘要、凭据），"
+        "通过后登记并返回 artifact 编号。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["name", "path"],
+            "additionalProperties": False,
+            "properties": {"name": {"type": "string"}, "path": {"type": "string"}},
+        },
+    }
     if order is None:
         order = tool_order(current())
     return [{"name": n, **s[n]} for n in order if n in tools]
@@ -855,5 +890,7 @@ def as_text(obj: Any) -> str:
 
 
 def tool_order(gf: View) -> tuple[str, ...]:
-    """一版功法的工具面顺序（H3：基础工具面，接资料库的两样）。"""
-    return (*gf.params("H3", "h3.base")["order"], *gf.params("H3", "h3.kb")["tools"])
+    """一版功法的工具面顺序（H3：基础工具面，接资料库的两样，再接这一版功法在 H3 上另外绑的工具）。"""
+    base = (*gf.params("H3", "h3.base")["order"], *gf.params("H3", "h3.kb")["tools"])
+    more = [t for f in gf.active("H3") if f["id"] not in ("h3.base", "h3.kb") for t in f["params"].get("tools", [])]
+    return (*base, *(t for t in more if t not in base))

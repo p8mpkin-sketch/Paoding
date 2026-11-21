@@ -13,6 +13,7 @@ S0 立项 → S3 识火 → G1 → S4 萃意 → G2 → S5 入位与火序 → G
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,7 +21,7 @@ from typing import Any
 
 from ..shapes import digest
 from . import budget, checks, cuiyi, data, decision, handoff, ruwei, schema, shihuo, survey, text
-from .dan import Dan, new_nonce
+from .dan import BudgetExhausted, Dan, new_nonce
 
 ENGINE_FIRE = "h1.tunshi@1"
 DRY_RUN_PICK = 3  # 试算按 P 自动取前 3（〔占位〕，09 §3）
@@ -71,6 +72,7 @@ class Delivery:
     artifacts: dict[str, str]
     needs: list[str]
     passed: bool = True
+    stop: str | None = None  # 没走到闸点就停下的原因：budget:task | budget:problem | budget:global | stage | soft_line
 
 
 class Engine:
@@ -96,14 +98,19 @@ class Engine:
         errs = schema.errors(self.state, "run")
         if errs:
             raise EngineError(f"run.json 不合 Schema：{errs[:3]}")
-        (self.ws / "run.json").write_text(json.dumps(self.state, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-        (self.ws / "engine.json").write_text(json.dumps(self.x, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        # 先写旁边的临时文件再改名：会话随时可能被终止（硬顶、停机），检查点不能停在写了一半的样子
+        for name, doc in (("engine.json", self.x), ("run.json", self.state)):
+            tmp = self.ws / f".{name}.tmp"
+            tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            os.replace(tmp, self.ws / name)
 
     def put(self, name: str, obj: Any) -> str:
         sha = digest(obj)
         p = self.ws / "artifacts" / f"{sha}.json"
         if not p.exists():
-            p.write_text(json.dumps(obj, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            tmp = p.with_name(f".{sha}.tmp")
+            tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            os.replace(tmp, p)
         self.state["artifacts"][name] = sha
         return sha
 
@@ -148,8 +155,13 @@ class Engine:
         self._save_state()
 
     def _spend(self, step: str, tier: str, tin: int, tout: int) -> None:
+        """记一次调用的花费（每步的预算份额按它扣）。单次调用常常不到千分之一美元（片段阅读用轻档）：
+        逐次取整会把它们全记成 0，这一步的份额就永远扣不动。所以不足一个单位的零头按步累着，凑满了再进位。"""
         sp = self.state["spent"]
-        cost = budget.cost_usd_milli(self.cfg.prior, tier, tin, tout)
+        pin, pout = self.cfg.prior.price()[tier]
+        carry: dict[str, int] = self.x.setdefault("spend_carry", {})
+        num = tin * pin + tout * pout + int(carry.get(step, 0))
+        cost, carry[step] = num // 1_000_000, num % 1_000_000
         sp["usd_milli"] += cost
         sp.setdefault("by_step", {})[step] = sp.get("by_step", {}).get(step, 0) + cost
         tk = sp.setdefault("tokens", {})
@@ -172,7 +184,18 @@ class Engine:
 
         reuse：试算转正式（09 §3）——复用那次试算的快照、勘察与观察（按快照身份核对，不重读），
         识火按存下的提议重做差距比对（公式，不花 token），从闸点 1 开始。"""
-        return self._out(self._start(intake, reuse))
+        return self._guard(lambda: self._start(intake, reuse))
+
+    def _guard(self, go: Callable[[], Delivery]) -> Delivery:
+        """跑一段流程；模型调用被预算挡下（端点代理到顶即拒）就停在当前单元，带检查点部分交付。"""
+        try:
+            return self._out(go())
+        except BudgetExhausted as e:
+            return self._out(self._stop(f"budget:{e.scope}"))
+
+    def _material(self, s: Mapping[str, Any]) -> Path | None:
+        """来源的定版目录：上传与资料库按 Artifact id 取，地址类来源（抓取后）按 `source:<编号>` 取。"""
+        return self.materials.get(s.get("artifact") or f"source:{s['no']}")
 
     def _start(self, intake: dict[str, Any], reuse: Path | None) -> Delivery:
         if not self.state:
@@ -186,7 +209,7 @@ class Engine:
             refused = list(intake.get("refused", []))
             keep = []
             for s in intake["sources"]:
-                mat = self.materials.get(s.get("artifact", ""))
+                mat = self._material(s)
                 why = survey.refusal(s, str(mat) if mat else None)
                 if why:
                     refused.append({"no": s["no"], "why": why})
@@ -253,7 +276,7 @@ class Engine:
             self.state["step"] = "S1"
         for i, s in enumerate(self._sources(), 1):
             sid = f"s{i}"
-            mat = self.materials.get(s.get("artifact", ""))
+            mat = self._material(s)
             if mat is None:
                 raise EngineError(f"来源 {s['no']} 的材料没有定版（地址类来源要先经扩权卡抓取）")
             snap = survey.load_snapshot(sid, s["form"], mat)
@@ -412,12 +435,69 @@ class Engine:
 
     def _budget_cut(self, step: str, uid: str) -> Delivery:
         self._mark(uid, step, "budget_cut")
+        self.x["paused_from"] = step
         self.state["step"] = "paused_budget"
         self._save_state()
-        msg = f"{step} 的预算份额用完，停在单元 {uid}；追加预算后从这里接着做（已完成的单元不重做）"
+        name = {"S3": "识别候选", "S4": "提炼要点", "S5": "归位与实验设计"}.get(step, step)
+        msg = f"“{name}”这一步的预算份额用完，停在单元 {uid}；追加预算后从这里接着做（已完成的单元不重做）"
         return Delivery(
-            None, "partial", msg, dict(self.state["artifacts"]), [msg, "追加预算继续，或缩小范围"], passed=False
+            None,
+            "partial",
+            msg,
+            self._shown(),
+            [msg, "追加预算继续，或缩小范围"],
+            passed=False,
+            stop="stage",
         )
+
+    def _shown(self) -> dict[str, str]:
+        """中途停下时随交付带出的产物：已经成形、给人看得懂的那几样（快照、勘察等中间件不带）。"""
+        keep = ("candidates.json", "essence:", "placement:", "order.json", "report:")
+        arts: dict[str, str] = self.state.get("artifacts", {})
+        return {k: v for k, v in arts.items() if k.startswith(keep) and not k.endswith(".v")}
+
+    STOP_ZH = {
+        "budget:task": "这个会话的预留预算用完",
+        "budget:problem": "这道题的预算用完",
+        "budget:global": "全局预算上限已到",
+        "soft_line": "预算或时间接近上限",
+    }
+
+    def _stop(self, why: str) -> Delivery:
+        """没走到下一个确认点就得停：把在做的单元标成待续、存检查点，交出此刻已有的产物。"""
+        step = self.state.get("step")
+        if not self.state or step in ("G1", "G2", "G3", "done", "failed", "paused_budget", "halted"):
+            raise EngineError(f"现在没有在做的步骤可停（{step}）")
+        doing = [u for u in self.state["units"] if u["state"] == "doing"]
+        for u in doing:
+            u["state"] = "budget_cut"
+        self.x["paused_from"] = step if step in ("S3", "S4", "S5", "S6") else "S3"
+        self.state["step"] = "paused_budget"
+        self._save_state()
+        at = f"单元 {doing[0]['id']}" if doing else f"步骤 {step}"
+        said = self.STOP_ZH.get(why, why)
+        msg = f"{said}，停在{at}；已完成的部分都留着，继续时从这里接着做，不重做"
+        more = "追加预算后追问一句“继续”" if why != "budget:task" else "追问一句“继续”即可接着做"
+        return Delivery(None, "partial", msg, self._shown(), [msg, more], passed=False, stop=why)
+
+    def pause(self, why: str = "soft_line") -> Delivery:
+        """收尾轮（预算或墙钟到软线）：不再调模型，停在当前单元并部分交付。"""
+        return self._out(self._stop(why))
+
+    def note(self, **kv: Any) -> None:
+        """引擎簿记（engine.json）里记几样编排要用的东西（例如看到第几条追问），随即落盘。"""
+        self.x.update(kv)
+        self._save_state()
+
+    def finish(self, d: Delivery) -> Delivery:
+        """给一份交付补上产物对照表（E-U5）。"""
+        return self._out(d)
+
+    def set_budget(self, usd_milli: int) -> None:
+        """这次运行的预算以题的预算为准（接进内核后每个会话开头对一次；追问里追加的预算就这样进来）。"""
+        if usd_milli > 0 and self.state and self.x.get("budget_usd_milli") != usd_milli:
+            self.x["budget_usd_milli"] = usd_milli
+            self._save_state()
 
     def _deliver_g1(self) -> Delivery:
         doc = self.get("candidates.json")
@@ -437,7 +517,7 @@ class Engine:
 
     def follow_up(self, body: str, *, follow_up_seq: int | None = None) -> Delivery:
         """cz 的追问正文（带决定块）。G1 之后进萃意，G2 之后进入位与火序，G3 之后出交接包。"""
-        return self._out(self._follow_up(body, follow_up_seq))
+        return self._guard(lambda: self._follow_up(body, follow_up_seq))
 
     def _follow_up(self, body: str, follow_up_seq: int | None) -> Delivery:
         step = self.state.get("step")
@@ -452,6 +532,8 @@ class Engine:
         errs = schema.errors(dec, "decision")
         if errs:
             return self._redeliver(step, [f"决定块不合：{e}" for e in errs])
+        if not self._snaps:  # 换了进程（接进内核后每个会话一个）：先把定版材料读回来，并核对它没变
+            self._snapshot()
         gate = next(g for g in reversed(self.state["gates"]) if g["gate"] == step)
         gate["decision"] = dec
         gate["follow_up_seq"] = follow_up_seq if follow_up_seq is not None else self._next_seq()
@@ -481,6 +563,9 @@ class Engine:
                 k: v for k, v in self.state["artifacts"].items() if not k.startswith(("read:", "candidates"))
             }
             self.state["gates"][-1]["decision"] = dec
+            forget = getattr(self.dan, "forget", None)
+            if forget is not None:  # 重做是要重新读、重新取样：调用备忘里这一步的旧回答不能再用
+                forget(("read:", "shihuo:"))
             self._save_state()
             return self._resume()
         if problems or not picked:
@@ -560,7 +645,7 @@ class Engine:
             if bad:
                 passed = False
                 needs.append(f"{cid} 未过：{', '.join(bad)}")
-        needs.append("请逐个确认火意，或逐栏修改、退回重做、放弃（闸点 2）")
+        needs.append("请逐个确认提炼出的核心做法，或逐栏修改、退回重做、放弃（第 2 次确认）")
         return Delivery("G2", "partial", report_g2(essences), arts, needs, passed=passed)
 
     def _apply_g2(self, dec: dict[str, Any], seq: int) -> Delivery:
@@ -700,7 +785,7 @@ class Engine:
             if bad or more:
                 passed = False
                 needs.append(f"{p['candidate']} 未过：{', '.join(bad + more)[:300]}")
-        needs.append("请逐个决定：交实现线、搁置（写理由）或排除（写理由）；可勾选把报告存进资料库（闸点 3）")
+        needs.append("请逐个决定：交实现线、搁置（写理由）或排除（写理由）；可勾选把报告存进资料库（第 3 次确认）")
         return Delivery("G3", "answered", text_, arts, needs, passed=passed)
 
     def _apply_g3(self, dec: dict[str, Any]) -> Delivery:
@@ -941,7 +1026,7 @@ class Engine:
 
     def resume(self) -> Delivery:
         """从 run.json 的当前步接着做。"""
-        return self._out(self._resume())
+        return self._guard(self._resume)
 
     def _resume(self) -> Delivery:
         step = self.state.get("step")
@@ -949,7 +1034,7 @@ class Engine:
             raise EngineError(f"这次运行已停在 {step}")
         if step == "paused_budget":
             cut = [u for u in self.state["units"] if u["state"] == "budget_cut"]
-            step = cut[0]["step"] if cut else "S3"
+            step = self.x.pop("paused_from", None) or (cut[0]["step"] if cut else "S3")
             for u in cut:
                 u["state"] = "todo"
             self.state["step"] = step
@@ -958,7 +1043,7 @@ class Engine:
             return self._shihuo()
         if self.state["mode"] == "dry_run":
             return self._dry_run()
-        if step == "G1":
+        if step in ("G1", "S3"):  # S3：清单已建好、还没来得及交付就被打断
             return self._deliver_g1()
         if step == "S4":
             return self._cuiyi()
