@@ -298,7 +298,7 @@ export function Trend({ series }: { series: DayBucket[] }) {
 function FirstRun() {
   return (
     <div className="today first-run" data-page="today">
-      <Mast cap="开始" title="四步上手" dek="交给庖丁一个任务，它会沿着事实的纹理拆开、尝试、验证；需要你拍板的时候，会在“待办”里找你。" />
+      <Mast cap="开始" title="四步上手" dek="交给焚决一个任务，它会拆解、执行、验证；需要你拍板的时候，会在“待办”里找你。" />
       <ol className="steps4">
         <li><span className="no">一</span><div className="grow"><b>连上服务</b><p className="t2">左下角配置人的令牌；没有令牌时整站只读。</p></div></li>
         <li><span className="no hot">二</span><div className="grow"><b>建第一个任务</b><p className="t2">说清楚要达成什么、怎样算完成，约两分钟。可以从模板开始。</p></div><Link to={{ page: "home" }} className={btnClass("ink", "sm")}>新建任务</Link></li>
