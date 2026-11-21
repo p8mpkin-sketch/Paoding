@@ -1,0 +1,723 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "cuiyi:C1:r1:blind",
+   "role": "blind",
+   "tier": "mid",
+   "input_sha256": "f600e17bbb6f62a4cc809a65b756ae6832988eb84d68df8770e686e6d3a6442f",
+   "output": {
+    "guess": "看不出出自哪里，像一类常见的智能体框架做法",
+    "sketches": [
+     "事件流上加一类记录",
+     "结果页按规则分组"
+    ]
+   },
+   "tokens_in": 5000,
+   "tokens_out": 600
+  },
+  {
+   "key": "cuiyi:C1:r1:extra1",
+   "role": "extra",
+   "tier": "heavy",
+   "input_sha256": "d550541bf16e11a69d93f7a1c11516f5d605d9608694efb286d18ad9c2e3673e",
+   "output": {
+    "masked": {
+     "statement": "系统按执行发生的先后，把结论前后的执行记录自动挂到结论旁边，不靠作者自己引用",
+     "mechanism": [
+      {
+       "step": 1,
+       "trigger": "每次工具执行",
+       "input": "执行",
+       "transform": "记录执行及其先后",
+       "output": "执行留档",
+       "primitives": [
+        "记录",
+        "留档"
+       ]
+      },
+      {
+       "step": 2,
+       "trigger": "交付",
+       "input": "结论与执行留档",
+       "transform": "按先后把每条结论之前最近的执行记录关联到结论",
+       "output": "结论—执行关联",
+       "primitives": [
+        "关联",
+        "排序"
+       ],
+       "features": [
+        "merge_readings"
+       ]
+      },
+      {
+       "step": 3,
+       "trigger": "人看结果",
+       "input": "关联",
+       "transform": "在结论旁列出关联的执行记录",
+       "output": "结果视图",
+       "primitives": [
+        "派生视图"
+       ]
+      }
+     ],
+     "premises": [
+      {
+       "id": "p1",
+       "statement": "支撑结论的执行在先后上与结论相邻",
+       "holds_here": "partial",
+       "why": "相邻不等于支撑",
+       "replaced_by": "关联只作读数，与作者引用并排比对，不替代引用"
+      },
+      {
+       "id": "p2",
+       "statement": "执行记录完整且不可改",
+       "holds_here": "yes",
+       "why": "执行输出自动登记为 exec 类，按题哈希成链"
+      }
+     ],
+     "costs": [
+      {
+       "id": "c1",
+       "cost": "先后相邻被误当作支撑，误挂",
+       "kind": "auditability",
+       "here": "avoided_by_fusion"
+      },
+      {
+       "id": "c2",
+       "cost": "读者把系统关联当成作者核实过的引用",
+       "kind": "auditability",
+       "here": "avoided_by_fusion",
+       "kernel": "T5"
+      }
+     ],
+     "overlaps": [
+      {
+       "fire": "h3.base@1",
+       "dims": [
+        "h3.exec-trace"
+       ],
+       "relation": "duplicate",
+       "note": "执行自动留档已有，且哈希成链"
+      },
+      {
+       "fire": "h7.result@1",
+       "dims": [
+        "h7.claim-refs"
+       ],
+       "relation": "complement",
+       "note": "作者引用已有"
+      },
+      {
+       "fire": "h6.activity-ledger@1",
+       "dims": [
+        "h6.exec-drill"
+       ],
+       "relation": "partial",
+       "note": "执行行可点到留档；活动链给出先后"
+      }
+     ],
+     "conflicts": [
+      {
+       "with": "T5",
+       "kind": "kernel",
+       "features": [
+        "merge_readings"
+       ],
+       "statement": "系统关联若计入有据率，就把两类读数合并了",
+       "resolution": "fused_away",
+       "how": "系统关联与作者引用分列，不合成一个有据率；关联不提升任何证据等级"
+      }
+     ],
+     "fusion": {
+      "statement": "每条结论旁同时有作者引用与系统按活动链推出的关联：两者一致记双证，作者引用落在关联窗口之外的标为引用存疑；系统关联只作读数",
+      "emergent": [
+       {
+        "dim": "双证判定覆盖率",
+        "dir": "up",
+        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
+        "measure": "structural",
+        "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
+        "gate": 1.0
+       },
+       {
+        "dim": "引用存疑检出率",
+        "dir": "up",
+        "why_zero_B": "没有比对",
+        "why_zero_A1": "没有比对",
+        "measure": "structural",
+        "how": "夹具里埋的错引全部被标为存疑",
+        "gate": 1.0
+       }
+      ],
+      "outcome_cap": "huolian"
+     },
+     "split": [],
+     "implementations": [
+      {
+       "sketch": "交付时由固定流程把关联写成一份 authored 附件，结果页读附件",
+       "primitives": [
+        "记录",
+        "关联",
+        "留档"
+       ]
+      },
+      {
+       "sketch": "读端按活动链的先后为每条主张算一个关联窗口，与作者引用求交，结果页并排显示",
+       "primitives": [
+        "派生视图",
+        "关联",
+        "对照"
+       ]
+      }
+     ]
+    },
+    "field_refs": {
+     "/premises/0": [
+      "o19dc36b6e02d"
+     ],
+     "/premises/1": [
+      "o64b582db1d33"
+     ],
+     "/costs/0": [
+      "o19dc36b6e02d"
+     ],
+     "/costs/1": [
+      "o64b582db1d33"
+     ],
+     "/conflicts/0": [
+      "o19dc36b6e02d"
+     ]
+    },
+    "plain_summary": "结果页里每条结论旁边，除了作者自己引用的执行记录，再列出系统按时间顺序找到的相关记录；两者一致标“双重印证”，作者引用对不上的标“引用存疑”。只改展示，不改证据等级。"
+   },
+   "tokens_in": 40000,
+   "tokens_out": 4000
+  },
+  {
+   "key": "cuiyi:C1:r1:extra2",
+   "role": "extra",
+   "tier": "heavy",
+   "input_sha256": "d550541bf16e11a69d93f7a1c11516f5d605d9608694efb286d18ad9c2e3673e",
+   "output": {
+    "masked": {
+     "statement": "系统按执行发生的先后，把结论前后的执行记录自动挂到结论旁边，不靠作者自己引用",
+     "mechanism": [
+      {
+       "step": 1,
+       "trigger": "每次工具执行",
+       "input": "执行",
+       "transform": "记录执行及其先后",
+       "output": "执行留档",
+       "primitives": [
+        "记录",
+        "留档"
+       ]
+      },
+      {
+       "step": 2,
+       "trigger": "交付",
+       "input": "结论与执行留档",
+       "transform": "按先后把每条结论之前最近的执行记录关联到结论",
+       "output": "结论—执行关联",
+       "primitives": [
+        "关联",
+        "排序"
+       ],
+       "features": [
+        "merge_readings"
+       ]
+      },
+      {
+       "step": 3,
+       "trigger": "人看结果",
+       "input": "关联",
+       "transform": "在结论旁列出关联的执行记录",
+       "output": "结果视图",
+       "primitives": [
+        "派生视图"
+       ]
+      }
+     ],
+     "premises": [
+      {
+       "id": "p1",
+       "statement": "支撑结论的执行在先后上与结论相邻",
+       "holds_here": "partial",
+       "why": "相邻不等于支撑",
+       "replaced_by": "关联只作读数，与作者引用并排比对，不替代引用"
+      },
+      {
+       "id": "p2",
+       "statement": "执行记录完整且不可改",
+       "holds_here": "yes",
+       "why": "执行输出自动登记为 exec 类，按题哈希成链"
+      }
+     ],
+     "costs": [
+      {
+       "id": "c1",
+       "cost": "先后相邻被误当作支撑，误挂",
+       "kind": "auditability",
+       "here": "avoided_by_fusion"
+      },
+      {
+       "id": "c2",
+       "cost": "读者把系统关联当成作者核实过的引用",
+       "kind": "auditability",
+       "here": "avoided_by_fusion",
+       "kernel": "T5"
+      }
+     ],
+     "overlaps": [
+      {
+       "fire": "h3.base@1",
+       "dims": [
+        "h3.exec-trace"
+       ],
+       "relation": "duplicate",
+       "note": "执行自动留档已有，且哈希成链"
+      },
+      {
+       "fire": "h7.result@1",
+       "dims": [
+        "h7.claim-refs"
+       ],
+       "relation": "complement",
+       "note": "作者引用已有"
+      },
+      {
+       "fire": "h6.activity-ledger@1",
+       "dims": [
+        "h6.exec-drill"
+       ],
+       "relation": "partial",
+       "note": "执行行可点到留档；活动链给出先后"
+      }
+     ],
+     "conflicts": [
+      {
+       "with": "T5",
+       "kind": "kernel",
+       "features": [
+        "merge_readings"
+       ],
+       "statement": "系统关联若计入有据率，就把两类读数合并了",
+       "resolution": "fused_away",
+       "how": "系统关联与作者引用分列，不合成一个有据率；关联不提升任何证据等级"
+      }
+     ],
+     "fusion": {
+      "statement": "每条结论旁同时有作者引用与系统按活动链推出的关联：两者一致记双证，作者引用落在关联窗口之外的标为引用存疑；系统关联只作读数",
+      "emergent": [
+       {
+        "dim": "双证判定覆盖率",
+        "dir": "up",
+        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
+        "measure": "structural",
+        "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
+        "gate": 1.0
+       }
+      ],
+      "outcome_cap": "huolian"
+     },
+     "split": [],
+     "implementations": [
+      {
+       "sketch": "读端按活动链的先后为每条主张算一个关联窗口，与作者引用求交，结果页并排显示",
+       "primitives": [
+        "派生视图",
+        "关联",
+        "对照"
+       ]
+      },
+      {
+       "sketch": "交付时由固定流程把关联写成一份 authored 附件，结果页读附件",
+       "primitives": [
+        "记录",
+        "关联",
+        "留档"
+       ]
+      }
+     ]
+    },
+    "field_refs": {
+     "/premises/0": [
+      "o19dc36b6e02d"
+     ],
+     "/premises/1": [
+      "o64b582db1d33"
+     ],
+     "/costs/0": [
+      "o19dc36b6e02d"
+     ],
+     "/costs/1": [
+      "o64b582db1d33"
+     ],
+     "/conflicts/0": [
+      "o19dc36b6e02d"
+     ]
+    },
+    "plain_summary": "结果页里每条结论旁边，除了作者自己引用的执行记录，再列出系统按时间顺序找到的相关记录；两者一致标“双重印证”，作者引用对不上的标“引用存疑”。只改展示，不改证据等级。"
+   },
+   "tokens_in": 40000,
+   "tokens_out": 4000
+  },
+  {
+   "key": "cuiyi:C1:r1:main:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "2e165b4dc053fe8cd805bf5dd9d1e555e708c80c1f870e12d83d2c93a95a1182",
+   "output": {
+    "masked": {
+     "statement": "系统按执行发生的先后，把结论前后的执行记录自动挂到结论旁边，不靠作者自己引用",
+     "mechanism": [
+      {
+       "step": 1,
+       "trigger": "每次工具执行",
+       "input": "执行",
+       "transform": "记录执行及其先后",
+       "output": "执行留档",
+       "primitives": [
+        "记录",
+        "留档"
+       ]
+      },
+      {
+       "step": 2,
+       "trigger": "交付",
+       "input": "结论与执行留档",
+       "transform": "按先后把每条结论之前最近的执行记录关联到结论",
+       "output": "结论—执行关联",
+       "primitives": [
+        "关联",
+        "排序"
+       ],
+       "features": [
+        "merge_readings"
+       ]
+      },
+      {
+       "step": 3,
+       "trigger": "人看结果",
+       "input": "关联",
+       "transform": "在结论旁列出关联的执行记录",
+       "output": "结果视图",
+       "primitives": [
+        "派生视图"
+       ]
+      }
+     ],
+     "premises": [
+      {
+       "id": "p1",
+       "statement": "支撑结论的执行在先后上与结论相邻",
+       "holds_here": "partial",
+       "why": "相邻不等于支撑",
+       "replaced_by": "关联只作读数，与作者引用并排比对，不替代引用"
+      },
+      {
+       "id": "p2",
+       "statement": "执行记录完整且不可改",
+       "holds_here": "yes",
+       "why": "执行输出自动登记为 exec 类，按题哈希成链"
+      }
+     ],
+     "costs": [
+      {
+       "id": "c1",
+       "cost": "先后相邻被误当作支撑，误挂",
+       "kind": "auditability",
+       "here": "avoided_by_fusion"
+      },
+      {
+       "id": "c2",
+       "cost": "读者把系统关联当成作者核实过的引用",
+       "kind": "auditability",
+       "here": "avoided_by_fusion",
+       "kernel": "T5"
+      }
+     ],
+     "overlaps": [
+      {
+       "fire": "h3.base@1",
+       "dims": [
+        "h3.exec-trace"
+       ],
+       "relation": "duplicate",
+       "note": "执行自动留档已有，且哈希成链"
+      },
+      {
+       "fire": "h7.result@1",
+       "dims": [
+        "h7.claim-refs"
+       ],
+       "relation": "complement",
+       "note": "作者引用已有"
+      },
+      {
+       "fire": "h6.activity-ledger@1",
+       "dims": [
+        "h6.exec-drill"
+       ],
+       "relation": "partial",
+       "note": "执行行可点到留档；活动链给出先后"
+      }
+     ],
+     "conflicts": [
+      {
+       "with": "T5",
+       "kind": "kernel",
+       "features": [
+        "merge_readings"
+       ],
+       "statement": "系统关联若计入有据率，就把两类读数合并了",
+       "resolution": "fused_away",
+       "how": "系统关联与作者引用分列，不合成一个有据率；关联不提升任何证据等级"
+      }
+     ],
+     "fusion": {
+      "statement": "每条结论旁同时有作者引用与系统按活动链推出的关联：两者一致记双证，作者引用落在关联窗口之外的标为引用存疑；系统关联只作读数",
+      "emergent": [
+       {
+        "dim": "双证判定覆盖率",
+        "dir": "up",
+        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
+        "measure": "structural",
+        "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
+        "gate": 1.0
+       },
+       {
+        "dim": "引用存疑检出率",
+        "dir": "up",
+        "why_zero_B": "没有比对",
+        "why_zero_A1": "没有比对",
+        "measure": "structural",
+        "how": "夹具里埋的错引全部被标为存疑",
+        "gate": 1.0
+       }
+      ],
+      "outcome_cap": "huolian"
+     },
+     "split": [],
+     "implementations": [
+      {
+       "sketch": "读端按活动链的先后为每条主张算一个关联窗口，与作者引用求交，结果页并排显示",
+       "primitives": [
+        "派生视图",
+        "关联",
+        "对照"
+       ]
+      },
+      {
+       "sketch": "交付时由固定流程把关联写成一份 authored 附件，结果页读附件",
+       "primitives": [
+        "记录",
+        "关联",
+        "留档"
+       ]
+      }
+     ]
+    },
+    "field_refs": {
+     "/premises/0": [
+      "o19dc36b6e02d"
+     ],
+     "/premises/1": [
+      "o64b582db1d33"
+     ],
+     "/costs/0": [
+      "o19dc36b6e02d"
+     ],
+     "/costs/1": [
+      "o64b582db1d33"
+     ],
+     "/conflicts/0": [
+      "o19dc36b6e02d"
+     ]
+    },
+    "plain_summary": "结果页里每条结论旁边，除了作者自己引用的执行记录，再列出系统按时间顺序找到的相关记录；两者一致标“双重印证”，作者引用对不上的标“引用存疑”。只改展示，不改证据等级。"
+   },
+   "tokens_in": 40000,
+   "tokens_out": 4000
+  },
+  {
+   "key": "read:s1:README.md:1-14:H7:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "b5db4b5731f7414b63ab57cdea69e0313df39798d5565bc7638fac0f4fa9d4bd",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h7.auto-link"
+      ],
+      "kind": "doc_claim",
+      "statement": "说明里称结论附近发生的记录会被自动附上并计为依据",
+      "primitives": [
+       "关联",
+       "引用"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1611,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:lanternlog/attach.py:1-18:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "bab166042973133fb572dbbb575c35208313b76f2a18a1696b24cff7ea46a18a",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1696,
+   "tokens_out": 20
+  },
+  {
+   "key": "read:s1:lanternlog/attach.py:1-18:H6:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "4a98035372df1aeeaa0a45fa68565434965b7dc4dc17492524dcd00a153ad013",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1696,
+   "tokens_out": 20
+  },
+  {
+   "key": "read:s1:lanternlog/attach.py:1-18:H7:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "465a68ce9792be3929a0e46964281322be4eac8487fa51bdadc277ffddd30c45",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h7.auto-link"
+      ],
+      "kind": "mechanism",
+      "statement": "交付结论时按时间把结论前后窗口内的执行记录自动挂到结论旁，并直接算作结论的依据",
+      "primitives": [
+       "关联",
+       "证据",
+       "排序"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1696,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:lanternlog/trace.py:1-19:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "d348bc064bde22a658b16b53b786546c5a5744b2ed1646655af4b6542f407550",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1645,
+   "tokens_out": 20
+  },
+  {
+   "key": "read:s1:lanternlog/trace.py:1-19:H3:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "a7ac27f901eb09184738d01e0e9472fa852cda212b8a2c2a514c523f5f57a83b",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h3.exec-trace"
+      ],
+      "kind": "mechanism",
+      "statement": "每次工具执行自动记一条命令、输出与时间，存在进程内的列表里",
+      "primitives": [
+       "记录",
+       "留档"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1645,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:lanternlog/trace.py:1-19:H6:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "dd7b9b73f3102576e1f5babfece7e1d2bc2b8751df35b3bd604483340c1bbc0e",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1645,
+   "tokens_out": 20
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "90ff3482896025df49e4f814ce8572c7b238dcf849cba171dd698ed6eda7e0b0",
+   "output": {
+    "patterns": [
+     {
+      "name": "dual-proof",
+      "title": "证据自动关联",
+      "slot": "H7",
+      "also_slots": [
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h7.auto-link",
+        "theirs": 2,
+        "observations": [
+         "o19dc36b6e02d",
+         "o64b582db1d33"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H7"
+      ],
+      "difficulty_parts": {},
+      "phenomenon": "每次工具执行自动留档，交付时系统按先后把每条结论前后的执行记录挂到结论旁边",
+      "gap_text": "执行留档我们已经有且更强（哈希成链）；但主张与留档的连线只靠模型自己引用，系统不做关联",
+      "is_fire": "是：由系统而不是作者把执行记录关联到结论是一类做法",
+      "recommend": {
+       "level": "recommend",
+       "why": "只动结果页的读端，风险最低；新生维是结构读数"
+      }
+     },
+     {
+      "name": "exec-trace",
+      "title": "h3.exec-trace",
+      "slot": "H3",
+      "dims": [
+       {
+        "dim": "h3.exec-trace",
+        "theirs": 2,
+        "observations": [
+         "o3e7a6fe49142"
+        ]
+       }
+      ],
+      "is_fire": "是：一类可复用的做法"
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：结论旁自动关联执行记录。每次执行自动留档我们已有且更强。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

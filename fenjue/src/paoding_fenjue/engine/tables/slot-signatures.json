@@ -1,0 +1,177 @@
+{
+ "v": 1,
+ "note": "火位签名表（08 §3.3）：聚焦打分与读者问题模板都从它来。词面线索按小写比对",
+ "slots": [
+  {
+   "slot": "H1",
+   "decides": "会话带什么工具、读哪份提示、何时结束、怎么接力、分几个阶段",
+   "lex": [
+    "agent loop",
+    "system prompt",
+    "session",
+    "handoff",
+    "milestone",
+    "stage",
+    "turn",
+    "stop condition",
+    "会话",
+    "阶段",
+    "里程碑",
+    "接力"
+   ],
+   "struct": [
+    "def run",
+    "while ",
+    "prompt",
+    "def stop",
+    "def done",
+    "seal"
+   ]
+  },
+  {
+   "slot": "H2",
+   "decides": "先做什么、开几个、何时等人",
+   "lex": [
+    "scheduler",
+    "planner",
+    "queue",
+    "priority",
+    "retry",
+    "parallel",
+    "dispatch",
+    "调度",
+    "排队",
+    "优先级",
+    "并行"
+   ],
+   "struct": [
+    "heapq",
+    "Queue(",
+    "concurrency",
+    "semaphore"
+   ]
+  },
+  {
+   "slot": "H3",
+   "decides": "会话看到哪些工具、每个工具的形状",
+   "lex": [
+    "tool",
+    "function schema",
+    "plugin",
+    "mcp",
+    "capability",
+    "工具",
+    "插件"
+   ],
+   "struct": [
+    "def tool",
+    "register_tool",
+    "schema"
+   ]
+  },
+  {
+   "slot": "H4",
+   "decides": "会话内外怎么保留、压缩、交接信息",
+   "lex": [
+    "context window",
+    "token count",
+    "summarize",
+    "summary",
+    "compact",
+    "truncate",
+    "memory",
+    "fold",
+    "上下文",
+    "压缩",
+    "摘要",
+    "折叠"
+   ],
+   "struct": [
+    "count_tokens",
+    "threshold",
+    "def fold",
+    "def summarize"
+   ]
+  },
+  {
+   "slot": "H5",
+   "decides": "资料从哪来、怎么切、怎么检索",
+   "lex": [
+    "index",
+    "embedding",
+    "retrieval",
+    "chunk",
+    "rerank",
+    "recall",
+    "检索",
+    "索引"
+   ],
+   "struct": [
+    "def search",
+    "vector"
+   ]
+  },
+  {
+   "slot": "H6",
+   "decides": "人在执行中与执行后看到什么",
+   "lex": [
+    "stream",
+    "trace",
+    "log viewer",
+    "timeline",
+    "replay",
+    "websocket",
+    "event",
+    "追踪",
+    "回放",
+    "时间线"
+   ],
+   "struct": [
+    "def replay",
+    "def record",
+    "trace"
+   ]
+  },
+  {
+   "slot": "H7",
+   "decides": "交付怎么组织与呈现",
+   "lex": [
+    "report",
+    "render",
+    "citation",
+    "export",
+    "summary",
+    "evidence",
+    "claim",
+    "conclusion",
+    "报告",
+    "结论",
+    "证据",
+    "导出"
+   ],
+   "struct": [
+    "def render",
+    "def report",
+    "def attach",
+    "def export"
+   ]
+  },
+  {
+   "slot": "H8",
+   "decides": "一句话怎么变成任务",
+   "lex": [
+    "parse",
+    "intent",
+    "clarify",
+    "triage",
+    "route",
+    "意图",
+    "分流"
+   ],
+   "struct": [
+    "def parse",
+    "def route"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,60 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "bang.schema.json",
+ "title": "异火榜（界面：候选方案）：docs/design/fenjue/yihuobang.json，只由 lianhua.py bang 写（09 §8）",
+ "type": "object",
+ "required": ["v", "entries"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } }
+ },
+ "$defs": {
+  "status": { "enum": ["identified", "dry_run", "selected", "handed_off", "absorbed", "rejected", "excluded", "superseded", "reverted"] },
+  "entry": {
+   "type": "object",
+   "required": ["id", "title", "essence", "slot", "status", "history"],
+   "additionalProperties": false,
+   "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/bangId" },
+    "title": { "type": "string", "maxLength": 40 },
+    "essence": { "type": "string", "maxLength": 80, "description": "火意一句（遮蔽视图的 statement）" },
+    "fusion": { "type": "string", "maxLength": 300 },
+    "slot": { "$ref": "common.schema.json#/$defs/slot" },
+    "also_slots": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/slot" } },
+    "dims": { "type": "array", "items": { "type": "string" } },
+    "source_kind": { "type": "string", "maxLength": 60, "description": "出处类型（不写具体产品名，例：编码智能体界面）" },
+    "license": { "$ref": "common.schema.json#/$defs/license" },
+    "status": { "$ref": "#/$defs/status" },
+    "value": { "type": "number" }, "confidence": { "type": "number" }, "difficulty": { "type": "integer" }, "risk": { "enum": ["R0", "R1", "R2", "R3"] }, "priority": { "type": "number" },
+    "basis_gongfa_digest": { "type": "string", "description": "上次算 P 时的功法摘要；与当前不同即“需复算”" },
+    "kernel_lines_expected": { "type": ["integer", "string"] },
+    "deps": { "type": "array", "items": { "type": "string" } },
+    "exclusive_with": { "type": "array", "items": { "type": "string" } },
+    "dossier": { "$ref": "common.schema.json#/$defs/dossierNo" },
+    "jie": { "type": "integer" },
+    "why": { "type": "string", "description": "排除、不收、并入的理由" },
+    "lessons": { "type": "array", "items": { "type": "string" } },
+    "runs": { "type": "array", "items": { "type": "object", "required": ["run", "mode", "reached"], "additionalProperties": false,
+      "properties": { "run": { "type": "string" }, "mode": { "$ref": "common.schema.json#/$defs/mode" }, "reached": { "enum": ["S3", "G1", "S4", "G2", "S5", "G3", "S6"] }, "artifacts": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/sha256" } }, "outcome": { "type": "string" } } } },
+    "history": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["date", "status"], "additionalProperties": false,
+      "properties": { "date": { "$ref": "common.schema.json#/$defs/date" }, "status": { "$ref": "#/$defs/status" }, "by": { "type": "string" }, "note": { "type": "string" } } } }
+   }
+  },
+  "update": {
+   "type": "object",
+   "description": "交接包里的榜更新提议，由 lianhua.py import 写入",
+   "required": ["op"],
+   "additionalProperties": false,
+   "properties": {
+    "op": { "enum": ["add", "set_status", "add_run", "merge_into"] },
+    "id": { "$ref": "common.schema.json#/$defs/bangId" },
+    "entry": { "$ref": "#/$defs/entry" },
+    "status": { "$ref": "#/$defs/status" },
+    "run": { "type": "object" },
+    "into": { "$ref": "common.schema.json#/$defs/bangId" },
+    "note": { "type": "string" }
+   }
+  }
+ }
+}

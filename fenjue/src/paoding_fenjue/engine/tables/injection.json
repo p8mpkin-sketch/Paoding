@@ -1,0 +1,73 @@
+{
+ "v": 1,
+ "note": "注入探测（08 §4.4 D6）与指令痕迹（K8）共用的模式表；按 NFKC 与大小写折叠后比对",
+ "prompt_like": [
+  "ignore previous",
+  "ignore all previous",
+  "disregard previous",
+  "system prompt",
+  "you are now",
+  "you are an ai",
+  "assistant:",
+  "system:",
+  "给阅读本仓库的 ai",
+  "给 ai",
+  "写给智能体",
+  "请忽略",
+  "忽略之前",
+  "忽略以上",
+  "调用 request_access",
+  "request_access",
+  "把内核改动行数",
+  "内核改动行数写成"
+ ],
+ "imperative": [
+  "忽略",
+  "你必须",
+  "你现在是",
+  "请在候选里",
+  "把…写入功法",
+  "写入功法",
+  "改写功法",
+  "ignore previous",
+  "you must",
+  "you are now",
+  "do not tell",
+  "请务必",
+  "本方案已通过全部内核测试"
+ ],
+ "tool_call_json": [
+  "\"tool\":",
+  "\"function_call\"",
+  "\"tool_calls\"",
+  "\"name\": \"request_access\""
+ ],
+ "hidden_unicode": [
+  "​",
+  "‌",
+  "‍",
+  "⁠",
+  "﻿",
+  "‪",
+  "‫",
+  "‬",
+  "‭",
+  "‮",
+  "⁦",
+  "⁧",
+  "⁨",
+  "⁩"
+ ],
+ "base64_min_len": 120,
+ "our_objects": [
+  "gongfa.json",
+  "lianhua.py",
+  "fires/",
+  "KERNEL_PATHS",
+  "run.json",
+  "profile.json",
+  "tables.py",
+  "scripts/",
+  "dossiers/"
+ ]
+}

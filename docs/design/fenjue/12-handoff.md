@@ -139,3 +139,5 @@ uv run python scripts/lianhua.py import <handoff.json> [--only C2] [--queue]
 | E5 | 验收夹具 | `fenjue/tests/engine_fixtures/` 四个夹具 × 四种形态、录好的丹输出、CI 里的确定性验收 | E1–E4 |
 | E6 | 界面 | 新建分析、三个确认卡（生成决定块）、报告页、候选方案页（排进界面线，EN16） | E4 |
 | E7 | 首次真跑 | 测试方用真模型跑验收（[11 §7](./11-acceptance.md#7-怎么跑)），读数回填 | E5 |
+
+**进度（2026-11-21，cz：先做能在夹具上过线的最小版本，识火与萃意走到闸点 2）**：E1 的量具除决策原子表（随入位做）之外都已落地（`paoding_fenjue.engine`：Schema 原样搬入、九张表、公式与火序、K1–K8、V1–V12、决定块解析、预算先验占位表）；E3/E4 先做流程骨架而不接内核（`run.Engine`：立项、快照、勘察、识火、闸点 1、萃意、闸点 2，`run.json` 检查点与续做；交付与决定块的形状就是将来 `deliver` 与 `follow_up` 的内容）；E5 的夹具先做小号（四个合成夹具，各一两百行，13 次识火的丹输出录在 `fenjue/tests/engine_fixtures/recorded/`）。没做的：分析实例与 `h1.tunshi`、`h3.tunshi-tools` 接入内核，真模型适配器，入位与交接，试算模式，E2 的 `lianhua.py import`、`bang`。

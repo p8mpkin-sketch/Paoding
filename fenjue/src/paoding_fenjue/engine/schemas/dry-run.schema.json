@@ -1,0 +1,48 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "dry-run.schema.json",
+ "title": "试算报告：如果吞会怎样（09 §3）。不分配档号，不能直接导入炼档",
+ "type": "object",
+ "required": ["v", "mode", "run", "candidates", "items", "estimate", "plain_summary"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "mode": { "const": "dry_run" },
+  "run": { "type": "string" },
+  "candidates": { "$ref": "candidates.schema.json", "description": "识火的完整清单（同正式）" },
+  "auto_picked": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/candId" }, "maxItems": 10, "description": "按 P 自动取的前 N 个" },
+  "items": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": ["candidate", "essence_draft", "slot", "replaces", "conflicts", "kernel_forecast", "likely_outcome", "checks"],
+    "additionalProperties": false,
+    "properties": {
+     "candidate": { "$ref": "common.schema.json#/$defs/candId" },
+     "essence_draft": { "$ref": "essence.schema.json#/$defs/masked", "description": "单稿，不重写" },
+     "slot": { "$ref": "common.schema.json#/$defs/slot" },
+     "group_slots": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/slot" } },
+     "replaces": { "type": ["string", "null"] },
+     "conflicts": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/shortText" } },
+     "kernel_forecast": { "type": "array", "items": { "type": "string" }, "description": "可能触到的体质路径；非空意味着要拆体质修炼" },
+     "difficulty": { "type": "integer", "minimum": 1, "maximum": 5 },
+     "likely_outcome": { "enum": ["promising_huolian", "at_most_helian", "maybe_binghuo"], "description": "有望火莲 / 至多合炼 / 可能并火：只是预判，不进读数" },
+     "why": { "$ref": "common.schema.json#/$defs/shortText" },
+     "checks": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/checkResult" } }
+    }
+   }
+  },
+  "estimate": {
+   "type": "object",
+   "description": "正式走一遍的预估",
+   "required": ["tokens", "minutes"],
+   "additionalProperties": false,
+   "properties": {
+    "tokens": { "type": "object", "additionalProperties": false, "patternProperties": { "^(light|mid|heavy)$": { "type": "object", "required": ["in", "out"], "properties": { "in": { "type": "integer" }, "out": { "type": "integer" } }, "additionalProperties": false } } },
+    "minutes": { "type": "integer", "minimum": 0 },
+    "budget_usd_milli": { "type": "integer", "minimum": 0, "description": "按预算先验与价格表折算；占位表下只作示意" }
+   }
+  },
+  "plain_summary": { "$ref": "common.schema.json#/$defs/plainSummary" }
+ }
+}

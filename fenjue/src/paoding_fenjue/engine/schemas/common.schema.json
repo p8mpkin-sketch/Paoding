@@ -1,0 +1,105 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "common.schema.json",
+ "title": "焚决引擎：公共定义",
+ "$defs": {
+  "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+  "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+  "slot": { "enum": ["H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8"] },
+  "kernelItem": { "enum": ["T1", "T2", "T3", "T4", "T5"] },
+  "port": { "type": "string", "pattern": "^M[1-7](:[a-z_]+)?$" },
+  "fireRef": { "type": "string", "pattern": "^h[1-8]\\.[a-z0-9-]+@[0-9]+$", "description": "火的 id@ver" },
+  "fireId": { "type": "string", "pattern": "^h[1-8]\\.[a-z0-9-]+$" },
+  "dimId": { "type": "string", "pattern": "^h[1-8]\\.[a-z0-9-]+$", "description": "能力维 id（engine/profile.json）" },
+  "level": { "type": "integer", "minimum": 0, "maximum": 3 },
+  "candId": { "type": "string", "pattern": "^C[0-9]+$" },
+  "obsId": { "type": "string", "pattern": "^o[0-9a-f]{12}$", "description": "观察 id：观察记录 JCS 的 sha256 前 12 位" },
+  "bangId": { "type": "string", "pattern": "^Y-[0-9]{3}$" },
+  "dossierNo": { "type": "string", "pattern": "^[0-9]{3}$" },
+  "mode": { "enum": ["formal", "dry_run", "from_bang", "replace"], "description": "正式 / 试算 / 从异火榜取 / 重新入位" },
+  "form": { "enum": ["code", "service", "docs", "description"], "description": "外部系统的形态" },
+  "tier": { "enum": ["light", "mid", "heavy"] },
+  "shortText": { "type": "string", "minLength": 1, "maxLength": 300 },
+  "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+  "license": {
+   "type": "object",
+   "required": ["status", "detected"],
+   "additionalProperties": false,
+   "properties": {
+    "status": {
+     "enum": ["permissive", "weak_copyleft", "strong_copyleft", "proprietary", "none_found", "unknown", "terms_of_service", "cz_description"],
+     "description": "宽松（MIT、BSD、Apache-2.0 等）/ 弱 copyleft / 强 copyleft / 专有 / 没找到许可证（视为保留所有权利）/ 不明 / 服务条款 / cz 的描述（无第三方许可）"
+    },
+    "spdx": { "type": "string", "description": "探测到的 SPDX 标识，可多个以空格分隔" },
+    "detected": { "type": "string", "description": "从哪里探测到：文件路径、包清单字段、条款页地址，或“无”" },
+    "reuse": { "enum": ["idea_only", "may_consult_code"], "description": "实现线的参考规则（12 §4）：只借思想 / 可参考原码并注明" }
+   }
+  },
+  "snapshot": {
+   "type": "object",
+   "required": ["id", "form", "identity", "license"],
+   "additionalProperties": false,
+   "properties": {
+    "id": { "type": "string", "pattern": "^s[0-9]+$" },
+    "form": { "$ref": "#/$defs/form" },
+    "identity": {
+     "type": "object",
+     "description": "快照身份：同一身份重跑勘察逐字节相同",
+     "additionalProperties": false,
+     "properties": {
+      "archive_sha256": { "$ref": "#/$defs/sha256" },
+      "repo": { "type": "string" },
+      "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+      "probe_plan_sha256": { "$ref": "#/$defs/sha256" },
+      "text_sha256": { "$ref": "#/$defs/sha256" }
+     },
+     "minProperties": 1
+    },
+    "artifact": { "type": "string", "description": "快照在分析实例里的 Artifact id（exec 或 input 类）" },
+    "size_tier": { "enum": ["S", "M", "L", "XL"] },
+    "license": { "$ref": "#/$defs/license" }
+   }
+  },
+  "evidenceRef": {
+   "type": "object",
+   "description": "指向快照里一段原文；原文本身不入产物",
+   "required": ["snapshot", "sha256"],
+   "additionalProperties": false,
+   "properties": {
+    "snapshot": { "type": "string", "pattern": "^s[0-9]+$" },
+    "path": { "type": "string" },
+    "lines": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2 },
+    "probe_item": { "type": "integer", "minimum": 1, "description": "行为探测计划的条目编号（服务形态）" },
+    "sha256": { "$ref": "#/$defs/sha256", "description": "该区间原文的 sha256" }
+   }
+  },
+  "provenance": {
+   "type": "object",
+   "description": "出处：与遮蔽视图分开存，检验不看它",
+   "required": ["snapshots", "observations"],
+   "additionalProperties": false,
+   "properties": {
+    "snapshots": { "type": "array", "items": { "$ref": "#/$defs/snapshot" }, "minItems": 1 },
+    "observations": { "type": "array", "items": { "$ref": "#/$defs/obsId" } },
+    "source_label": { "type": "string", "description": "给人看的来源说明（可含外部专名；不进遮蔽视图）" }
+   }
+  },
+  "checkResult": {
+   "type": "object",
+   "required": ["id", "ok"],
+   "additionalProperties": false,
+   "properties": {
+    "id": { "type": "string", "pattern": "^(K[1-8]|V[0-9]{1,2})$" },
+    "ok": { "type": "boolean" },
+    "advisory": { "type": "boolean", "description": "只作读数不作门（K6）" },
+    "detail": { "type": "string" },
+    "override": { "type": "string", "description": "cz 在闸点坚持时记下：人改，检验未过" }
+   }
+  },
+  "plainSummary": {
+   "type": "string",
+   "maxLength": 600,
+   "description": "给人看的一段话：用常规技术词，不出现内部设计名词（V5）"
+  }
+ }
+}

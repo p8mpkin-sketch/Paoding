@@ -1,0 +1,107 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "read:s1:attach.md:1-4:H7:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "d932d8df84ed08c9b574665d45bfa97ca3eaf9860739bb457792935575a06d7d",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h7.auto-link"
+      ],
+      "kind": "doc_claim",
+      "statement": "文档称结论前后两分钟的执行记录会被自动挂上并当作依据",
+      "primitives": [
+       "关联",
+       "证据"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1523,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:results.md:1-4:H7:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "7668a593e1332885c563f9106e5f55b13057844f58008b6d548ca99cf9779563",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h7.auto-link"
+      ],
+      "kind": "doc_claim",
+      "statement": "文档称结果页按附近有没有执行记录标出结论是否有依据",
+      "primitives": [
+       "关联",
+       "派生视图"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1523,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:trace.md:1-3:H6:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "a58af7cb801d87592349a7359b91ddb97638815a55fb595e70cfec7dc4c60bae",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1518,
+   "tokens_out": 20
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "87ec16d2ddb98bd37d77950ebc74e8bd3725873bb45b18528c07fe5c49d43705",
+   "output": {
+    "patterns": [
+     {
+      "name": "dual-proof",
+      "title": "证据自动关联",
+      "slot": "H7",
+      "also_slots": [
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h7.auto-link",
+        "theirs": 2,
+        "observations": [
+         "o61dc24f1a716",
+         "o7f91cfe044b4"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H7"
+      ],
+      "difficulty_parts": {},
+      "phenomenon": "每次工具执行自动留档，交付时系统按先后把每条结论前后的执行记录挂到结论旁边",
+      "gap_text": "执行留档我们已经有且更强（哈希成链）；但主张与留档的连线只靠模型自己引用，系统不做关联",
+      "is_fire": "是：由系统而不是作者把执行记录关联到结论是一类做法",
+      "recommend": {
+       "level": "recommend",
+       "why": "只动结果页的读端，风险最低；新生维是结构读数"
+      }
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：结论旁自动关联执行记录。每次执行自动留档我们已有且更强。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

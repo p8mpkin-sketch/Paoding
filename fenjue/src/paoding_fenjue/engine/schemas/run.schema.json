@@ -1,0 +1,41 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "run.schema.json",
+ "title": "运行状态 run.json：引擎的检查点，在分析题的工作区里（09 §4、§6）",
+ "type": "object",
+ "required": ["v", "run", "mode", "engine", "step", "units", "spent", "gates", "artifacts"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "run": { "type": "string" },
+  "mode": { "$ref": "common.schema.json#/$defs/mode" },
+  "engine": { "type": "object", "required": ["fire", "gongfa_digest"], "additionalProperties": false, "properties": { "fire": { "$ref": "common.schema.json#/$defs/fireRef" }, "gongfa_digest": { "$ref": "common.schema.json#/$defs/sha256" }, "arm": { "enum": ["main", "holdout"] } } },
+  "step": { "enum": ["S0", "S1", "S2", "S3", "G1", "S4", "G2", "S5", "G3", "S6", "done", "paused_budget", "halted", "failed"] },
+  "units": {
+   "type": "array",
+   "items": { "type": "object", "required": ["id", "step", "state"], "additionalProperties": false,
+    "properties": {
+     "id": { "type": "string", "description": "例 S3:H4:depth、S4:C2、S5:C2" },
+     "step": { "enum": ["S1", "S2", "S3", "S4", "S5"] },
+     "state": { "enum": ["todo", "doing", "done", "failed", "budget_cut", "void"] },
+     "output": { "$ref": "common.schema.json#/$defs/sha256" },
+     "depends_on": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/sha256" }, "description": "上游产物；上游作废则本单元作废" },
+     "summary": { "type": "string", "maxLength": 1500, "description": "带锚的单元摘要：每句挂观察 id 或产物 sha256" },
+     "attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+     "session": { "type": "string", "description": "做这一单元的租约" } } }
+  },
+  "spent": {
+   "type": "object",
+   "required": ["usd_milli"],
+   "additionalProperties": false,
+   "properties": { "usd_milli": { "type": "integer", "minimum": 0 }, "by_step": { "type": "object", "additionalProperties": { "type": "integer" } }, "tokens": { "type": "object" } }
+  },
+  "gates": {
+   "type": "array",
+   "items": { "type": "object", "required": ["gate", "deliver_seq"], "additionalProperties": false,
+    "properties": { "gate": { "enum": ["G1", "G2", "G3"] }, "deliver_seq": { "type": "integer" }, "follow_up_seq": { "type": "integer" }, "decision": { "$ref": "decision.schema.json" } } }
+  },
+  "artifacts": { "type": "object", "additionalProperties": { "$ref": "common.schema.json#/$defs/sha256" }, "description": "名字 → sha256：snapshots、survey、obs、candidates、essence:Cn、placement:Cn、handoff、report" },
+  "relays": { "type": "integer", "minimum": 0, "maximum": 8 }
+ }
+}

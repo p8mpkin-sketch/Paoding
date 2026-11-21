@@ -1,0 +1,71 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "read:s1:probe1:H7:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "70615e7fcc9cf2532508a2dc1a55cef4ec0392128cfba1cb08117aa407d381f6",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h7.auto-link"
+      ],
+      "kind": "behavior",
+      "statement": "结论响应里每条结论都带着时间相邻的执行记录并标为有依据",
+      "primitives": [
+       "关联",
+       "证据"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1678,
+   "tokens_out": 140
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "3536c8febee836b67b0e8c988a6f19cb10d3b3a15a85ab6799da8ae6df7d820e",
+   "output": {
+    "patterns": [
+     {
+      "name": "dual-proof",
+      "title": "证据自动关联",
+      "slot": "H7",
+      "also_slots": [
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h7.auto-link",
+        "theirs": 2,
+        "observations": [
+         "o209dc379314c"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H7"
+      ],
+      "difficulty_parts": {},
+      "phenomenon": "每次工具执行自动留档，交付时系统按先后把每条结论前后的执行记录挂到结论旁边",
+      "gap_text": "执行留档我们已经有且更强（哈希成链）；但主张与留档的连线只靠模型自己引用，系统不做关联",
+      "is_fire": "是：由系统而不是作者把执行记录关联到结论是一类做法",
+      "recommend": {
+       "level": "recommend",
+       "why": "只动结果页的读端，风险最低；新生维是结构读数"
+      }
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：结论旁自动关联执行记录。每次执行自动留档我们已有且更强。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

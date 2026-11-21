@@ -1,0 +1,6 @@
+{"responses": [
+ {"item": 1, "status": 200, "body": {"tokens": 6900, "window": 8000, "folded": true,
+   "compact_note": "older turns were folded into one summary to stay inside the window",
+   "turns": [{"role": "summary", "text": "earlier turns: set up repo, fixed two tests"}, {"role": "user", "text": "next"}]}},
+ {"item": 2, "status": 200, "body": {"handoff": "summary only", "memory": "earlier turns: set up repo, fixed two tests", "raw_turns": null}}
+]}

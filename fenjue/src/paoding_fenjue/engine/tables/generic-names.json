@@ -1,0 +1,27 @@
+{
+ "v": 1,
+ "note": "通用产品名表（K2 另一半）：人维护；遮蔽视图里不许出现。小写比对",
+ "names": [
+  "openai",
+  "anthropic",
+  "claude",
+  "chatgpt",
+  "gpt-4",
+  "langchain",
+  "llamaindex",
+  "autogen",
+  "crewai",
+  "github",
+  "gitlab",
+  "slack",
+  "notion",
+  "jira",
+  "vscode",
+  "cursor",
+  "copilot",
+  "devin",
+  "swe-agent",
+  "openhands",
+  "aider"
+ ]
+}

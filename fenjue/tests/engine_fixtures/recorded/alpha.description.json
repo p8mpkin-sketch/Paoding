@@ -1,0 +1,73 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "read:s1:statement.txt:1-1:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "b33cccd7e387f86a82104ae1a8194051ea2220e34eee553bfc43f11be2624917",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h1.staged"
+      ],
+      "kind": "doc_claim",
+      "statement": "描述称会话把目标分成几个阶段，每个阶段要贴检查输出才算过",
+      "primitives": [
+       "阶段",
+       "确认"
+      ],
+      "level_hint": 1
+     }
+    ]
+   },
+   "tokens_in": 1545,
+   "tokens_out": 140
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "7f44828c91d2eef6a6ed2212641a32aae17aa2e6a4d5fb5a566f09d717228efc",
+   "output": {
+    "patterns": [
+     {
+      "name": "staged-proof",
+      "title": "阶段证据确认",
+      "slot": "H1",
+      "also_slots": [
+       "H7",
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h1.staged",
+        "theirs": 2,
+        "observations": [
+         "of4ce07fba7a4"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H1",
+       "H7"
+      ],
+      "difficulty_parts": {},
+      "phenomenon": "目标被拆成有序阶段，每个阶段附上检查命令的输出才算完成，下一阶段等上一阶段确认后才开始",
+      "gap_text": "开放道的独行会话只在最后交付一次，中间没有阶段，也没有阶段完成的确认；结果页只能看到一张平铺的主张表",
+      "is_fire": "是：分阶段推进并以执行留档确认阶段完成是一类做法，不绑定某个界面或某家实现",
+      "recommend": {
+       "level": "recommend",
+       "why": "体质改动预计为 0，新生维是结构读数，CI 就能证；与已入功法的活动链直接相接"
+      }
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：把目标分成几个阶段，每个阶段用检查输出确认，报告按阶段组织。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

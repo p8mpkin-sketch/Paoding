@@ -1,0 +1,10 @@
+{"responses": [
+ {"item": 1, "status": 200, "body": {"session": 42, "stage": "milestone 2 of 3", "milestones": [
+   {"index": 0, "title": "build", "sealed": true, "proof_output": "make: ok"},
+   {"index": 1, "title": "unit checks", "sealed": true, "proof_output": "12 passed"},
+   {"index": 2, "title": "package", "sealed": false, "waiting_for": "milestone 1 seal"}]}},
+ {"item": 2, "status": 200, "body": {"report": [
+   {"milestone": "build", "proof": "make: ok"},
+   {"milestone": "unit checks", "proof": "12 passed"},
+   {"milestone": "package", "proof": null}], "summary": "2 of 3 milestones sealed"}}
+]}
