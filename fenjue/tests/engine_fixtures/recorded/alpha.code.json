@@ -20,7 +20,7 @@
    "key": "cuiyi:C1:r1:extra1",
    "role": "extra",
    "tier": "heavy",
-   "input_sha256": "f910654db7df2b0bad067060c7ab3a2e740dc51ee81b174267f9c148c5101f6b",
+   "input_sha256": "bf64212cc2e8098f4ec809633db47a2956f53c86298e39e0a32b328bf6f91bbe",
    "output": {
     "masked": {
      "statement": "目标拆成有序阶段，每个阶段附上可核对的执行记录才算完成，后一阶段以前一阶段的确认为前提",
@@ -217,13 +217,13 @@
     },
     "field_refs": {
      "/premises/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/premises/1": [
       "o80a8d6b22fce"
      ],
      "/costs/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/costs/1": [
       "o80a8d6b22fce"
@@ -232,7 +232,7 @@
       "oa0b94248c8b5"
      ],
      "/conflicts/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/conflicts/1": [
       "o80a8d6b22fce"
@@ -250,7 +250,7 @@
    "key": "cuiyi:C1:r1:extra2",
    "role": "extra",
    "tier": "heavy",
-   "input_sha256": "f910654db7df2b0bad067060c7ab3a2e740dc51ee81b174267f9c148c5101f6b",
+   "input_sha256": "bf64212cc2e8098f4ec809633db47a2956f53c86298e39e0a32b328bf6f91bbe",
    "output": {
     "masked": {
      "statement": "目标拆成有序阶段，每个阶段附上可核对的执行记录才算完成，后一阶段以前一阶段的确认为前提",
@@ -438,13 +438,13 @@
     },
     "field_refs": {
      "/premises/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/premises/1": [
       "o80a8d6b22fce"
      ],
      "/costs/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/costs/1": [
       "o80a8d6b22fce"
@@ -453,7 +453,7 @@
       "oa0b94248c8b5"
      ],
      "/conflicts/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/conflicts/1": [
       "o80a8d6b22fce"
@@ -471,7 +471,7 @@
    "key": "cuiyi:C1:r1:main:1",
    "role": "main",
    "tier": "heavy",
-   "input_sha256": "e3328a5dbd9a7bc44a51d7d2d367e829daefcde896beff0c9dfc8de60af16117",
+   "input_sha256": "d6f23d3b6f7ca36b384c87c49e86ab21389a8e48cfa9d08e65ad91f6aebd177f",
    "output": {
     "masked": {
      "statement": "目标拆成有序阶段，每个阶段附上可核对的执行记录才算完成，后一阶段以前一阶段的确认为前提",
@@ -668,13 +668,13 @@
     },
     "field_refs": {
      "/premises/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/premises/1": [
       "o80a8d6b22fce"
      ],
      "/costs/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/costs/1": [
       "o80a8d6b22fce"
@@ -683,7 +683,7 @@
       "oa0b94248c8b5"
      ],
      "/conflicts/0": [
-      "o041cca1d8ae2"
+      "o2a382aceab1b"
      ],
      "/conflicts/1": [
       "o80a8d6b22fce"
@@ -863,7 +863,7 @@
    "tokens_out": 140
   },
   {
-   "key": "read:s1:tests/test_milestones.py:1-18:H1:1",
+   "key": "read:s1:tests/milestones_spec.py:1-18:H1:1",
    "role": "reader",
    "tier": "light",
    "input_sha256": "836618287bfd967b482b7e58ade8c27a60402904144bb5d7b569ef20ced70bbd",
@@ -891,7 +891,7 @@
    "key": "shihuo:patterns:1",
    "role": "main",
    "tier": "heavy",
-   "input_sha256": "6c8ceb72ba83258862caec3973b1fe9245367388b943c7d67992fbae15025bb6",
+   "input_sha256": "91e38ca69e7b951ed80fa24455eff4e2736bf88faa626b7f2092bb4fdf5d6c37",
    "output": {
     "patterns": [
      {
@@ -907,7 +907,7 @@
         "dim": "h1.staged",
         "theirs": 2,
         "observations": [
-         "o041cca1d8ae2",
+         "o2a382aceab1b",
          "oa0b94248c8b5",
          "oa5010b9ffb60",
          "oa72c112ef828"

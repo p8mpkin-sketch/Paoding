@@ -39,7 +39,7 @@ READER: dict[tuple[str, str], dict[tuple[str, str], list[dict[str, Any]]]] = {
         ("README.md", "H1"): [
             _o([STAGED], "说明里称每个阶段都写明一条证明它完成的检查，下一阶段等上一阶段完成", ["阶段", "确认"], "doc_claim")
         ],
-        ("tests/test_milestones.py", "H1"): [
+        ("tests/milestones_spec.py", "H1"): [
             _o([STAGED], "测试写明：没有检查输出不能记为完成，未完成的阶段挡住下一阶段", ["门", "确认", "校验"], "test_spec")
         ],
         ("cairnwork/report.py", "H7"): [
