@@ -13,6 +13,7 @@ import "./pages/kaiti.css";
 import "./pages/models.css";
 import "./pages/tasks.css";
 import "./pages/task.css";
+import "./pages/trace.css";
 import "./pages/knowledge.css";
 
 applyTheme(loadTheme()); // 先于首帧，免得闪一下

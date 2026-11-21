@@ -40,7 +40,7 @@ def test_fold_reads_calls_sayings_results_and_the_end():
             ]
         },
     }
-    assert act.fold(res, 1) == [{"round": 1, "kind": "result", "id": "t1", "ok": False, "gist": "Traceback"}]
+    assert act.fold(res, 1) == [{"round": 1, "kind": "result", "id": "t1", "ok": False, "gist": "Traceback", "size": 9}]
     end = act.fold({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3}, 2)
     assert end == [{"round": 2, "kind": "end", "ok": True, "turns": 3, "gist": "success"}]
     assert act.fold({"type": "system", "subtype": "init"}, 1) == []
@@ -113,8 +113,12 @@ def test_solve_session_activity_is_readable_live_and_after_it_ends(tmp_path, gra
         th.join(timeout=30)
         assert seen is not None, "在途时读不到活动"
         assert seen["role"] == "solve" and seen["status"] == "running" and seen["rounds"] == 1
-        assert [x["kind"] for x in seen["items"]][:3] == ["say", "call", "result"]
-        assert seen["items"][1]["tool"] == "exec" and "6*7" in seen["items"][1]["gist"]
+        assert [x["kind"] for x in seen["items"]][:4] == ["turn", "say", "call", "result"]
+        assert seen["items"][2]["tool"] == "exec" and "6*7" in seen["items"][2]["gist"]
+        assert (
+            seen["items"][0]["model"] and seen["turns"] >= 1 and seen["tokens"]["out"] > 0
+        )  # 每次模型调用一条，带 usage
+        assert all(isinstance(x["t"], int) for x in seen["items"])  # 自会话起算的毫秒数
         assert TOKEN not in str(seen) and creds.MASK in seen["last_say"]["text"]
         assert seen["spent_usd_milli"] > 0  # 端点代理给这个任务令牌记的账
 
@@ -130,3 +134,59 @@ def test_solve_session_activity_is_readable_live_and_after_it_ends(tmp_path, gra
         assert TOKEN not in (tmp_path / "sessions" / lid / act.FILE).read_text(encoding="utf-8")
     finally:
         rig.close()
+
+
+def test_fold_reads_model_turns_and_thinking():
+    ev = {
+        "type": "assistant",
+        "message": {
+            "model": "claude-sonnet-5-5",
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 1200,
+                "output_tokens": 85,
+                "cache_read_input_tokens": 900,
+                "cache_creation_input_tokens": 0,
+            },
+            "content": [
+                {"type": "thinking", "thinking": "先确认复现条件。"},
+                {"type": "redacted_thinking", "data": "xxx"},
+                {"type": "tool_use", "id": "t1", "name": "mcp__paoding__exec", "input": {"cmd": "ls"}},
+            ],
+        },
+    }
+    assert act.fold(ev, 2) == [
+        {
+            "round": 2,
+            "kind": "turn",
+            "model": "claude-sonnet-5-5",
+            "in": 1200,
+            "out": 85,
+            "cache_read": 900,
+            "cache_write": 0,
+            "stop": "tool_use",
+        },
+        {"round": 2, "kind": "think", "text": "先确认复现条件。"},
+        {"round": 2, "kind": "think", "text": "", "redacted": True},
+        {"round": 2, "kind": "call", "tool": "exec", "gist": "ls", "id": "t1"},
+    ]
+    bad = act.fold(
+        {"type": "assistant", "message": {"usage": {"input_tokens": -3, "output_tokens": True}, "content": []}}, 1
+    )
+    assert bad[0]["in"] == 0 and bad[0]["out"] == 0  # 只认非负整数
+    v = act.view([{"n": i + 1, **x} for i, x in enumerate(act.fold(ev, 2))], 0)
+    assert (
+        v["turns"] == 1
+        and v["tokens"] == {"in": 1200, "out": 85, "cache_read": 900, "cache_write": 0}
+        and v["models"] == ["claude-sonnet-5-5"]
+    )
+
+
+def test_wall_clock_stays_out_of_the_chain_and_the_segments(tmp_path):
+    log = act.ActivityLog(tmp_path, (), "l_1")
+    log.feed({"type": "assistant", "message": {"content": [{"type": "text", "text": "想一下"}]}}, 1)
+    item = log.snapshot()[0]
+    assert "t" in item and item["h"] == act.item_hash(act.GENESIS, {k: v for k, v in item.items() if k != "t"})
+    seg, last = log.segment()
+    assert b'"t"' not in seg and last == 1
+    assert act.replay_segments([seg])[0]["h"] == item["h"]  # 回放没有 t，链照样接得上

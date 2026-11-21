@@ -170,8 +170,11 @@ def main() -> None:
             {
                 "type": "assistant",
                 "message": {
+                    "model": msg.get("model", ""),
                     "usage": msg.get("usage", {}),
+                    "stop_reason": msg.get("stop_reason", "tool_use"),
                     "content": [
+                        *([{"type": "thinking", "thinking": step["think"]}] if step.get("think") else []),
                         *([{"type": "text", "text": step["say"]}] if step.get("say") else []),
                         {"type": "tool_use", "id": f"t{turns}", "name": step["tool"], "input": step.get("input", {})},
                     ],

@@ -44,6 +44,26 @@ function KnowledgeCard({ a }: { a: ArtifactView }) {
 }
 
 /** 证据下钻：点一条依据，右侧抽屉里给出那次执行的命令、输出与哈希（ArtifactCard，与检视同一张卡）。 */
+/** 一份登记记录的正文（证据抽屉与文件栏的预览共用）。 */
+export function ArtifactPreview({ id, seq }: { id: string; seq: number }) {
+  const { api } = useServices();
+  const [a, setA] = useState<ArtifactView | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    setA(null); setErr(null);
+    let live = true;
+    api.artifact(id, seq).then((r) => live && setA(r), (e: Error) => live && setErr(e.message));
+    return () => { live = false; };
+  }, [api, id, seq]);
+  if (!a) return <p className="t2">{err ? <>取不到登记记录：<Plain text={err} /></> : "读取中…"}</p>;
+  return (
+    <>
+      {a.class === "knowledge" ? <KnowledgeCard a={a} /> : <ArtifactCard a={a} />}
+      <p className="t2" data-file-trust>{a.class === "exec" || a.class === "judge" ? "由执行层登记，模型改不了它，可以作依据。" : a.class === "authored" ? "会话写的，不能作依据。" : a.class === "input" ? "你给的材料。" : "引用的资料：按“人”的语域排，不是执行证据。"}</p>
+    </>
+  );
+}
+
 export function EvidenceDrawer({ id, seq, onClose }: { id: string | null; seq: number; onClose: () => void }) {
   const { api } = useServices();
   const [a, setA] = useState<ArtifactView | null>(null);

@@ -1128,12 +1128,34 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
           return a ? { ...x, artifact: a.id } : x;
         });
         const anchors = full.flatMap((x) => (x.artifact ? [{ n: Number(x.n), seq: Number(String(x.artifact).slice(2)) }] : []));
+        // 本机毫秒 t（相对会话开始）：留档登记的时刻是定点，exec 调用比它早 2.4 秒，其余条目在定点之间均分；不进链、不入账，回放不给
+        const evs = eventsOf(pid);
+        const t0 = evs.find((e) => e.seq === l.issued_seq)?.ts ?? 0;
+        const fixed = new Map<number, number>();
+        full.forEach((x, i) => {
+          if (!x.artifact) return;
+          const at = (evs.find((e) => `a_${e.seq}` === x.artifact)?.ts ?? t0) - t0;
+          fixed.set(i, at);
+          const c = full.findIndex((y) => y.kind === "call" && y.id === x.id);
+          if (c >= 0) fixed.set(c, Math.max(0, at - 2400));
+        });
+        const ks = [...fixed.keys()].sort((a, b) => a - b);
+        const clocked = full.map((x, i): Record<string, unknown> => {
+          if (fixed.has(i)) return { ...x, t: fixed.get(i)! };
+          const lo = ks.filter((k) => k < i).at(-1), hi = ks.find((k) => k > i);
+          const a = lo === undefined ? 0 : fixed.get(lo)!, ia = lo ?? -1;
+          const t = hi === undefined ? a + (i - ia) * 1800 : a + ((fixed.get(hi)! - a) * (i - ia)) / (hi - ia);
+          return { ...x, t: Math.round(t) };
+        });
         if (!active && full.length && l.ended_seq !== undefined) anchors.push({ n: full.length, seq: l.ended_seq });
         const asOfQ = q.get("as_of");
         const asOfN = asOfQ === null || asOfQ === "" ? null : Number(asOfQ);
         if (asOfN !== null && !Number.isInteger(asOfN)) return err(400, "schema_error", "after、as_of 是整数");
         const upto = (asOfN === null ? anchors : anchors.filter((x) => x.seq <= asOfN)).at(-1)?.n ?? null;
-        const all = asOfN === null ? full : full.slice(0, upto ?? 0);
+        const all = asOfN === null ? clocked : full.slice(0, upto ?? 0);
+        const turnsOf = all.filter((x) => x.kind === "turn");
+        const tokens = Object.fromEntries((["in", "out", "cache_read", "cache_write"] as const).map((k) => [k, turnsOf.reduce((a, x) => a + Number(x[k] ?? 0), 0)]));
+        const usage = { turns: turnsOf.length, tokens, models: [...new Set(turnsOf.map((x) => String(x.model)))].sort() };
         const after = Number(q.get("after") ?? 0);
         const items = all.filter((x) => Number(x.n) > after);
         const done = new Set(all.filter((x) => x.kind === "result").map((x) => x.id));
@@ -1145,14 +1167,14 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
             lease: lid, problem_id: pid, kind: l.kind, active: false, live: false, status: all.length ? "replay" : "none", as_of: asOfN,
             rounds: 1, model: "model-a", elapsed_s: 0, spent_usd_milli: 0, closing: false, anchored_through: upto,
             items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: all.filter((x) => x.kind === "call").length,
-            now: null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
+            now: null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null, ...usage,
           });
         }
         return json(200, {
           lease: lid, problem_id: pid, kind: l.kind, active, live: active, status: active ? "running" : all.length ? "released" : "none", anchored_through: upto,
           rounds: 1, model: "model-a", elapsed_s: mine.reduce((a, c) => a + c.wall_s, 0), spent_usd_milli: mine.reduce((a, c) => a + c.usd_milli, 0), closing: false,
           items, next_after: items.length ? Number(items.at(-1)!.n) : after, total: all.length, calls: calls.length,
-          now: active ? pending ?? null : null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null,
+          now: active ? pending ?? null : null, last_say: all.filter((x) => x.kind === "say").at(-1) ?? null, ...usage,
         });
       }
       return notFound(`没有会话 ${lid}`);

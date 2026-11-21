@@ -79,7 +79,8 @@ describe("HMI §2 禁令", () => {
   it("不内嵌 reducer：源码里不按事件种类推导图的状态", () => {
     // 认识事件种类的只有时间轴刻度（model/ticks.ts）；别处出现 add_fact、judge_verdict 这类写状态的事件名就是在复刻 reducer
     // 任务页“过程”一栏（ui/TaskLog.tsx）也按事件种类给一句说法：只排版事件体已有的字段，不推导任何状态
-    expect(offenders(/["'](add_fact|judge_verdict|request_judge|expire_lease|release)["']/).filter((f) => f !== "src/model/ticks.ts" && f !== "src/api/types.ts" && f !== "src/ui/TaskLog.tsx")).toEqual([]);
+    // 轨迹合并（model/trace.ts）按事件种类把事件归到会话与筛选类别里，同样只排版、不推导图的状态
+    expect(offenders(/["'](add_fact|judge_verdict|request_judge|expire_lease|release)["']/).filter((f) => f !== "src/model/ticks.ts" && f !== "src/api/types.ts" && f !== "src/ui/TaskLog.tsx" && f !== "src/model/trace.ts")).toEqual([]);
   });
 
   it("视图不读本机时钟与随机数", () => {

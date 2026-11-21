@@ -265,7 +265,10 @@ export function staticScripts(): Script[] {
     unverified: ["只测了 SQLite 后端；Postgres 和 Redis 的行为是按文档推的", "用的是各仓库今天的主分支，没测已发布的旧版本"],
     needs: [],
   }));
-  o.release("S1", "solve", 1370);
+  // 端点代理按请求记账：前四次模型调用各一条，第五条随会话收尾（release）记
+  for (const [u, ti, tc, to] of [[230, 5200, 0, 610], [250, 5900, 4800, 520], [290, 6800, 5700, 660], [300, 7400, 6600, 700]] as const)
+    o.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: ti, tokens_cached: tc, tokens_out: to, usd_milli: u, wall_s: 8, price_table: "prices@1" }));
+  o.release("S1", "solve", 300);
   // demo-7：开放道，求解会话在跑（会话活动面板的示例）。图台按设计是空的，进度只在会话活动里。
   const r = new Builder("demo-7");
   const ask = "把仓库里的单元测试跑起来，找出最近一次提交让哪些测试变红了，给出原因。";
@@ -279,38 +282,55 @@ export function staticScripts(): Script[] {
   r.lease("S1", "solve");
   r.exec("e_ls", "S1", "shell", "git log --oneline -3", "9c1d2e4 重构 parse_date\n71aa03b 加缓存\n5f2e9d0 初始化\n");
   r.exec("e_t0", "S1", "shell", "python -m pytest -q", "..F.F......\n2 failed, 9 passed\n", 1);
-  r.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: 21000, tokens_cached: 0, tokens_out: 2600, usd_milli: 236, wall_s: 26, price_table: "prices@1" }));
+  // 端点代理按请求记账：一次模型调用一条 cost（与会话活动里的 turn 按序号对齐）
+  for (const [u, w, ti, to, tc] of [[52, 6, 4200, 600, 0], [61, 7, 4700, 640, 3800], [58, 6, 5600, 690, 4500], [65, 7, 6500, 670, 5800]] as const)
+    r.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: ti, tokens_cached: tc, tokens_out: to, usd_milli: u, wall_s: w, price_table: "prices@1" }));
   return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }, { pid: r.pid, steps: r.steps }];
 }
 
-/** 会话活动（GET /v1/leases/{id}/activity）的示例条目：假后端不跑 CLI，按会话种类与在途与否给一份固定的流水。 */
+/** 会话活动（GET /v1/leases/{id}/activity）的示例条目：假后端不跑 CLI，按会话种类与在途与否给一份固定的流水。
+ *  含模型调用（turn：模型、token、停止原因）与思考（think）；t（本机毫秒）由假后端按留档登记的时刻补上。 */
+const turn = (inp: number, out: number, cache: number, stop = "tool_use") => ({ kind: "turn", model: "model-a", in: inp, out, cache_read: cache, cache_write: cache ? 0 : inp - 400, stop });
 export function activityDemo(live: boolean, pid = ""): Record<string, unknown>[] {
   if (pid === "demo-6") {
     return [
-      { round: 1, kind: "say", text: "先在三个仓库里找持久化相关的接口，再各写一个中途杀进程的复现脚本。" },
-      { round: 1, kind: "call", tool: "Write", gist: "NOTES.md", id: "t1" },
-      { round: 1, kind: "result", id: "t1", ok: true, gist: "Wrote NOTES.md" },
-      { round: 1, kind: "call", tool: "exec", gist: "rg -l checkpoint langgraph/libs | head -2", id: "t2" },
-      { round: 1, kind: "result", id: "t2", ok: true, gist: "libs/checkpoint/langgraph/checkpoint/base/__init__.py" },
-      { round: 1, kind: "call", tool: "exec", gist: "python repro/crash_test.py --fw autogen", id: "t3" },
-      { round: 1, kind: "result", id: "t3", ok: true, gist: "load_state: FileNotFoundError: state.json\n-> 从头开始" },
-      { round: 1, kind: "say", text: "AutoGen 不自动落盘。再试一次每步手动保存，看能不能恢复到上一步，然后交付。" },
-      { round: 1, kind: "call", tool: "deliver", gist: "answered", id: "t4" },
-      { round: 1, kind: "result", id: "t4", ok: true, gist: "{\"delivery\": \"d_1\"}" },
-      { round: 1, kind: "end", ok: true, turns: 9, gist: "success" },
-    ].map((x, i) => ({ n: i + 1, ...x }));
+      { kind: "think", text: "要比较的是“崩溃后能恢复到哪一步”，光读文档不够，得每家写一个中途杀进程的复现，看重启后从哪接着跑。先记计划，再找各家的持久化接口。" },
+      { ...turn(5200, 240, 0) },
+      { kind: "say", text: "先在三个仓库里找持久化相关的接口，再各写一个中途杀进程的复现脚本。" },
+      { kind: "call", tool: "Write", gist: "NOTES.md", id: "t1" },
+      { kind: "result", id: "t1", ok: true, gist: "Wrote NOTES.md", size: 14 },
+      { ...turn(5900, 90, 4800) },
+      { kind: "call", tool: "exec", gist: "rg -l checkpoint langgraph/libs | head -2", id: "t2" },
+      { kind: "result", id: "t2", ok: true, gist: "libs/checkpoint/langgraph/checkpoint/base/__init__.py", size: 118 },
+      { kind: "think", text: "LangGraph 的检查点在 checkpoint/base 里，每个 super-step 结束都会写。AutoGen 没有对应的目录，可能要手动 save_state。先跑 AutoGen 的复现确认。" },
+      { ...turn(6800, 130, 5700) },
+      { kind: "call", tool: "exec", gist: "python repro/crash_test.py --fw autogen", id: "t3" },
+      { kind: "result", id: "t3", ok: true, gist: "load_state: FileNotFoundError: state.json\n-> 从头开始", size: 96 },
+      { ...turn(7400, 160, 6600) },
+      { kind: "say", text: "AutoGen 不自动落盘。再试一次每步手动保存，看能不能恢复到上一步，然后交付。" },
+      { kind: "call", tool: "deliver", gist: "answered", id: "t4" },
+      { kind: "result", id: "t4", ok: true, gist: "{\"delivery\": \"d_1\"}", size: 19 },
+      { ...turn(8100, 40, 7300, "end_turn") },
+      { kind: "end", ok: true, turns: 9, gist: "success", ms: 41000 },
+    ].map((x, i) => ({ n: i + 1, round: 1, ...x }));
   }
   const xs: Record<string, unknown>[] = [
-    { round: 1, kind: "say", text: "先看看最近的提交，再把测试整体跑一遍，确认是哪几个变红。" },
-    { round: 1, kind: "call", tool: "exec", gist: "git log --oneline -3", id: "t1" },
-    { round: 1, kind: "result", id: "t1", ok: true, gist: "9c1d2e4 重构 parse_date\n71aa03b 加缓存\n5f2e9d0 初始化" },
-    { round: 1, kind: "call", tool: "exec", gist: "python -m pytest -q", id: "t2" },
-    { round: 1, kind: "result", id: "t2", ok: false, gist: "..F.F......\n2 failed, 9 passed" },
-    { round: 1, kind: "say", text: "两个失败都在 test_dates.py。最近一次提交重构了 parse_date，先对比这个函数在两次提交间的差别，再把旧版本代回去重跑确认。" },
-    { round: 1, kind: "call", tool: "Read", gist: "src/dates.py", id: "t3" },
-    { round: 1, kind: "result", id: "t3", ok: true, gist: "def parse_date(s):\n    return datetime.strptime(s, \"%Y-%m-%d\")" },
-    { round: 1, kind: "call", tool: "exec", gist: "git stash && git checkout 71aa03b -- src/dates.py && python -m pytest -q tests/test_dates.py", id: "t4" },
+    { kind: "think", text: "变红是相对上一次提交说的。先看最近几次提交改了什么，再整体跑一遍测试，拿到失败名单。" },
+    { ...turn(4200, 180, 0) },
+    { kind: "say", text: "先看看最近的提交，再把测试整体跑一遍，确认是哪几个变红。" },
+    { kind: "call", tool: "exec", gist: "git log --oneline -3", id: "t1" },
+    { kind: "result", id: "t1", ok: true, gist: "9c1d2e4 重构 parse_date\n71aa03b 加缓存\n5f2e9d0 初始化", size: 58 },
+    { ...turn(4700, 70, 3800) },
+    { kind: "call", tool: "exec", gist: "python -m pytest -q", id: "t2" },
+    { kind: "result", id: "t2", ok: false, gist: "..F.F......\n2 failed, 9 passed", size: 1840 },
+    { kind: "think", text: "两个失败都在 test_dates.py，断言里出现了带时区的日期字符串。最近一次提交正好重构了 parse_date，格式串很可能把时区丢了。把旧版本代回去重跑能直接确认因果。" },
+    { ...turn(6100, 210, 4500) },
+    { kind: "say", text: "两个失败都在 test_dates.py。最近一次提交重构了 parse_date，先对比这个函数在两次提交间的差别，再把旧版本代回去重跑确认。" },
+    { kind: "call", tool: "Read", gist: "src/dates.py", id: "t3" },
+    { kind: "result", id: "t3", ok: true, gist: "def parse_date(s):\n    return datetime.strptime(s, \"%Y-%m-%d\")", size: 612 },
+    { ...turn(6900, 120, 5800) },
+    { kind: "call", tool: "exec", gist: "git stash && git checkout 71aa03b -- src/dates.py && python -m pytest -q tests/test_dates.py", id: "t4" },
   ];
-  if (!live) xs.push({ round: 1, kind: "result", id: "t4", ok: true, gist: "4 passed" }, { round: 1, kind: "end", ok: true, turns: 6, gist: "success" });
-  return xs.map((x, i) => ({ n: i + 1, ...x }));
+  if (!live) xs.push({ kind: "result", id: "t4", ok: true, gist: "4 passed", size: 8 }, { ...turn(7300, 60, 6700, "end_turn") }, { kind: "end", ok: true, turns: 6, gist: "success" });
+  return xs.map((x, i) => ({ n: i + 1, round: 1, ...x }));
 }

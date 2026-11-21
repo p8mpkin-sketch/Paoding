@@ -46,7 +46,7 @@ def test_items_are_chained_and_segments_replay(tmp_path):
     log.mark(last2, "a_25")
     assert log.segment() is None  # 没有新条目就没有新段
     items = act.replay_segments([seg1, seg2])
-    assert items == log.snapshot()
+    assert items == [act.chained(x) for x in log.snapshot()]  # 本机墙钟 t 不入账
     assert [x["n"] for x in items] == [1, 2, 3, 4] and log.anchored == 4 and log.segments == ["a_20", "a_25"]
     assert items[0]["h"] == act.item_hash(act.GENESIS, items[0])
     assert all(items[i]["h"] == act.item_hash(items[i - 1]["h"], items[i]) for i in range(1, 4))
@@ -132,7 +132,7 @@ def test_what_was_seen_live_replays_byte_for_byte(tmp_path, graph, upstream):  #
         # 新生维一：实时所见可回放率 = 100%
         for aid, live in seen:
             back = rig.runner.activity(lid, as_of=int(aid[2:]))
-            assert canonicalize(back["items"]) == canonicalize(live), aid
+            assert canonicalize(back["items"]) == canonicalize([act.chained(x) for x in live]), aid
             assert back["anchored_through"] == len(live) and back["status"] == "replay" and back["now"] is None
         # 回放到第一段之前：那一刻还没有入账的活动
         assert rig.runner.activity(lid, as_of=int(segs[0]["id"][2:]) - 1) is None
@@ -161,7 +161,9 @@ def test_the_ledger_outlives_the_session_directory(tmp_path, graph, upstream):  
         before = rig.runner.activity(lid)
         shutil.rmtree(tmp_path / "sessions" / lid)  # 工作区按期清掉之后
         after = rig.runner.activity(lid)
-        assert after is not None and canonicalize(after["items"]) == canonicalize(before["items"])
+        assert after is not None and canonicalize(after["items"]) == canonicalize(
+            [act.chained(x) for x in before["items"]]
+        )
     finally:
         rig.close()
 
