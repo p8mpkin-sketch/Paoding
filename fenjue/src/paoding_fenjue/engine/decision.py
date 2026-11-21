@@ -31,6 +31,7 @@ _KEYS = {
         "搁置": "hold",
         "排除": "exclude",
         "存入资料库": "library_import",
+        "退回": "back",
         "备注": "note",
     },
 }

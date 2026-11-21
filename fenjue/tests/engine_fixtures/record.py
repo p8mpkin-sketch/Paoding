@@ -32,9 +32,18 @@ def main() -> int:
                 print(f"  {d.gate} passed={d.passed} needs={d.needs}")
                 ids = list(eng.x["picked"])
                 d = eng.follow_up(cases.g2_block(ids))
-                print(f"  -> {eng.state['step']}")
+                print(f"  {d.gate} passed={d.passed} needs={d.needs}")
+                d = eng.follow_up(cases.g3_block(ids, fx))
+                print(f"  -> {eng.state['step']} passed={d.passed} needs={d.needs}")
         rec.dump(cases.recording(fx, form))
-    print(json.dumps({"recorded": len(cases.RUNS)}))
+    for fx, form in cases.DRY_RUNS:
+        rec = Recorder(Script(fx, form))
+        with tempfile.TemporaryDirectory() as tmp:
+            eng = cases.engine(fx, form, Path(tmp), rec, ".dry")
+            d = eng.start(cases.intake(fx, form, "dry_run"))
+            print(f"{fx}.{form} 试算: {eng.state['step']} passed={d.passed} needs={d.needs}")
+        rec.dump(cases.recording(fx, form, ".dry"))
+    print(json.dumps({"recorded": len(cases.RUNS) + len(cases.DRY_RUNS)}))
     return 0
 
 

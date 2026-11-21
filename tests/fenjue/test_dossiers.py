@@ -94,10 +94,16 @@ def test_each_dossier_is_complete(path: Path):
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
 def test_readings_point_at_tests_that_still_exist(path: Path):
-    """读数表里的出处是测试名时，那个测试还在（改名、删测试会让它变红，读数就失去了出处）。"""
-    for r in load(path)["readings"]:
-        node = r.get("test")
-        if not node:
+    """读数表里的出处是测试名时，那个测试还在（改名、删测试会让它变红，读数就失去了出处）。
+
+    入位到设计已裁之间（含方案分析导入的炼档）测试还没写：实现线在验体之前写，所以从验体起才核。
+    出处可以带参数（`tests/fenjue/trials.py T2`），只核文件与函数名；不是路径的说明（例：web 单测）不核。"""
+    d = load(path)
+    if d["status"] in ("identified", "distilled", "placed", "design_approved"):
+        return
+    for r in d["readings"]:
+        node = (r.get("test") or "").split()[0] if r.get("test") else ""
+        if not node or "/" not in node:
             continue
         file, _, name = node.partition("::")
         src = ROOT / file
@@ -140,9 +146,32 @@ def test_every_manifest_on_disk_is_accounted_for():
     """包里的每份清单要么在功法里，要么是谁的上一团火（lineage.from 里提到它），要么有一份炼档，不留孤儿。"""
     live = set(in_gongfa())
     named = {x for fid in fire_ids() for x in fire(fid)["lineage"]["from"]}
-    drafted = {d["fire"].get("id") for d in dossiers().values()}  # 入位时写下、还没定阶的草稿，或不收的
+    drafted = {
+        f.get("id") for d in dossiers().values() for f in [d["fire"], *[m["fire"] for m in d.get("group") or []]]
+    }
+    # ↑ 入位时写下、还没定阶的草稿（含火组成员），或不收的
     orphans = [fid for fid in fire_ids() if fid not in live | named | drafted]
     assert orphans == [], f"这几份清单既不在功法里，也不是谁的上一团火，也没有炼档：{orphans}"
+
+
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
+def test_engine_block_matches_the_dossier(path: Path):
+    """方案分析导入的炼档（12 §2.4）：engine.artifacts 是 sha256，第二节就是 engine.essence 按 12 §2.2 渲染的八栏；
+    火组成员都在这一份炼档里、记着本档档号。"""
+    from paoding_fenjue.engine import handoff
+
+    d = load(path)
+    for m in d.get("group") or []:
+        assert m["fire"]["lineage"].get("dossier") == d["dossier"], "火组成员要记本档档号"
+        assert m.get("replaces") is None or m["replaces"] in m["fire"]["lineage"]["from"]
+    e = d.get("engine")
+    if not e:
+        return
+    assert all(re.fullmatch(r"[0-9a-f]{64}", v) for v in e["artifacts"].values())
+    assert set(e["artifacts"]) == {"candidates", "essence", "placement", "report"}
+    assert handoff.render_cuiyi(e["essence"], e.get("decided_by", "cz")) == d["cuiyi"], (
+        "第二节要与 engine.essence 渲染的一致"
+    )
 
 
 def test_template_has_every_key_and_section():

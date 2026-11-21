@@ -12,6 +12,8 @@
     uv run python scripts/lianhua.py sanhuo <档号> --by cz --why …     # 散火：火位指回上一团火
     uv run python scripts/lianhua.py status [<档号>]                    # 每份炼档走到哪一步、下一步是什么
     uv run python scripts/lianhua.py render <档号>                      # 由 JSON 重新生成 .md
+    uv run python scripts/lianhua.py import <交接包.json> [--only C2] [--queue]   # 方案分析的交接包 → 炼档（入位）
+    uv run python scripts/lianhua.py bang show | bang apply <交接包或更新列表.json>   # 异火榜（候选方案）
 
 数据操作都在 paoding_fenjue.lianhua（纯函数，有单测）；这里只读写文件、跑 git 与测试。
 入位时清单草稿写进 fenjue/src/paoding_fenjue/fires/<id>.json（还不在功法里，开关缺省关）；定阶时才改 gongfa.json。
@@ -21,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as dt
 import hashlib
 import json
@@ -33,11 +36,15 @@ from typing import Any
 
 from paoding_fenjue import lianhua as lh
 from paoding_fenjue.contract import check, digest, fire_digest
+from paoding_fenjue.engine import handoff as ho
+from paoding_fenjue.shapes import gongfa_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOSSIERS = ROOT / "docs" / "design" / "fenjue" / "dossiers"
 PKG = ROOT / "fenjue" / "src" / "paoding_fenjue"
 GONGFA = PKG / "gongfa.json"
+BANG = ROOT / "docs" / "design" / "fenjue" / "yihuobang.json"
+BANG_SEED = ROOT / "docs" / "design" / "fenjue" / "engine" / "examples" / "yihuobang.seed.json"
 
 
 def _today() -> str:
@@ -284,6 +291,7 @@ def cmd_jue(a: argparse.Namespace) -> None:
         _write_json(GONGFA, g)
         print(f"功法 → 第 {g['jie']} 阶；{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；存档 {dg[:12]}")
     print(f"裁决：{lh.OUTCOMES[a.outcome]} → {path_of(d['dossier']).relative_to(ROOT)}")
+    _writeback(d, "jue", a.by, a.date or _today())
 
 
 def cmd_sanhuo(a: argparse.Namespace) -> None:
@@ -293,6 +301,16 @@ def cmd_sanhuo(a: argparse.Namespace) -> None:
     _write_json(GONGFA, g)
     print(f"散火：{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；功法 → 第 {g['jie']} 阶；存档 {dg[:12]}")
     print("在跑的题照开题时的那一版跑完（FJ6）；之后新开的题用散火后的功法")
+    _writeback(d, "sanhuo", a.by, a.date or _today(), a.why)
+
+
+def _writeback(d: dict[str, Any], event: str, by: str, date: str, why: str = "") -> None:
+    """结局回写（12 §5）：异火榜上有这份炼档就改它的状态；没有（手写的、不经方案分析的炼档）不动。"""
+    bang = ho.writeback(_bang_doc(), d, event, date, by, why)
+    if bang is not None:
+        _commit([(BANG, _dump(bang))])
+        e = next(x for x in bang["entries"] if x.get("dossier") == d["dossier"])
+        print(f"异火榜：{e['id']} → {e['status']}")
 
 
 def cmd_archive(a: argparse.Namespace) -> None:
@@ -308,10 +326,138 @@ def cmd_status(a: argparse.Namespace) -> None:
         step = lh.next_step(d) if d.get("generated") else None
         hint = f"下一步：{step}" if step else ("手写（首炼）" if not d.get("generated") else "")
         print(f"{d['dossier']} {d['title']}：{d['status']}  {hint}")
+    if a.no:
+        return
+    for e in ho.ready_to_import(_bang_doc(), _dossiers()):
+        print(f"异火榜 {e['id']} {e['title']}：火位已空出，可以导入（先在方案分析里做一次入位复核，再 import）")
 
 
 def cmd_render(a: argparse.Namespace) -> None:
     print(f"→ {save(load(a.no)).with_suffix('.md').relative_to(ROOT)}")
+
+
+def _dossiers() -> list[dict[str, Any]]:
+    return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(DOSSIERS.glob("[0-9][0-9][0-9]-*.json"))]
+
+
+def _bang_doc() -> dict[str, Any]:
+    src = BANG if BANG.exists() else BANG_SEED
+    doc: dict[str, Any] = json.loads(src.read_text(encoding="utf-8"))
+    return doc
+
+
+def _dump(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=1) + "\n"
+
+
+def _commit(writes: list[tuple[Path, str]]) -> None:
+    """原子写入（12 §2.1 第 7 步）：先全部写临时文件，都成功了再逐个改名；任何一步失败不留半份。"""
+    tmps: list[tuple[Path, Path]] = []
+    try:
+        for path, text in writes:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            tmps.append((Path(tmp), path))
+    except BaseException:
+        for t, _ in tmps:
+            t.unlink(missing_ok=True)
+        raise
+    for t, path in tmps:
+        os.replace(t, path)
+
+
+def _updates_for(h: dict[str, Any], only: set[str] | None) -> list[dict[str, Any]]:
+    """--only 时只写这几个候选的榜更新：add 看 note 里的候选号，set_status 跟着同一条目的 add_run。"""
+    if only is None:
+        return list(h["bang_updates"])
+    owner: dict[str, str] = {}
+    for u in h["bang_updates"]:
+        if u["op"] == "add_run" and u["run"].get("candidate"):
+            owner[u["id"]] = u["run"]["candidate"]
+    out = []
+    for u in h["bang_updates"]:
+        cid = str(u.get("note", "")).removeprefix("候选 ") if u["op"] == "add" else owner.get(str(u.get("id")))
+        if cid in only:
+            out.append(u)
+    return out
+
+
+QUEUED = "已交实现线（排队：等模块槽释放）"
+
+
+def cmd_import(a: argparse.Namespace) -> None:
+    """方案分析的交接包 → 炼档：校验、火位锁、入位复核、开档到“入位”、清单草稿、异火榜（12 §2.1）。"""
+    h = json.loads(Path(a.handoff).read_text(encoding="utf-8"))
+    errs = ho.check(h)
+    if errs:
+        raise SystemExit("拒导入：\n  " + "\n  ".join(errs))
+    g = gongfa_raw()
+    if h["basis"]["gongfa_digest"] != gongfa_digest(g):
+        print("功法摘要与交接包的依据不同：做入位复核")
+    only = set(a.only) if a.only else None
+    items = [it for it in h["items"] if only is None or it["candidate"] in only]
+    if only and len(items) != len(only):
+        raise SystemExit(f"交接包里没有 {sorted(only - {it['candidate'] for it in items})}")
+    locks = ho.slot_locks(_dossiers())
+    queued, ready = [], []
+    for it in items:
+        held = [f"{s}（炼档 {locks[s]}）" for s in ho.slots_of(it) if s in locks]
+        if held and not a.queue:
+            raise SystemExit(f"拒导入 {it['candidate']}：火位被在途炼档占着 {held}；加 --queue 只记进异火榜排队")
+        problems = ho.recheck(it["placement"], g)
+        if problems:
+            raise SystemExit(f"拒导入 {it['candidate']}：入位复核不过 {problems}；请以“重新入位”模式只重跑映射")
+        (queued if held else ready).append(it)
+    writes: list[tuple[Path, str]] = []
+    numbers: dict[str, str] = {}
+    n = int(next_no())
+    for it in ready:
+        no = f"{n:03d}"
+        n += 1
+        d = ho.to_dossier(it, no, run=h["run"], provenance=it["essence"]["provenance"], by=h["decided_by"])
+        numbers[it["candidate"]] = no
+        writes.append((DOSSIERS / f"{no}-{d['name']}.json", _dump(d)))
+        writes.append((DOSSIERS / f"{no}-{d['name']}.md", lh.render(d)))
+        for f, _ in lh.members(d):
+            dest = PKG / "fires" / f"{f['id']}.json"
+            if dest.exists() and json.loads(dest.read_text(encoding="utf-8")) != f:
+                raise SystemExit(f"{dest} 已有一份不同的清单：同 id 的火改了就升 ver、另开一份")
+            writes.append((dest, _dump(f)))
+    updates = copy.deepcopy(_updates_for(h, only))  # 下面改说明，不动交接包本身
+    queue_ids = {it["candidate"] for it in queued}
+    for u in updates:
+        if u["op"] == "set_status" and u.get("status") == "handed_off":
+            cid = next(
+                (x["run"].get("candidate") for x in updates if x["op"] == "add_run" and x["id"] == u["id"]), None
+            )
+            if cid in queue_ids:
+                u["note"] = QUEUED
+        elif u["op"] == "add" and str(u.get("note", "")).removeprefix("候选 ") in queue_ids:
+            u["entry"]["history"][-1]["note"] = QUEUED
+    bang = ho.apply_bang(_bang_doc(), updates, a.date or _today(), numbers)
+    writes.append((BANG, _dump(bang)))
+    _commit(writes)
+    for it in ready:
+        print(f"导入 {it['candidate']} → 炼档 {numbers[it['candidate']]}（入位）；下一步：开设计 PR，裁决后 approve")
+    for it in queued:
+        print(f"{it['candidate']} 排队：火位被占，只记进异火榜")
+    print(f"异火榜 → {BANG.relative_to(ROOT)}（{len(updates)} 条更新）")
+
+
+def cmd_bang(a: argparse.Namespace) -> None:
+    doc = _bang_doc()
+    if a.action == "show":
+        for e in sorted(doc["entries"], key=lambda e: -float(e.get("priority", 0))):
+            print(f"{e['id']} {e['title']}：{e['status']}（{e['slot']}，P={e.get('priority', '—')}）")
+        return
+    if not a.file:
+        raise SystemExit("bang apply 要给交接包或更新列表")
+    src = json.loads(Path(a.file).read_text(encoding="utf-8"))
+    updates = src["bang_updates"] if isinstance(src, dict) else src
+    _commit([(BANG, _dump(ho.apply_bang(doc, updates, a.date or _today())))])
+    print(f"异火榜 → {BANG.relative_to(ROOT)}（{len(updates)} 条更新）")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -376,6 +522,17 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("render", help="由 JSON 重新生成 .md")
     p.add_argument("no")
     p.set_defaults(fn=cmd_render)
+    p = sub.add_parser("import", help="方案分析的交接包 → 炼档（入位状态）、清单草稿、异火榜")
+    p.add_argument("handoff")
+    p.add_argument("--only", action="append", help="只导入这个候选（可多次）")
+    p.add_argument("--queue", action="store_true", help="火位被占时只记进异火榜排队，不拒")
+    p.add_argument("--date")
+    p.set_defaults(fn=cmd_import)
+    p = sub.add_parser("bang", help="异火榜：show 列出；apply 按交接包或更新列表写入")
+    p.add_argument("action", choices=["show", "apply"])
+    p.add_argument("file", nargs="?")
+    p.add_argument("--date")
+    p.set_defaults(fn=cmd_bang)
     return ap
 
 
@@ -383,7 +540,7 @@ def main(argv: list[str]) -> int:
     a = parser().parse_args(argv)
     try:
         a.fn(a)
-    except lh.StepError as e:
+    except (lh.StepError, ho.ImportRefused) as e:
         print(f"做不了：{e}", file=sys.stderr)
         return 2
     return 0
