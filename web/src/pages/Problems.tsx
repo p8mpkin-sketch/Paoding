@@ -1,10 +1,11 @@
-// 任务列表（前端重新设计 v5 第三期）：一张表，按状态分组；搜索、排列、行菜单、选择模式与批量、归档与回收站。
+// 任务列表（v5 第三期；v6 深化，docs/design/pages-v6 §3）：一张表，按状态分组；搜索、判定方式与时间范围筛选、排列、
+// 合计条、右侧预览、导出 CSV、键盘（j/k/Enter/p/x//）、行菜单、选择模式与批量、归档与回收站。
 // 列表是 GET /v1/problems 的排版：分组、排序、搜索都只在本机做，不改任何派生量。
 // 整理（归档、删除、恢复、改名、置顶）走 curate 操作（软删：账与花费不动）；正在跑的任务删除前先在同一批里关题。
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, RefreshCw, Search } from "lucide-react";
+import { Download, MoreHorizontal, RefreshCw, Search } from "lucide-react";
 import type { Op, ProblemItem, ProblemsView } from "../api/types";
 import { ops } from "../api/ops";
 import { newIdemKey } from "../api/client";
@@ -16,6 +17,9 @@ import { StationCell } from "../ui/StationStrip";
 import { stationsOf } from "../model/stations";
 import { pending, recorded, rejected } from "../ui/feedback";
 import { Plain, Text } from "../ui/registers";
+import { TaskPreview } from "../ui/TaskPreview";
+import { useRowKeys } from "../ui/keys";
+import { dayStart, doneRate } from "../model/dashboard";
 
 export function Link({ to, children, className, onClick, ...data }: { to: Route; children: React.ReactNode; className?: string; onClick?: () => void } & { [k: `data-${string}`]: string }) {
   return <a {...data} className={className} href={hrefOf(to)} onClick={(e) => { onClick?.(); if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); navigate(to); }}>{children}</a>;
@@ -75,13 +79,39 @@ const GROUPS: { g: Group; word: string; hint?: string }[] = [
   { g: "live", word: "正在做" },
   { g: "end", word: "已结束" },
 ];
-export type Sort = "group" | "recent" | "cost";
-const SORTS: { s: Sort; word: string }[] = [{ s: "group", word: "按状态分组" }, { s: "recent", word: "最近更新" }, { s: "cost", word: "花费从高到低" }];
+export type Sort = "group" | "recent" | "cost" | "wall" | "name";
+const SORTS: { s: Sort; word: string }[] = [{ s: "group", word: "按状态分组" }, { s: "recent", word: "最近更新" }, { s: "cost", word: "花费从高到低" }, { s: "wall", word: "用时从长到短" }, { s: "name", word: "按名字" }];
+
+/** 判定方式（ProblemItem.authority，服务端给）。 */
+export type Auth = "" | "local" | "external" | "human" | "self";
+const AUTHS: { a: Auth; word: string }[] = [{ a: "", word: "全部判定方式" }, { a: "local", word: "判定器" }, { a: "external", word: "外部判定" }, { a: "human", word: "人工验收" }, { a: "self", word: "开放道" }];
+/** 时间范围：按开始时刻，或已结束的按结束时刻。 */
+export type Range = "" | "today" | "7" | "30";
+const RANGES: { r: Range; word: string }[] = [{ r: "", word: "全部时间" }, { r: "today", word: "今天" }, { r: "7", word: "近 7 天" }, { r: "30", word: "近 30 天" }];
+
+/** 判定方式与时间范围（纯排版；now 由外层注入）。 */
+export function filterMore(items: ProblemItem[], auth: Auth, range: Range, now: number): ProblemItem[] {
+  const since = range === "" ? -Infinity : range === "today" ? dayStart(now) : dayStart(now) - (Number(range) - 1) * 86_400_000;
+  return items.filter((p) => (!auth || p.authority === auth) && (p.closed && p.closed_ts !== null ? p.closed_ts : p.opened_ts) >= since);
+}
+
+const csvCell = (x: string | number) => { const s = String(x); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const iso = (ms: number | null) => (ms === null ? "" : new Date(ms).toISOString());
+/** 当前筛选下的行导出成 CSV（本机生成，不经服务端）。 */
+export function toCsv(items: ProblemItem[]): string {
+  const head = ["编号", "标题", "状态", "判定方式", "花费(美元)", "上限(美元)", "用时(秒)", "开始", "结束"];
+  const rows = items.map((p) => [p.id, p.title.value, p.closed ? (END_WORD[p.terminal ?? ""] ?? "已结束") : p.human_todo > 0 ? "等你处理" : "执行中", p.authority,
+    (p.spent_usd_milli / 1000).toFixed(3), p.cap_usd_milli === null ? "" : (p.cap_usd_milli / 1000).toFixed(3), p.wall.elapsed_s, iso(p.opened_ts), iso(p.closed_ts)]);
+  return [head, ...rows].map((r) => r.map(csvCell).join(",")).join("\n") + "\n";
+}
 const lastSeq = (p: ProblemItem) => p.closed_seq ?? p.opened_seq;
 
 /** 排序：置顶的永远在前（分组时在组内最前），其余按所选方式。 */
 export function sortRows(items: ProblemItem[], sort: Sort): ProblemItem[] {
-  const by = sort === "cost" ? (a: ProblemItem, b: ProblemItem) => b.spent_usd_milli - a.spent_usd_milli : (a: ProblemItem, b: ProblemItem) => lastSeq(b) - lastSeq(a);
+  const by = sort === "cost" ? (a: ProblemItem, b: ProblemItem) => b.spent_usd_milli - a.spent_usd_milli
+    : sort === "wall" ? (a: ProblemItem, b: ProblemItem) => b.wall.elapsed_s - a.wall.elapsed_s
+      : sort === "name" ? (a: ProblemItem, b: ProblemItem) => a.title.value.localeCompare(b.title.value, "zh-CN")
+        : (a: ProblemItem, b: ProblemItem) => lastSeq(b) - lastSeq(a);
   return [...items].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || by(a, b));
 }
 
@@ -123,7 +153,7 @@ export function Recent() {
 
 type Ask = { ids: string[] } | null;
 
-export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
+export function Problems({ filter = NO_FILTER, now = 0 }: { filter?: BankFilter; now?: number }) {
   const { api, cfg } = useServices();
   const writable = !!cfg.token;
   const { view, error, reload } = useProblems(5000);
@@ -135,22 +165,29 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
   const [renaming, setRenaming] = useState<ProblemItem | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [auth, setAuth] = useState<Auth>("");
+  const [range, setRange] = useState<Range>("");
+  const [preview, setPreview] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => setQ(filter.q), [filter.q]);
   useEffect(() => { setSel(new Set()); setShowAll(false); }, [filter.terminal]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.key !== "/" || e.metaKey || e.ctrlKey || (t && (t.closest("input, textarea, select, [contenteditable]")))) return;
-      e.preventDefault(); search.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // 键盘：j/k 移动当前行（焦点落在行上），Enter 打开任务，p 或空格预览，x 选中（选择模式下），/ 搜索
+  useRowKeys(root, {
+    search,
+    extra: (key, row) => {
+      const pid = row?.getAttribute("data-problem");
+      if (!pid) return false;
+      if (key === "Enter") { navigate({ page: "problem", pid, asOf: null, node: null }); return true; }
+      if (key === "p" || key === " ") { setPreview((x) => (x === pid ? null : pid)); return true; }
+      if (key === "x" && selMode) { setSel((s) => { const n = new Set(s); if (n.has(pid)) n.delete(pid); else n.add(pid); return n; }); return true; }
+      return false;
+    },
+  });
 
   const set = (patch: Partial<BankFilter>) => navigate({ page: "problems", ...filter, ...patch }, true);
   const items = useMemo(() => view?.items.filter((p) => shelfOf(p) !== "purged") ?? [], [view]);
-  const list = useMemo(() => filterBank(items, { ...filter, q }), [items, filter, q]);
+  const list = useMemo(() => filterMore(filterBank(items, { ...filter, q }), auth, range, now), [items, filter, q, auth, range, now]);
   const byId = useMemo(() => new Map(items.map((p) => [p.id, p])), [items]);
 
   /** 对一组任务逐个提交；每个任务一批（批内依次校验，所以“先关题再进回收站”可以在同一批里）。 */
@@ -182,7 +219,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
   const sorted = sortRows(list, sort);
   const toggle = (pid: string) => setSel((s) => { const n = new Set(s); if (n.has(pid)) n.delete(pid); else n.add(pid); return n; });
 
-  const row = (p: ProblemItem) => <Row key={p.id} p={p} selMode={selMode} picked={sel.has(p.id)} onPick={() => toggle(p.id)} writable={writable && !busy}
+  const row = (p: ProblemItem) => <Row key={p.id} p={p} previewing={preview === p.id} onPreview={() => setPreview(preview === p.id ? null : p.id)} selMode={selMode} picked={sel.has(p.id)} onPick={() => toggle(p.id)} writable={writable && !busy}
     onAct={(a) => {
       if (a === "delete") setAsk({ ids: [p.id] });
       else if (a === "rename") setRenaming(p);
@@ -197,6 +234,7 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
       ? <Empty title={`没有找到带“${q.trim()}”的任务`} action={<Button tone="line" size="sm" onClick={() => { setQ(""); set({ q: "" }); }} data-action="clear-q">清空搜索</Button>}>只搜标题和编号。</Empty>
       : v === "trash" ? <Empty title="回收站是空的">删除的任务在这里放 30 天，期间可以恢复。</Empty>
       : v === "archived" ? <Empty title="没有归档的任务">归档只是收起来，随时可以移回。</Empty>
+      : auth || range ? <Empty title="没有符合筛选的任务" action={<Button tone="line" size="sm" onClick={() => { setAuth(""); setRange(""); }} data-action="clear-more">清除筛选</Button>}>换一个判定方式或时间范围。</Empty>
       : <Empty title={items.length ? "这一类里还没有任务" : "还没有任务"} action={items.length ? undefined : <Link to={{ page: "home" }} className={btnClass("ink", "sm")}>新建任务</Link>}>{items.length ? "换一个分类看看。" : "说一句要做的事，回车就开始。"}</Empty>;
   } else if (sort !== "group" || shelfView) {
     body = sorted.map(row);
@@ -217,10 +255,12 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
     });
   }
   const pickedIds = [...sel].filter((x) => list.some((p) => p.id === x));
+  const rate = doneRate(list);
+  const previewP = preview ? byId.get(preview) ?? null : null;
   const allPicked = pickedIds.length === list.length && list.length > 0;
 
   return (
-    <div className="problems" data-page="bank">
+    <div className="problems" data-page="bank" ref={root}>
       <Mast title="任务" dek={shelfView ? (v === "trash" ? "删除的任务在这里放 30 天，可以恢复；到期后工作区文件清掉。已经花掉的钱一直计入读数。" : "归档的任务只是收起来，账和结果都在。") : undefined} />
       <div className="tl-tool">
         <form className="tl-search" role="search" onSubmit={(e) => { e.preventDefault(); set({ q }); }}>
@@ -228,9 +268,16 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
           <input ref={search} type="search" value={q} placeholder="搜标题或编号" aria-label="搜索任务" data-field="q" onChange={(e) => setQ(e.target.value)} onBlur={() => set({ q })} />
           <kbd className="k-kbd" aria-hidden="true">/</kbd>
         </form>
+        <select value={auth} aria-label="判定方式" data-field="auth" onChange={(e) => setAuth(e.target.value as Auth)}>
+          {AUTHS.map((a) => <option key={a.a} value={a.a}>{a.word}</option>)}
+        </select>
+        <select value={range} aria-label="时间范围" data-field="range" onChange={(e) => setRange(e.target.value as Range)}>
+          {RANGES.map((r) => <option key={r.r} value={r.r}>{r.word}</option>)}
+        </select>
         <select value={sort} aria-label="排列方式" data-field="sort" onChange={(e) => setSort(e.target.value as Sort)} disabled={shelfView}>
           {SORTS.map((s) => <option key={s.s} value={s.s}>{s.word}</option>)}
         </select>
+        <Button tone="line" onClick={() => exportCsv(sorted)} disabled={!list.length} data-action="export-csv"><Download aria-hidden="true" />导出</Button>
         {writable && <Button tone="line" aria-pressed={selMode} onClick={() => { setSelMode(!selMode); setSel(new Set()); }} data-action="select-mode">{selMode ? "完成" : "选择"}</Button>}
         <span className="tl-live" role="status">
           <span className="tl-dot" aria-hidden="true" />每 5 秒更新
@@ -246,6 +293,15 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
           <button key={word} type="button" role="tab" aria-selected={v === x} data-tab={x} onClick={() => set({ terminal: x })}>{word}<span className="num">{count(x)}</span></button>
         ))}
       </div>
+      <p className="tl-sum t2" data-bank-sum>
+        <span><b className="k-mono">{list.length}</b> 个任务</span>
+        <span>花费 <b className="k-mono">{usd(list.reduce((a, p) => a + p.spent_usd_milli, 0))}</b></span>
+        {rate !== null && <span>已结束里做成 <b className="k-mono">{Math.round(rate * 100)}%</b></span>}
+        <span>用时合计 <b className="k-mono">{Math.round(list.reduce((a, p) => a + p.wall.elapsed_s, 0) / 60)} 分</b></span>
+        {(auth || range || q.trim()) && <button type="button" className="linkbtn" onClick={() => { setAuth(""); setRange(""); setQ(""); set({ q: "" }); }} data-action="clear-all">清除筛选</button>}
+        <span className="grow" /><span className="t2">j/k 移动 · Enter 打开 · p 预览</span>
+      </p>
+      <div className={`tl-split${previewP ? " with" : ""}`}>
       <div className={`tl${selMode ? " selm" : ""}`} role="table" aria-label="任务" data-list>
         <div className="tl-row tl-head" role="row">
           {selMode && <span role="columnheader"><span className="sr-only">选择</span></span>}
@@ -254,6 +310,8 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
           <span role="columnheader"><span className="sr-only">操作</span></span>
         </div>
         {body}
+      </div>
+      {previewP && <TaskPreview key={previewP.id} p={previewP} onClose={() => setPreview(null)} />}
       </div>
 
       {selMode && (
@@ -276,9 +334,18 @@ export function Problems({ filter = NO_FILTER }: { filter?: BankFilter }) {
   );
 }
 
+function exportCsv(items: ProblemItem[]) {
+  const blob = new Blob(["\ufeff", toCsv(items)], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement("a");
+  el.href = url; el.download = "tasks.csv";
+  document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 type RowAct = "delete" | "rename" | "pin" | "archive" | "restore";
 
-function Row({ p, selMode, picked, onPick, writable, onAct }: { p: ProblemItem; selMode: boolean; picked: boolean; onPick: () => void; writable: boolean; onAct: (a: RowAct) => void }) {
+function Row({ p, selMode, picked, onPick, writable, onAct, previewing, onPreview }: { p: ProblemItem; selMode: boolean; picked: boolean; onPick: () => void; writable: boolean; onAct: (a: RowAct) => void; previewing: boolean; onPreview: () => void }) {
   const g = groupOf(p);
   const sh = shelfOf(p);
   const to: Route = { page: "problem", pid: p.id, asOf: null, node: null };
@@ -290,7 +357,8 @@ function Row({ p, selMode, picked, onPick, writable, onAct }: { p: ProblemItem; 
   const time = sh === "trash" ? (p.trash_until === null ? "—" : `到${dayOf(p.trash_until)}`) : g === "end" ? (p.closed_ts ? dayOf(p.closed_ts) : "—") : mmss(p.wall.elapsed_s);
   const pct = p.cap_usd_milli ? Math.min(100, Math.round((p.spent_usd_milli / p.cap_usd_milli) * 100)) : null;
   return (
-    <div className={`tl-row ${g}${picked ? " on" : ""}${sh !== "active" ? " shelved" : ""}`} role="row" data-problem={p.id} data-group-of={g} data-shelf={sh}>
+    <div className={`tl-row ${g}${picked ? " on" : ""}${previewing ? " pv" : ""}${sh !== "active" ? " shelved" : ""}`} role="row" data-problem={p.id} data-group-of={g} data-shelf={sh} data-krow="" tabIndex={-1}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest("a, button, input")) onPreview(); }}>
       {selMode && <span role="cell"><input type="checkbox" className="tl-ck" checked={picked} onChange={onPick} aria-label={`选择：${p.title.value}`} data-pick={p.id} /></span>}
       <span role="cell" data-terminal={p.terminal ?? "running"}><StatusCell p={p} /></span>
       <span role="cell" className="tl-main">
@@ -305,6 +373,7 @@ function Row({ p, selMode, picked, onPick, writable, onAct }: { p: ProblemItem; 
       <span role="cell" className="tl-time r">{time}</span>
       <span role="cell" className="tl-acts">
         {g === "need" && sh === "active" && <Link to={{ page: "inbox" }} className={btnClass("ink", "sm")} data-action="go-handle">去处理</Link>}
+        <button type="button" className="k-btn k-btn-bare k-btn-sm tl-pvb" aria-pressed={previewing} aria-label={`预览：${p.title.value}`} onClick={onPreview} data-action="preview">预览</button>
         <RowMenu p={p} writable={writable} onAct={onAct} />
       </span>
     </div>
