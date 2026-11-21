@@ -383,11 +383,12 @@ def test_container_proc_is_popen_shaped():
 
 
 @needs_docker
-def test_orphans_of_a_dead_adapter_are_swept(tmp_path):
+def test_orphans_of_a_dead_adapter_are_swept(tmp_path, upstream):  # noqa: F811
     """Adapter 进程异常退出后留下的中继与网络：带着与执行层相同的属主标签，哮天犬的孤儿清扫收得走。"""
     from paoding_executor.contract import sweep_orphans
 
-    launcher = ContainerLauncher(IMAGE, 1, 1)
+    port = upstream.server.server_address[1]  # 中继起来时要探通上游：给它一个会应答的 HTTP 服务
+    launcher = ContainerLauncher(IMAGE, port, port)
     try:
         launcher.owner = f"{socket.gethostname()}:999999:1"  # 一个不存在的进程
         launcher._ensure("l_55")
@@ -396,3 +397,44 @@ def test_orphans_of_a_dead_adapter_are_swept(tmp_path):
         assert leftovers() == []
     finally:
         launcher.close()
+
+
+def test_transport_defaults_to_tcp_on_macos_and_unix_elsewhere(monkeypatch, tmp_path):
+    """macOS 的 Docker Desktop 上挂进容器的 Unix 套接字连不通：那里缺省走 tcp（中继经 host.docker.internal 连宿主），
+    别处缺省 unix。不需要 Docker：只看启动器发出的 docker 命令。"""
+    from paoding_adapter import container as ct
+
+    calls: list[tuple[str, ...]] = []
+
+    def fake_docker(*args, check=True, timeout=120):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+
+    monkeypatch.setattr(ct, "_docker", fake_docker)
+    monkeypatch.setattr(ct.shutil, "which", lambda _: "/usr/bin/docker")
+    for platform, want in (("darwin", "tcp"), ("linux", "unix")):
+        monkeypatch.setattr(ct.sys, "platform", platform)
+        assert ct.default_transport() == want
+        launcher = ct.ContainerLauncher(IMAGE, 4001, 4002)
+        try:
+            assert launcher.transport == want
+            calls.clear()
+            launcher._ensure("l_5")
+            (create,) = [c for c in calls if c[0] == "create"]
+            verbs = [c[0] if c[0] != "network" else f"network {c[1]}" for c in calls]
+            if want == "tcp":
+                assert launcher._bridges == []  # 不开 Unix 套接字
+                assert "--add-host" in create and "host.docker.internal:host-gateway" in create
+                assert create[-2:] == ("8081=tcp:host.docker.internal:4001", "8082=tcp:host.docker.internal:4002")
+                assert not [a for a in create if "/run/pd" in a and a.startswith("type=bind")]
+                # 中继先接默认网桥再启动；模型容器的网络照旧是内部网络
+                assert verbs.index("network connect") < verbs.index("start")
+                assert ("network", "connect", "bridge", "pd-model-l-5-ep") in calls
+            else:
+                assert "--add-host" not in create and "network connect" not in verbs
+                assert create[-2:] == ("8081=/run/pd/proxy.sock", "8082=/run/pd/mcp.sock")
+            assert [c for c in calls if c[:2] == ("network", "create")][0][2] == "--internal"
+        finally:
+            launcher.close()
+    with pytest.raises(ct.LaunchError, match="unix 或 tcp"):
+        ct.ContainerLauncher(IMAGE, 1, 1, transport="udp")

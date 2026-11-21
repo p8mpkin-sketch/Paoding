@@ -138,6 +138,7 @@ class StackConfig:
     scripts: dict = field(default_factory=dict)
     launcher: str = ""  # container | local；缺省 real → container，fake → local
     cli_image: str = ""  # 模型容器的镜像：real 必填；fake + container 缺省用通用镜像
+    transport: str = ""  # 端点中继到本进程的通路：unix | tcp；缺省按平台（macOS 的 Docker Desktop 走 tcp）
     upstream: str = "https://api.anthropic.com"  # real 的模型端点；fake 用本机假上游
     api_key_env: str = "ANTHROPIC_API_KEY"  # real：真实密钥所在的环境变量名
     api_key: str = ""  # real：配置里直接给的密钥（环境变量有值时不用）；不进日志
@@ -198,6 +199,7 @@ class StackConfig:
                 k: be[src]
                 for k, src in (
                     ("launcher", "launcher"),
+                    ("transport", "transport"),
                     ("cli_image", "image"),
                     ("upstream", "upstream"),
                     ("upstream", "api_base"),
@@ -300,6 +302,8 @@ class Stack:
         self.launch_mode = cfg.launcher or ("container" if cfg.backend == "real" else "local")
         if self.launch_mode not in ("container", "local"):
             raise StackError(f"launcher 取 container 或 local，不是 {cfg.launcher!r}")
+        if cfg.transport not in ("", "unix", "tcp"):
+            raise StackError(f"backend.transport 取 unix 或 tcp（缺省按平台），不是 {cfg.transport!r}")
         # 钥匙环（宪章 03 §4）：真实密钥只在端点代理这一个进程的内存里。启动时从环境变量注入；
         # 配置文件的 backend.api_key 是过渡期（D4），照用但告警；都没有也照常启动，等设置页注入。
         self.keyring = KeyRing({"default": cfg.api_key_env if cfg.backend == "real" else ""})
@@ -492,7 +496,11 @@ class Stack:
             if drivers:
                 mounts = (*mounts, *driver_mounts("tunshi"))
             self.launcher = ContainerLauncher(
-                cfg.cli_image or cfg.bases.get("basic", "python:3.12-slim"), proxy_port, mcp_port, mounts=mounts
+                cfg.cli_image or cfg.bases.get("basic", "python:3.12-slim"),
+                proxy_port,
+                mcp_port,
+                mounts=mounts,
+                transport=cfg.transport,
             )
         else:
             self.launcher = local_launcher
@@ -772,6 +780,7 @@ class Stack:
                 "ok": True,
                 "backend": self.cfg.backend,
                 "launcher": self.cfg.launcher or None,
+                "transport": getattr(self.launcher, "transport", None),  # 模型容器的中继通路（unix | tcp）
                 "sessions_in_flight": len(self.runner.live),
                 "key_set": self.keyring.ready(self.proxy.cfg.key_slot),
             },
