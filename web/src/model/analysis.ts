@@ -1,6 +1,6 @@
 // 方案分析的纯函数（界面一期）：步骤与状态的说法、预算分段、决定块的生成、引擎自由文本里内部名词的替换。
 // 用词照 docs/design/engine-ui §6：界面里不出现设计名词；决定块的关键字是引擎的解析格式，原样保留，只放在折叠的“原文”里。
-import type { AnCandidate, AnGate, AnStep, AnalysisDetail, AnalysisRow } from "../api/analysis-types";
+import type { AnCandidate, AnDecision, AnGate, AnStep, AnalysisDetail, AnalysisRow } from "../api/analysis-types";
 
 export const STEP_ORDER = ["S0", "S1", "S2", "S3", "G1", "S4", "G2", "S5", "G3", "S6"] as const;
 export const STEP_WORD: Record<(typeof STEP_ORDER)[number], string> = {
@@ -61,11 +61,12 @@ export const ARTIFACT_KIND_WORD = { material: "你给的材料", exec: "执行�
 const PLAIN: [RegExp, string][] = [
   [/闸点\s*([123])/g, "第 $1 次确认"],
   [/体质改动/g, "内核改动"], [/体质/g, "内核"],
+  [/遮蔽视图/g, "去来源视图"], [/火位锁/g, "模块槽占用"], [/新火/g, "新模块"], [/定阶/g, "定版"], [/常设留出/g, "固定留出集"],
   [/异火榜/g, "候选方案"], [/火意/g, "核心机制"], [/火序/g, "集成顺序"], [/火位/g, "模块槽"], [/火组/g, "模块组"],
   [/功法/g, "能力配置"], [/(?<!能力)剖面/g, "能力剖面"], [/炼档/g, "集成记录"],
   [/识火/g, "发现"], [/萃意/g, "抽象"], [/入位/g, "映射"], [/吞噬引擎/g, "方案分析"], [/试算/g, "预评估"],
   [/盲审丹/g, "盲审"], [/萃丹/g, "抽取模型"], [/主丹/g, "主模型"], [/读丹/g, "读取模型"], [/位丹/g, "映射模型"], [/丹方/g, "模型配置"],
-  [/新生维/g, "新增指标"], [/第\s*(\d+)\s*阶/g, "v$1"], [/取 main\b/g, "取主模型那一稿"], [/火莲/g, "新增能力"], [/合炼/g, "全面提升"], [/并火/g, "无增益"],
+  [/新生维/g, "新增指标"], [/第\s*(\d+)\s*阶(?=[\u4e00-\u9fff])/g, "v$1 "], [/第\s*(\d+)\s*阶/g, "v$1"], [/取 main\b/g, "取主模型那一稿"], [/火莲/g, "新增能力"], [/合炼/g, "全面提升"], [/并火/g, "无增益"],
 ];
 export function plain(text: string): string {
   let s = text;
@@ -93,14 +94,34 @@ export function stateOf(r: Pick<AnalysisRow, "step" | "waiting" | "mode">): { wo
 }
 
 /** 十步进度条：每一格是 done / now / wait（确认点停着等你）/ 空。 */
-export function stepper(step: AnStep | null, waiting: boolean): { key: string; word: string; gate: boolean; cls: "done" | "now" | "wait" | "" }[] {
+export function stepper(step: AnStep | null, waiting: boolean, mode = "formal"): { key: string; word: string; gate: boolean; cls: "done" | "now" | "wait" | "skip" | "" }[] {
   const i = step === "done" ? STEP_ORDER.length : step ? STEP_ORDER.indexOf(step as (typeof STEP_ORDER)[number]) : -1;
+  // 预评估一口气走完：三次确认与交接都不做，画成“跳过”，不画成做完
+  const skipped = (k: string) => mode === "dry_run" && (k.startsWith("G") || k === "S6");
   return STEP_ORDER.map((k, j) => ({
     key: k,
-    word: STEP_WORD[k],
+    word: skipped(k) ? (k === "S6" ? "不交接" : "不停") : STEP_WORD[k],
     gate: k.startsWith("G"),
-    cls: j < i ? "done" : j === i ? (k.startsWith("G") && waiting ? "wait" : "now") : "",
+    cls: skipped(k) ? "skip" : j < i ? "done" : j === i ? (k.startsWith("G") && waiting ? "wait" : "now") : "",
   }));
+}
+
+/** 一次确认里你定了什么，一句话（过程栏与完成页用）。 */
+export function decisionLine(dec: AnDecision): string {
+  const ids = (xs: (string | { candidate: string; why?: string })[] | undefined) =>
+    (xs ?? []).map((x) => (typeof x === "string" ? x : x.why ? `${x.candidate}（${x.why}）` : x.candidate)).join("、");
+  const out: string[] = [];
+  if (dec.gate === "G1") out.push(`选 ${ids(dec.pick) || "—"}`);
+  if (dec.gate === "G2") out.push(`确认 ${ids(dec.confirm) || "—"}`);
+  if (dec.gate === "G3") out.push(`交实现线 ${ids(dec.to_implementation) || "无"}`);
+  if (dec.hold?.length) out.push(`搁置 ${ids(dec.hold)}`);
+  if (dec.exclude?.length) out.push(`排除 ${ids(dec.exclude)}`);
+  if (dec.back?.length) out.push(`退回 ${ids(dec.back)}`);
+  if (dec.drop?.length) out.push(`放弃 ${ids(dec.drop)}`);
+  if (dec.edit?.length) out.push(`改了 ${dec.edit.length} 处`);
+  if (dec.gate === "G3" && dec.library_import) out.push("报告存入资料库");
+  if (dec.note) out.push(`备注：${dec.note}`);
+  return plain(out.join("；"));
 }
 
 /** 预算三段（发现、抽象、映射）的已花与软上限；整题上限由引擎 engine.json 给出。 */

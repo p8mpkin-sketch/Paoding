@@ -29,7 +29,18 @@ from typing import Any
 from paoding_fenjue.engine import decision as dblock
 from paoding_fenjue.engine import schema
 from paoding_fenjue.engine.budget import STAGE_SHARE
-from paoding_fenjue.engine.run import report_g1, report_g2
+from paoding_fenjue.engine.run import (
+    ARM_ZH,
+    HELD_ZH,
+    KIND_ZH,
+    OUTCOME_ZH,
+    REL_ZH,
+    RES_ZH,
+    local_artifact_id,
+    report_dry_run,
+    report_g1,
+    report_g2,
+)
 from paoding_graph.contract import BadBody, GraphHttp, MountError
 
 RUN_RE = r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}"
@@ -42,6 +53,16 @@ _MATERIAL = ("snapshot:",)
 _EXEC = ("survey:", "read:", "candidates.needs")
 
 Forward = Callable[[str, str, int], None]
+
+# 引擎枚举的人读说法（引擎 run.py 写报告用的同一张表）：界面照这张表显示，不另抄一份
+WORDS = {
+    "reading_kind": KIND_ZH,
+    "arm": ARM_ZH,
+    "resolution": RES_ZH,
+    "relation": REL_ZH,
+    "held": HELD_ZH,
+    "outcome": OUTCOME_ZH,
+}
 
 
 def _kind(name: str) -> str:
@@ -63,6 +84,60 @@ def _read_json(p: Path) -> Any:
 
 def _iso(ts: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+
+def _handoff_view(h: dict[str, Any] | None) -> dict[str, Any] | None:
+    """交接包的摘要：交了哪几个、暂缓哪几个、候选方案怎么变、校验过没过。整份在“文件”里。"""
+    if h is None:
+        return None
+    return {
+        "decided_by": h.get("decided_by"),
+        "date": h.get("date"),
+        "items": [
+            {
+                "candidate": it["candidate"],
+                "title": it["seed"]["title"],
+                "module": it["placement"]["fire"]["id"],
+                "slot": it["placement"]["fire"]["slot"],
+                "plain_summary": it["placement"].get("plain_summary", ""),
+            }
+            for it in h.get("items", [])
+        ],
+        "held": h.get("held", []),
+        "bang_updates": [
+            {"op": u["op"], "id": u.get("id") or u.get("entry", {}).get("id"), "status": u.get("status")}
+            for u in h.get("bang_updates", [])
+        ],
+        "profile_proposals": len(h.get("profile_proposals", [])),
+        "library_import": bool(h.get("library_import")),
+        "validator": h.get("validator", []),
+    }
+
+
+def _dry_view(r: dict[str, Any] | None, v: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """预评估报告里界面用的那几栏（每个做法一行）；整份在“文件”里。"""
+    if r is None:
+        return None
+    return {
+        "auto_picked": r.get("auto_picked", []),
+        "plain_summary": r.get("plain_summary", ""),
+        "estimate": r.get("estimate"),
+        "items": [
+            {
+                "candidate": it["candidate"],
+                "statement": it["essence_draft"]["statement"],
+                "slot": it["slot"],
+                "replaces": it.get("replaces"),
+                "kernel_forecast": it.get("kernel_forecast", []),
+                "difficulty": it.get("difficulty"),
+                "likely_outcome": it["likely_outcome"],
+                "why": it.get("why", ""),
+                "conflicts": it.get("conflicts", []),
+            }
+            for it in r.get("items", [])
+        ],
+        "validators": v or [],
+    }
 
 
 def default_bang(root: Path) -> Path:
@@ -165,24 +240,47 @@ class AnalysisHub:
         if p.exists():
             obs = [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
         arts = [
-            {"name": n, "sha256": sha, "kind": _kind(n), "bytes": _size(ws / "artifacts" / f"{sha}.json")}
+            {
+                "name": n,
+                "sha256": sha,
+                "artifact_id": local_artifact_id(n, sha),  # E-U5 对照表里的那个 id（没接内核时的占位）
+                "kind": _kind(n),
+                "bytes": _size(ws / "artifacts" / f"{sha}.json"),
+            }
             for n, sha in state.get("artifacts", {}).items()
         ]
         cands = self._art(ws, state, "candidates.json")
-        reports = []
-        if cands:
-            g1 = next((g for g in state.get("gates", []) if g["gate"] == "G1"), None)
-            reports.append({"gate": "G1", "deliver_seq": g1["deliver_seq"] if g1 else None, "text": report_g1(cands)})
+        dry = self._art(ws, state, "dry_run.json")
+
+        def seq(gate: str) -> int | None:
+            g = next((g for g in reversed(state.get("gates", [])) if g["gate"] == gate), None)
+            return g["deliver_seq"] if g else None
+
+        # 人读报告只列真正交付过的：预评估一口气走完，中间没有交付，只有最后那一份
+        reports: list[dict[str, Any]] = []
+        if cands and dry is None:
+            reports.append({"kind": "G1", "gate": "G1", "deliver_seq": seq("G1"), "text": report_g1(cands)})
         essences = []
         for cid in eng.get("picked", []):
             ess = self._art(ws, state, f"essence:{cid}")
             if ess is not None:
                 essences.append({**ess, "validators": self._art(ws, state, f"essence:{cid}.v") or []})
-        if essences:
-            g2 = next((g for g in state.get("gates", []) if g["gate"] == "G2"), None)
-            reports.append(
-                {"gate": "G2", "deliver_seq": g2["deliver_seq"] if g2 else None, "text": report_g2(essences)}
-            )
+        if essences and dry is None:
+            reports.append({"kind": "G2", "gate": "G2", "deliver_seq": seq("G2"), "text": report_g2(essences)})
+        placements = []
+        for cid in eng.get("confirmed", eng.get("picked", [])):
+            pl = self._art(ws, state, f"placement:{cid}")
+            if pl is not None:
+                placements.append({**pl, "problems": eng.get("placement_problems", {}).get(cid, [])})
+        for name, kind, gate in (("report:G3", "G3", "G3"), ("report:S6", "handoff", None)):
+            rep = self._art(ws, state, name)
+            if rep is not None:
+                reports.append(
+                    {"kind": kind, "gate": gate, "deliver_seq": seq(gate) if gate else None, "text": rep["markdown"]}
+                )
+        if dry is not None:
+            reports.append({"kind": "dry_run", "gate": None, "deliver_seq": None, "text": report_dry_run(dry)})
+        handoff = self._art(ws, state, "handoff.json")
         return {
             **out,
             "intake": _read_json(ws / "intake.json"),
@@ -193,9 +291,15 @@ class AnalysisHub:
             "relays": state.get("relays", 0),
             "picked": eng.get("picked", []),
             "stage_share": STAGE_SHARE,
-            "needs": self._needs(state, ws, essences),
+            "needs": self._needs(state, ws, essences, placements, handoff, dry),
             "candidates_doc": cands,
             "essences": essences,
+            "placements": placements,
+            "order": self._art(ws, state, "order.json"),
+            "g3": eng.get("g3"),
+            "handoff": _handoff_view(handoff),
+            "dry_run": _dry_view(dry, self._art(ws, state, "dry_run.v")),
+            "words": WORDS,
             "reports": reports,
             "observations": obs,
             "artifacts": arts,
@@ -203,8 +307,16 @@ class AnalysisHub:
             "history": self._submitted(run),
         }
 
-    def _needs(self, state: dict[str, Any], ws: Path, essences: list[dict[str, Any]]) -> list[str]:
-        """这一次交付要你做的（引擎交付里的 needs，从产物现算，与 Engine._deliver_g1/_g2 同口径）。"""
+    def _needs(
+        self,
+        state: dict[str, Any],
+        ws: Path,
+        essences: list[dict[str, Any]],
+        placements: list[dict[str, Any]],
+        handoff: dict[str, Any] | None,
+        dry: dict[str, Any] | None,
+    ) -> list[str]:
+        """这一次交付要你做的（引擎交付里的 needs，从产物现算，与 Engine._deliver_g1/_g2/_g3、交接、预评估同口径）。"""
         if state.get("step") == "G1":
             return list(self._art(ws, state, "candidates.needs") or [])
         if state.get("step") == "G2":
@@ -217,6 +329,30 @@ class AnalysisHub:
                 ]
                 if bad:
                     out.append(f"{e['candidate']} 未过：{', '.join(bad)}")
+            return out
+        if state.get("step") == "G3":
+            out = []
+            for p in placements:
+                bad = [c["id"] for c in p.get("checks", []) if not c["ok"]] + list(p.get("problems", []))
+                if bad:
+                    out.append(f"{p['candidate']} 未过：{', '.join(bad)[:300]}")
+            return out
+        if state.get("step") == "done" and dry is not None:
+            bad = [c["id"] for c in self._art(ws, state, "dry_run.v") or [] if not c["ok"]]
+            out = [f"校验未过（只标不拦）：{', '.join(bad)}"] if bad else []
+            return [
+                *out,
+                "这是预评估：单稿、不盲审、不写实现步骤，不能直接交实现线；要正式走一遍就复用这次的快照与观察重开一题",
+            ]
+        if state.get("step") == "done" and handoff is not None:
+            out = []
+            bad = [c["id"] for c in handoff.get("validator", []) if not c["ok"]]
+            if bad:
+                out.append("交接包校验未过：" + "；".join(bad))
+            if handoff.get("items"):
+                out.append("交实现线的做法：在主仓库的工作分支跑 uv run python scripts/lianhua.py import <交接包>")
+            if handoff.get("library_import"):
+                out.append("报告存进资料库：由界面以你的身份导入（只作参考，不作依据）")
             return out
         return []
 
@@ -264,7 +400,7 @@ class AnalysisHub:
             if gate is None or step != gate["gate"]:
                 raise MountError(409, "not_at_gate", f"这次分析现在不在等你确认（{step}）")
             if gate["gate"] != "G1":
-                raise MountError(409, "not_yet", "第 2、3 次确认在界面二期")
+                raise MountError(409, "not_yet", "第 2、3 次确认的提交在界面后续几期，这一期只读")
             if body["deliver_seq"] != gate["deliver_seq"]:
                 raise MountError(409, "stale_view", "你看的不是最新一次交付，请刷新")
             if self._pending(run, state):

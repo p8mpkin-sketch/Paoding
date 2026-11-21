@@ -35,10 +35,18 @@ export type AnDecision = {
   exclude?: { candidate: string; why?: string }[];
   edit?: { pointer: string; value: string }[];
   note?: string;
+  /** 第 2 次确认：确认、退回重做、放弃。 */
+  confirm?: string[];
+  back?: (string | { candidate: string; why?: string })[];
+  drop?: (string | { candidate: string; why?: string })[];
+  /** 第 3 次确认：交实现线、搁置、排除、存入资料库。 */
+  to_implementation?: string[];
+  hold?: { candidate: string; why?: string }[];
+  library_import?: boolean;
   [k: string]: unknown;
 };
 export type AnGateRow = { gate: AnGate; deliver_seq: number; follow_up_seq?: number; decision?: AnDecision };
-export type AnArtifact = { name: string; sha256: string; kind: "material" | "exec" | "analysis"; bytes: number };
+export type AnArtifact = { name: string; sha256: string; /** 交付末尾对照表里的 id（E-U5）。 */ artifact_id?: string; kind: "material" | "exec" | "analysis"; bytes: number };
 
 export type AnEvidence = { snapshot: string; path?: string; lines?: [number, number]; sha256?: string; url?: string };
 export type AnObservation = {
@@ -112,6 +120,55 @@ export type AnEssence = {
   validators: AnCheck[];
   drafts: { agreement?: number; n?: number; chosen?: string; disagreements?: string[] };
 };
+/** 映射（第 3 次确认交付的每个候选一份，10 §placement）：界面只读到的栏。 */
+export type AnModule = { id: string; ver?: number; slot: string; also_touches?: string[] };
+export type AnReading = { dim: string; kind: string; dir: "up" | "down" | string; gate?: number | string; test?: string; run?: string; mandatory?: boolean };
+export type AnPlacement = {
+  candidate: string;
+  plain_summary?: string;
+  fire: AnModule;
+  group: AnModule[];
+  replaces: string | null;
+  arms?: Record<string, string>;
+  readings?: AnReading[];
+  conflicts: {
+    fires: { fire: string; resolution: string; note?: string }[];
+    kernel: { kernel: string; resolution: string; note?: string }[];
+    candidates: { other: string; relation: string; note?: string }[];
+    slot_locks: { slot: string; dossier: string }[];
+  };
+  steps?: { n: number; do: string; slot: string; where: string[]; accept: string }[];
+  kernel_forecast: string[];
+  difficulty: { value: number };
+  checks: AnCheck[];
+  /** 确定性检查没过的条目（引擎 placement_problems）。 */
+  problems: string[];
+};
+export type AnOrder = {
+  order: { candidate: string; position: number; P: number; why: string; waits_for?: string[] }[];
+  held: { candidate: string; why: string; note?: string }[];
+};
+export type AnHandoff = {
+  decided_by?: string;
+  date?: string;
+  items: { candidate: string; title: string; module: string; slot: string; plain_summary: string }[];
+  held: { candidate: string; why: string; note?: string }[];
+  bang_updates: { op: string; id?: string; status?: string }[];
+  profile_proposals: number;
+  library_import: boolean;
+  validator: AnCheck[];
+};
+export type AnDryRun = {
+  auto_picked: string[];
+  plain_summary: string;
+  estimate: { tokens: Record<string, { in: number; out: number }>; minutes: number; budget_usd_milli?: number } | null;
+  items: { candidate: string; statement: string; slot: string; replaces: string | null; kernel_forecast: string[]; difficulty?: number; likely_outcome: string; why: string; conflicts: string[] }[];
+  validators: AnCheck[];
+};
+export type AnReportKind = "G1" | "G2" | "G3" | "handoff" | "dry_run";
+/** 引擎枚举的人读说法（服务端从引擎写报告的同一张表给出）。 */
+export type AnWords = Record<"reading_kind" | "arm" | "resolution" | "relation" | "held" | "outcome", Record<string, string>>;
+
 export type AnSubmitted = {
   run: string;
   gate: AnGate;
@@ -137,7 +194,13 @@ export type AnalysisDetail = AnalysisRow & {
   needs: string[];
   candidates_doc: AnCandidatesDoc | null;
   essences: AnEssence[];
-  reports: { gate: AnGate; deliver_seq: number | null; text: string }[];
+  placements: AnPlacement[];
+  order: AnOrder | null;
+  g3: { to_implementation: string[]; hold: Record<string, string>; exclude: Record<string, string>; library_import: boolean } | null;
+  handoff: AnHandoff | null;
+  dry_run: AnDryRun | null;
+  words: AnWords;
+  reports: { kind: AnReportKind; gate: AnGate | null; deliver_seq: number | null; text: string }[];
   observations: AnObservation[];
   artifacts: AnArtifact[];
   submitted: AnSubmitted[];

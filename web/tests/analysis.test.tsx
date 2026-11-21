@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { hrefOf, parseRoute, type Route } from "../src/app/router";
-import { budgetAdd, g1Block, g1Problems, plain, stateOf, stepper } from "../src/model/analysis";
+import { budgetAdd, decisionLine, g1Block, g1Problems, plain, stateOf, stepper } from "../src/model/analysis";
 import { Analyses, Analysis } from "../src/pages/Analyses";
 import { Candidates } from "../src/pages/Candidates";
 import { Inbox } from "../src/pages/Inbox";
@@ -13,6 +13,11 @@ afterEach(cleanup);
 const $ = (c: ParentNode, sel: string) => c.querySelector<HTMLElement>(sel);
 const DELTA = "p_fixture_delta_code";
 const ALPHA = "p_fixture_alpha_code";
+const GAMMA = "p_fixture_gamma_code";
+const BETA = "p_fixture_beta_code";
+const DRY = "p_fixture_delta_code.dry";
+/** 界面上不该出现的内部名词（engine-ui §6 与 E-U4 的禁词）。 */
+const INTERNAL = /闸点|试算|遮蔽视图|火位|新火|定阶|常设留出|火意|功法|异火|炼档|体质|识火|萃意|入位|本火|新生维|A′|B′|A°/;
 
 describe("方案分析：纯函数", () => {
   it("决定块照引擎 decision.render 的顺序与写法：选、排除（带理由）、改、备注", () => {
@@ -51,6 +56,18 @@ describe("方案分析：纯函数", () => {
     const s = stepper("G1", true);
     expect(s.map((x) => x.cls)).toEqual(["done", "done", "done", "done", "wait", "", "", "", "", ""]);
     expect(stepper("done", false).every((x) => x.cls === "done")).toBe(true);
+    // 预评估不停在确认点、也不交接：这四格画成跳过
+    expect(stepper("done", false, "dry_run").map((x) => x.cls)).toEqual(["done", "done", "done", "done", "skip", "done", "skip", "done", "skip", "skip"]);
+    expect(stateOf({ step: "G3", mode: "formal", waiting: { gate: "G3", deliver_seq: 5, submitted: false } }).word).toBe("待你确认 · 第 3 次");
+    expect(stateOf({ step: "done", mode: "dry_run", waiting: null }).word).toBe("报告已出");
+  });
+
+  it("每次确认里定了什么，一句话说清（三种确认的栏都认）", () => {
+    expect(decisionLine({ v: 1, gate: "G1", pick: ["C1", "C2"], exclude: [{ candidate: "C3", why: "重复" }], note: "先看压缩" })).toBe("选 C1、C2；排除 C3（重复）；备注：先看压缩");
+    expect(decisionLine({ v: 1, gate: "G2", confirm: ["C1"], back: ["C2"], drop: [] })).toBe("确认 C1；退回 C2");
+    expect(decisionLine({ v: 1, gate: "G3", to_implementation: ["C1", "C2"], hold: [{ candidate: "C3", why: "等 C2 定论后再看" }], library_import: true })).toBe("交实现线 C1、C2；搁置 C3（等 C2 定论后再看）；报告存入资料库");
+    expect(decisionLine({ v: 1, gate: "G3", to_implementation: [], back: ["闸点2"] })).toBe("交实现线 无；退回 第 2 次确认");
+    expect(plain("火位锁；遮蔽视图；新火；定阶；常设留出")).toBe("模块槽占用；去来源视图；新模块；定版；固定留出集");
   });
 
   it("路由：能力配置下的方案分析与候选方案", () => {
@@ -65,10 +82,13 @@ describe("方案分析：纯函数", () => {
 });
 
 describe("方案分析：页面（假后端回放引擎在验收夹具上真跑的产物）", () => {
-  it("列表：三次分析，在等你的标琥珀并汇总在顶上", async () => {
+  it("列表：五次分析（每种停法一次），在等你的标琥珀并汇总在顶上", async () => {
     const r = rig();
     const { container } = renderWith(r, <Analyses />);
-    await waitFor(() => expect(container.querySelectorAll("[data-an-run]")).toHaveLength(3));
+    await waitFor(() => expect(container.querySelectorAll("[data-an-run]")).toHaveLength(5));
+    expect($(container, `[data-an-run="${GAMMA}"]`)!.textContent).toContain("第 3 次");
+    expect($(container, `[data-an-run="${BETA}"]`)!.textContent).toContain("已交接");
+    expect($(container, `[data-an-run="${DRY}"]`)!.textContent).toMatch(/预评估.*报告已出/);
     expect($(container, "[data-an-waiting]")!.textContent).toContain("3 个分析在等你");
     expect($(container, `[data-an-run="${DELTA}"]`)!.textContent).toMatch(/只借思路.*3 个候选/);
     expect($(container, `[data-an-run="${ALPHA}"]`)!.textContent).toContain("第 2 次");
@@ -150,13 +170,88 @@ describe("方案分析：页面（假后端回放引擎在验收夹具上真跑�
     cleanup();
     const f = renderWith(r, <Analysis run={DELTA} tab="files" />);
     await waitFor(() => expect($(f.container, '[data-an-file="candidates.json"]')).not.toBeNull());
-    expect(f.container.querySelectorAll("[data-an-file]")).toHaveLength(12);
+    expect(f.container.querySelectorAll("[data-an-file]")).toHaveLength(13);
     fireEvent.click($(f.container, '[data-an-file="candidates.json"] [data-action="an-file"]')!);
     await waitFor(() => expect($(f.container, "[data-an-artifact] pre")!.textContent).toContain("plain_summary"));
     cleanup();
     const rep = renderWith(r, <Analysis run={ALPHA} tab="report" />);
     await waitFor(() => expect(rep.container.querySelectorAll("[data-an-report]")).toHaveLength(2));
     expect($(rep.container, '[data-an-report="G1"]')!.textContent).toContain("方案分析：候选做法");
+  });
+
+  it("第 3 次确认先只读：集成顺序、每个候选的映射、预登记的指标与实现步骤；提交被拒", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Analysis run={GAMMA} tab="now" />);
+    await waitFor(() => expect($(container, '[data-an-placement="C1"]')).not.toBeNull());
+    const page = $(container, '[data-an-gate="G3"]')!;
+    expect(page.textContent).toContain("后续一期");
+    expect($(container, "[data-an-order]")!.textContent).toMatch(/C1.*P = /);
+    const card = $(container, '[data-an-placement="C1"]')!;
+    expect(card.textContent).toMatch(/模块槽 · .*内核不改.*难度 \d/);
+    expect(card.querySelectorAll(".an-dtbl tbody tr").length).toBeGreaterThan(3);
+    expect(card.textContent).toMatch(/基线保障|新增/);
+    expect($(card, "[data-an-steps]")!.textContent).toContain("验收：");
+    expect($(container, "[data-an-decided]")!.textContent).toMatch(/第 1 次确认.*选 C1.*第 2 次确认.*确认 C1/);
+    expect(container.querySelector('[data-action="an-submit"]')).toBeNull();
+    expect(page.textContent).not.toMatch(INTERNAL);
+    expect($(container, '[data-an-step="G3"]')!.className).toContain("wait");
+    await expect(r.api.analysisDecide(GAMMA, { block: "【决定 v1】闸点 3\n交实现线：C1", deliver_seq: 5 })).rejects.toMatchObject({ code: "not_yet" });
+    cleanup();
+    const rep = renderWith(r, <Analysis run={GAMMA} tab="report" />);
+    await waitFor(() => expect(rep.container.querySelectorAll("[data-an-report]")).toHaveLength(3));
+    expect($(rep.container, '[data-an-report="G3"]')!.textContent).toContain("集成顺序");
+    cleanup();
+    const p = renderWith(r, <Analysis run={GAMMA} tab="process" />);
+    await waitFor(() => expect($(p.container, '[data-an-unit="ruwei:C1"]')).not.toBeNull());
+    expect($(p.container, '[data-an-unit="ruwei:C1"]')!.textContent).toContain("映射 C1");
+    expect($(p.container, '[data-an-proc="G2:3"]')!.textContent).toContain("确认 C1");
+    expect($(p.container, '[data-an-proc="G3:5"]')!.textContent).toContain("等你确认");
+  });
+
+  it("三次确认都过了：交给实现线的、接下来谁做什么、你的三次确认；报告四份", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Analysis run={BETA} tab="now" />);
+    await waitFor(() => expect($(container, '[data-an-done="handoff"]')).not.toBeNull());
+    const page = $(container, '[data-an-done="handoff"]')!;
+    expect(page.textContent).toMatch(/已交接 · 1 个做法交给实现线/);
+    expect($(container, "[data-an-handed]")!.textContent).toContain("C1");
+    expect($(container, "[data-an-next]")!.textContent).toMatch(/lianhua\.py import.*资料库/);
+    expect($(container, "[data-an-decided]")!.textContent).toMatch(/第 3 次确认.*交实现线 C1.*报告存入资料库/);
+    expect(page.textContent).not.toMatch(INTERNAL);
+    expect(container.querySelector("[data-an-working]")).toBeNull();
+    expect(container.querySelector('[data-an-tab="now"] .ct')).toBeNull();
+    cleanup();
+    const rep = renderWith(r, <Analysis run={BETA} tab="report" />);
+    await waitFor(() => expect([...rep.container.querySelectorAll("[data-an-report]")].map((x) => x.getAttribute("data-an-report"))).toEqual(["G1", "G2", "G3", "handoff"]));
+    expect(rep.container.textContent).not.toMatch(INTERNAL);
+    cleanup();
+    const f = renderWith(r, <Analysis run={BETA} tab="files" />);
+    await waitFor(() => expect($(f.container, '[data-an-file="handoff.json"]')).not.toBeNull());
+    expect($(f.container, '[data-an-file="handoff.json"]')!.textContent).toContain("交接包");
+    expect($(f.container, '[data-an-file="placement:C1"]')!.textContent).toContain("映射 · C1");
+    expect($(f.container, '[data-an-file="report:G3"] [title]')!.getAttribute("title")).toMatch(/sha256 [0-9a-f]{64}\n对照 id local:[0-9a-f]{16}/);
+  });
+
+  it("预评估走完：每个做法一行的结论与正式走一遍的预估；进度条里确认与交接画成跳过；只有一份报告", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Analysis run={DRY} tab="now" />);
+    await waitFor(() => expect($(container, '[data-an-done="dry_run"]')).not.toBeNull());
+    const page = $(container, '[data-an-done="dry_run"]')!;
+    expect(container.querySelectorAll("[data-an-dry-item]")).toHaveLength(3);
+    expect($(container, '[data-an-dry-item="C1"]')!.textContent).toContain("有望带来新能力");
+    expect(page.textContent).toMatch(/正式走一遍的预估：.*约 48 分钟/);
+    expect(page.textContent).toContain("不能直接交实现线");
+    expect(page.textContent).not.toMatch(INTERNAL);
+    expect($(container, '[data-an-step="G1"]')!.className).toContain("skip");
+    expect($(container, '[data-an-step="S5"]')!.className).toContain("done");
+    cleanup();
+    const rep = renderWith(r, <Analysis run={DRY} tab="report" />);
+    await waitFor(() => expect([...rep.container.querySelectorAll("[data-an-report]")].map((x) => x.getAttribute("data-an-report"))).toEqual(["dry_run"]));
+    cleanup();
+    const p = renderWith(r, <Analysis run={DRY} tab="process" />);
+    await waitFor(() => expect($(p.container, "[data-an-process]")).not.toBeNull());
+    expect(p.container.querySelector("[data-an-process] li.gate")).toBeNull();
+    expect(p.container.textContent).not.toMatch(INTERNAL);
   });
 
   it("候选方案：按状态筛选，点开看核心机制与状态史", async () => {

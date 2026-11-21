@@ -4,13 +4,13 @@
 // 决定块由界面按勾选生成（E-U3：只点选，不手写），折叠显示“原文”；关键字是引擎的解析格式，原样保留。
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
-import type { AnArtifact, AnArtifactView, AnCandidate, AnObservation, AnSubmitted, AnUnit, AnalysesView, AnalysisDetail, AnalysisRow } from "../api/analysis-types";
+import type { AnArtifact, AnArtifactView, AnCandidate, AnCheck, AnObservation, AnPlacement, AnSubmitted, AnUnit, AnalysesView, AnalysisDetail, AnalysisRow } from "../api/analysis-types";
 import { useServices } from "../app/context";
 import { navigate, type AnalysisTab } from "../app/router";
 import { Button, Empty, Mast, SectionHead } from "../kit";
 import {
   ARTIFACT_KIND_WORD, CHECK_WORD, FLAG_WORD, FORM_WORD, GAP_WORD, GATE_N, MODE_WORD, OBS_KIND_WORD, PART_WORD, REC_WORD, SLOT_WORD, STEP_WORD, STOP_WORD, TIER_WORD, UNIT_WORD, VIA_WORD,
-  budgetAdd, fmt, g1Block, g1Problems, moduleName, parts, plain, stages, stateOf, stepper, titleOf, type G1Choice, type Tone,
+  budgetAdd, decisionLine, fmt, g1Block, g1Problems, moduleName, parts, plain, stages, stateOf, stepper, titleOf, type G1Choice, type Tone,
 } from "../model/analysis";
 import { shortHash, usd } from "../model/text";
 import { pending, recorded, rejected } from "../ui/feedback";
@@ -144,13 +144,13 @@ export function Analyses() {
 // ------------------------------------------------------------ 详情
 
 function Stepper({ d }: { d: AnalysisDetail }) {
-  const cells = stepper(d.step, !!d.waiting);
+  const cells = stepper(d.step, !!d.waiting, d.mode);
   return (
     <ol className="an-steps" aria-label="分析进度">
       {cells.map((c) => (
         <li key={c.key} className={`${c.gate ? "gate " : ""}${c.cls}`} data-an-step={c.key} aria-current={c.cls === "now" || c.cls === "wait" ? "step" : undefined}>
           <span className="bar" aria-hidden="true" />
-          <span className="w">{c.gate ? `◆ ${c.word}` : c.word}</span>
+          <span className="w">{c.gate && c.cls !== "skip" ? `◆ ${c.word}` : c.word}</span>
         </li>
       ))}
     </ol>
@@ -276,6 +276,8 @@ export function Analysis({ run, tab }: { run: string; tab: AnalysisTab }) {
 function Now({ d, onSubmitted }: { d: AnalysisDetail; onSubmitted: () => void }) {
   if (d.step === "G1" && d.candidates_doc) return <G1 d={d} onSubmitted={onSubmitted} />;
   if (d.step === "G2") return <G2Preview d={d} />;
+  if (d.step === "G3") return <G3Preview d={d} />;
+  if (d.step === "done") return d.dry_run ? <DryRunDone d={d} /> : <HandoffDone d={d} />;
   if (d.step === "failed") return <div className="an-warn"><b>分析失败</b>停在{lastStep(d)}；可重试的单元见“过程”。</div>;
   if (d.step === "paused_budget") return <div className="an-ask"><div className="grow"><b>预算用完，已暂停</b>已完成的部分交给了你，追加预算后接着做时不会重做。追加与缩小范围在二期。</div></div>;
   return <Working d={d} />;
@@ -551,6 +553,7 @@ function G2Preview({ d }: { d: AnalysisDetail }) {
   return (
     <div className="an-g2" data-an-gate="G2">
       <div className="an-ask"><div className="grow"><b>第 2 次确认：核心机制</b>逐个确认、改一句、退回或放弃的卡在二期；这里先只读，每个候选一节。</div></div>
+      <Decided d={d} />
       {d.needs.map((n) => <div key={n} className="an-warn"><P text={n} /></div>)}
       {d.essences.map((e) => {
         const bad = [...e.checks, ...e.validators].filter((c) => !c.ok && !c.advisory);
@@ -565,9 +568,186 @@ function G2Preview({ d }: { d: AnalysisDetail }) {
           </section>
         );
       })}
-      {d.gates.filter((g) => g.decision).map((g) => (
-        <p key={g.deliver_seq} className="an-note">第 {GATE_N[g.gate]} 次确认：选 {g.decision?.pick?.join("、") || "—"}{g.decision?.note ? ` · 备注：${g.decision.note}` : ""}</p>
-      ))}
+    </div>
+  );
+}
+
+/** 之前几次确认里你定了什么：每次一行，原话在“过程”。 */
+function Decided({ d }: { d: AnalysisDetail }) {
+  const rows = d.gates.filter((g) => g.decision);
+  if (rows.length === 0) return null;
+  return (
+    <ul className="an-list an-decided" data-an-decided>
+      {rows.map((g) => <li key={g.deliver_seq}><b>第 {GATE_N[g.gate]} 次确认</b><span className="t2"><Plain text={decisionLine(g.decision!)} /></span></li>)}
+    </ul>
+  );
+}
+
+/** 对照组的固定顺序：基线、外部原版、外部方案移植、融合方案、基线复跑。 */
+const ARM_ORDER = ["B", "A0", "A1", "F", "B1"];
+
+const Checks = ({ rows }: { rows: AnCheck[] }) => (
+  <div className="an-checks">{rows.map((c) => <St key={c.id} tone={c.ok ? (c.advisory ? "" : "ok") : "bad"} title={c.detail ? plain(c.detail) : undefined}>{c.id} {CHECK_WORD[c.id]}</St>)}</div>
+);
+
+/** 一个候选的映射：放进哪个模块槽、替换谁、内核动不动、拿什么量、怎么做、和谁冲突。只读。 */
+function PlacementCard({ p, d }: { p: AnPlacement; d: AnalysisDetail }) {
+  const w = d.words;
+  const title = d.candidates_doc?.candidates.find((c) => c.id === p.candidate)?.title ?? "";
+  const conf = p.conflicts;
+  const conflicts = [
+    ...conf.fires.map((c) => ({ k: moduleName(c.fire), v: w.resolution[c.resolution] ?? c.resolution, note: c.note })),
+    ...conf.kernel.map((c) => ({ k: `内核 ${c.kernel}`, v: w.resolution[c.resolution] ?? c.resolution, note: c.note })),
+    ...conf.candidates.map((c) => ({ k: c.other, v: w.relation[c.relation] ?? c.relation, note: c.note })),
+    ...conf.slot_locks.map((c) => ({ k: SLOT_WORD[c.slot] ?? c.slot, v: `被在途的集成记录 ${c.dossier} 占用`, note: undefined })),
+  ];
+  const bad = [...p.checks.filter((c) => !c.ok && !c.advisory).map((c) => c.id), ...p.problems];
+  return (
+    <section className="an-card" data-an-placement={p.candidate}>
+      <h3><span className="k-mono t2">{p.candidate}</span> <P text={title} /></h3>
+      {p.plain_summary && <p className="an-sum"><P text={p.plain_summary} /></p>}
+      <div className="an-chips">
+        <span className="an-chip">模块槽 · {SLOT_WORD[p.fire.slot] ?? p.fire.slot}</span>
+        <span className="an-chip k-mono">{p.fire.id}</span>
+        {p.fire.also_touches?.length ? <span className="an-chip">兼及 {p.fire.also_touches.map((s) => SLOT_WORD[s] ?? s).join("、")}</span> : null}
+        {p.group.length > 0 && <span className="an-chip">同组 {p.group.map((g) => g.id).join("、")}</span>}
+        <span className="an-chip">{p.replaces ? `替换 ${moduleName(p.replaces)}（留作对照）` : "与现有模块并存"}</span>
+        <span className={`an-chip${p.kernel_forecast.length ? " need" : ""}`}>{p.kernel_forecast.length ? `内核改动预判：${p.kernel_forecast.join("、")}` : "内核不改"}</span>
+        <span className="an-chip">难度 {p.difficulty.value}</span>
+      </div>
+      {p.arms && (
+        <dl className="an-kv">
+          {ARM_ORDER.filter((k) => k in p.arms!).concat(Object.keys(p.arms).filter((k) => !ARM_ORDER.includes(k))).map((k) => [k, p.arms![k]] as const).map(([k, v]) => <Fragment key={k}><dt>{w.arm[k] ?? k}</dt><dd><P text={v} /></dd></Fragment>)}
+        </dl>
+      )}
+      {p.readings?.length ? (
+        <div className="an-tblwrap">
+          <table className="an-dtbl">
+            <caption>预登记的指标 {p.readings.length} 项</caption>
+            <thead><tr><th scope="col">指标</th><th scope="col">类别</th><th scope="col">方向</th><th scope="col">门槛</th><th scope="col">怎么量</th></tr></thead>
+            <tbody>
+              {p.readings.map((r) => (
+                <tr key={r.dim}>
+                  <th scope="row"><P text={r.dim} />{r.mandatory ? <span className="t3">（必登）</span> : null}</th>
+                  <td className="nw">{w.reading_kind[r.kind] ?? r.kind}</td>
+                  <td className="nw">{r.dir === "up" ? "越高越好" : "越低越好"}</td>
+                  <td className="k-mono"><P text={String(r.gate ?? "—")} /></td>
+                  <td className="t2"><P text={r.test ?? r.run ?? "—"} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {p.steps?.length ? (
+        <details className="an-raw" data-an-steps>
+          <summary>实现步骤 {p.steps.length} 步</summary>
+          <ol className="an-impl">
+            {p.steps.map((s) => <li key={s.n}><P text={s.do} /><span className="t2">{SLOT_WORD[s.slot] ?? s.slot} · <span className="k-mono">{s.where.join("、")}</span> · 验收：<P text={s.accept} /></span></li>)}
+          </ol>
+        </details>
+      ) : null}
+      {conflicts.length > 0 && (
+        <ul className="an-list" data-an-conflicts>
+          {conflicts.map((c) => <li key={`${c.k}:${c.v}`}><b>{c.k}</b> {c.v}{c.note ? <span className="t2"> · <P text={c.note} /></span> : null}</li>)}
+        </ul>
+      )}
+      <Checks rows={p.checks} />
+      {bad.length > 0 && <p className="an-miss">未过：<P text={bad.join("、")} /></p>}
+    </section>
+  );
+}
+
+function OrderList({ d }: { d: AnalysisDetail }) {
+  if (!d.order) return null;
+  const title = (id: string) => d.candidates_doc?.candidates.find((c) => c.id === id)?.title ?? "";
+  return (
+    <section className="an-card" data-an-order>
+      <h3>集成顺序</h3>
+      <ol className="an-impl">
+        {d.order.order.map((o) => <li key={o.candidate}><span><span className="k-mono t2">{o.candidate}</span> <P text={title(o.candidate)} /></span><span className="t2"><P text={o.why} />{o.waits_for?.length ? ` · 等 ${o.waits_for.join("、")} 定论` : ""}</span></li>)}
+      </ol>
+      {d.order.held.map((h) => <p key={h.candidate} className="an-miss">暂缓 {h.candidate}：{d.words.held[h.why] ?? h.why}{h.note ? <>（<P text={h.note} />）</> : null}</p>)}
+      <p className="an-note">顺序按优先级与先后关系算出，一次只交一个：前一个定论后再做下一个。</p>
+    </section>
+  );
+}
+
+function G3Preview({ d }: { d: AnalysisDetail }) {
+  return (
+    <div className="an-g2" data-an-gate="G3">
+      <div className="an-ask"><div className="grow"><b>第 3 次确认：映射与集成顺序</b>逐个决定交实现线、搁置或排除的卡在后续一期；这里先只读，每个候选一节。</div></div>
+      {d.needs.map((n) => <div key={n} className="an-warn"><P text={n} /></div>)}
+      <Decided d={d} />
+      <OrderList d={d} />
+      {d.placements.map((p) => <PlacementCard key={p.candidate} p={p} d={d} />)}
+    </div>
+  );
+}
+
+/** 三次确认都过了：交给实现线的、暂缓的、候选方案的变化，以及接下来由谁做什么。 */
+function HandoffDone({ d }: { d: AnalysisDetail }) {
+  const h = d.handoff;
+  if (!h) return <Empty title="已完成">这次分析已经走完；交接内容见“报告”。</Empty>;
+  const bad = h.validator.filter((c) => !c.ok && !c.advisory);
+  return (
+    <div className="an-g2" data-an-done="handoff">
+      <section className="an-card">
+        <div className="an-live"><span className={`an-dot ${bad.length ? "bad" : "ok"}`} aria-hidden="true" /><b>{h.items.length ? `已交接 · ${h.items.length} 个做法交给实现线` : "已完成 · 这次没有交给实现线的做法"}</b><span className="t2">{h.date}{h.held.length ? ` · 暂缓 ${h.held.length} 个` : ""}</span></div>
+        {h.items.length > 0 && (
+          <ol className="an-impl" data-an-handed>
+            {h.items.map((it) => <li key={it.candidate}><span><span className="k-mono t2">{it.candidate}</span> <P text={it.title} /> <span className="an-chip">{SLOT_WORD[it.slot] ?? it.slot}</span> <span className="k-mono t3">{it.module}</span></span><span className="t2"><P text={it.plain_summary} /></span></li>)}
+          </ol>
+        )}
+        {h.held.map((x) => <p key={x.candidate} className="an-miss">暂缓 {x.candidate}：{d.words.held[x.why] ?? x.why}{x.note ? <>（<P text={x.note} />）</> : null}</p>)}
+        {d.license?.reuse === "idea_only" && <p className="an-miss">来源许可证 {d.license.spdx ?? d.license.status}：实现时不得打开原码，只借思路。</p>}
+        <Checks rows={h.validator} />
+        {bad.length > 0 && <p className="an-miss">交接内容校验未过：{bad.map((c) => c.id).join("、")}</p>}
+      </section>
+      {d.needs.length > 0 && (
+        <section className="an-card" data-an-next>
+          <h3>接下来</h3>
+          <ul className="an-list">{d.needs.map((n) => <li key={n}><P text={n} /></li>)}</ul>
+          <p className="an-note">候选方案的变化 {h.bang_updates.length} 条，由导入命令写入、随 PR 审；这里不直接改。{h.library_import ? "报告存入资料库在界面后续一期。" : ""}</p>
+        </section>
+      )}
+      <section className="an-card"><h3>你的三次确认</h3><Decided d={d} /></section>
+    </div>
+  );
+}
+
+/** 预评估走完：每个做法一行的结论与正式走一遍的预估。只读；转正式在后续一期。 */
+function DryRunDone({ d }: { d: AnalysisDetail }) {
+  const r = d.dry_run!;
+  const e = r.estimate;
+  return (
+    <div className="an-g2" data-an-done="dry_run">
+      <section className="an-card">
+        <div className="an-live"><span className="an-dot ok" aria-hidden="true" /><b>预评估报告已出</b><span className="t2">自动取了优先级最高的 {r.auto_picked.length} 个 · 没有停下来等确认</span></div>
+        <p className="an-sum"><P text={r.plain_summary} /></p>
+        <div className="an-tblwrap">
+          <table className="an-dtbl" data-an-dry>
+            <caption>每个做法的预评估</caption>
+            <thead><tr><th scope="col">做法</th><th scope="col">模块槽</th><th scope="col">替换</th><th scope="col">内核</th><th scope="col">难度</th><th scope="col">可能的结局</th></tr></thead>
+            <tbody>
+              {r.items.map((it) => (
+                <tr key={it.candidate} data-an-dry-item={it.candidate}>
+                  <th scope="row"><span className="k-mono t2">{it.candidate}</span> <P text={it.statement} /></th>
+                  <td className="nw">{SLOT_WORD[it.slot] ?? it.slot}</td>
+                  <td className="nw">{it.replaces ? moduleName(it.replaces) : "无"}</td>
+                  <td className="nw">{it.kernel_forecast.length ? it.kernel_forecast.join("、") : "不改"}</td>
+                  <td className="k-mono">{it.difficulty ?? "—"}</td>
+                  <td><b>{d.words.outcome[it.likely_outcome] ?? it.likely_outcome}</b><span className="t2"> · <P text={it.why} /></span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {e && <p className="t2">正式走一遍的预估：{Object.entries(e.tokens).map(([k, v]) => `${TIER_WORD[k] ?? k} 入 ${v.in.toLocaleString("en-US")} 出 ${v.out.toLocaleString("en-US")}`).join("；")}；约 {e.minutes} 分钟机器时间{e.budget_usd_milli ? `，预算 ${usd(e.budget_usd_milli)}` : ""}〔占位估算〕。</p>}
+        <Checks rows={r.validators} />
+      </section>
+      {d.needs.map((n) => <div key={n} className="an-warn"><P text={n} /></div>)}
+      <p className="an-note">预评估的结果只记到候选方案里（状态“预评估过”）。复用这次的快照与观察转成正式分析在界面后续一期。</p>
     </div>
   );
 }
@@ -579,15 +759,17 @@ function Reports({ d }: { d: AnalysisDetail }) {
   return (
     <div className="an-g2" data-an-reports>
       {d.reports.map((r) => (
-        <section key={r.gate} className="an-card" data-an-report={r.gate}>
-          <h3>第 {GATE_N[r.gate]} 次交付{r.deliver_seq !== null ? <span className="t3 k-mono"> · 交付 #{r.deliver_seq}</span> : null}</h3>
+        <section key={r.kind} className="an-card" data-an-report={r.kind}>
+          <h3>{REPORT_WORD[r.kind] ?? r.kind}{r.deliver_seq !== null ? <span className="t3 k-mono"> · 交付 #{r.deliver_seq}</span> : null}</h3>
           <pre className="an-report"><P text={r.text} /></pre>
         </section>
       ))}
-      <p className="an-note">报告由产物按固定格式生成（引擎 report_g1 / report_g2），不是模型另写的；表里每个数都能在“文件”里对上。</p>
+      <p className="an-note">报告由产物按固定格式生成，不是模型另写的；表里每个数都能在“文件”里对上。</p>
     </div>
   );
 }
+
+const REPORT_WORD: Record<string, string> = { G1: "第 1 次交付 · 候选做法", G2: "第 2 次交付 · 核心机制", G3: "第 3 次交付 · 映射与集成顺序", handoff: "交接", dry_run: "预评估报告" };
 
 function unitWord(u: AnUnit): string {
   const [k, v] = u.id.split(":");
@@ -596,6 +778,9 @@ function unitWord(u: AnUnit): string {
   if (k === "read") return `读 ${SLOT_WORD[v] ?? v}`;
   if (u.id === "candidates") return "整理候选清单";
   if (k === "cuiyi") return `抽象 ${v}`;
+  if (k === "ruwei") return `映射 ${v}`;
+  if (k === "handoff") return "整理交接内容";
+  if (k === "dry_run") return "整理预评估报告";
   return u.id;
 }
 
@@ -630,7 +815,7 @@ function Process({ d }: { d: AnalysisDetail }) {
             {r.gate && (
               <div className="t2">
                 交付 #{r.gate.deliver_seq}
-                {r.gate.decision ? <> · 你的决定 #{r.gate.follow_up_seq}：选 {r.gate.decision.pick?.join("、") ?? "—"}{r.gate.decision.exclude?.length ? `，排除 ${r.gate.decision.exclude.map((x) => x.candidate).join("、")}` : ""}</>
+                {r.gate.decision ? <> · 你的决定 #{r.gate.follow_up_seq}：<Plain text={decisionLine(r.gate.decision)} /></>
                   : pend.has(`${r.gate.gate}:${r.gate.deliver_seq}`) ? <> · 已提交，等分析接着做</> : <> · 等你确认</>}
               </div>
             )}
@@ -667,7 +852,7 @@ function Files({ d }: { d: AnalysisDetail }) {
               <div key={a.name} className={`md-row an-file${sel === a.sha256 ? " on" : ""}`} role="row" data-an-file={a.name}>
                 <span role="cell"><button type="button" className="an-link" aria-expanded={sel === a.sha256} data-action="an-file" onClick={() => setSel(sel === a.sha256 ? null : a.sha256)}>{fileWord(a.name)}</button></span>
                 <span role="cell" className="k-mono t3">{a.name}</span>
-                <span role="cell" className="k-mono t3" title={a.sha256}>{shortHash(a.sha256)}</span>
+                <span role="cell" className="k-mono t3" title={`sha256 ${a.sha256}${a.artifact_id ? `\n对照 id ${a.artifact_id}` : ""}`}>{shortHash(a.sha256)}</span>
                 <span role="cell" className="r k-mono t2">{(a.bytes / 1024).toFixed(1)} KB</span>
               </div>
             ))}
@@ -696,5 +881,13 @@ function fileWord(name: string): string {
   if (name === "candidates.json") return "候选清单";
   if (name === "candidates.needs") return "需要你做的";
   if (k === "essence") return v.endsWith(".v") ? `核心机制校验 · ${v.slice(0, -2)}` : `核心机制 · ${v}`;
+  if (name === "candidates.proposal") return "候选提议（模型原稿）";
+  if (k === "placement") return `映射 · ${v}`;
+  if (name === "order.json") return "集成顺序";
+  if (k === "report") return v === "S6" ? "交接报告" : `第 ${v.slice(1)} 次交付的报告`;
+  if (name === "handoff.json") return "交接包";
+  if (name === "dry_run.json") return "预评估报告";
+  if (name === "dry_run.v") return "预评估校验";
+  if (name === "bang_updates.json") return "候选方案的变化（提议）";
   return name;
 }

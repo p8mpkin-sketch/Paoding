@@ -58,7 +58,7 @@ export function analysesMock(now: () => number) {
     if (typeof add !== "number" || !Number.isInteger(add) || add < 0 || add > 100_000) return err(400, "schema_error", "budget_add_usd_milli 取 0 到 100000 的整数");
     const w = d.waiting;
     if (!w) return err(409, "not_at_gate", `这次分析现在不在等你确认（${d.step}）`);
-    if (w.gate !== "G1") return err(409, "not_yet", "第 2、3 次确认在界面二期");
+    if (w.gate !== "G1") return err(409, "not_yet", "第 2、3 次确认的提交在界面后续几期，这一期只读");
     if (body.deliver_seq !== w.deliver_seq) return err(409, "stale_view", "你看的不是最新一次交付，请刷新");
     if (w.submitted) return err(409, "already_submitted", "这一次确认已经提交过，等引擎续做");
     const parsed = parseG1(body.block);
