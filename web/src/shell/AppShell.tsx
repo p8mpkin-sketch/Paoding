@@ -8,6 +8,7 @@ import { navigate, type Route } from "../app/router";
 import { applyTheme, loadTheme, THEMES, type Theme } from "../app/theme";
 import { runningOf } from "../model/dashboard";
 import { Kbd, Logo, btnClass } from "../kit";
+import { useAnalyses, waitingOf } from "../pages/Analyses";
 import { Link } from "../pages/Problems";
 import { Plain } from "../ui/registers";
 import { CommandPalette } from "./CommandPalette";
@@ -37,6 +38,9 @@ export function navOf(r: Route): { key: NavKey | null; crumbs: string[] } {
     case "platform": return { key: "tasks", crumbs: ["任务", "从平台导入"] };
     case "readings": return { key: "readings", crumbs: ["读数"] };
     case "evolution": return { key: "evolution", crumbs: ["能力配置"] };
+    case "analyses": return { key: "evolution", crumbs: ["能力配置", "方案分析"] };
+    case "analysis": return { key: "evolution", crumbs: ["能力配置", "方案分析", r.run] };
+    case "candidates": return { key: "evolution", crumbs: ["能力配置", "候选方案"] };
     case "settings": return { key: "settings", crumbs: ["设置"] };
     case "models": return { key: "models", crumbs: ["模型"] };
     case "knowledge": return { key: "knowledge", crumbs: ["知识", r.tab === "memory" ? "记忆" : "资料"] };
@@ -82,6 +86,9 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
   const openPid = route.page === "problem" ? route.pid : null;
   const running = problems ? runningOf(problems.items) : [];
   const waiting = running.reduce((a, p) => a + p.human_todo, 0);
+  // 方案分析在等你的确认数：角标挂在“能力配置”上，和“待你处理”同一口径（docs/design/engine-ui §1）
+  const analyses = useAnalyses(30_000);
+  const anWaiting = analyses.data ? waitingOf(analyses.data.items).length : 0;
 
   // 全局快捷键：⌘K / Ctrl+K 命令面板；C 新建任务（在输入框里不触发）
   useEffect(() => {
@@ -107,7 +114,8 @@ export function AppShell({ route, problems, problemsError, canWrite, token, chil
         <Icon aria-hidden="true" className="ic" />
         <span className={narrow ? "sr-only" : "word"}>{n.word}</span>
         {!narrow && n.key === "tasks" && problems && <span className="ct num">{problems.items.length}</span>}
-        {n.key === "inbox" && waiting > 0 && <span className="ct hot num">{waiting}<span className="sr-only"> 项等你处理</span></span>}
+        {n.key === "inbox" && waiting + anWaiting > 0 && <span className="ct hot num">{waiting + anWaiting}<span className="sr-only"> 项等你处理</span></span>}
+        {n.key === "evolution" && anWaiting > 0 && <span className="ct hot num">{anWaiting}<span className="sr-only"> 个方案分析在等你确认</span></span>}
       </Link>
     );
   };

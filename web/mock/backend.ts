@@ -16,6 +16,7 @@ import type {
 } from "../src/api/types";
 import { activityDemo, demoScript, reviewActivityDemo, staticScripts, type Script } from "./scenario";
 import { kaitiDraft, kaitiExtract, platformRoute } from "./kaiti";
+import { analysesMock } from "./analyses";
 import { evolutionDoc } from "./evolution";
 
 export const sha256 = (data: string | Uint8Array): string => createHash("sha256").update(data).digest("hex");
@@ -1056,6 +1057,9 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
     return err(404, "unknown_ref", `没有端点 ${path}`);
   }
 
+  // ---- 方案分析（界面一期；回放引擎真跑的应答，见 mock/analyses.ts） ----
+  const analysesRoute = analysesMock(() => clock);
+
   // ---- 路由 ----
   function handle(req: MockRequest): MockResponse {
     const u = new URL(req.url, "http://mock");
@@ -1067,6 +1071,13 @@ export function createMock(opts: { autoplayMs?: number } = {}) {
 
     if (path === "/v1/settings" || path === "/v1/settings/log" || path === "/v1/settings/sources" || path.startsWith("/v1/keys") || path === "/v1/models/test") return settingsRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path === "/v1/evolution") return req.method === "GET" ? json(200, evolutionDoc(0)) : err(405, "schema_error", "只读");
+    if (path === "/v1/analyses" || path.startsWith("/v1/analyses/") || path === "/v1/fenjue/bang") {
+      const auth = req.headers?.authorization ?? "";
+      const humanOnly = () => !auth.startsWith("Bearer ") ? { status: 401, body: { ok: false, code: "forbidden_op", detail: "须带人的令牌" } }
+        : auth.slice(7).trim() !== MOCK_TOKEN ? { status: 403, body: { ok: false, code: "forbidden_op", detail: "只接受人的令牌" } } : null;
+      const r = analysesRoute(req.method, path, humanOnly, parse);
+      if (r) return json(r.status, r.body);
+    }
     if (path === "/v1/memory" || path.startsWith("/v1/memory/items/")) return memoryRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/knowledge/")) return knowledgeRoute(req.method, path, req.headers?.authorization ?? "", parse);
     if (path.startsWith("/v1/connectors")) {

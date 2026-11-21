@@ -33,6 +33,6 @@ describe("能力配置页", () => {
     expect($(h, '[data-ev-metric="done-rate"]')!.textContent).toMatch(/75%.*100%/);
     expect($(h, "[data-ev-few]")).not.toBeNull(); // 一臂只有 1 个已结束的任务：只提示样本少
     expect(container.querySelectorAll("[data-ev-versions] [data-ev-digest]")).toHaveLength(3);
-    expect(container.querySelectorAll("button:not([data-action=ev-dossier]):not([data-action=chart-table])")).toHaveLength(0);
+    expect(container.querySelectorAll("button:not([data-action=ev-dossier]):not([data-action=chart-table]):not([data-cap-tab])")).toHaveLength(0); // 只读：除了能力配置的三栏切换
   });
 });

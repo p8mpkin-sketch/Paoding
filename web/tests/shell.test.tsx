@@ -36,7 +36,11 @@ describe("外壳", () => {
     expect(status).toContain("可写");
     expect(status).not.toMatch(/在途|等你|花费|\$/);
     const waiting = running.reduce((a, p) => a + p.human_todo, 0);
-    expect(container.querySelector('[data-nav="inbox"] .ct')?.textContent).toMatch(new RegExp(`^${waiting}`));
+    // 方案分析在等你的确认也算进“待你处理”，并单独标在“能力配置”上
+    const an = (await r.api.analyses()).items.filter((x) => x.waiting && !x.waiting.submitted).length;
+    expect(an).toBeGreaterThan(0);
+    await waitFor(() => expect(container.querySelector('[data-nav="evolution"] .ct')?.textContent).toMatch(new RegExp(`^${an}`)));
+    expect(container.querySelector('[data-nav="inbox"] .ct')?.textContent).toMatch(new RegExp(`^${waiting + an}`));
     expect(container.querySelectorAll(".shell-pins li")).toHaveLength(running.length);
   });
 

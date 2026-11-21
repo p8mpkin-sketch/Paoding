@@ -18,11 +18,18 @@ export type Route =
   | { page: "platform"; id?: string }
   | { page: "readings" }
   | { page: "evolution" }
+  /** 能力配置 › 方案分析（docs/design/engine-ui）：列表、详情（四栏）与候选方案。 */
+  | { page: "analyses" }
+  | { page: "analysis"; run: string; tab: AnalysisTab }
+  | { page: "candidates"; id?: string }
   | { page: "inbox" }
   | { page: "settings" }
   | { page: "models" }
   | { page: "knowledge"; tab: "sources" | "memory" }
   | { page: "problem"; pid: string; asOf: number | null; node: string | null };
+
+export type AnalysisTab = "now" | "report" | "process" | "files";
+const AN_TABS: AnalysisTab[] = ["now", "report", "process", "files"];
 
 export function parseRoute(pathname: string, search: string): Route {
   const q = new URLSearchParams(search);
@@ -39,6 +46,13 @@ export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/today") return { page: "today" };
   if (pathname === "/readings") return { page: "readings" };
   if (pathname === "/capability") return { page: "evolution" };
+  if (pathname === "/capability/analyses") return { page: "analyses" };
+  const an = pathname.match(/^\/capability\/analyses\/([^/]+)(?:\/([a-z]+))?\/?$/);
+  if (an) {
+    const tab = AN_TABS.find((t) => t === an[2]) ?? "now";
+    return { page: "analysis", run: decodeURIComponent(an[1]), tab };
+  }
+  if (pathname === "/capability/candidates") return q.get("id") ? { page: "candidates", id: q.get("id")! } : { page: "candidates" };
   if (pathname === "/inbox") return { page: "inbox" };
   if (pathname === "/settings") return { page: "settings" };
   if (pathname === "/models") return { page: "models" };
@@ -64,6 +78,9 @@ export function hrefOf(r: Route): string {
     case "platform": return `/import/platform${r.id ? `?id=${encodeURIComponent(r.id)}` : ""}`;
     case "readings": return "/readings";
     case "evolution": return "/capability";
+    case "analyses": return "/capability/analyses";
+    case "analysis": return `/capability/analyses/${encodeURIComponent(r.run)}${r.tab === "now" ? "" : `/${r.tab}`}`;
+    case "candidates": return `/capability/candidates${r.id ? `?id=${encodeURIComponent(r.id)}` : ""}`;
     case "inbox": return "/inbox";
     case "settings": return "/settings";
     case "models": return "/models";

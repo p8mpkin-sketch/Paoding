@@ -13,6 +13,7 @@ import type { KaitiAcceptance, KaitiExtract, KaitiOverrides, KaitiVetted, Platfo
 import { HUMAN_OPS } from "./ops";
 import type { SessionActivity } from "./activity-types";
 import type { Evolution } from "./evolution-types";
+import type { AnArtifactView, AnDecideBody, AnSubmitted, AnalysesView, AnalysisDetail, BangView } from "./analysis-types";
 import type { KeySlot, KeysView, ModelProbe, ModelProfile, Settings, SettingsDoc, SettingsLogEntry, SettingsSources } from "./settings-types";
 
 export type ApiConfig = {
@@ -161,6 +162,12 @@ export function createApi(cfg: ApiConfig) {
     knChunk: (id: string) => get<KnChunk>(`/v1/knowledge/chunks/${enc(id)}`),
     // ---- 能力配置的演进读数（焚决 04 §7）：只读 ----
     evolution: () => get<Evolution>("/v1/evolution"),
+    /** 方案分析（界面一期）：组装根读引擎工作区；提交第 1 次确认只认人的令牌，校验不过 400，所见交付变了 409 stale_view。 */
+    analyses: () => get<AnalysesView>("/v1/analyses"),
+    analysis: (run: string) => get<AnalysisDetail>(`/v1/analyses/${enc(run)}`),
+    analysisArtifact: (run: string, sha: string) => get<AnArtifactView>(`/v1/analyses/${enc(run)}/artifacts/${enc(sha)}`),
+    analysisDecide: (run: string, body: AnDecideBody) => post<{ ok: true; submitted: AnSubmitted }>(`/v1/analyses/${enc(run)}/decision`, body),
+    bang: () => get<BangView>("/v1/fenjue/bang"),
     // ---- 设置层 ----
     settings: () => get<SettingsDoc>("/v1/settings"),
     settingsLog: () => get<{ items: SettingsLogEntry[] }>("/v1/settings/log"),

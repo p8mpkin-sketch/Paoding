@@ -43,6 +43,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+from analysis_hub import AnalysisHub, default_bang  # noqa: E402
 from connector_hub import ConnectorHub  # noqa: E402
 from kaiti_hub import KaitiHub, kaiti_config, practice_doc  # noqa: E402
 from knowledge_hub import KnowledgeHub, knowledge_config  # noqa: E402
@@ -148,6 +149,7 @@ class StackConfig:
     kaiti: dict = field(default_factory=dict)  # 一句话开题的起草服务（scripts/kaiti_hub.py）
     judges_dir: Path | None = None  # 判官注册表；缺省 judgebox/judges.d
     connectors_dir: Path | None = None  # 外部平台的连接器档案；缺省 judgebox/connectors.d（测试另给目录）
+    analyses_dir: Path | None = None  # 方案分析：引擎工作区的根目录（一个运行一个目录）；缺省 <home>/analyses
 
     @classmethod
     def load(cls, home: Path, path: Path | None = None, **over) -> StackConfig:
@@ -206,6 +208,8 @@ class StackConfig:
         cfg.memory = memory_config(raw.get("memory"))
         cfg.knowledge = knowledge_config(raw.get("knowledge"))
         cfg.kaiti = kaiti_config(raw.get("kaiti"), base)
+        if raw.get("analyses_dir"):
+            cfg.analyses_dir = (base / str(raw["analyses_dir"])).resolve()
         for k, v in over.items():
             if v is not None:
                 setattr(cfg, k, v)
@@ -354,6 +358,11 @@ class Stack:
             self.connectors, self.catalog, self.keyring.get, self.keyring.ready, self.kaiti.svc
         )
         self.platforms.mount(self.http)
+        # 方案分析（界面一期，docs/design/engine-ui）：只读引擎工作区；人提交的第 1 次确认另存，等引擎续做
+        self.analyses = AnalysisHub(
+            cfg.analyses_dir or home / "analyses", home / "analysis-decisions", default_bang(ROOT)
+        )
+        self.analyses.mount(self.http)
 
         # 执行层
         self.executor = (

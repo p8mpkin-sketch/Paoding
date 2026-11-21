@@ -9,6 +9,7 @@ import { Mast } from "../kit";
 import { usd } from "../model/text";
 import { HBars, Tile } from "../ui/Charts";
 import { Plain } from "../ui/registers";
+import { CapTabs, useAnalyses, waitingOf } from "./Analyses";
 
 const POLL_MS = 30_000;
 export const SLOT_WORD: Record<string, string> = {
@@ -152,6 +153,7 @@ function HoldoutCard({ h, permille }: { h: EvoHoldout; permille: number }) {
 
 export function Evolution() {
   const { doc, error } = useEvolution();
+  const an = useAnalyses(30_000);
   if (error && !doc) return <p className="error">读不到演进读数：<Plain text={error} /></p>;
   if (!doc) return <p className="muted">读取中…</p>;
   const cur = doc.current;
@@ -168,6 +170,7 @@ export function Evolution() {
     <div className="evolution" data-page="evolution">
       <Mast title={<>能力配置 <span className="ev-ver" data-ev-version>v{cur.jie}</span></>}
         dek="每集成一个外部方案，先过内核不变量测试，再与基线、外部方案移植分别对照，优于两者才采纳，版本号加一。这一页只读：回滚与评审由你决定。" />
+      <CapTabs cur="evolution" waiting={an.data ? waitingOf(an.data.items).length : undefined} />
       {pending.length > 0 && (
         <p className="ev-ask" data-ev-pending>{pending.map((d) => `集成记录 ${d.dossier}「${d.title}」${STATUS[d.status].word}`).join("；")}。</p>
       )}
