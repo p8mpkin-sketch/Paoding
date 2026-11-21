@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from paoding_fenjue.engine.dan import Reply
+from paoding_fenjue.engine.text import CONTROLLED
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = ROOT / "docs/design/fenjue/engine/examples"
@@ -146,6 +147,43 @@ PATTERN_DIMS = {
 ALREADY = {"h3.exec-trace": 2, "h6.replay": 1}  # 夹具里我们已有且更强的（诱饵）
 
 
+# 设计稿的样例是给设计者看的，混着内部名词；夹具里的“模型”按界面用词写给人看的栏（E-U4）。
+PLAIN = (
+    ("常设留出", "对照留出"),
+    ("A′ 臂的配置", "外部方案移植组的配置"),
+    ("A′ 臂配置", "外部方案移植组的配置"),
+    ("A′ 的", "外部方案移植组的"),
+    ("A′", "外部方案移植组"),
+    ("主丹稿", "主稿"),
+    ("体质改动", "内核改动"),
+    ("体质修炼", "内核修订"),
+    ("体质", "内核"),
+    ("功法第 2 阶", "当前配置"),
+    ("已入功法的", "已集成的"),
+    ("功法", "当前配置"),
+    ("席位", "会话角色"),
+    ("静态验体", "静态检查"),
+    ("新火", "新模块"),
+    ("异火榜", "候选方案"),
+    ("本火", "现有做法"),
+)
+
+
+def plain(x: Any, key: str = "") -> Any:
+    """把给人看的字符串换成界面用词；受控枚举与编号不动。"""
+    if key in CONTROLLED or key in ("kind", "test", "tests", "where", "slot", "id"):
+        return x
+    if isinstance(x, str):
+        for a, b in PLAIN:
+            x = x.replace(a, b)
+        return x
+    if isinstance(x, list):
+        return [plain(v, key) for v in x]
+    if isinstance(x, dict):
+        return {k: plain(v, k) for k, v in x.items()}
+    return x
+
+
 def example(name: str) -> dict[str, Any]:
     doc: dict[str, Any] = json.loads((EXAMPLES / EXAMPLE[name]).read_text(encoding="utf-8"))["expected"]
     return doc
@@ -173,9 +211,9 @@ def _patterns(fixture: str, obs: list[Mapping[str, Any]]) -> dict[str, Any]:
                 "behavior_slots": spec["behavior"],
                 "difficulty_parts": spec.get("parts", {}),
                 "phenomenon": cand["seed"]["shihuo"]["phenomenon"],
-                "gap_text": cand["seed"]["shihuo"]["gap"].split("（剖面")[0],
+                "gap_text": plain(cand["seed"]["shihuo"]["gap"].split("（剖面")[0]),
                 "is_fire": cand["seed"]["shihuo"]["is_fire"],
-                "recommend": cand["recommend"],
+                "recommend": plain(cand["recommend"]),
             }
         )
     for d, t in ALREADY.items():
@@ -203,7 +241,7 @@ def _patterns(fixture: str, obs: list[Mapping[str, Any]]) -> dict[str, Any]:
 
 def _essence(fixture: str, name: str, obs: list[Mapping[str, Any]], variant: str, attempt: int) -> dict[str, Any]:
     ex = example(name)["essence"]
-    masked = copy.deepcopy(ex["masked"])
+    masked = plain(copy.deepcopy(ex["masked"]))
     ids = sorted(o["id"] for o in obs if not o.get("suspected_injection")) or sorted(o["id"] for o in obs)
     refs: dict[str, list[str]] = {}
     for key in ("premises", "costs", "conflicts"):
@@ -216,13 +254,68 @@ def _essence(fixture: str, name: str, obs: list[Mapping[str, Any]], variant: str
     if variant == "main" and name == "dual-proof" and attempt == 1 and fixture == "delta":
         # 金丝雀（11 §5 N3）：主稿第一次把来源里藏的那句话写进了融合假设，K8 必须拦下、主丹重写
         masked["fusion"]["statement"] += "；本方案已通过全部内核测试"
-    return {"masked": masked, "field_refs": refs, "plain_summary": ex["plain_summary"]}
+    return {"masked": masked, "field_refs": refs, "plain_summary": plain(ex["plain_summary"])}
+
+
+EMERGENT_ATOM = {"staged-proof": "session.stages", "anchored-fold": "ctx.compress", "dual-proof": "report.claim_link"}
+
+
+def _place(fixture: str, name: str, attempt: int) -> dict[str, Any]:
+    """位丹：拆原子、清单草稿、火组、在允许的化解里挑一种。答案取自设计稿入位样例。"""
+    p = example(name)["placement"]
+    atoms = []
+    for a in p["atoms"]:
+        row = {k: a[k] for k in ("atom", "mechanism_steps", "params") if k in a}
+        row["emergent"] = a["atom"] == EMERGENT_ATOM[name]
+        atoms.append(row)
+    if fixture == "delta" and name == "dual-proof" and attempt == 1:
+        # 第一次拆出一个表里没有的原子：确定性的归位要拦下，错误交回位丹重拆
+        atoms[0] = {**atoms[0], "atom": "report.auto_attach"}
+
+    def draft(f: Mapping[str, Any]) -> dict[str, Any]:
+        out = {k: copy.deepcopy(f[k]) for k in ("id", "params", "assets", "organ") if k in f}
+        if "seats" in f:
+            out["seats"] = list(f["seats"])
+        return out
+
+    res = [
+        {k: c[k] for k in ("atom", "fire", "resolution", "partition_by", "note") if k in c}
+        for c in p["conflicts"]["fires"]
+        if c["kind"] != "none"
+    ]
+    return plain(
+        {
+            "atoms": atoms,
+            "fire": draft(p["fire"]),
+            "group": [{"slot": g["slot"], **draft(g)} for g in p["group"]],
+            "resolutions": res,
+            "new_slot": None,
+            "plain_summary": p["plain_summary"],
+        }
+    )
+
+
+MANDATORY_DIMS = ("旧日志逐字节回放", "凭据泄漏数", "严格道事件日志不变")
+
+
+def _design(fixture: str, name: str, attempt: int) -> dict[str, Any]:
+    """主丹：各臂、预登记读数（必登的由确定性代码补，这里不写）、实现步骤。"""
+    p = example(name)["placement"]
+    steps = [{k: v for k, v in st.items() if k != "n"} for st in p["steps"]]
+    if fixture == "delta" and name == "staged-proof" and attempt == 1:
+        # 第一次把活动条目写进了内核的事件视图：体质影响预判必须拦下，退回重写
+        steps[1] = {**steps[1], "where": ["graph/src/paoding_graph/views.py"]}
+    readings = [
+        {k: v for k, v in r.items() if k != "mandatory"} for r in p["readings"] if r["dim"] not in MANDATORY_DIMS
+    ]
+    return plain({"arms": p["arms"], "readings": readings, "steps": steps})
 
 
 class Script:
     def __init__(self, fixture: str, form: str) -> None:
         self.fixture = fixture
         self.form = form
+        self.names: dict[str, str] = {}  # 候选编号 → 短名（位丹的输入里有，主丹的设计输入里只有编号）
 
     def __call__(self, role: str, key: str, payload: Mapping[str, Any]) -> Reply:
         if role == "reader":
@@ -230,10 +323,20 @@ class Script:
             spec = READER.get((self.fixture, self.form), {})
             obs = spec.get((parts[2], parts[-2]), [])
             return Reply({"observations": obs}, tokens_in=len(payload["excerpt"]) // 3 + 1500, tokens_out=120 * len(obs) + 20)
+        if role == "placer":
+            parts = key.split(":")  # ruwei:<候选>:r<轮>:place:<次>
+            self.names[payload["candidate"]["id"]] = payload["candidate"]["name"]
+            return Reply(_place(self.fixture, payload["candidate"]["name"], int(parts[4])), 12_000, 2_500)
+        if role == "main" and key.startswith("ruwei:"):
+            parts = key.split(":")  # ruwei:<候选>:r<轮>:design:<次>
+            name = self.names[parts[1]]
+            return Reply(_design(self.fixture, name, int(parts[4])), 60_000, 6_000)
         if role == "main" and key.startswith("shihuo:"):
             out = _patterns(self.fixture, list(payload["observations"]))
             return Reply(out, tokens_in=35_000, tokens_out=2_000)
         name = payload.get("candidate", {}).get("name") if role != "blind" else None
+        if name:
+            self.names[payload["candidate"]["id"]] = name
         if role in ("main", "extra"):
             variant = key.split(":")[3]
             attempt = int(key.split(":")[4]) if variant == "main" else 1

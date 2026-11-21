@@ -5,7 +5,7 @@
    "key": "cuiyi:C1:r1:blind",
    "role": "blind",
    "tier": "mid",
-   "input_sha256": "f600e17bbb6f62a4cc809a65b756ae6832988eb84d68df8770e686e6d3a6442f",
+   "input_sha256": "30fcff1e305e1f5afb677f446694d13c5df8da63c1bc7c4fa19333a32e0282a2",
    "output": {
     "guess": "看不出出自哪里，像一类常见的智能体框架做法",
     "sketches": [
@@ -135,7 +135,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -314,7 +314,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -484,7 +484,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -660,6 +660,143 @@
    },
    "tokens_in": 1645,
    "tokens_out": 20
+  },
+  {
+   "key": "ruwei:C1:r1:design:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "e02131cd4268bf113782dcd5d388213ce68b169f3fc5a3441091d9a3751c16e5",
+   "output": {
+    "arms": {
+     "B": "当前配置原样（只有作者引用）",
+     "A1": "照搬：按先后自动挂执行记录，代替作者引用显示，不比对",
+     "F": "h7.dual-proof：并排比对，双证与引用存疑",
+     "B1": "第 2 阶重跑；结构读数确定性，噪声底 0"
+    },
+    "readings": [
+     {
+      "dim": "双证判定覆盖率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "web 单测与读端纯函数测试：test_dual_proof_covers_every_cited_claim"
+     },
+     {
+      "dim": "引用存疑检出率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "test_seeded_miscitation_is_flagged"
+     },
+     {
+      "dim": "作者引用显示不变",
+      "kind": "本火",
+      "dir": "up",
+      "gate": "相同",
+      "test": "web 单测：作者引用一栏与 B 逐项相同"
+     },
+     {
+      "dim": "读数分列不合并",
+      "kind": "本火",
+      "dir": "up",
+      "gate": "过",
+      "test": "eval/tests/test_open_lane_isolation.py"
+     },
+     {
+      "dim": "结果页加载时长",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "<= B + 噪声底",
+      "test": "web e2e（mock）"
+     }
+    ],
+    "steps": [
+     {
+      "do": "读端纯函数：按活动链给每条主张算关联窗口，与作者引用求交，出一致、存疑、无关联三种判定",
+      "slot": "H7",
+      "where": [
+       "web/src/（结果页的数据层）"
+      ],
+      "tests": [
+       "test_dual_proof_covers_every_cited_claim",
+       "test_seeded_miscitation_is_flagged"
+      ],
+      "kernel_lines": 0,
+      "accept": "两条新生维的结构读数为 100%"
+     },
+     {
+      "do": "结果页并排显示作者引用与系统关联，系统关联用叙述色、不着证据色",
+      "slot": "H7",
+      "where": [
+       "web/src/（结果页组件）"
+      ],
+      "tests": [
+       "web 单测"
+      ],
+      "kernel_lines": 0,
+      "accept": "作者引用一栏与 B 相同"
+     },
+     {
+      "do": "外部方案移植组的配置：show=replace_refs、不比对",
+      "slot": "H7",
+      "where": [
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "web 单测"
+      ],
+      "kernel_lines": 0,
+      "accept": "外部方案移植组的双证判定按构造为 0"
+     }
+    ]
+   },
+   "tokens_in": 60000,
+   "tokens_out": 6000
+  },
+  {
+   "key": "ruwei:C1:r1:place:1",
+   "role": "placer",
+   "tier": "mid",
+   "input_sha256": "3ac107648da78031cd8e26b31f3f6cca9bdf514a704080511fde2835081f03b6",
+   "output": {
+    "atoms": [
+     {
+      "atom": "report.claim_link",
+      "mechanism_steps": [
+       2,
+       3
+      ],
+      "params": {
+       "window": "previous_delivery_to_claim_turn",
+       "show": "side_by_side"
+      },
+      "emergent": true
+     }
+    ],
+    "fire": {
+     "id": "h7.dual-proof",
+     "params": {
+      "window": "previous_delivery_to_claim_turn",
+      "show": "side_by_side",
+      "lanes": [
+       "open"
+      ]
+     },
+     "assets": [],
+     "organ": {
+      "class": "感知官",
+      "retire_signal": "连续 30 份交付的作者引用与系统关联全部一致（占位）",
+      "enable_when": "开放道交付带活动链时",
+      "control_arm": "h7.result@1（只有作者引用）"
+     }
+    },
+    "group": [],
+    "resolutions": [],
+    "new_slot": null,
+    "plain_summary": "结果页新增一栏系统找到的相关执行记录，和作者引用对照显示。只读，不改内核。"
+   },
+   "tokens_in": 12000,
+   "tokens_out": 2500
   },
   {
    "key": "shihuo:patterns:1",

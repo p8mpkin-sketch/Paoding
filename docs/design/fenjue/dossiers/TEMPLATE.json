@@ -23,5 +23,7 @@
   "jie_proposed": null,
   "metrics": { "cycle_days": null, "kernel_lines": 0, "slots": [], "trial_cost_usd_milli": null, "reverts": 0 },
   "verdict": null,
-  "reverts": []
+  "reverts": [],
+  "group": [],
+  "engine": null
 }

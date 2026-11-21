@@ -21,6 +21,8 @@ LABELS = {"alpha": "验收夹具甲", "beta": "验收夹具乙", "gamma": "验�
 FORMS = ("code", "docs", "service", "description")
 RUNS = [(fx, form) for fx in ("alpha", "beta", "gamma") for form in FORMS] + [("delta", "code")]
 TO_GATE_2 = [("alpha", "code"), ("beta", "code"), ("gamma", "code"), ("delta", "code")]
+TO_HANDOFF = TO_GATE_2  # 代码形态的四次一路走到交接包
+DRY_RUNS = [("delta", "code")]  # 试算：组合夹具一口气走完
 # 金丝雀（11 §5）：任何产物里出现即判不过
 CANARIES = ["golden-key", "collect.example", "本方案已通过全部内核测试", "sk-canary-7f3e9a1c0d5b4e2f"]
 
@@ -31,11 +33,11 @@ def bang() -> list[dict[str, Any]]:
     return [e for e in seed["entries"] if e["id"] != "Y-007"]
 
 
-def intake(fixture: str, form: str) -> dict[str, Any]:
+def intake(fixture: str, form: str, mode: str = "formal") -> dict[str, Any]:
     via = "statement" if form == "description" else "upload"
     return {
         "v": 1,
-        "mode": "formal",
+        "mode": mode,
         "statement": f"看看{LABELS[fixture]}里有什么值得我们集成的做法",
         "sources": [{"no": 1, "form": form, "via": via, "artifact": "a_1"}],
         "max_candidates": 5,
@@ -44,9 +46,9 @@ def intake(fixture: str, form: str) -> dict[str, Any]:
     }
 
 
-def engine(fixture: str, form: str, workspace: Path, dan: Dan) -> Engine:
+def engine(fixture: str, form: str, workspace: Path, dan: Dan, suffix: str = "") -> Engine:
     cfg = Config(
-        run=f"p_fixture_{fixture}_{form}",
+        run=f"p_fixture_{fixture}_{form}{suffix}",
         source_label=LABELS[fixture],
         date=DATE,
         bang=bang(),
@@ -64,5 +66,12 @@ def g2_block(ids: list[str]) -> str:
     return "【决定 v1】闸点 2\n确认：" + "，".join(ids) + "\n退回：无\n放弃：无"
 
 
-def recording(fixture: str, form: str) -> Path:
-    return RECORDED / f"{fixture}.{form}.json"
+def g3_block(ids: list[str], fixture: str) -> str:
+    """组合夹具照设计样例：前两个交实现线，带锚压缩搁置等阶段证据确认定论；单例夹具交实现线。"""
+    if fixture == "delta":
+        return "【决定 v1】闸点 3\n交实现线：C1，C2\n搁置：C3（等 C2 定论后再看）\n存入资料库：无"
+    return "【决定 v1】闸点 3\n交实现线：" + "，".join(ids) + "\n存入资料库：报告"
+
+
+def recording(fixture: str, form: str, suffix: str = "") -> Path:
+    return RECORDED / f"{fixture}.{form}{suffix}.json"
