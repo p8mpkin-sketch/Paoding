@@ -46,7 +46,7 @@
    "slot": "H2",
    "meaning": "固定次序与预留",
    "level": 2,
-   "by": "h2.sinan@2",
+   "by": "h2.sinan@1",
    "basis": "08 附表 A"
   },
   {
@@ -54,7 +54,7 @@
    "slot": "H2",
    "meaning": "按预期收益排序",
    "level": 2,
-   "by": "h2.sinan@2",
+   "by": "h2.sinan@1",
    "basis": "08 附表 A"
   },
   {
@@ -62,7 +62,7 @@
    "slot": "H2",
    "meaning": "等人的点位",
    "level": 2,
-   "by": "h2.sinan@2",
+   "by": "h2.sinan@1",
    "basis": "08 附表 A：work 的 human 项"
   },
   {
@@ -70,7 +70,7 @@
    "slot": "H2",
    "meaning": "并行子任务调度",
    "level": 1,
-   "by": "h2.sinan@2",
+   "by": "h2.sinan@1",
    "basis": "08 附表 A：explore 并行"
   },
   {
@@ -78,7 +78,7 @@
    "slot": "H3",
    "meaning": "代理工具集（执行、提交、读、扩权、交付）",
    "level": 2,
-   "by": "h3.base@2",
+   "by": "h3.base@1",
    "basis": "08 附表 A"
   },
   {
@@ -101,7 +101,7 @@
    "slot": "H3",
    "meaning": "工具调用自动留档",
    "level": 3,
-   "by": "h3.base@2",
+   "by": "h3.base@1",
    "basis": "08 附表 A：exec 自动登记 exec 类，哈希成链"
   },
   {

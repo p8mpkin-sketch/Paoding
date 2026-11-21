@@ -169,7 +169,7 @@
     ],
     "overlaps": [
      {
-      "fire": "h3.base@2",
+      "fire": "h3.base@1",
       "dims": [
        "h3.exec-trace"
       ],

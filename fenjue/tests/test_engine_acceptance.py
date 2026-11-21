@@ -124,7 +124,7 @@ def test_gamma_splits_trace_from_auto_link(g1_runs):
     doc = g1_runs[("gamma", "code")][2]
     assert [c["name"] for c in doc["candidates"]] == ["dual-proof"]
     assert [(a["dim"], a["ours"], a["theirs"], a["by"]) for a in doc["already_have"]] == [
-        ("h3.exec-trace", 3, 2, "h3.base@2")
+        ("h3.exec-trace", 3, 2, "h3.base@1")
     ]
 
 

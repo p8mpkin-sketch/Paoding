@@ -343,7 +343,7 @@
    "dim": "h3.exec-trace",
    "ours": 3,
    "theirs": 2,
-   "by": "h3.base@2",
+   "by": "h3.base@1",
    "observations": [
     "o804b15126dcf"
    ]
