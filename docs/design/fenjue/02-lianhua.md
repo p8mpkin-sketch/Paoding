@@ -135,7 +135,7 @@
 
 ## 9. 炼档
 
-每次吞噬一份，放在 `docs/design/fenjue/dossiers/` 下（FJ11），文件名是档号加短名，例 `001-replayable-live.md`，旁边一份同名的 `.json` 存机器可读的部分（清单、预登记、读数、裁决）。模板是同目录的 `TEMPLATE.md` 与 `TEMPLATE.json`；CI 里 `tests/fenjue/test_dossiers.py` 逐份核对（F5）。
+每次吞噬一份，放在 `docs/design/fenjue/dossiers/` 下（FJ11），文件名是档号加短名，例 `001-replayable-live.md`，旁边一份同名的 `.json` 存机器可读的部分（清单、预登记、读数、裁决）。炼档不手写：`scripts/lianhua.py` 每一步一条命令（`new`、`cuiyi`、`ruwei`、`approve`、`yanti`、`ronghuo`、`jue`、`sanhuo`），把这一步的产出写进 JSON，`.md` 由 JSON 生成；字段的说明见同目录的 `TEMPLATE.md` 与 `TEMPLATE.json`。CI 里 `tests/fenjue/test_dossiers.py` 逐份核对（F5）。
 
 ```
 炼档 001：可回放的实时性

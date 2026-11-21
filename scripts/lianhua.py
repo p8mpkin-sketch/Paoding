@@ -172,13 +172,16 @@ def cmd_yanti(a: argparse.Namespace) -> None:
     n = kernel_lines(a.base)
     cand = candidate(d)
     trials: dict[str, dict[str, Any]] = {}
-    for t in lh.TRIALS:
-        if a.skip_trials:
-            trials[t] = {"ok": False, "summary": "没跑（--skip-trials）"}
-            continue
-        ok, summary = _run([sys.executable, "tests/fenjue/trials.py", "--gongfa", str(cand), t], None)
-        trials[t] = {"ok": ok, "summary": summary}
-        print(f"{t}：{'过' if ok else '不过'}  {summary}")
+    try:
+        for t in lh.TRIALS:
+            if a.skip_trials:
+                trials[t] = {"ok": False, "summary": "没跑（--skip-trials）"}
+                continue
+            ok, summary = _run([sys.executable, "tests/fenjue/trials.py", "--gongfa", str(cand), t], None)
+            trials[t] = {"ok": ok, "summary": summary}
+            print(f"{t}：{'过' if ok else '不过'}  {summary}")
+    finally:
+        cand.unlink(missing_ok=True)
     d = lh.yanti(d, n, errs, trials, _git("rev-parse", "--short", "HEAD"))
     print(
         f"体质改动行数 {n}；静态验体 {'全过' if not errs else errs}；验体{'通过' if d['yanti']['passed'] else '不过'}"
@@ -210,11 +213,15 @@ def cmd_ronghuo(a: argparse.Namespace) -> None:
             values.setdefault(dim, {}).update(v)
     if a.run_tests:  # 结构读数：出处测试在换上这团火的功法下过了，合火臂即 1
         cand = candidate(d)
-        for r in d["readings"]:
-            if r.get("test") and "F" not in values.get(r["dim"], {}):
-                ok, summary = _run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", r["test"]], cand)
-                values.setdefault(r["dim"], {})["F"] = 1 if ok else 0
-                print(f"{r['dim']}：F={'1' if ok else '0'}  {summary}")
+        try:
+            for r in d["readings"]:
+                if r.get("test") and "F" not in values.get(r["dim"], {}):
+                    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", r["test"]]
+                    ok, summary = _run(cmd, cand)
+                    values.setdefault(r["dim"], {})["F"] = 1 if ok else 0
+                    print(f"{r['dim']}：F={'1' if ok else '0'}  {summary}")
+        finally:
+            cand.unlink(missing_ok=True)
     d = lh.ronghuo(d, values, gongfa_raw()["jie"])
     print(f"结局提议：{lh.OUTCOMES[d['outcome_proposed']]}；品阶提议：{d['jie_proposed']}")
     for w in d["outcome_why"]:
