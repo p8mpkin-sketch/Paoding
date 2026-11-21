@@ -86,6 +86,9 @@ class Config:
     # 开放道交付后闲置多久自动关（地图 Q33，设置 lanes.idle_close_days）：开放道开题时抄进事件体；None 即不抄。
     # 没抄入的题（更早的日志）不闲置自动关
     idle_close_s: int | None = 7 * 86400
+    # 开放道交付后的复核（地图 Q34，设置 lanes.review）：开着时开放道开题抄入 review: true。缺省关：
+    # 由组装根按设置打开（复核会话的形态在功法里，没装上就不该派）
+    review_open: bool = False
 
 
 def empty_state() -> State:

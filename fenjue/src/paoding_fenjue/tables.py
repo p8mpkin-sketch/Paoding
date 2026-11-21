@@ -26,7 +26,7 @@ SEATS: dict[str, tuple[str, ...]] = {
     "explore": tuple(sorted((*_ADAPTER_COMMON, "add_fact", "request_scope"))),
     "reason": tuple(sorted((*_ADAPTER_COMMON, "abandon_intent", "add_fact", "add_intent", "request_scope"))),
     "solve": tuple(sorted((*_ADAPTER_COMMON, "deliver", "request_scope"))),
-    "verify": tuple(sorted(_ADAPTER_COMMON)),
+    "verify": tuple(sorted((*_ADAPTER_COMMON, "review"))),  # 体质修炼 002：开放道交付的复核读数（地图 Q34）
     "recall": tuple(sorted((*_ADAPTER_COMMON, "add_fact"))),
     "idler": tuple(sorted(_ADAPTER_COMMON)),
 }

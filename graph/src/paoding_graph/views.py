@@ -21,6 +21,7 @@ from . import work as wk
 from .parse import BadBody, Obj
 from .reducer import Config
 from .reducer import curate as cu
+from .reducer import review as rv
 from .reducer.common import _rule
 from .reducer.problem import _derive_profile
 from .state import Check, Fact, Hint, Intent, Lease, Problem, State
@@ -46,6 +47,7 @@ REGISTER = {
     "summary": "叙述",
     "suggestion": "叙述",
     "candidate": "叙述",
+    "review": "叙述",  # 开放道的复核意见（地图 Q34）：复核会话写的，读数由确定性代码数出
     "delivery": "叙述",  # 开放道的交付：答案、主张、自检、未验证项都是会话写的（docs/design/open-lane/ §3.4）
     # 人：Hint、裁决与拒绝的理由、豁免、覆盖理由、开题时人写下的目标陈述
     "hint": "人",
@@ -136,7 +138,36 @@ def _goal_predicate(state: State, pid: str, p: Problem, level: str | None) -> Vi
     }
 
 
-def _delivery(state: State, d: Mapping[str, Any]) -> View:
+def _review(state: State, r: Mapping[str, Any]) -> View:
+    """一份复核（地图 Q34）：读数是确定性数出来的；意见是复核会话写的（叙述）。不改终态，不进任何判定统计。"""
+
+    def grounds(refs: Sequence[str]) -> list[View]:
+        return [{"id": x, "class": state["artifacts"][x]["class"]} for x in refs]
+
+    return {
+        "id": r["id"],
+        "seq": r["seq"],
+        "lease": r["lease"],
+        "readings": rv.readings(r),
+        "claims": [
+            {"claim": c["claim"], "verdict": c["verdict"], "note": tag("review", c["note"]), "refs": grounds(c["refs"])}
+            for c in r["claims"]
+        ],
+        "reruns": [
+            {
+                "check": x["check"],
+                "result": x["result"],
+                "refs": grounds(x["refs"]),
+                **({"note": tag("review", x["note"])} if "note" in x else {}),
+            }
+            for x in r["reruns"]
+        ],
+        "counterexamples": [tag("review", x) for x in r["counterexamples"]],
+        "summary": tag("review", r["summary"]),
+    }
+
+
+def _delivery(state: State, d: Mapping[str, Any], review: Mapping[str, Any] | None = None) -> View:
     """一次交付的投影。主张的依据逐个标出类别：执行留档（exec）、材料（input）或资料（knowledge）。
     supported：有执行留档或材料（“N 条里 M 条有执行记录”的分子）；cited：引用了资料（“K 条引用了资料”）。
     两者分开算：只引资料的主张 supported=false（cz 2026-11-20 验收附加条件 1）。"""
@@ -173,6 +204,8 @@ def _delivery(state: State, d: Mapping[str, Any]) -> View:
         ],
         "unverified": [tag("delivery", x) for x in d["unverified"]],
         "needs": [tag("delivery", x) for x in d["needs"]],
+        # 复核读数（地图 Q34）只在有的时候给：更早的日志重放出的视图逐字节不变（焚决 R1）
+        **({"review": _review(state, review)} if review is not None else {}),
     }
 
 
@@ -455,10 +488,56 @@ def problems(state: State, ts_of: Callable[[str, int], int | None] | None = None
     }
 
 
+def open_readings(state: State) -> View:
+    """GET /v1/readings/open：开放道单独成表（open-lane §5.2，地图 Q35）。
+
+    只数开放道（authority = self）的题。不进解出率、每解成本与任何对照读数；与 /v1/problems 的 by_authority.self
+    同一批题，这里多出交付、反馈、花费与复核的拆分。采纳率只在有反馈（采纳或不采纳）的题里算。"""
+    outcomes = {o: 0 for o in ("answered", "partial", "blocked")}
+    feedback = {f: 0 for f in ("adopted", "rejected", "none")}
+    terminals = {"delivered": 0, "unsolved": 0, "open": 0}
+    review = {"deliveries": 0, "claims": 0, "supported": 0, "unsupported": 0, "unclear": 0}
+    reruns = {r: 0 for r in rv.RERUN_RESULTS}
+    problems = deliveries = follow_ups = spent = 0
+    for pid, p in state["problems"].items():
+        if p["goal"].get("authority") != "self":
+            continue
+        problems += 1
+        terminals[_terminal(state, pid) or "open"] += 1
+        if p.get("closed"):
+            feedback[p.get("feedback", "none")] += 1
+        for d in p.get("deliveries") or []:
+            deliveries += 1
+            outcomes[d["outcome"]] += 1
+        follow_ups += len(p.get("follow_ups") or [])
+        spent += wk.budget_view(state, pid)["spent"]["usd_milli"]
+        for r in p.get("reviews") or []:
+            got = rv.readings(r)
+            review["deliveries"] += 1
+            for k in ("claims", "supported", "unsupported", "unclear"):
+                review[k] += got[k]
+            for k in reruns:
+                reruns[k] += got["reruns"][k]
+    judged = feedback["adopted"] + feedback["rejected"]
+    return {
+        "problems": problems,
+        "terminals": terminals,
+        "deliveries": deliveries,
+        "outcomes": outcomes,
+        "follow_ups": follow_ups,
+        "feedback": feedback,
+        "adoption_rate": round(feedback["adopted"] / judged, 4) if judged else None,
+        "spent_usd_milli": spent,
+        "usd_milli_per_delivery": spent // deliveries if deliveries else None,
+        "review": {**review, "reruns": reruns},
+    }
+
+
 def status(state: State, pid: str) -> View:
     """GET /status：等级、争议、Intent 状态的当前值（或某序号的值）。pd status 的结构化同源。"""
     p = _problem(state, pid)
     ctx = _ctx(state, pid)
+    reviewed = {r["delivery"]: r for r in p.get("reviews") or []}
     goal_level = ctx["levels"].get("goal")
     return {
         "problem": {
@@ -512,7 +591,7 @@ def status(state: State, pid: str) -> View:
             **(
                 {
                     "self_checks": [dict(c) for c in p["goal"].get("self_checks", [])],
-                    "deliveries": [_delivery(state, d) for d in p.get("deliveries", [])],
+                    "deliveries": [_delivery(state, d, reviewed.get(d["id"])) for d in p.get("deliveries", [])],
                     **({"feedback": p["feedback"]} if "feedback" in p else {}),
                     # 地图 v0.9 Q31、Q20、Q33：追问是人写的；叫停只给 seq；等人时给出闲置自动关的时刻
                     # 三项都只在有的时候给：更早的日志重放出的视图逐字节不变（焚决 R1）

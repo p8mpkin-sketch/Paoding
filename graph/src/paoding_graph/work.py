@@ -171,6 +171,9 @@ def add(a: Totals, b: Mapping[str, object]) -> Totals:
     return {k: a.get(k, 0) + (cast(Any, b.get(k)) or 0) for k in ("usd_milli", "tokens", "wall_s")}
 
 
+VERIFY_POOL = ("judge", "verify")  # 花验证份额的租约：判官，与开放道的复核会话（地图 Q34）
+
+
 def budget_view(state: State, pid: str) -> BudgetView:
     p = state["problems"][pid]
     budget = cast(Totals, p["budget"])
@@ -188,7 +191,7 @@ def budget_view(state: State, pid: str) -> BudgetView:
         spent = add(spent, amt)
         kind = c["lease_kind"]
         by_kind[kind] = add(by_kind.get(kind, zero()), amt)
-        if kind == "judge":
+        if kind in VERIFY_POOL:
             verify_spent = add(verify_spent, amt)
     reserved = zero()
     for l in active_leases(state, pid):
@@ -333,6 +336,21 @@ def idle_close_at(state: State, pid: str) -> int | None:
     return since + int(p["idle_close_s"]) * 1000
 
 
+def review_wanted(state: State, pid: str) -> list[dict[str, Any]]:
+    """开放道的复核项（地图 Q34）：开题时开了复核的题，每次有答案的交付（answered、partial）各复核一次。
+    已有复核、或已经为它领过复核租约（不论结果）的交付不再派；叫停之后不再派。复核只给读数，不拦人看结果。"""
+    p = state["problems"][pid]
+    if not p.get("review") or halted(state, pid):
+        return []
+    done = {r["delivery"] for r in p.get("reviews") or []}
+    tried = {l.get("target") for l in leases_of(state, pid) if l["kind"] == "verify"}
+    return [
+        {"kind": "verify", "target": d["id"]}
+        for d in p.get("deliveries") or []
+        if d["outcome"] in ("answered", "partial") and d["id"] not in done and d["id"] not in tried
+    ]
+
+
 def open_work(state: State, pid: str) -> list[dict[str, Any]]:
     """开放道的 /work（open-lane §3.2、§3.3、§3.5）：一个求解会话做到底；未交付而会话结束就接力，每一轮至多
     OPEN_RELAYS 个；交付之后不再派，等人看（why=delivered，受阻为 blocked）；人追问开始新的一轮（地图 Q31）；
@@ -345,6 +363,7 @@ def open_work(state: State, pid: str) -> list[dict[str, Any]]:
     ds = [d for d in (p.get("deliveries") or []) if d["seq"] > start]
     last = ds[-1] if ds else None
     busy = any(l["active"] for l in solves)
+    items += review_wanted(state, pid)
     if last is not None:
         items.append(
             {"kind": "human", "target": pid, "why": "blocked" if last["outcome"] == "blocked" else "delivered"}

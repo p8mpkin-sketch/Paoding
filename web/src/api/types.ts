@@ -298,6 +298,28 @@ export type Delivery = {
   self_check: { what: Tagged; result: "pass" | "fail" | "skipped"; refs: GroundBrief[]; item?: string }[];
   unverified: Tagged[];
   needs: Tagged[];
+  /** 这次交付的复核（地图 Q34）；没有复核不出现 */
+  review?: Review;
+};
+/** 复核读数：主张几条、有据几条、引用与主张不符几条、看不出几条；自检重跑过与不过各几条。 */
+export type ReviewReadings = {
+  claims: number;
+  supported: number;
+  unsupported: number;
+  unclear: number;
+  reruns: { pass: number; fail: number; not_rerun: number };
+  counterexamples: number;
+};
+/** 开放道交付的独立复核（open-lane §3.6，地图 Q34）：只给读数，不改终态、不拦交付；意见是复核会话写的（叙述），读数由确定性代码数出。 */
+export type Review = {
+  id: string;
+  seq: number;
+  lease: string;
+  readings: ReviewReadings;
+  claims: { claim: number; verdict: "supported" | "unsupported" | "unclear"; note: Tagged; refs: GroundBrief[] }[];
+  reruns: { check: number; result: "pass" | "fail" | "not_rerun"; refs: GroundBrief[]; note?: Tagged }[];
+  counterexamples: Tagged[];
+  summary: Tagged;
 };
 /** 人在交付之后的追问（地图 Q31）：回到求解，带着工作区与上一轮交付。 */
 export type FollowUp = { id: string; seq: number; text: Tagged; after_delivery: string | null };
@@ -306,7 +328,7 @@ export type HumanWorkItem = { kind: "human"; target: string; why: string };
 export type WorkItem =
   | { kind: "bootstrap" | "recall" | "solve" }
   | { kind: "reason"; reflect?: boolean }
-  | { kind: "explore" | "judge"; target: string }
+  | { kind: "explore" | "judge" | "verify"; target: string }
   | { kind: "rejudge"; target: string; judge: string; version: string; candidate: ArtifactId | null }
   | HumanWorkItem;
 export type WorkView = Envelope & { items: WorkItem[] };
@@ -474,6 +496,28 @@ export type ProblemsView = Envelope & {
     /** 全部花费 ÷ 本地判定的 solved */
     cost_per_solve_usd_milli: number | null;
     by_authority: { local: AuthorityTally; external: AuthorityTally; human: AuthorityTally; self: AuthorityTally };
+  };
+};
+/** GET /v1/readings/open：开放道单独成表（open-lane §5.2，地图 Q35）。只数 authority=self 的题；不进解出率、每解成本与任何对照读数。 */
+export type OpenReadingsView = Envelope & {
+  problems: number;
+  terminals: { delivered: number; unsolved: number; open: number };
+  deliveries: number;
+  outcomes: { answered: number; partial: number; blocked: number };
+  follow_ups: number;
+  feedback: { adopted: number; rejected: number; none: number };
+  /** 采纳 ÷（采纳 + 不采纳）；没有反馈的题不进分母 */
+  adoption_rate: number | null;
+  spent_usd_milli: number;
+  /** 开放道全部花费 ÷ 交付次数 */
+  usd_milli_per_delivery: number | null;
+  review: {
+    deliveries: number;
+    claims: number;
+    supported: number;
+    unsupported: number;
+    unclear: number;
+    reruns: { pass: number; fail: number; not_rerun: number };
   };
 };
 export type EventsResponse = { events: Event[]; head: number; next_after: number };

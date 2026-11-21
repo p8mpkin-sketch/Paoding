@@ -183,6 +183,9 @@ def test_follow_up_and_halt_on_the_open_lane(tmp_path):
     assert code == 0 and "已叫停" in out
     code, out = pd(tmp_path, "halt", pid)
     assert code == 1 and "conflict" in out
+    code, out = pd(tmp_path, "readings")  # 地图 Q35：开放道读数单独成表
+    assert code == 0 and "开放道 1 题" in out and "交付 1 次：完整回答 1" in out and "每次交付 40 毫美元" in out, out
+    assert "采纳率 —" in out
 
 
 def test_follow_up_and_halt_refused_on_the_strict_lane(tmp_path):

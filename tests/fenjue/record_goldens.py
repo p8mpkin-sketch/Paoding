@@ -47,6 +47,8 @@ LANES: dict[str, str] = {
     "test_knowledge_class.py": "knowledge",
     "test_open_lane_people.py": "open_lane_l3",  # #111 地图 v0.9：追问、叫停、闲置自动关（F1 时在途，合入后补录）
     "test_gongfa_fields.py": "gongfa",  # 体质修炼 001：开题带功法摘要、租约带会话形态（F3）
+    "test_readonly_allow.py": "grants_readonly",  # #123 地图 v0.11 Q36：只读白名单自动批（合入后补录）
+    "test_open_lane_review.py": "open_lane_review",  # 体质修炼 002：开放道交付的复核（地图 Q34）
 }
 MIN_EVENTS = 3
 MAX_EVENTS = 300  # 压测类的长日志不录：它们的事件形状在短日志里都有，录进来只让文件变大

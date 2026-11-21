@@ -1330,3 +1330,11 @@ def test_mount_human_only_for_drafts(api):
     assert st == 403 and body["code"] == "forbidden_op"
     st, _, _ = api.req("POST", "/v1/drafts", {"text": "x"})
     assert st == 401
+
+
+def test_open_readings_endpoint_is_its_own_table(api):
+    """地图 Q35：开放道读数单独成表；严格道的题不进。"""
+    drive(api)
+    r = api.get("/v1/readings/open")
+    assert r["problems"] == 0 and r["deliveries"] == 0 and r["adoption_rate"] is None
+    assert {"as_of", "head", "view_hash"} <= set(r)

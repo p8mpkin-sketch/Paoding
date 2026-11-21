@@ -14,7 +14,7 @@ from .common import Config, Ok, Reject, _amount
 
 def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: int) -> Ok | Reject:
     kind, target = body.string("kind"), body.opt_string("target")
-    if kind not in ("bootstrap", "reason", "explore", "judge", "recall", "solve"):
+    if kind not in ("bootstrap", "reason", "explore", "judge", "recall", "solve", "verify"):
         return Reject("schema_error", f"租约种类 {kind} 非法")
     if (kind == "judge") != (actor["kind"] == "judge"):
         return Reject("forbidden_op", "judge 租约只由判官运行器申请；任务租约只由司南申请")
@@ -37,11 +37,11 @@ def _v_lease(state: State, actor: Actor, pid: str, body: Obj, cfg: Config, ts: i
         return Reject("over_budget", "Bootstrap 的预留不超过 bootstrap_share × cap")
     pool_res = wk.zero()
     for l in wk.active_leases(state, pid):
-        if l["kind"] == "judge":
+        if l["kind"] in wk.VERIFY_POOL:
             pool_res = wk.add(pool_res, l["reserve"])
-    ok = (
+    ok = (  # 判官与复核（地图 Q34）同用验证份额
         wk.fits(view, reserve, prob["budget"]["verify_share"], view["verify_spent"], pool_res)
-        if kind == "judge"
+        if kind in wk.VERIFY_POOL
         else wk.fits(view, reserve)
     )
     if not ok:
