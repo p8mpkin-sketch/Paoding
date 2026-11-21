@@ -1,7 +1,7 @@
 """pd：人的通道（§3.2 命令表的 M0 子集）。
 
     pd problem open <problem.yaml>
-    pd status <pid>          pd report <pid>
+    pd status <pid>          pd report <pid>          pd readings（开放道读数表，与解出率分开）
     pd profile <pid> [--override <轴>=<值> --reason "<文本>"]
     pd hint add [--node <id>] "<文本>"      pd hint close <hid>
     pd approve <intent> [--yes]             pd deny <intent> --reason "<文本>"
@@ -40,7 +40,7 @@ from pathlib import Path
 
 import yaml
 
-from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, closeout_items, seen_card
+from paoding_graph.contract import BlobStore, Config, GraphService, TokenRegistry, closeout_items, seen_card, views
 
 from . import connector, kaiti, render
 
@@ -130,6 +130,12 @@ def cmd_status(local: Local, a, w) -> int:
     if not _known(local, pid, w):
         return 1
     w(render.status(local.graph.state, pid, local.graph.budget(pid)))
+    return 0
+
+
+def cmd_readings(local: Local, a, w) -> int:
+    """pd readings：开放道读数表（地图 Q35），与严格道的解出率分开。"""
+    w(render.open_readings(views.open_readings(local.graph.state)))
     return 0
 
 
@@ -539,6 +545,7 @@ def parser() -> argparse.ArgumentParser:
     po.add_argument("file")
     for name in ("status", "report"):
         sp.add_parser(name).add_argument("target")
+    sp.add_parser("readings")
     pf = sp.add_parser("profile")
     pf.add_argument("target")
     pf.add_argument("--override")
@@ -631,6 +638,8 @@ def main(
         return cmd_follow_up(local, a, w)
     if a.cmd == "halt":
         return cmd_halt(local, a, w)
+    if a.cmd == "readings":
+        return cmd_readings(local, a, w)
     return {"status": cmd_status, "report": cmd_report, "profile": cmd_profile, "hint": cmd_hint}[a.cmd](local, a, w)
 
 

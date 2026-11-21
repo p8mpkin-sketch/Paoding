@@ -165,6 +165,22 @@ def deliveries(o: Out, state: dict, pid: str) -> None:
             o.add("delivery", f"{d['id']} 未验证：{x}")
         for x in d["needs"]:
             o.add("delivery", f"{d['id']} 需要人提供：{x}")
+        for r in p.get("reviews", []):  # 复核（地图 Q34）：读数是数出来的，意见是复核会话写的；不改终态
+            if r["delivery"] == d["id"]:
+                v = [c["verdict"] for c in r["claims"]]
+                xs = [x["result"] for x in r["reruns"]]
+                o.add(
+                    "structure",
+                    f"{d['id']} 复核 {r['id']}：主张 {len(v)} 条，有据 {v.count('supported')}、"
+                    f"引用与主张不符 {v.count('unsupported')}、看不出 {v.count('unclear')}；"
+                    f"自检重跑 过 {xs.count('pass')}、不过 {xs.count('fail')}、没能重跑 {xs.count('not_rerun')}",
+                )
+                o.add("review", f"{d['id']} 复核意见：{r['summary']}")
+                for c in r["claims"]:
+                    if c["verdict"] != "supported":
+                        o.add("review", f"{d['id']} 主张 {c['claim'] + 1}（{c['verdict']}）：{c['note']}")
+                for x in r["counterexamples"]:
+                    o.add("review", f"{d['id']} 反例：{x}")
         for u in p.get("follow_ups", []):  # 追问（地图 Q31）：人看过这一份交付之后写的
             if u["after_delivery"] == d["id"]:
                 o.add("hint", f"追问 {u['id']}（seq {u['seq']}）：{u['text']}")
@@ -175,6 +191,34 @@ def deliveries(o: Out, state: dict, pid: str) -> None:
 
 
 # ---------- 视图 ----------
+
+
+def open_readings(view: dict) -> str:
+    """开放道读数表（地图 Q35）：与严格道的解出率分开，永不合并。"""
+    o = Out()
+    t, oc, fb, rv = view["terminals"], view["outcomes"], view["feedback"], view["review"]
+    o.add(
+        "status",
+        f"开放道 {view['problems']} 题：已交付 {t['delivered']}、未解决 {t['unsolved']}、在做 {t['open']}；未经判定",
+    )
+    o.add(
+        "status",
+        f"交付 {view['deliveries']} 次：完整回答 {oc['answered']}、部分完成 {oc['partial']}、受阻 {oc['blocked']}；"
+        f"追问 {view['follow_ups']} 次",
+    )
+    rate = "—" if view["adoption_rate"] is None else f"{view['adoption_rate'] * 100:.0f}%"
+    o.add(
+        "status",
+        f"反馈：采纳 {fb['adopted']}、不采纳 {fb['rejected']}、不表态 {fb['none']}；采纳率 {rate}（只算有反馈的）",
+    )
+    per = "—" if view["usd_milli_per_delivery"] is None else f"{view['usd_milli_per_delivery']} 毫美元"
+    o.add("budget", f"花费 {view['spent_usd_milli']} 毫美元；每次交付 {per}")
+    o.add(
+        "status",
+        f"复核 {rv['deliveries']} 次交付：主张 {rv['claims']} 条，有据 {rv['supported']}、不符 {rv['unsupported']}、"
+        f"看不出 {rv['unclear']}；自检重跑 过 {rv['reruns']['pass']}、不过 {rv['reruns']['fail']}",
+    )
+    return o.text()
 
 
 def status(state: dict, pid: str, budget: dict) -> str:

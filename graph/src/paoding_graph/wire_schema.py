@@ -574,8 +574,54 @@ define(
             "unverified": arr(ref("Tagged")),
             "needs": arr(ref("Tagged")),
         },
+        {"review": doc(ref("Review"), "这次交付的复核（地图 Q34）；没有复核不出现")},
         doc="开放道的一次交付（open-lane §3.4）。内核只校验依据真实存在、类别可采信，不校验结论对不对；"
         "supported=false 即这条主张没有任何留档支撑。",
+    ),
+)
+define(
+    "ReviewReadings",
+    obj(
+        {
+            "claims": INT,
+            "supported": INT,
+            "unsupported": INT,
+            "unclear": INT,
+            "reruns": obj({"pass": INT, "fail": INT, "not_rerun": INT}),
+            "counterexamples": INT,
+        },
+        doc="复核读数：主张几条、有据几条、引用与主张不符几条、看不出几条；自检重跑过与不过各几条。",
+    ),
+)
+define(
+    "Review",
+    obj(
+        {
+            "id": STR,
+            "seq": INT,
+            "lease": STR,
+            "readings": ref("ReviewReadings"),
+            "claims": arr(
+                obj(
+                    {
+                        "claim": INT,
+                        "verdict": lit("supported", "unsupported", "unclear"),
+                        "note": ref("Tagged"),
+                        "refs": arr(ref("GroundBrief")),
+                    }
+                )
+            ),
+            "reruns": arr(
+                obj(
+                    {"check": INT, "result": lit("pass", "fail", "not_rerun"), "refs": arr(ref("GroundBrief"))},
+                    {"note": ref("Tagged")},
+                )
+            ),
+            "counterexamples": arr(ref("Tagged")),
+            "summary": ref("Tagged"),
+        },
+        doc="开放道交付的独立复核（open-lane §3.6，地图 Q34）：只给读数，不改终态、不拦交付；"
+        "意见是复核会话写的（叙述），读数由确定性代码数出。",
     ),
 )
 define(
@@ -598,7 +644,7 @@ define(
     one(
         obj({"kind": lit("bootstrap", "recall", "solve")}),
         obj({"kind": lit("reason")}, {"reflect": BOOL}),
-        obj({"kind": lit("explore", "judge"), "target": STR}),
+        obj({"kind": lit("explore", "judge", "verify"), "target": STR}),  # verify：开放道交付的复核（地图 Q34）
         obj(
             {"kind": lit("rejudge"), "target": STR, "judge": STR, "version": STR, "candidate": null(ref("ArtifactId"))}
         ),
@@ -891,6 +937,36 @@ define(
                 ),
             }
         )
+    ),
+)
+define(
+    "OpenReadingsView",
+    env(
+        obj(
+            {
+                "problems": INT,
+                "terminals": obj({"delivered": INT, "unsolved": INT, "open": INT}),
+                "deliveries": INT,
+                "outcomes": obj({"answered": INT, "partial": INT, "blocked": INT}),
+                "follow_ups": INT,
+                "feedback": obj({"adopted": INT, "rejected": INT, "none": INT}),
+                "adoption_rate": doc(null(NUM), "采纳 ÷（采纳 + 不采纳）；没有反馈的题不进分母"),
+                "spent_usd_milli": INT,
+                "usd_milli_per_delivery": doc(null(INT), "开放道全部花费 ÷ 交付次数"),
+                "review": obj(
+                    {
+                        "deliveries": INT,
+                        "claims": INT,
+                        "supported": INT,
+                        "unsupported": INT,
+                        "unclear": INT,
+                        "reruns": obj({"pass": INT, "fail": INT, "not_rerun": INT}),
+                    }
+                ),
+            }
+        ),
+        doc="GET /v1/readings/open：开放道单独成表（open-lane §5.2，地图 Q35）。只数 authority=self 的题；"
+        "不进解出率、每解成本与任何对照读数。",
     ),
 )
 define("EventsResponse", obj({"events": arr(ref("Event")), "head": INT, "next_after": INT}))

@@ -200,6 +200,10 @@ class Problem(TypedDict):
     follow_ups: NotRequired[list[Body]]  # 开放道的追问（follow_up，地图 Q31）：{id, seq, ts, text, after_delivery}
     halted: NotRequired[Body]  # 开放道的叫停（halt，地图 Q20）：{seq, ts, reason?}；之后的追问解除它
     idle_close_s: NotRequired[int]  # 开放道交付后闲置多久自动关（地图 Q33），开题时由设置抄进事件体
+    review: NotRequired[bool]  # 开放道开题时抄入的复核开关（地图 Q34，设置 lanes.review）；没有即不复核
+    reviews: NotRequired[
+        list[Body]
+    ]  # 复核读数（review）：{id, seq, delivery, lease, claims, reruns, counterexamples, summary}
     feedback: NotRequired[str]  # 开放道关题时人的反馈 adopted | rejected | none；不是终态（裁决 §12 第 6 条）
     marks: NotRequired[list[int]]
     mark_seqs: NotRequired[list[int]]

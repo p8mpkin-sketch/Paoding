@@ -134,6 +134,18 @@ def world():
     ans6 = k.art("p6", "authored", b"answer", actor=solve6)
     d6 = {"outcome": "partial", "answer": ans6, "claims": [], "self_check": [], "unverified": ["没跑完"], "needs": []}
     assert k.submit(solve6, "p6", "deliver", d6).startswith("d_")
+    # 复核（地图 Q34）要一道开了复核、已经交付过的开放道题，和一个在途的复核会话
+    k.cfg = dataclasses.replace(k.cfg, review_open=True)
+    st7 = k.art("p7", "input", b"statement p7")
+    assert k.submit(HUMAN, "p7", "open_problem", {**open5, "origin": {"statement_ref": st7, "materials": []}}) == "ok"
+    k.cfg = dataclasses.replace(k.cfg, review_open=False)
+    lid7 = k.submit(SINAN, "p7", "lease", {"kind": "solve", "holder": "sn1", "reserve": R, "ttl_s": 600})
+    solve7 = {"kind": "adapter", "id": "ad1", "session": lid7, "role": "solve"}
+    run7 = k.art("p7", "exec", b"p7 output")
+    d7 = {**d6, "answer": k.art("p7", "authored", b"a7", actor=solve7), "claims": [{"text": "X", "refs": [run7]}]}
+    did7 = k.submit(solve7, "p7", "deliver", d7)
+    vr = {"kind": "verify", "target": did7, "holder": "sn1", "reserve": {"usd_milli": 10, "wall_s": 60}, "ttl_s": 600}
+    verify7 = {"kind": "adapter", "id": "ad1", "session": k.submit(SINAN, "p7", "lease", vr), "role": "verify"}
     assert all(isinstance(x, str) and "_" in x for x in (f, plain, gated, lid, hint, req, a_judge, st_in))
     exec_meta = {
         "sandbox_id": "s",
@@ -264,6 +276,18 @@ def world():
             },
         ),
         (HUMAN, "p6", "follow_up", {"text": "接着把第二部分做完", "seen": {"seq": k.state["seq"]}}),
+        (
+            verify7,
+            "p7",
+            "review",
+            {
+                "delivery": did7,
+                "claims": [{"claim": 0, "verdict": "supported", "note": "输出里有 X", "refs": [run7]}],
+                "reruns": [],
+                "counterexamples": [],
+                "summary": "1 条主张有据",
+            },
+        ),
         (HUMAN, "p5", "halt", {"reason": "先停一下"}),
         (
             HUMAN,

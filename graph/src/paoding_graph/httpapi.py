@@ -149,6 +149,7 @@ class GraphHttp:
             ("GET", R(r"/v1/health"), self.r_health),
             ("GET", R(r"/healthz"), self.r_healthz),
             ("GET", R(r"/v1/problems"), g(lambda st, m, q: views.problems(st, self._ts_of))),
+            ("GET", R(r"/v1/readings/open"), g(lambda st, m, q: views.open_readings(st))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/status"), g(lambda st, m, q: views.status(st, m["pid"]))),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/view"), g(self.v_view)),
             ("GET", R(r"/v1/problems/(?P<pid>[^/]+)/budget"), g(lambda st, m, q: views.budget(st, m["pid"]))),
