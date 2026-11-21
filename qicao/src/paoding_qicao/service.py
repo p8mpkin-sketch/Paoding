@@ -136,7 +136,14 @@ class KaitiService:
             raise BadRequest("profile 须是已登记的模型档案名")
         settings = self.settings()
         doc, err, model = body.get("draft"), "", self.profile
-        if doc is not None:
+        raw = body.get("raw", False)
+        if not isinstance(raw, bool) or (raw and doc is not None):
+            raise BadRequest("raw 须是 true 或 false，且不能与 draft 同给")
+        if raw:
+            # 上一轮起草不可用、已按原话开题（地图 Q38）：交回人选的执行模型、预算或知识选项时不再调起草模型，
+            # 否则这一轮可能起草成功、换成另一份题面
+            err, model = "上一轮起草不可用，这一轮不再调起草模型", ""
+        elif doc is not None:
             model = str(body.get("model") or "")[:64]
         else:
             drafter = self.drafter

@@ -220,6 +220,39 @@ def test_bad_model_output_and_tampered_draft_refuse():
     assert out["lane"] == "refuse"
 
 
+def test_without_a_drafter_an_open_task_still_gets_a_batch():
+    """地图 Q38（D14）：起草挂了、没选严格判定的题按原话直开开放道，照样给出可提交的批次；草案为空。"""
+
+    class M:
+        def complete(self, system, user, max_tokens):
+            raise OSError("起草模型连不上")
+
+    text = "对比三个框架的状态持久化方式，崩溃后能恢复到哪一步。"
+    out = svc(model_drafter(M())).draft_view({"text": text})
+    assert out["lane"] == "open" and out["draft"] is None and out["ops"]
+    assert [n["code"] for n in out["notes"]] == ["draft_unavailable"] and "连不上" in out["notes"][0]["text"]
+    opened = next(o for o in out["ops"] if o["op"] == "open_problem")["body"]
+    assert opened["goal"]["accept"] == "open" and opened["goal"]["statement"] == text
+    assert svc(model_drafter(M())).draft_view({"text": text, "strict": True})["lane"] == "refuse"
+
+    # 交回人选的预算：raw=true 不再调起草模型，题面不变，预算按人选的
+    class Count:
+        n = 0
+
+        def complete(self, system, user, max_tokens):
+            Count.n += 1
+            raise AssertionError("raw=true 不该调起草模型")
+
+    again = svc(model_drafter(Count())).draft_view(
+        {"text": text, "raw": True, "nonce": out["nonce"], "overrides": {"usd_milli": 1234}}
+    )
+    assert Count.n == 0 and again["lane"] == "open" and again["input"]["budget"]["usd_milli"] == 1234
+    assert again["input"]["goal"] == out["input"]["goal"] and again["input"]["title"] == out["input"]["title"]
+    for bad in ({"raw": "yes"}, {"raw": True, "draft": out["draft"] or {}}):
+        with pytest.raises(BadRequest):
+            svc().draft_view({"text": text, **bad})
+
+
 def test_refuse_way_02_human_acceptance():
     """拒绝页第 02 条路（宪章 D3、02 §3.3）：人给验收清单（原文区间或自己写），任务改为人工验收。"""
     s = svc()
