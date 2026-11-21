@@ -1,0 +1,23 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "observation.schema.json",
+ "title": "观察记录：读丹把一段外部原文变成的结构化描述（08 §3.5）",
+ "type": "object",
+ "required": ["id", "slot", "kind", "statement", "primitives", "evidence", "form", "suspected_injection"],
+ "additionalProperties": false,
+ "properties": {
+  "id": { "$ref": "common.schema.json#/$defs/obsId" },
+  "slot": { "$ref": "common.schema.json#/$defs/slot", "description": "读丹判断的火位（读计划给的问题模板所属火位）" },
+  "dims": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/dimId" }, "description": "涉及的能力维（剖面里的 id；新维用 new: 前缀写在 new_dims）" },
+  "new_dims": { "type": "array", "items": { "type": "string", "maxLength": 60 } },
+  "kind": { "enum": ["mechanism", "behavior", "doc_claim", "config", "test_spec"], "description": "机制 / 外部行为 / 文档声称 / 配置 / 测试里写明的规格" },
+  "statement": { "$ref": "common.schema.json#/$defs/shortText", "description": "用我们的词表、第三人称描述这段在做什么；不许命令式与第二人称（K8 同表）" },
+  "primitives": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "机制原语（08 附表 B）" },
+  "level_hint": { "$ref": "common.schema.json#/$defs/level", "description": "读丹对外部在该维上的级的提示；最终级由主丹定" },
+  "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" }, "minItems": 1 },
+  "form": { "$ref": "common.schema.json#/$defs/form" },
+  "suspected_injection": { "type": "boolean" },
+  "injection_note": { "type": "string", "maxLength": 200, "description": "疑似指令的类型（确定性探测的模式名或读丹的描述），不复述指令原文" },
+  "reader": { "type": "object", "additionalProperties": false, "properties": { "tier": { "$ref": "common.schema.json#/$defs/tier" }, "nonce_sha256": { "$ref": "common.schema.json#/$defs/sha256" }, "attempt": { "type": "integer", "minimum": 1, "maximum": 3 } } }
+ }
+}

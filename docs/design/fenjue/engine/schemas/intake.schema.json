@@ -1,0 +1,41 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "intake.schema.json",
+ "title": "立项单：一次方案分析的输入（09 §2.2 S0）",
+ "type": "object",
+ "required": ["v", "mode", "sources", "statement", "requested_by", "date"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "mode": { "$ref": "common.schema.json#/$defs/mode" },
+  "statement": { "$ref": "common.schema.json#/$defs/text", "description": "cz 的原话：想看这个系统的什么" },
+  "sources": {
+   "type": "array", "minItems": 1, "maxItems": 8,
+   "description": "本次运行的全部来源；之后的扩权申请只能指向这里登记的来源（08 §4.4 D4）",
+   "items": {
+    "type": "object",
+    "required": ["no", "form", "via"],
+    "additionalProperties": false,
+    "properties": {
+     "no": { "type": "integer", "minimum": 1 },
+     "form": { "$ref": "common.schema.json#/$defs/form" },
+     "via": { "enum": ["upload", "library", "repo_url", "service_url", "doc_url", "statement"], "description": "上传 / 资料库已有 / 仓库地址 / 服务地址 / 文档地址 / 就在原话里" },
+     "artifact": { "type": "string", "description": "via=upload 或 library 时：材料的 Artifact id" },
+     "url": { "type": "string", "format": "uri" },
+     "ref": { "type": "string", "description": "via=repo_url 时：要抓的提交哈希或标签（必填其一，不抓默认分支的漂移版本）" },
+     "probe_plan": { "type": "string", "description": "via=service_url 时：探测计划（cz 在扩权卡上逐条批准）" }
+    }
+   }
+  },
+  "focus": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/slot" }, "description": "可选：只看这几个火位" },
+  "max_candidates": { "type": "integer", "minimum": 1, "maximum": 10 },
+  "bang_entries": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/bangId" }, "description": "mode=from_bang 或 replace：从哪几条榜上条目出发" },
+  "requested_by": { "type": "string" },
+  "date": { "$ref": "common.schema.json#/$defs/date" },
+  "refused": {
+   "type": "array",
+   "description": "摄入拒收的来源（拒收表命中：本机题库、校准目录等）",
+   "items": { "type": "object", "required": ["no", "why"], "properties": { "no": { "type": "integer" }, "why": { "type": "string" } }, "additionalProperties": false }
+  }
+ }
+}

@@ -1,0 +1,797 @@
+{
+ "case": "A",
+ "name": "staged-proof",
+ "fixture": "fenjue/tests/engine_fixtures/alpha/",
+ "form": "code",
+ "expected": {
+  "candidate": {
+   "id": "C1",
+   "name": "staged-proof",
+   "title": "阶段证据确认",
+   "slot": "H1",
+   "also_slots": [
+    "H7",
+    "H6"
+   ],
+   "gaps": [
+    {
+     "dim": "h1.staged",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 1,
+     "pain_basis": "无记录在案的失败；不在异火榜上（首次登记为 Y-007）",
+     "observations": [
+      "o9ff88df2fdad",
+      "o643d01f16824",
+      "od46408282009"
+     ]
+    },
+    {
+     "dim": "h7.stage-report",
+     "ours": 0,
+     "theirs": 2,
+     "gap": 2,
+     "type": "missing",
+     "weight": 1,
+     "pain": 1,
+     "pain_basis": "同上",
+     "observations": [
+      "oa16373762a38"
+     ]
+    }
+   ],
+   "value": 4,
+   "confidence": 1.0,
+   "confidence_parts": {
+    "c0": 1.0,
+    "cover": 1.0,
+    "corro": 1.0,
+    "cap": 1.0
+   },
+   "difficulty": 2,
+   "difficulty_basis": "estimated",
+   "difficulty_parts": {
+    "base": 1,
+    "behavior_slots_minus_1": 1,
+    "extra_ports": 0,
+    "new_tool": 0,
+    "kernel_split": 0,
+    "a1_infeasible": 0,
+    "run_only_emergent": 0
+   },
+   "risk": "R1",
+   "priority": 1.0,
+   "seed": {
+    "name": "staged-proof",
+    "title": "阶段证据确认",
+    "identified": "2026-11-21",
+    "shihuo": {
+     "source": "验收夹具甲（合成的外部智能体框架，代码形态，Apache-2.0）",
+     "phenomenon": "目标被拆成有序阶段，每个阶段附上检查命令的输出才算完成，下一阶段等上一阶段确认后才开始",
+     "gap": "开放道的独行会话只在最后交付一次，中间没有阶段，也没有阶段完成的确认；结果页只能看到一张平铺的主张表（剖面 h1.staged = 0、h7.stage-report = 0）",
+     "is_fire": "是：分阶段推进并以执行留档确认阶段完成是一类做法，不绑定某个界面或某家实现"
+    }
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "5ded96755eeee82f78c38bb36f40f817e82fa23797d5b8ab66fd63e1300aed43"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "permissive",
+       "spdx": "Apache-2.0",
+       "detected": "LICENSE",
+       "reuse": "may_consult_code"
+      }
+     }
+    ],
+    "observations": [
+     "o9ff88df2fdad",
+     "o643d01f16824",
+     "od46408282009",
+     "oa16373762a38"
+    ],
+    "source_label": "验收夹具甲"
+   },
+   "recommend": {
+    "level": "recommend",
+    "why": "体质改动预计为 0，新生维是结构读数，CI 就能证；与已入功法的活动链直接相接"
+   }
+  },
+  "essence": {
+   "v": 1,
+   "candidate": "C1",
+   "masked": {
+    "statement": "目标拆成有序阶段，每个阶段附上可核对的执行记录才算完成，后一阶段以前一阶段的确认为前提",
+    "mechanism": [
+     {
+      "step": 1,
+      "trigger": "会话开始",
+      "input": "原话",
+      "transform": "把目标拆成有序阶段，并为每个阶段写出确认条件",
+      "output": "阶段清单",
+      "primitives": [
+       "阶段",
+       "清单"
+      ]
+     },
+     {
+      "step": 2,
+      "trigger": "一个阶段的工作做完",
+      "input": "该阶段的确认条件",
+      "transform": "运行确认用的检查并把输出留档",
+      "output": "执行留档",
+      "primitives": [
+       "确认",
+       "留档",
+       "证据"
+      ]
+     },
+     {
+      "step": 3,
+      "trigger": "留档就绪",
+      "input": "执行留档",
+      "transform": "把阶段记为已确认，并引用这份留档",
+      "output": "阶段确认记录",
+      "invariant": "没有留档引用的阶段不得记为已确认",
+      "primitives": [
+       "确认",
+       "引用",
+       "门"
+      ],
+      "features": [
+       "self_success",
+       "narrative_as_evidence"
+      ]
+     },
+     {
+      "step": 4,
+      "trigger": "下一阶段开始",
+      "input": "上一阶段的确认记录",
+      "transform": "核对上一阶段已确认",
+      "output": "放行或停下",
+      "primitives": [
+       "门"
+      ]
+     }
+    ],
+    "premises": [
+     {
+      "id": "p1",
+      "statement": "每个阶段的确认条件都能写成一条可执行的检查",
+      "holds_here": "partial",
+      "why": "开放道的题常有找不到可执行检查的阶段",
+      "replaced_by": "这类阶段如实记为“无执行确认”，不算已确认"
+     },
+     {
+      "id": "p2",
+      "statement": "阶段确认记录与检查输出放在同一处可改的存储里",
+      "holds_here": "no",
+      "why": "我们的执行留档按题哈希成链、活动条目成链入账，不可改",
+      "replaced_by": "阶段完成点作为活动条目入链，引用执行留档的 ArtifactId"
+     }
+    ],
+    "costs": [
+     {
+      "id": "c1",
+      "cost": "每个阶段多一次确认检查，墙钟与花费上升",
+      "kind": "latency",
+      "here": "would_pay"
+     },
+     {
+      "id": "c2",
+      "cost": "阶段“已确认”容易被读成整道题已完成",
+      "kind": "auditability",
+      "here": "avoided_by_fusion",
+      "kernel": "T1"
+     },
+     {
+      "id": "c3",
+      "cost": "确认记录可改，事后不可信",
+      "kind": "auditability",
+      "here": "already_paid_by_kernel",
+      "kernel": "T4"
+     }
+    ],
+    "overlaps": [
+     {
+      "fire": "h1.solo@2",
+      "dims": [
+       "h1.single-context",
+       "h1.relay"
+      ],
+      "relation": "partial",
+      "note": "同一会话从规划走到交付；没有阶段"
+     },
+     {
+      "fire": "h7.result@1",
+      "dims": [
+       "h7.claim-refs"
+      ],
+      "relation": "partial",
+      "note": "主张已能带执行留档引用，但不按阶段组织"
+     },
+     {
+      "fire": "h6.activity-ledger@1",
+      "dims": [
+       "h6.live-replay"
+      ],
+      "relation": "complement",
+      "note": "阶段完成点可以落在已入账的活动链上"
+     }
+    ],
+    "conflicts": [
+     {
+      "with": "T1",
+      "kind": "kernel",
+      "features": [
+       "self_success"
+      ],
+      "statement": "会话自己确认阶段完成，形似自判成功",
+      "resolution": "fused_away",
+      "how": "阶段确认只是过程读数；题的终态仍只到交付，判定来源恒为 self"
+     },
+     {
+      "with": "T5",
+      "kind": "kernel",
+      "features": [
+       "narrative_as_evidence"
+      ],
+      "statement": "“我检查过了”式的自述可能被当作确认依据",
+      "resolution": "fused_away",
+      "how": "阶段确认只认 exec 类留档；只有自述的阶段记为无执行确认"
+     },
+     {
+      "with": "h1.solo@2",
+      "kind": "parametric",
+      "statement": "结束条件同为以交付结束，多了阶段推进",
+      "resolution": "replace",
+      "how": "同一席位只能有一个形态，新形态顶替独行，独行进常设留出"
+     }
+    ],
+    "fusion": {
+     "statement": "每个阶段的完成点在已入账的活动链上有确定位置，且紧前有它引用的执行留档；回放到任一完成点，看到的就是当时用来确认它的那条执行输出",
+     "emergent": [
+      {
+       "dim": "阶段确认可回放率",
+       "dir": "up",
+       "why_zero_B": "本火没有阶段，没有完成点可回放",
+       "why_zero_A1": "照搬时阶段记录只在工作区文件里，不入事件账，回放不到",
+       "measure": "structural",
+       "how": "假会话剧本在若干阶段点记下面板内容，事后按 as_of 回放逐字节比对",
+       "gate": 1.0
+      },
+      {
+       "dim": "阶段确认防篡改检出率",
+       "dir": "up",
+       "why_zero_B": "本火没有阶段记录",
+       "why_zero_A1": "照搬的阶段记录不成链，改了查不出",
+       "measure": "structural",
+       "how": "改动任一已入账阶段条目的一个字节，链校验必报错",
+       "gate": 1.0
+      }
+     ],
+     "outcome_cap": "huolian"
+    },
+    "split": [],
+    "implementations": [
+     {
+      "sketch": "阶段完成点作为一类活动条目，引用执行留档，随活动链分段入账",
+      "primitives": [
+       "记录",
+       "成链",
+       "锚点",
+       "留档"
+      ]
+     },
+     {
+      "sketch": "每个阶段结束时做一次部分交付，主张逐条引用该阶段的执行留档，结果页按交付先后分组",
+      "primitives": [
+       "分段",
+       "引用",
+       "派生视图"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "snapshots": [
+     {
+      "id": "s1",
+      "form": "code",
+      "identity": {
+       "archive_sha256": "5ded96755eeee82f78c38bb36f40f817e82fa23797d5b8ab66fd63e1300aed43"
+      },
+      "artifact": "a_1",
+      "size_tier": "S",
+      "license": {
+       "status": "permissive",
+       "spdx": "Apache-2.0",
+       "detected": "LICENSE",
+       "reuse": "may_consult_code"
+      }
+     }
+    ],
+    "observations": [
+     "o9ff88df2fdad",
+     "o643d01f16824",
+     "od46408282009",
+     "oa16373762a38"
+    ],
+    "source_label": "验收夹具甲"
+   },
+   "field_refs": {
+    "/premises/0": [
+     "o9ff88df2fdad"
+    ],
+    "/premises/1": [
+     "o643d01f16824"
+    ],
+    "/costs/0": [
+     "o643d01f16824"
+    ],
+    "/costs/1": [
+     "od46408282009"
+    ],
+    "/costs/2": [
+     "o643d01f16824"
+    ],
+    "/conflicts/0": [
+     "od46408282009"
+    ],
+    "/conflicts/1": [
+     "od46408282009"
+    ],
+    "/conflicts/2": [
+     "o9ff88df2fdad"
+    ]
+   },
+   "drafts": {
+    "n": 3,
+    "chosen": "main",
+    "agreement": 1.6,
+    "disagreements": [
+     "萃丹二稿没有“防篡改检出率”这一新生维"
+    ]
+   },
+   "checks": [
+    {
+     "id": "K1",
+     "ok": true
+    },
+    {
+     "id": "K2",
+     "ok": true
+    },
+    {
+     "id": "K3",
+     "ok": true
+    },
+    {
+     "id": "K4",
+     "ok": true
+    },
+    {
+     "id": "K5",
+     "ok": true
+    },
+    {
+     "id": "K6",
+     "ok": true,
+     "advisory": true,
+     "detail": "盲审未猜中出处"
+    },
+    {
+     "id": "K7",
+     "ok": true
+    },
+    {
+     "id": "K8",
+     "ok": true
+    }
+   ],
+   "plain_summary": "把目标分成几个阶段，每个阶段要附上检查命令的输出才算完成；完成点写进可回放的执行记录，事后能逐个核对。"
+  },
+  "placement": {
+   "v": 1,
+   "candidate": "C1",
+   "atoms": [
+    {
+     "atom": "session.stages",
+     "home": "H1",
+     "mechanism_steps": [
+      1,
+      4
+     ],
+     "params": {
+      "stage_proof": "exec"
+     }
+    },
+    {
+     "atom": "session.end",
+     "home": "H1",
+     "mechanism_steps": [
+      3
+     ],
+     "params": {
+      "ends_on": "deliver"
+     },
+     "owner_now": "h1.solo@2"
+    },
+    {
+     "atom": "report.layout",
+     "home": "H7",
+     "mechanism_steps": [
+      3
+     ],
+     "params": {
+      "group_by": "stage"
+     },
+     "owner_now": "h7.result@1"
+    }
+   ],
+   "fire": {
+    "id": "h1.staged",
+    "ver": 1,
+    "slot": "H1",
+    "seats": [
+     "solve"
+    ],
+    "also_touches": [
+     "H6"
+    ],
+    "ports": [
+     "M1:deliver",
+     "M1:request_scope",
+     "M2",
+     "M3",
+     "M4",
+     "M7"
+    ],
+    "params": {
+     "forms": {
+      "solve": {
+       "tools": [
+        "exec",
+        "show",
+        "deliver"
+       ],
+       "prompt": {
+        "files": [
+         "solve.md",
+         "staged.md"
+        ]
+       },
+       "stage_proof": "exec",
+       "stage_ledger": true,
+       "relay": true,
+       "ends_on": "deliver"
+      }
+     }
+    },
+    "assets": [
+     {
+      "name": "adapter/prompts/staged.md"
+     }
+    ],
+    "organ": {
+     "class": "感知官",
+     "retire_signal": "无阶段的独行在同一组提示词上的交付率与有据率落在噪声底内（占位）",
+     "enable_when": "开放道",
+     "control_arm": "h1.solo@2（无阶段）"
+    },
+    "lineage": {
+     "dossier": null,
+     "from": [
+      "h1.solo"
+     ]
+    },
+    "switch": "fires.H1"
+   },
+   "group": [
+    {
+     "id": "h7.result-stages",
+     "ver": 1,
+     "slot": "H7",
+     "ports": [
+      "M4"
+     ],
+     "params": {
+      "group_by": "stage",
+      "unconfirmed_label": "无执行确认"
+     },
+     "assets": [],
+     "organ": {
+      "class": "感知官",
+      "retire_signal": "按阶段分组的结果页打开后展开率低于 5%（占位）",
+      "enable_when": "交付带阶段时",
+      "control_arm": "h7.result@1（平铺）"
+     },
+     "lineage": {
+      "dossier": null,
+      "from": [
+       "h7.result"
+      ]
+     },
+     "switch": "fires.H7"
+    }
+   ],
+   "replaces": "h1.solo",
+   "arms": {
+    "B": "功法第 2 阶原样（h1.solo@2、h7.result@1）",
+    "A1": "照搬：阶段清单与确认输出记在工作区文件，交付时附上，不入活动链（stage_ledger=false）",
+    "F": "h1.staged + h7.result-stages：阶段完成点入活动链",
+    "B1": "第 2 阶重跑，估噪声"
+   },
+   "readings": [
+    {
+     "dim": "阶段确认可回放率",
+     "kind": "新生",
+     "dir": "up",
+     "gate": 1.0,
+     "test": "adapter/tests/test_stage_ledger.py::test_stage_points_replay_byte_for_byte"
+    },
+    {
+     "dim": "阶段确认防篡改检出率",
+     "kind": "新生",
+     "dir": "up",
+     "gate": 1.0,
+     "test": "adapter/tests/test_stage_ledger.py::test_tampered_stage_is_caught"
+    },
+    {
+     "dim": "阶段—留档对应率",
+     "kind": "异火",
+     "dir": "up",
+     "gate": ">= A1 − 噪声底",
+     "test": "adapter/tests/test_stage_ledger.py::test_each_confirmed_stage_cites_exec"
+    },
+    {
+     "dim": "无留档却记为已确认的阶段数",
+     "kind": "本火",
+     "dir": "down",
+     "gate": 0,
+     "test": "adapter/tests/test_stage_ledger.py::test_narration_never_confirms"
+    },
+    {
+     "dim": "旧日志逐字节回放",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "过",
+     "test": "tests/fenjue/test_t4_zhang.py",
+     "mandatory": true
+    },
+    {
+     "dim": "凭据泄漏数",
+     "kind": "本火",
+     "dir": "down",
+     "gate": 0,
+     "test": "tests/fenjue/trials.py T2",
+     "mandatory": true
+    },
+    {
+     "dim": "严格道事件日志不变",
+     "kind": "本火",
+     "dir": "up",
+     "gate": "相同",
+     "test": "tests/fenjue/zero_diff.py --check（开关关时）",
+     "mandatory": true
+    },
+    {
+     "dim": "交付率",
+     "kind": "共有",
+     "dir": "up",
+     "gate": ">= B − 噪声底",
+     "run": "开放道前后同提示（04 §4）"
+    },
+    {
+     "dim": "每次交付花费、墙钟",
+     "kind": "共有",
+     "dir": "down",
+     "gate": "<= max(B, A1) + 噪声底",
+     "run": "开放道前后同提示"
+    },
+    {
+     "dim": "每题新增事件数",
+     "kind": "共有",
+     "dir": "down",
+     "gate": "预登记上限（占位）",
+     "test": "adapter/tests/test_stage_ledger.py::test_event_budget"
+    }
+   ],
+   "conflicts": {
+    "fires": [
+     {
+      "fire": "h1.solo@2",
+      "atom": "session.end",
+      "kind": "parametric",
+      "resolution": "replace",
+      "note": "同一席位只能有一个形态（lease.form 按席位取），不能分区并存"
+     },
+     {
+      "fire": "h7.result@1",
+      "atom": "report.layout",
+      "kind": "parametric",
+      "resolution": "replace",
+      "note": "排版参数多了按阶段分组；没有阶段的交付照平铺显示"
+     }
+    ],
+    "kernel": [
+     {
+      "kernel": "T1",
+      "resolution": "fused_away",
+      "note": "阶段确认只是读数，终态仍只到交付"
+     },
+     {
+      "kernel": "T5",
+      "resolution": "fused_away",
+      "note": "只认 exec 类留档"
+     }
+    ],
+    "candidates": [
+     {
+      "other": "anchored-fold",
+      "relation": "sequential",
+      "note": "对方兼及 H1（接力会话读它的摘要）"
+     }
+    ],
+    "slot_locks": []
+   },
+   "steps": [
+    {
+     "n": 1,
+     "do": "写阶段推进的提示资产，并把新形态的清单定稿",
+     "slot": "H1",
+     "where": [
+      "adapter/prompts/",
+      "fenjue/src/paoding_fenjue/fires/"
+     ],
+     "tests": [
+      "fenjue/tests/test_fenjue.py（静态验体）"
+     ],
+     "kernel_lines": 0,
+     "accept": "清单过静态验体，资产 sha256 一致"
+    },
+    {
+     "n": 2,
+     "do": "活动条目加“阶段完成点”一类，引用执行留档，随既有分段入账",
+     "slot": "H1",
+     "where": [
+      "adapter/src/paoding_adapter/activity.py"
+     ],
+     "tests": [
+      "adapter/tests/test_stage_ledger.py"
+     ],
+     "kernel_lines": 0,
+     "accept": "两条新生维的结构读数为 100%"
+    },
+    {
+     "n": 3,
+     "do": "交付时每个阶段一条主张，引用该阶段的执行留档；只有自述的阶段记为无执行确认",
+     "slot": "H1",
+     "where": [
+      "adapter/src/paoding_adapter/tools.py"
+     ],
+     "tests": [
+      "adapter/tests/test_stage_ledger.py::test_narration_never_confirms"
+     ],
+     "kernel_lines": 0,
+     "accept": "内核的交付校验照旧通过，不加字段"
+    },
+    {
+     "n": 4,
+     "do": "结果页按阶段分组显示主张与留档",
+     "slot": "H7",
+     "where": [
+      "web/src/（结果页组件）"
+     ],
+     "tests": [
+      "web 单测"
+     ],
+     "kernel_lines": 0,
+     "accept": "无阶段的交付显示与今天相同"
+    },
+    {
+     "n": 5,
+     "do": "A′ 臂的配置：stage_ledger=false",
+     "slot": "H1",
+     "where": [
+      "fenjue/src/paoding_fenjue/fires/"
+     ],
+     "tests": [
+      "adapter/tests/test_stage_ledger.py"
+     ],
+     "kernel_lines": 0,
+     "accept": "A′ 的新生维读数按构造为 0"
+    }
+   ],
+   "kernel_forecast": [],
+   "split": [],
+   "new_slot": null,
+   "difficulty": {
+    "value": 2,
+    "parts": {
+     "base": 1,
+     "behavior_slots_minus_1": 1,
+     "extra_ports": 0,
+     "new_tool": 0,
+     "kernel_split": 0,
+     "a1_infeasible": 0,
+     "run_only_emergent": 0
+    }
+   },
+   "checks": [
+    {
+     "id": "V1",
+     "ok": true
+    },
+    {
+     "id": "V2",
+     "ok": true
+    },
+    {
+     "id": "V3",
+     "ok": true
+    },
+    {
+     "id": "V4",
+     "ok": true
+    },
+    {
+     "id": "V5",
+     "ok": true
+    },
+    {
+     "id": "V6",
+     "ok": true
+    },
+    {
+     "id": "V7",
+     "ok": true
+    },
+    {
+     "id": "V8",
+     "ok": true
+    },
+    {
+     "id": "V9",
+     "ok": true
+    },
+    {
+     "id": "V10",
+     "ok": true
+    },
+    {
+     "id": "V11",
+     "ok": true
+    },
+    {
+     "id": "V12",
+     "ok": true
+    }
+   ],
+   "plain_summary": "新的会话策略顶替现有的单会话策略：分阶段做，每阶段附检查输出；结果页按阶段分组。内核不改。"
+  }
+ },
+ "tolerance": {
+  "confidence": [
+   0.8,
+   1.0
+  ],
+  "value": "精确",
+  "difficulty": "精确（入位后）",
+  "priority": "精确",
+  "slot": "精确",
+  "group": "精确（id 可不同，火位与替换关系精确）",
+  "gaps": "维与类型精确，theirs 允许 ±1",
+  "essence": "K1–K5、K7、K8 必过；新生维集合须包含 dim 列出的各维（名称按语义比对，由 cz 在验收时核）",
+  "readings": "必登维齐全；新生维门槛精确"
+ }
+}
