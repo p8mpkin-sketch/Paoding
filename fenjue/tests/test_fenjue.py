@@ -42,7 +42,10 @@ def test_gongfa_fills_all_eight_slots_and_names_every_seat_with_a_form():
     assert form("solve")["fire"] == "h1.solo" and form("explore")["fire"] == "h1.triad"
     with pytest.raises(KeyError):
         form("verify")  # 复核还没有形态：席位在内核里，形态没落地
-    assert [h["jie"] for h in g["history"]] == list(range(g["jie"] + 1))  # 品阶史只追加
+    js = [h["jie"] for h in g["history"]]  # 品阶史只追加：每一步升一阶（收下）或降一阶（散火，带 reverts）
+    assert js[0] == 0 and js[-1] == g["jie"]
+    for h0, h in zip(g["history"], g["history"][1:], strict=False):
+        assert h["jie"] - h0["jie"] == (-1 if "reverts" in h else 1), h
 
 
 def test_lineage_points_at_real_fires_and_dossiers():

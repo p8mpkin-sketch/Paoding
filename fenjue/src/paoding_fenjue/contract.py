@@ -1,9 +1,11 @@
 """paoding_fenjue 对其他组件的契约（EDR-001 D-4：跨组件只经 contract）。"""
 
 from .shapes import (
+    GONGFA_ENV,
     SLOTS,
     TOOL_EVENTS,
     active,
+    arm_of,
     check,
     digest,
     fire,
@@ -14,6 +16,8 @@ from .shapes import (
     gongfa,
     gongfa_digest,
     gongfa_of,
+    holdout_permille,
+    in_holdout,
     kernel_config,
     params,
     ref,
@@ -21,12 +25,14 @@ from .shapes import (
 from .tables import ACTORS, PORTS, SEATS
 
 __all__ = [
+    "GONGFA_ENV",
     "ACTORS",
     "PORTS",
     "SEATS",
     "SLOTS",
     "TOOL_EVENTS",
     "active",
+    "arm_of",
     "check",
     "digest",
     "fire",
@@ -37,6 +43,8 @@ __all__ = [
     "gongfa",
     "gongfa_digest",
     "gongfa_of",
+    "holdout_permille",
+    "in_holdout",
     "kernel_config",
     "params",
     "ref",

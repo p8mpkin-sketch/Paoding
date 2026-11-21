@@ -32,6 +32,12 @@
    "h8.kaiti@1"
   ]
  },
+ "holdout": {
+  "H6": [
+   "h6.activity@1"
+  ]
+ },
+ "holdout_permille": 100,
  "history": [
   {
    "jie": 0,

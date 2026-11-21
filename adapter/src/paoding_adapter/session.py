@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from paoding_executor.contract import ExecSpec, SandboxPort, compile_spec
-from paoding_fenjue.contract import form, params
+from paoding_fenjue.contract import form, in_holdout, params
 from paoding_graph.contract import Actor, BlobPort, GraphPort, GraphReader, TokenIssuer
 
 from . import activity as act
@@ -180,7 +180,7 @@ class SessionRunner:
         (sdir / "home").mkdir(exist_ok=True)
         # 会话形态（功法 H1 的清单，paoding_fenjue）：带哪些工具、要不要接力、以什么收尾。
         # 独行（开放道，open-lane §3.2）一个会话做到底，交付即结束，接力时拷上一个会话的工作区；三段式写论断、交判官
-        shape = form(role)
+        shape = form(role, pid)
         tools: tuple[str, ...] = tuple(shape["tools"])
         if shape["relay"]:
             self._relay(pid, lease_id, ws)
@@ -219,7 +219,10 @@ class SessionRunner:
             "task_token": task_token,
             "rec": rec,
             "role": role,
-            "ledger": role in self.cfg.ledger_roles,
+            # 入账与否：部署的开关（散火即 ledger_roles=()），再看这道题在 H6 上是否分在常设留出（F5，留出的是
+            # #115 原样的 h6.activity，不入账）
+            "ledger": self._ledgered(pid, role),
+            "ledgered": self._ledgered(pid, role),
             "anchor_at": self.clock(),
             "anchor_lock": threading.Lock(),
         }
@@ -390,7 +393,7 @@ class SessionRunner:
                 "spent_usd_milli": t.spent_usd_milli if t else 0,
                 "closing": bool(lv["closing"]),
             }
-            anchored = log.anchored if lv["role"] in self.cfg.ledger_roles else None
+            anchored = log.anchored if lv.get("ledgered") else None
             return {**head, **act.view(log.snapshot(), after, anchored=anchored)}
         try:
             ledger = self.ledger_items(lease_id)
@@ -430,6 +433,12 @@ class SessionRunner:
         if not round_end and self._segments_in(pid) >= self.cfg.anchor_cap:
             return
         self._anchor(lease_id, pid, token)
+
+    def _ledgered(self, pid: str, role: str) -> bool:
+        roles = self.cfg.ledger_roles
+        if in_holdout(pid, "H6"):  # 留出的火（h6.activity）在这道题上顶替入账的那团：照它的清单
+            roles = tuple(r for r in roles if r in params("H6", "h6.activity-ledger", pid).get("ledger_roles", []))
+        return role in roles
 
     def _segments_in(self, pid: str) -> int:
         arts = self.reader.state["artifacts"].values()

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import json
+from pathlib import Path
 
 from trials import ROOT, TRIALS, targets
 
@@ -33,3 +35,25 @@ def test_targets_dedupes_and_rejects_unknown():
         assert "T9" in str(e)
     else:
         raise AssertionError("未知的体质项应当报错")
+
+
+def test_trials_take_a_gongfa_as_a_parameter(tmp_path, monkeypatch):
+    """F5：--gongfa 换一套功法，--holdout 把留出比例拉满；功法组件经环境变量读到它，摘要随之变。"""
+    from trials import GONGFA_ENV, with_gongfa
+
+    from paoding_fenjue import shapes
+
+    names, path = with_gongfa(["T4", "--holdout"])
+    assert names == ["T4"] and path is not None
+    assert json.loads(Path(path).read_text(encoding="utf-8"))["holdout_permille"] == 1000
+    base = shapes.gongfa()["digest"]
+    monkeypatch.setenv(GONGFA_ENV, path)
+    shapes.gongfa.cache_clear()
+    try:
+        assert shapes.gongfa()["holdout_permille"] == 1000 and shapes.gongfa()["digest"] != base
+        assert all(shapes.in_holdout(f"kt-{i}", "H6") for i in range(50))
+    finally:
+        monkeypatch.delenv(GONGFA_ENV)
+        shapes.gongfa.cache_clear()
+    assert shapes.gongfa()["digest"] == base
+    assert with_gongfa(["T1"]) == (["T1"], None)

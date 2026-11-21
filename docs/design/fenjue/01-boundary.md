@@ -143,7 +143,8 @@ type Fire = {
 type Gongfa = {                // 功法：此刻生效的整套火
   jie: number,                 // 品阶
   fires: Record<Slot, string[]>, // 火位 → ["id@ver", …]：同一火位可并存几团火（07 §3），H1 按席位分
-  holdout?: Record<Slot, string>,  // 常设留出：同一火位上保留的上一团火（见 04 §5）
+  holdout?: Record<Slot, string[]>,  // 常设留出：同一火位上保留的上一团火，顶替出身里提到它的那团（见 04 §5；F5 修订为列表）
+  holdout_permille?: number,         // 留出比例 ε，千分比（F5）
   digest: string,              // sha256(JCS(本对象除 digest 外的部分 + 各火清单摘要))
 }
 ```
