@@ -13,6 +13,7 @@
 | `blobs/` | Blob 仓库，按 sha256 寻址，只增不改 | 要 |
 | `vault/` | 保密库：含密级判官资产 | 自行决定，见下 |
 | `sessions/` | 会话的工作目录；留档已登记进 Blob | 不用 |
+| `analyses/` | 方案分析实例（配置 `analysis.enabled`）每道题的分析工作区导出，界面读它；产物已登记进 Blob（[焚决 13 §7](./design/fenjue/13-kernel.md#7-分析实例)） | 不用 |
 | `logs/stack.log` | 结构化日志（轮转，10 MB × 5） | 不用 |
 | `human.token` | 人的令牌（权限 600）；删掉后下次启动重新生成 | 不用 |
 | `config.yaml` 或 `config.json` | 配置，可省 | 随你的配置管理 |

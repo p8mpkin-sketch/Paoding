@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from paoding_fenjue import lianhua as lh
+from paoding_fenjue import shapes
 from paoding_fenjue.contract import check, digest, fire_digest
 from paoding_fenjue.engine import handoff as ho
 from paoding_fenjue.shapes import gongfa_digest
@@ -153,6 +154,19 @@ def archive(g: dict[str, Any]) -> str:
     p = root / "gongfa" / f"{dg}.json"
     if not p.exists():
         _write_json(p, body)
+    return dg
+
+
+def sync_engine(g: dict[str, Any]) -> str:
+    """分析实例的功法（gongfa.engine.json）跟着主功法走：由主功法推出、存档、写回。主功法每变一次都要跟一次，
+    否则分析实例开的题会锁在旧的一套上（docs/design/fenjue/13-kernel.md §2）。返回它的摘要。"""
+    refs = []
+    for fid in (shapes.ENGINE_FORM, shapes.ENGINE_TOOLS):
+        f = json.loads((PKG / "fires" / f"{fid}.json").read_text(encoding="utf-8"))
+        refs.append(f"{fid}@{f['ver']}")
+    e = shapes.engine_variant(g, _fire_file, (refs[0], refs[1]))
+    dg = archive(e)
+    _write_json(PKG / shapes.ENGINE_GONGFA, e)
     return dg
 
 
@@ -289,6 +303,7 @@ def cmd_jue(a: argparse.Namespace) -> None:
     if g != gongfa_raw():
         dg = archive(g)  # 先存档再生效：新开的题记下的摘要，存档里一定有
         _write_json(GONGFA, g)
+        sync_engine(g)
         print(f"功法 → 第 {g['jie']} 阶；{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；存档 {dg[:12]}")
     print(f"裁决：{lh.OUTCOMES[a.outcome]} → {path_of(d['dossier']).relative_to(ROOT)}")
     _writeback(d, "jue", a.by, a.date or _today())
@@ -299,6 +314,7 @@ def cmd_sanhuo(a: argparse.Namespace) -> None:
     save(d)
     dg = archive(g)
     _write_json(GONGFA, g)
+    sync_engine(g)
     print(f"散火：{d['fire']['slot']} = {g['fires'][d['fire']['slot']]}；功法 → 第 {g['jie']} 阶；存档 {dg[:12]}")
     print("在跑的题照开题时的那一版跑完（FJ6）；之后新开的题用散火后的功法")
     _writeback(d, "sanhuo", a.by, a.date or _today(), a.why)
@@ -316,6 +332,7 @@ def _writeback(d: dict[str, Any], event: str, by: str, date: str, why: str = "")
 def cmd_archive(a: argparse.Namespace) -> None:
     """手改了功法或修订了一团火（本火修订，不走炼档）之后补存档；已经存过的不动。"""
     print(f"存档 {archive(gongfa_raw())}")
+    print(f"分析实例的功法 → 存档 {sync_engine(gongfa_raw())}")
 
 
 def cmd_status(a: argparse.Namespace) -> None:

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
 import sys
@@ -60,6 +61,7 @@ class LaunchPlan:
     max_turns: int = 0
     resume: bool = False
     model: str = ""  # 按任务解析出的模型 id（宪章 03 §3.2）；空即用 CliBinding.model
+    program: list[str] | None = None  # 驱动程序的会话：代替 CliBinding.program，其余参数与环境照旧（焚决 13 §3）
 
 
 @dataclass
@@ -73,7 +75,7 @@ class CliBinding:
         allowed = list(FILE_TOOLS) + [f"mcp__{MCP_NAME}__{t}" for t in plan.proxy_tools]
         sid = session_uuid(plan.lease_id)
         argv = [
-            *self.program,
+            *(plan.program or self.program),
             "-p",
             plan.user_prompt,  # 1 无交互运行与事件流
             "--output-format",
@@ -186,6 +188,32 @@ def fake_program(in_container: bool = False) -> list[str]:
     if in_container:
         return ["python", "-I", FAKE_CLI_IN_CONTAINER]
     return [sys.executable, "-I", str(FAKE_CLI)]
+
+
+DRIVERS = {"tunshi": Path(__file__).with_name("tunshi_cli.py")}
+DRIVER_DIR_IN_CONTAINER = "/opt/paoding"
+DRIVER_LIB_IN_CONTAINER = "/opt/paoding/lib"  # 驱动程序要的两个纯标准库的包（paoding_fenjue、paoding_graph）挂在这里
+
+
+def driver_program(name: str, in_container: bool = False) -> list[str]:
+    """固定流程的驱动程序：接受与真 CLI 同一组参数（`-p`、`--mcp-config`、`--resume`…），输出同形的事件流。
+    in_container：在模型容器（通用 Python 镜像）里跑，程序与它要的包由启动器只读挂到固定路径（driver_mounts）。"""
+    src = DRIVERS[name]
+    if in_container:
+        return ["python3", "-I", f"{DRIVER_DIR_IN_CONTAINER}/{src.name}"]
+    return [sys.executable, "-I", str(src)]
+
+
+def driver_mounts(name: str) -> tuple[tuple[str, str], ...]:
+    """模型容器里跑驱动程序要只读挂进去的东西：程序本身，与两个包的源码目录（都只用标准库）。"""
+    src = DRIVERS[name]
+    out = [(str(src), f"{DRIVER_DIR_IN_CONTAINER}/{src.name}")]
+    for pkg in ("paoding_fenjue", "paoding_graph"):  # 只取包的目录，不 import 它（跨组件只经契约）
+        spec = importlib.util.find_spec(pkg)
+        if spec is None or not spec.submodule_search_locations:
+            raise RuntimeError(f"找不到包 {pkg}")
+        out.append((str(Path(next(iter(spec.submodule_search_locations)))), f"{DRIVER_LIB_IN_CONTAINER}/{pkg}"))
+    return tuple(out)
 
 
 def describe(argv: list[str]) -> str:

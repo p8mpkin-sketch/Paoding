@@ -420,7 +420,7 @@ def needs(doc: Mapping[str, Any], inp: Inputs, proposal: Mapping[str, Any]) -> l
     if any(sv.injection for sv in inp.surveys):
         out.append("来源里有疑似写给智能体的指令，已忽略并在报告里单列")
     if doc.get("candidates"):
-        out.append("请在下列候选中挑选（闸点 1）")
+        out.append("请在下列候选中挑选（第 1 次确认）")
     else:
         out.append("没有找到值得集成的做法；可以补材料或换一个来源")
     return out

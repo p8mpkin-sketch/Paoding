@@ -3,7 +3,14 @@
 from typing import Any, Protocol
 
 from .activity import SEGMENT_MEDIA, ChainBroken, replay_segments  # noqa: F401
-from .backend import FAKE_CLI, CliBinding, fake_program  # noqa: F401
+from .backend import (  # noqa: F401
+    DRIVER_LIB_IN_CONTAINER,
+    FAKE_CLI,
+    CliBinding,
+    driver_mounts,
+    driver_program,
+    fake_program,
+)
 from .container import (  # noqa: F401
     PROXY_PORT,
     RELAY_ALIAS,

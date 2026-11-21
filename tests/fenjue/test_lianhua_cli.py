@@ -81,16 +81,22 @@ def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path
     assert "h7.result-first@1" in g["fires"]["H7"] and g["holdout"]["H7"] == ["h7.result@1"] and g["jie"] == 3
     # 定阶先存档（FJ6）：新功法与新火进了存档，旧的一份不少
     assert (pkg / "archive/fires/h7.result-first@1.json").exists()
-    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 1
+    # 每定一阶存两份：主功法，与由它推出的分析实例功法（13 §2；分析实例开的题锁在后者上）
+    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 2
+    e = json.loads((pkg / "gongfa.engine.json").read_text(encoding="utf-8"))
+    assert e["variant"] == "engine" and e["jie"] == 3 and e["fires"]["H7"] == g["fires"]["H7"]
+    assert "h1.tunshi@1" in e["fires"]["H1"] and "h3.tunshi-tools@1" in e["fires"]["H3"]
     md = (dossiers / f"{no}-result-first.md").read_text(encoding="utf-8")
     d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
     assert md == lh.render(d) and "| 结局 | 火莲 |" in md
     run(mod, "sanhuo", no, "--by", "cz", "--why", "演示散火", "--date", "2026-11-21")
     g = json.loads((pkg / "gongfa.json").read_text(encoding="utf-8"))
     assert "h7.result@1" in g["fires"]["H7"] and g["jie"] == 2 and g["history"][-1]["reverts"] == no
-    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 2  # 散火后的功法也存档；在跑的题仍取得到定阶那一版
+    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 4  # 散火后的两份也存档；在跑的题仍取得到定阶那一版
+    e = json.loads((pkg / "gongfa.engine.json").read_text(encoding="utf-8"))
+    assert e["jie"] == 2 and e["fires"]["H7"] == g["fires"]["H7"]
     run(mod, "archive")  # 已经存过：不动
-    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 2
+    assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 4
     # 手写的首炼档，命令不碰
     with pytest.raises(SystemExit, match="手写"):
         mod.load("001")
