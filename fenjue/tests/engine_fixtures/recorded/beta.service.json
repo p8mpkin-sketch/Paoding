@@ -1,0 +1,97 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "read:s1:probe1:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "52c02d7c3c94c69d6e1a2df1dcdcff7d30133fe5b0f2de8c76284cb5384f821c",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1653,
+   "tokens_out": 20
+  },
+  {
+   "key": "read:s1:probe1:H4:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "a4b5148cf628c45b9e3120cf03e6f3f3a6a450b496149e83649ee0c840658146",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h4.compress"
+      ],
+      "kind": "behavior",
+      "statement": "响应显示上下文接近窗口时较早的轮次已被折叠成摘要",
+      "primitives": [
+       "折叠",
+       "摘要"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1653,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:probe2:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "2b261134fa93b4122355c1b125b35fc53ff8de5d7b4e143416453453d7f088e0",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1585,
+   "tokens_out": 20
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "744afa4a9c5332650ef2ca0d1c89dd9c9eda02791caef1c2cfa2b43e0141b89a",
+   "output": {
+    "patterns": [
+     {
+      "name": "anchored-fold",
+      "title": "带锚压缩",
+      "slot": "H4",
+      "also_slots": [
+       "H1",
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h4.compress",
+        "theirs": 2,
+        "observations": [
+         "o9477e18bead9"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H4"
+      ],
+      "difficulty_parts": {
+       "extra_ports": 1,
+       "run_only_emergent": 1
+      },
+      "phenomenon": "会话的上下文快满时自动把较早的过程折叠成摘要继续干，换会话时只交摘要",
+      "gap_text": "我们没有会话内压缩，上下文用完只能接力；接力笔记由模型自由书写，事实追不回原文",
+      "is_fire": "是：按上下文用量折叠历史并以摘要接力是一类做法",
+      "recommend": {
+       "level": "recommend",
+       "why": "长任务里接力次数与重复执行是明确的成本；体质改动预计为 0"
+      }
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：上下文快满时把早先的过程压成摘要，换会话时只交摘要；我们可以让摘要带上原始记录的链接。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

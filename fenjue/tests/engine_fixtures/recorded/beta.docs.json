@@ -1,0 +1,117 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "read:s1:folding.md:1-4:H4:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "f49a3193c35fc5eb22b51adc476c498a7ea0451893541e11c8be3977644d085a",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h4.compress"
+      ],
+      "kind": "doc_claim",
+      "statement": "文档称上下文到阈值就把前面的轮次压成摘要继续",
+      "primitives": [
+       "折叠",
+       "摘要"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1528,
+   "tokens_out": 140
+  },
+  {
+   "key": "read:s1:handoff.md:1-4:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "ab0a4d91500f4417c6e5d742fe1ee1be754c8d3b439356875dc88541db6e334b",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1517,
+   "tokens_out": 20
+  },
+  {
+   "key": "read:s1:handoff.md:1-4:H4:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "7068308a3a5f180b3f7bad30089916117637bc8afe4a1f273e7c94ea7a07119c",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h4.relay-notes"
+      ],
+      "kind": "doc_claim",
+      "statement": "文档称换会话时只带摘要，原始轮次丢掉",
+      "primitives": [
+       "交接",
+       "摘要"
+      ],
+      "level_hint": 2
+     }
+    ]
+   },
+   "tokens_in": 1517,
+   "tokens_out": 140
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "8144b72c4b032c990358ebf41a0d3b20770cfcb9310e345e7b955cf52029aa21",
+   "output": {
+    "patterns": [
+     {
+      "name": "anchored-fold",
+      "title": "带锚压缩",
+      "slot": "H4",
+      "also_slots": [
+       "H1",
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h4.compress",
+        "theirs": 2,
+        "observations": [
+         "o1b03d17c76b9"
+        ]
+       },
+       {
+        "dim": "h4.relay-notes",
+        "theirs": 2,
+        "observations": [
+         "o0b13f4856228"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H4"
+      ],
+      "difficulty_parts": {
+       "extra_ports": 1,
+       "run_only_emergent": 1
+      },
+      "phenomenon": "会话的上下文快满时自动把较早的过程折叠成摘要继续干，换会话时只交摘要",
+      "gap_text": "我们没有会话内压缩，上下文用完只能接力；接力笔记由模型自由书写，事实追不回原文",
+      "is_fire": "是：按上下文用量折叠历史并以摘要接力是一类做法",
+      "recommend": {
+       "level": "recommend",
+       "why": "长任务里接力次数与重复执行是明确的成本；体质改动预计为 0"
+      }
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：上下文快满时把早先的过程压成摘要，换会话时只交摘要；我们可以让摘要带上原始记录的链接。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

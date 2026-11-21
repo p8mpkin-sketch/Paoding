@@ -1,0 +1,15 @@
+{
+ "v": 1,
+ "note": "拒收表（08 §3.1 规则 1）：命中即拒收，不发任何请求。〔占位〕由 cz 增补",
+ "path_prefixes": [
+  "~/paoding-bank"
+ ],
+ "name_parts": [
+  "paoding-bank",
+  "bank",
+  "calib",
+  "calibration",
+  "golden-answers"
+ ],
+ "why": "拒收：本机题库或校准目录"
+}

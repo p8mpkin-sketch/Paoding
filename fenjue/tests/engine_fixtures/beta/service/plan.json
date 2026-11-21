@@ -1,0 +1,4 @@
+{"items": [
+ {"no": 1, "method": "GET", "path": "/session/7/context"},
+ {"no": 2, "method": "GET", "path": "/session/7/handoff"}
+]}

@@ -1,0 +1,255 @@
+{
+ "v": 1,
+ "note": "能力剖面初值（08 附表 A，待 cz 校）。量具对生效火的读数，不是火位注册表的副本；引擎只能提议修订。",
+ "weights_default": 1,
+ "dims": [
+  {
+   "dim": "h1.single-context",
+   "slot": "H1",
+   "meaning": "同一段上下文从规划走到交付",
+   "level": 2,
+   "by": "h1.solo@2",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h1.role-split",
+   "slot": "H1",
+   "meaning": "多席位分工",
+   "level": 2,
+   "by": "h1.triad@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h1.relay",
+   "slot": "H1",
+   "meaning": "跨会话接力",
+   "level": 2,
+   "by": "h1.solo@2",
+   "basis": "08 附表 A：接力至多 5、拷工作区"
+  },
+  {
+   "dim": "h1.staged",
+   "slot": "H1",
+   "meaning": "目标分阶段推进，阶段完成有确认",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h1.subagent",
+   "slot": "H1",
+   "meaning": "子代理派生与回收",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h2.fixed-order",
+   "slot": "H2",
+   "meaning": "固定次序与预留",
+   "level": 2,
+   "by": "h2.sinan@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h2.gain-rank",
+   "slot": "H2",
+   "meaning": "按预期收益排序",
+   "level": 2,
+   "by": "h2.sinan@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h2.human-wait",
+   "slot": "H2",
+   "meaning": "等人的点位",
+   "level": 2,
+   "by": "h2.sinan@1",
+   "basis": "08 附表 A：work 的 human 项"
+  },
+  {
+   "dim": "h2.parallel",
+   "slot": "H2",
+   "meaning": "并行子任务调度",
+   "level": 1,
+   "by": "h2.sinan@1",
+   "basis": "08 附表 A：explore 并行"
+  },
+  {
+   "dim": "h3.proxy-tools",
+   "slot": "H3",
+   "meaning": "代理工具集（执行、提交、读、扩权、交付）",
+   "level": 2,
+   "by": "h3.base@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h3.kb-tools",
+   "slot": "H3",
+   "meaning": "资料检索工具",
+   "level": 2,
+   "by": "h3.kb@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h3.discovery",
+   "slot": "H3",
+   "meaning": "工具动态发现与接入",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h3.exec-trace",
+   "slot": "H3",
+   "meaning": "工具调用自动留档",
+   "level": 3,
+   "by": "h3.base@1",
+   "basis": "08 附表 A：exec 自动登记 exec 类，哈希成链"
+  },
+  {
+   "dim": "h4.package",
+   "slot": "H4",
+   "meaning": "结构化会话包",
+   "level": 2,
+   "by": "h4.views-notes@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h4.relay-notes",
+   "slot": "H4",
+   "meaning": "跨会话笔记交接",
+   "level": 1,
+   "by": "h4.views-notes@1",
+   "basis": "08 附表 A：NOTES.md，模型自由书写"
+  },
+  {
+   "dim": "h4.compress",
+   "slot": "H4",
+   "meaning": "会话内上下文压缩",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h4.anchored",
+   "slot": "H4",
+   "meaning": "压缩或笔记里的事实可追回原文",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h5.hybrid",
+   "slot": "H5",
+   "meaning": "混合检索",
+   "level": 2,
+   "by": "h5.shuku@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h5.recall",
+   "slot": "H5",
+   "meaning": "历史经验召回",
+   "level": 2,
+   "by": "h5.tongjian-recall@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h5.cite-chunk",
+   "slot": "H5",
+   "meaning": "引用到段",
+   "level": 2,
+   "by": "h5.shuku@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h6.live",
+   "slot": "H6",
+   "meaning": "执行中实时可见",
+   "level": 2,
+   "by": "h6.activity-ledger@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h6.replay",
+   "slot": "H6",
+   "meaning": "任意时刻回放",
+   "level": 3,
+   "by": "h6.workbench@1",
+   "basis": "08 附表 A：as_of"
+  },
+  {
+   "dim": "h6.live-replay",
+   "slot": "H6",
+   "meaning": "实时所见可逐字节回放",
+   "level": 3,
+   "by": "h6.activity-ledger@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h6.exec-drill",
+   "slot": "H6",
+   "meaning": "执行行可点到留档",
+   "level": 2,
+   "by": "h6.activity-ledger@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h6.plan-visible",
+   "slot": "H6",
+   "meaning": "计划与待办实时可见",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h7.structured",
+   "slot": "H7",
+   "meaning": "结构化交付（答案、主张、自检、未验证、需要）",
+   "level": 2,
+   "by": "h7.result@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h7.claim-refs",
+   "slot": "H7",
+   "meaning": "主张带作者引用",
+   "level": 2,
+   "by": "h7.result@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h7.auto-link",
+   "slot": "H7",
+   "meaning": "系统自动把执行留档关联到主张",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h7.stage-report",
+   "slot": "H7",
+   "meaning": "按阶段组织的进度与证据",
+   "level": 0,
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h8.span-draft",
+   "slot": "H8",
+   "meaning": "一句话起草（只指认原文区间）",
+   "level": 2,
+   "by": "h8.kaiti@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h8.route",
+   "slot": "H8",
+   "meaning": "拒题与分道",
+   "level": 2,
+   "by": "h8.kaiti@1",
+   "basis": "08 附表 A"
+  },
+  {
+   "dim": "h8.clarify",
+   "slot": "H8",
+   "meaning": "起草时的澄清追问",
+   "level": 1,
+   "by": "h8.kaiti@1",
+   "basis": "08 附表 A"
+  }
+ ]
+}

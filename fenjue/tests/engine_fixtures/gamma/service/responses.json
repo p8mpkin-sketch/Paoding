@@ -1,0 +1,6 @@
+{"responses": [
+ {"item": 1, "status": 200, "body": {"conclusions": [
+   {"text": "tests pass", "supported": true, "evidence": [{"command": "pytest", "output": "3 passed", "ts": 100}]},
+   {"text": "bug fixed", "supported": true, "evidence": [{"command": "cat notes.txt", "output": "fixed?", "ts": 205}]}]}},
+ {"item": 2, "status": 200, "body": {"records": [{"command": "pytest", "ts": 100}, {"command": "cat notes.txt", "ts": 205}]}}
+]}

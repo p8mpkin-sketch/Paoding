@@ -1,0 +1,111 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "candidates.schema.json",
+ "title": "候选火清单：识火的产出（08 §3.8）",
+ "type": "object",
+ "required": ["v", "mode", "run", "basis", "candidates", "already_have", "not_fire", "unseen_slots", "coverage", "checks", "plain_summary"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "mode": { "$ref": "common.schema.json#/$defs/mode" },
+  "run": { "type": "string", "description": "分析实例里的题号" },
+  "basis": {
+   "type": "object",
+   "description": "这份清单是对着哪套功法与剖面算的",
+   "required": ["gongfa_jie", "gongfa_digest", "profile_sha256", "snapshots"],
+   "additionalProperties": false,
+   "properties": {
+    "gongfa_jie": { "type": "integer", "minimum": 0 },
+    "gongfa_digest": { "$ref": "common.schema.json#/$defs/sha256" },
+    "profile_sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+    "snapshots": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/snapshot" }, "minItems": 1 }
+   }
+  },
+  "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+  "already_have": {
+   "type": "array",
+   "description": "已有不差：外部有、我们持平或更强的机制，证明扫过",
+   "items": { "type": "object", "required": ["dim", "ours", "theirs", "observations"], "additionalProperties": false,
+    "properties": { "dim": { "$ref": "common.schema.json#/$defs/dimId" }, "ours": { "$ref": "common.schema.json#/$defs/level" }, "theirs": { "$ref": "common.schema.json#/$defs/level" }, "by": { "$ref": "common.schema.json#/$defs/fireRef" }, "observations": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/obsId" }, "minItems": 1 } } }
+  },
+  "not_fire": {
+   "type": "array", "description": "普通需求：不是一种可复用的做法",
+   "items": { "type": "object", "required": ["what", "why"], "additionalProperties": false, "properties": { "what": { "$ref": "common.schema.json#/$defs/shortText" }, "why": { "$ref": "common.schema.json#/$defs/shortText" } } }
+  },
+  "unseen_slots": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/slot" } },
+  "coverage": {
+   "type": "array", "description": "逐火位的覆盖报告（08 §3.4）",
+   "items": { "type": "object", "required": ["slot", "excerpts", "tokens_in", "stop"], "additionalProperties": false,
+    "properties": { "slot": { "$ref": "common.schema.json#/$defs/slot" }, "modules": { "type": "array", "items": { "type": "string" } }, "excerpts": { "type": "integer", "minimum": 0 }, "tokens_in": { "type": "integer", "minimum": 0 },
+     "stop": { "enum": ["budget", "saturated", "weak_signal", "focus_excluded", "budget_cut"] }, "max_score": { "type": "number" } } }
+  },
+  "checks": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/checkResult" } },
+  "plain_summary": { "$ref": "common.schema.json#/$defs/plainSummary" }
+ },
+ "$defs": {
+  "gapDim": {
+   "type": "object",
+   "required": ["dim", "ours", "theirs", "gap", "type", "observations"],
+   "additionalProperties": false,
+   "properties": {
+    "dim": { "type": "string", "description": "剖面维 id；新维写 new:<短名>" },
+    "ours": { "$ref": "common.schema.json#/$defs/level" },
+    "ours_by": { "$ref": "common.schema.json#/$defs/fireRef" },
+    "theirs": { "$ref": "common.schema.json#/$defs/level" },
+    "gap": { "type": "integer", "minimum": 0, "maximum": 3 },
+    "type": { "enum": ["missing", "weaker", "new_dim"], "description": "缺维 / 更弱 / 新维（只作旗帜，待剖面增维）" },
+    "weight": { "type": "number", "minimum": 0 },
+    "pain": { "enum": [1, 2, 3] },
+    "pain_basis": { "type": "string", "description": "痛点乘数的依据：仓库文档锚点（不来自本机题库或校准目录）" },
+    "observations": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/obsId" }, "minItems": 1 }
+   }
+  },
+  "candidate": {
+   "type": "object",
+   "required": ["id", "name", "title", "slot", "gaps", "value", "confidence", "difficulty", "risk", "priority", "seed", "provenance", "recommend"],
+   "additionalProperties": false,
+   "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/candId" },
+    "name": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "title": { "type": "string", "maxLength": 40 },
+    "slot": { "$ref": "common.schema.json#/$defs/slot" },
+    "also_slots": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/slot" } },
+    "gaps": { "type": "array", "items": { "$ref": "#/$defs/gapDim" }, "minItems": 1 },
+    "value": { "type": "number", "minimum": 0, "description": "V = Σ w·gap·π（08 §3.7）" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "C = c₀ × cover × corro，按形态截断" },
+    "confidence_parts": { "type": "object", "additionalProperties": false, "properties": { "c0": { "type": "number" }, "cover": { "type": "number" }, "corro": { "type": "number" }, "cap": { "type": "number" } } },
+    "difficulty": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "difficulty_basis": { "enum": ["estimated", "after_placement"] },
+    "difficulty_parts": { "type": "object", "additionalProperties": { "type": "integer" } },
+    "risk": { "enum": ["R0", "R1", "R2", "R3"] },
+    "priority": { "type": "number", "minimum": 0, "description": "P = V·C ÷ (D·(1+R))" },
+    "dedupe": { "type": "object", "additionalProperties": false, "properties": { "bang": { "$ref": "common.schema.json#/$defs/bangId" }, "dossier": { "$ref": "common.schema.json#/$defs/dossierNo" }, "note": { "type": "string" } } },
+    "seed": {
+     "type": "object",
+     "description": "炼档种子：与 dossiers/TEMPLATE.json、paoding_fenjue.lianhua.new() 同形",
+     "required": ["name", "title", "identified", "shihuo"],
+     "additionalProperties": false,
+     "properties": {
+      "name": { "type": "string" },
+      "title": { "type": "string" },
+      "identified": { "$ref": "common.schema.json#/$defs/date" },
+      "shihuo": {
+       "type": "object",
+       "required": ["source", "phenomenon", "gap", "is_fire"],
+       "additionalProperties": false,
+       "properties": {
+        "source": { "$ref": "common.schema.json#/$defs/text" },
+        "phenomenon": { "$ref": "common.schema.json#/$defs/text" },
+        "gap": { "$ref": "common.schema.json#/$defs/text" },
+        "is_fire": { "type": "string", "pattern": "^是", "description": "lianhua.new 要求以“是”开头" }
+       }
+      }
+     }
+    },
+    "provenance": { "$ref": "common.schema.json#/$defs/provenance" },
+    "recommend": { "type": "object", "required": ["level", "why"], "additionalProperties": false, "properties": { "level": { "enum": ["recommend", "optional", "not_recommended"] }, "why": { "$ref": "common.schema.json#/$defs/shortText" } } },
+    "flags": { "type": "array", "items": { "enum": ["self_referential", "injection_flagged_sources", "license_restricted", "profile_stale", "needs_new_slot", "needs_kernel_split"] } }
+   }
+  }
+ }
+}

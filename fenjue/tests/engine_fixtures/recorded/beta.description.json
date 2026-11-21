@@ -1,0 +1,86 @@
+{
+ "v": 1,
+ "entries": [
+  {
+   "key": "read:s1:statement.txt:1-1:H1:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "70478c4a1464fcef5d79e393191d938fc7f369207da75bf5206da8bc1a963d0c",
+   "output": {
+    "observations": []
+   },
+   "tokens_in": 1536,
+   "tokens_out": 20
+  },
+  {
+   "key": "read:s1:statement.txt:1-1:H4:1",
+   "role": "reader",
+   "tier": "light",
+   "input_sha256": "cbcda60e14abc0322aef2dae0aa58d7f604a47ca84a1efb0f4b2102ef8ddbe4c",
+   "output": {
+    "observations": [
+     {
+      "dims": [
+       "h4.compress"
+      ],
+      "kind": "doc_claim",
+      "statement": "描述称上下文快满时会把前面的过程压成摘要代替原文",
+      "primitives": [
+       "折叠",
+       "摘要"
+      ],
+      "level_hint": 1
+     }
+    ]
+   },
+   "tokens_in": 1536,
+   "tokens_out": 140
+  },
+  {
+   "key": "shihuo:patterns:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "a39f375521e0a745437c86c139dcd355e954b92aaa869d78295f093a0f1ac569",
+   "output": {
+    "patterns": [
+     {
+      "name": "anchored-fold",
+      "title": "带锚压缩",
+      "slot": "H4",
+      "also_slots": [
+       "H1",
+       "H6"
+      ],
+      "dims": [
+       {
+        "dim": "h4.compress",
+        "theirs": 2,
+        "observations": [
+         "o438119fe2e6e"
+        ]
+       }
+      ],
+      "behavior_slots": [
+       "H4"
+      ],
+      "difficulty_parts": {
+       "extra_ports": 1,
+       "run_only_emergent": 1
+      },
+      "phenomenon": "会话的上下文快满时自动把较早的过程折叠成摘要继续干，换会话时只交摘要",
+      "gap_text": "我们没有会话内压缩，上下文用完只能接力；接力笔记由模型自由书写，事实追不回原文",
+      "is_fire": "是：按上下文用量折叠历史并以摘要接力是一类做法",
+      "recommend": {
+       "level": "recommend",
+       "why": "长任务里接力次数与重复执行是明确的成本；体质改动预计为 0"
+      }
+     }
+    ],
+    "not_fire": [],
+    "plain_summary": "在这个系统里找到一个值得集成的做法：上下文快满时把早先的过程压成摘要，换会话时只交摘要；我们可以让摘要带上原始记录的链接。"
+   },
+   "tokens_in": 35000,
+   "tokens_out": 2000
+  }
+ ]
+}

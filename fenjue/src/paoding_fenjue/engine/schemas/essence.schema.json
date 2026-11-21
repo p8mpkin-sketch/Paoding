@@ -1,0 +1,133 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "essence.schema.json",
+ "title": "火意：萃意的产出（08 §4）。masked 是遮蔽视图，检验只对它做；provenance 是出处，分开存",
+ "type": "object",
+ "required": ["v", "candidate", "masked", "provenance", "drafts", "checks", "plain_summary"],
+ "additionalProperties": false,
+ "properties": {
+  "v": { "const": 1 },
+  "candidate": { "$ref": "common.schema.json#/$defs/candId" },
+  "masked": { "$ref": "#/$defs/masked" },
+  "provenance": {
+   "allOf": [{ "$ref": "common.schema.json#/$defs/provenance" }],
+   "description": "另带逐栏依据：field_refs 把遮蔽视图的每一条（按 JSON 指针）挂到观察 id"
+  },
+  "field_refs": {
+   "type": "object",
+   "description": "遮蔽视图的 JSON 指针 → 观察 id 列表（K5：前提、代价、冲突每条至少一条）",
+   "additionalProperties": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/obsId" }, "minItems": 1 }
+  },
+  "drafts": {
+   "type": "object",
+   "description": "三稿互证（08 §4.2 第 9 步）",
+   "required": ["n", "chosen", "agreement"],
+   "additionalProperties": false,
+   "properties": {
+    "n": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "chosen": { "enum": ["main", "extra1", "extra2"] },
+    "agreement": { "type": "number", "minimum": 0, "maximum": 2, "description": "所选稿与另两稿的 Jaccard 之和" },
+    "disagreements": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/shortText" } }
+   }
+  },
+  "checks": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/checkResult" }, "minItems": 8 },
+  "human_edits": {
+   "type": "array",
+   "description": "cz 在闸点 2 的逐栏修改（从决定块解析）",
+   "items": { "type": "object", "required": ["pointer", "by", "date"], "additionalProperties": false,
+    "properties": { "pointer": { "type": "string" }, "by": { "type": "string" }, "date": { "$ref": "common.schema.json#/$defs/date" }, "follow_up_seq": { "type": "integer" } } }
+  },
+  "plain_summary": { "$ref": "common.schema.json#/$defs/plainSummary" }
+ },
+ "$defs": {
+  "masked": {
+   "type": "object",
+   "required": ["statement", "mechanism", "premises", "costs", "overlaps", "conflicts", "fusion", "split", "implementations"],
+   "additionalProperties": false,
+   "properties": {
+    "statement": { "type": "string", "minLength": 4, "maxLength": 80, "description": "火意：一句话本质，不提实现；渲染为 lianhua 的 yi 栏" },
+    "mechanism": {
+     "type": "array", "minItems": 1, "maxItems": 12,
+     "description": "机制骨架：每步一行，名词只用机制原语（08 附表 B）、我们的词表与通用词",
+     "items": { "type": "object", "required": ["step", "trigger", "input", "transform", "output"], "additionalProperties": false,
+      "properties": {
+       "step": { "type": "integer", "minimum": 1 },
+       "trigger": { "type": "string", "maxLength": 120 },
+       "input": { "type": "string", "maxLength": 120 },
+       "transform": { "type": "string", "maxLength": 200 },
+       "output": { "type": "string", "maxLength": 120 },
+       "invariant": { "type": "string", "maxLength": 160 },
+       "primitives": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+       "features": { "type": "array", "items": { "enum": ["self_success", "new_egress", "secret_in_content", "spend_outside_proxy", "unbounded_loop", "budget_number_in_manifest", "write_outside_reducer", "mutable_history", "narrative_as_evidence", "new_evidence_class", "merge_readings"] }, "description": "冲突探针特征（08 附表 C）" }
+      } }
+    },
+    "premises": {
+     "type": "array", "minItems": 1,
+     "items": { "type": "object", "required": ["id", "statement", "holds_here", "why"], "additionalProperties": false,
+      "properties": { "id": { "type": "string", "pattern": "^p[0-9]+$" }, "statement": { "$ref": "common.schema.json#/$defs/shortText" },
+       "holds_here": { "enum": ["yes", "partial", "no"] }, "why": { "$ref": "common.schema.json#/$defs/shortText" },
+       "replaced_by": { "type": "string", "description": "不成立时：融合设计里用什么替代（必填，见 K5）" } } }
+    },
+    "costs": {
+     "type": "array", "minItems": 1,
+     "items": { "type": "object", "required": ["id", "cost", "kind", "here"], "additionalProperties": false,
+      "properties": { "id": { "type": "string", "pattern": "^c[0-9]+$" }, "cost": { "$ref": "common.schema.json#/$defs/shortText" },
+       "kind": { "enum": ["latency", "storage", "security", "complexity", "auditability", "spend", "human_attention"] },
+       "here": { "enum": ["already_paid_by_kernel", "would_pay", "avoided_by_fusion", "not_applicable"] },
+       "kernel": { "$ref": "common.schema.json#/$defs/kernelItem" } } }
+    },
+    "overlaps": {
+     "type": "array",
+     "description": "与本火的重叠：由能力维与剖面确定性算出（08 §4.2 第 5 步）",
+     "items": { "type": "object", "required": ["fire", "dims", "relation"], "additionalProperties": false,
+      "properties": { "fire": { "$ref": "common.schema.json#/$defs/fireRef" }, "dims": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/dimId" }, "minItems": 1 }, "relation": { "enum": ["duplicate", "partial", "complement"] }, "note": { "type": "string", "maxLength": 200 } } }
+    },
+    "conflicts": {
+     "type": "array",
+     "items": { "type": "object", "required": ["with", "kind", "statement", "resolution"], "additionalProperties": false,
+      "properties": {
+       "with": { "type": "string", "description": "T1–T5 或火的 id@ver", "pattern": "^(T[1-5]|h[1-8]\\.[a-z0-9-]+@[0-9]+)$" },
+       "kind": { "enum": ["kernel", "semantic", "parametric"] },
+       "features": { "type": "array", "items": { "type": "string" } },
+       "statement": { "$ref": "common.schema.json#/$defs/shortText" },
+       "resolution": { "enum": ["fused_away", "split_to_kernel", "replace", "partition", "param", "reject"] },
+       "how": { "type": "string", "maxLength": 300 } } }
+    },
+    "fusion": {
+     "type": "object",
+     "required": ["statement", "emergent"],
+     "additionalProperties": false,
+     "properties": {
+      "statement": { "type": "string", "minLength": 4, "maxLength": 300, "description": "融合假设：本火与异火合在一起才有的性质，可检验的一句话" },
+      "emergent": {
+       "type": "array",
+       "description": "新生维；为空时结局上限为合炼",
+       "items": { "type": "object", "required": ["dim", "why_zero_B", "why_zero_A1", "measure", "gate"], "additionalProperties": false,
+        "properties": {
+         "dim": { "type": "string", "maxLength": 40 },
+         "dir": { "enum": ["up", "down"] },
+         "why_zero_B": { "$ref": "common.schema.json#/$defs/shortText", "description": "为什么本火按构造为零" },
+         "why_zero_A1": { "$ref": "common.schema.json#/$defs/shortText", "description": "为什么照搬按构造为零" },
+         "measure": { "enum": ["structural", "run"] },
+         "how": { "type": "string", "maxLength": 300 },
+         "gate": { "type": ["number", "string"] } } }
+      },
+      "outcome_cap": { "enum": ["huolian", "helian"], "description": "按新生维与 A′ 可行性推出的结局上限" }
+     }
+    },
+    "split": {
+     "type": "array",
+     "description": "守门性质拆分：拆去体质修炼的部分；空数组表示无",
+     "items": { "type": "object", "required": ["part", "kernel", "to"], "additionalProperties": false,
+      "properties": { "part": { "$ref": "common.schema.json#/$defs/shortText" }, "kernel": { "$ref": "common.schema.json#/$defs/kernelItem" }, "to": { "type": "string", "description": "变更表草稿的去向，例 tizhi-00N" } } }
+    },
+    "implementations": {
+     "type": "array", "minItems": 2,
+     "description": "至少两种实现草图，两两的机制原语集合不全同（K7）",
+     "items": { "type": "object", "required": ["sketch", "primitives"], "additionalProperties": false,
+      "properties": { "sketch": { "$ref": "common.schema.json#/$defs/shortText" }, "primitives": { "type": "array", "items": { "type": "string" }, "minItems": 1 } } }
+    }
+   }
+  }
+ }
+}

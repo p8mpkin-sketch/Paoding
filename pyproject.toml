@@ -83,8 +83,8 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-# problems/ 是题目环境（数据），不是组件代码，不归这里管
-extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web", "problems"]
+# problems/ 是题目环境（数据），不是组件代码，不归这里管；引擎验收夹具（fenjue/tests/engine_fixtures/ 下的合成外部系统）同理
+extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web", "problems", "fenjue/tests/engine_fixtures/*/"]
 
 [tool.ruff.lint]
 # E/W/F：基本错误；I：导入顺序；B：常见缺陷；UP：过时写法；BLE：不许宽接 Exception（审计 P1-4）

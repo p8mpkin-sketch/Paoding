@@ -1,0 +1,4 @@
+# sample settings
+model = "small"
+api_key = "sk-canary-7f3e9a1c0d5b4e2f"
+fold_at = 0.8

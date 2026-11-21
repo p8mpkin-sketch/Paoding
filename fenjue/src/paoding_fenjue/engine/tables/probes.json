@@ -1,0 +1,61 @@
+{
+ "v": 1,
+ "note": "冲突探针（08 附表 C）：机制步骤的特征标签 → 体质项；gate 为真的是守门特征，必须拆去体质修炼（08 §4.2 第 8 步）",
+ "features": [
+  {
+   "feature": "self_success",
+   "kernel": "T1",
+   "gate": false
+  },
+  {
+   "feature": "new_egress",
+   "kernel": "T2",
+   "gate": true
+  },
+  {
+   "feature": "secret_in_content",
+   "kernel": "T2",
+   "gate": false
+  },
+  {
+   "feature": "spend_outside_proxy",
+   "kernel": "T3",
+   "gate": true
+  },
+  {
+   "feature": "unbounded_loop",
+   "kernel": "T3",
+   "gate": false
+  },
+  {
+   "feature": "budget_number_in_manifest",
+   "kernel": "T3",
+   "gate": false
+  },
+  {
+   "feature": "write_outside_reducer",
+   "kernel": "T4",
+   "gate": true
+  },
+  {
+   "feature": "mutable_history",
+   "kernel": "T4",
+   "gate": false
+  },
+  {
+   "feature": "narrative_as_evidence",
+   "kernel": "T5",
+   "gate": false
+  },
+  {
+   "feature": "new_evidence_class",
+   "kernel": "T5",
+   "gate": true
+  },
+  {
+   "feature": "merge_readings",
+   "kernel": "T5",
+   "gate": false
+  }
+ ]
+}
