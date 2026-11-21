@@ -1,0 +1,27 @@
+{
+ "id": "h6.workbench",
+ "ver": 1,
+ "slot": "H6",
+ "ports": [
+  "M4"
+ ],
+ "params": {
+  "surfaces": [
+   "frontier",
+   "timeline",
+   "cost",
+   "task-page"
+  ]
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "常开",
+  "control_arm": "只给结果页",
+  "retire_signal": "工作台各栏的打开率低于 5%（占位）"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H6"
+}

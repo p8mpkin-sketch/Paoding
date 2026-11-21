@@ -59,6 +59,10 @@ def open_problem(svc, pid="p1", usd_milli=5000):
 
 @pytest.fixture
 def graph(tmp_path):
+    return make_graph(tmp_path)
+
+
+def make_graph(tmp_path, cfg=None):
     reg = TokenRegistry()
     reg.issue({"kind": "human", "id": "cz"}, "tok-human")
     reg.issue({"kind": "sinan", "id": "sn1"}, "tok-sinan")
@@ -70,7 +74,7 @@ def graph(tmp_path):
         t[0] += 1
         return t[0]
 
-    svc = GraphService(tmp_path / "g.sqlite", CFG, reg, tick)
+    svc = GraphService(tmp_path / "g.sqlite", cfg or CFG, reg, tick)
     return svc
 
 

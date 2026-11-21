@@ -1,0 +1,36 @@
+{
+ "id": "h2.sinan",
+ "ver": 1,
+ "slot": "H2",
+ "ports": [
+  "M1:lease",
+  "M4"
+ ],
+ "params": {
+  "order": [
+   "bootstrap",
+   "reason",
+   "explore",
+   "solve"
+  ],
+  "reserve": {
+   "bootstrap": "fixed",
+   "reason": "fixed",
+   "explore": "intent_capped",
+   "solve": "remainder"
+  },
+  "explore_rank": "expected_gain",
+  "reason_before_explore": true
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "常开",
+  "control_arm": "按 /work 给出的顺序（order_by_gain、wait_for_judges、thin_bootstrap 全关）",
+  "retire_signal": "关掉排序开关后四臂读数落在噪声底内"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H2"
+}

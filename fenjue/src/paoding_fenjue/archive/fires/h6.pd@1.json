@@ -1,0 +1,27 @@
+{
+ "id": "h6.pd",
+ "ver": 1,
+ "slot": "H6",
+ "ports": [
+  "M4"
+ ],
+ "params": {
+  "registers": [
+   "evidence",
+   "narrative",
+   "judgement",
+   "estimate"
+  ]
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "常开",
+  "control_arm": "只给 JSON 输出",
+  "retire_signal": "命令行四语域的使用率低于 5%（占位）"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H6"
+}

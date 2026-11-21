@@ -1,0 +1,23 @@
+{
+ "id": "h8.kaiti",
+ "ver": 1,
+ "slot": "H8",
+ "ports": [
+  "M3"
+ ],
+ "params": {
+  "draft": "只指认原文区间",
+  "model": "按设置档案解析"
+ },
+ "assets": [],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "一句话开题",
+  "control_arm": "手填开题表",
+  "retire_signal": "确认卡上人改动的字段数与手填持平"
+ },
+ "lineage": {
+  "from": []
+ },
+ "switch": "fires.H8"
+}

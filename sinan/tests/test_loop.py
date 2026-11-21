@@ -598,3 +598,28 @@ def test_lease_idem_keys_differ_at_the_same_seq(w):
     w.gate.set()
     while w.sinan.in_flight():
         w.sinan.collect(5)
+
+
+def test_dispatch_follows_the_gongfa_each_problem_was_opened_under(w, monkeypatch):
+    """任务锁定开题时的功法版本（FJ6）：事项顺序与预留规则（功法 H2）按每道题开题时的那一版取，
+    不按此刻的功法。这里让 p2 的那一版没有 bootstrap：p2 无事可做，p1 照旧。"""
+    from paoding_fenjue.contract import for_problem
+    from paoding_sinan import loop
+
+    seen = []
+
+    class Pinned:
+        def __init__(self, p):
+            self.p = p
+
+        def params(self, slot):
+            seen.append((self.p["id"], slot))
+            h2 = for_problem(self.p).params(slot)
+            return {**h2, "order": [k for k in h2["order"] if k != "bootstrap"]} if self.p["id"] == "p2" else h2
+
+    monkeypatch.setattr(loop, "for_problem", Pinned)
+    w.open("p1")
+    w.open("p2")
+    assert w.sinan.pick("p1") == {"do": {"kind": "bootstrap"}}
+    assert w.sinan.pick("p2") == {"stop": "idle"}
+    assert ("p1", "H2") in seen and ("p2", "H2") in seen
