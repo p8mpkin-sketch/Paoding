@@ -36,6 +36,7 @@ SETTINGS_M = dataclasses.replace(SETTINGS, models={"profiles": PROFILES, "routes
 # 运行时扩权开着（新装缺省，runtime-grants §3.1）：开题零出站，原文地址只作展示
 SETTINGS_ON = dataclasses.replace(SETTINGS, grants_runtime=True)
 OPEN = "帮我比较三种排序算法在十万个整数上的速度，写一份结论。"  # 没有答案、没有命令：开放道
+RAW = "看看 q3:8080 上的服务为什么启动慢，给出原因和改法。"  # 起草挂了时按原话直开
 ZERO = "目标在 q2:8080，登录后页面会显示一个答案串，把它交出来。半小时内搞定。答案：PD-3R8W1ZNA"
 CASES = {
     "practice": (
@@ -84,6 +85,14 @@ def main() -> None:
     out["drafts"]["zero"] = {"text": ZERO, "out": on.draft_view({"text": ZERO, "nonce": "fixture-zero"})}  # type: ignore[index]
     out["extract"]["open"] = {"text": OPEN, "out": on.extract_view({"text": OPEN})}  # type: ignore[index]
     out["drafts"]["open"] = {"text": OPEN, "out": on.draft_view({"text": OPEN, "nonce": "fixture-open"})}  # type: ignore[index]
+
+    # 起草不可用（地图 Q38，D14）：没选严格判定的题按原话直开开放道
+    def down(ext, has):  # type: ignore[no-untyped-def]
+        raise OSError("起草模型连不上")
+
+    off = KaitiService(Intake.load(), lambda: SETTINGS_ON, placeholder_priors(), down, "heuristic", CATALOG)
+    out["extract"]["raw"] = {"text": RAW, "out": off.extract_view({"text": RAW})}  # type: ignore[index]
+    out["drafts"]["raw"] = {"text": RAW, "out": off.draft_view({"text": RAW, "nonce": "fixture-raw"})}  # type: ignore[index]
     first = out["drafts"]["command"]["out"]  # type: ignore[index]
     base = {
         "text": CASES["command"],
@@ -127,6 +136,18 @@ def main() -> None:
             out["overrides"].append(  # type: ignore[attr-defined]
                 {"name": "open", "overrides": o2, "out": svc_om.draft_view({**base, "overrides": o2})}
             )
+    # 起草不可用时输入框旁选了执行模型：交回 raw（不再调起草模型），只加这一项
+    off_m = KaitiService(
+        Intake.load(),
+        lambda: dataclasses.replace(SETTINGS_M, grants_runtime=True),
+        placeholder_priors(),
+        down,
+        "heuristic",
+        CATALOG,
+    )
+    rw = out["drafts"]["raw"]["out"]  # type: ignore[index]
+    raw_ov = off_m.draft_view({"text": RAW, "raw": True, "nonce": rw["nonce"], "overrides": pick})
+    out["overrides"].append({"name": "raw", "overrides": pick, "out": raw_ov})  # type: ignore[attr-defined]
     ob = out["drafts"]["outbound"]["out"]  # type: ignore[index]
     ack = {"ack_command": True}
     base = {"text": CASES["outbound"], "draft": ob["draft"], "nonce": ob["nonce"], "model": ob["model"], "strict": True}

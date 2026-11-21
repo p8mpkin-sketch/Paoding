@@ -214,6 +214,11 @@ function KnowledgePick({ kn, sources, onChange }: { kn: KaitiKnowledge; sources:
   );
 }
 
+/** 起草不可用、已按原话开题（地图 Q38，D14）：没有草案可交回。 */
+const isRaw = (v: KaitiVetted) => !v.draft && v.notes.some((n) => n.code === "draft_unavailable");
+/** 重新校验时交回什么：有草案交回草案（不再调模型）；按原话开的交 raw（服务端也不调模型）。 */
+const again = (v: KaitiVetted) => (v.draft ? { draft: v.draft, model: v.model } : { raw: true });
+
 export function Kaiti({ home = false }: { home?: boolean } = {}) {
   const { api, cfg } = useServices();
   const writable = cfg.token !== null;
@@ -301,10 +306,11 @@ export function Kaiti({ home = false }: { home?: boolean } = {}) {
       const t = tier ? tiers?.tiers[tier] : undefined;
       const want: KaitiOverrides = { ...(runPick ? { model: runPick } : {}), ...(t ? { usd_milli: t.usd_milli, wall_s: t.wall_s } : {}), ...(kn.mode !== "auto" ? { knowledge: kn } : {}) };
       let picked: KaitiOverrides = {};
-      if (Object.keys(want).length && out.input && out.lane !== "refuse" && out.draft) {
-        // 交回同一份草案（不再调模型），只加输入框下面选的执行模型与预算档位
+      if (Object.keys(want).length && out.input && out.lane !== "refuse" && (out.draft || isRaw(out))) {
+        // 交回同一份草案（不再调模型），只加输入框下面选的执行模型与预算档位；
+        // 起草不可用、按原话开的题（地图 Q38）没有草案：带 raw，服务端照原话再算一遍，也不调模型
         picked = want;
-        out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: out.draft, model: out.model, ...(profile ? { profile } : {}), nonce: out.nonce, overrides: picked });
+        out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...again(out), ...(profile ? { profile } : {}), nonce: out.nonce, overrides: picked });
       }
       setV(out); setOv(picked); setProf(profile); setAcc(null);
     } catch (e) {
@@ -318,10 +324,10 @@ export function Kaiti({ home = false }: { home?: boolean } = {}) {
   }
 
   async function revet(next: KaitiOverrides) {
-    if (!v?.draft) return;
+    if (!v || !(v.draft || isRaw(v))) return;
     setBusy("revet"); setFieldErr(null);
     try {
-      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), draft: v.draft, model: v.model, ...(prof ? { profile: prof } : {}), nonce: v.nonce, overrides: next, ...(acc ? { acceptance: acc } : {}) });
+      const out = await api.draftVet({ text, ...(answer.trim() ? { answer } : {}), ...again(v), ...(prof ? { profile: prof } : {}), nonce: v.nonce, overrides: next, ...(acc ? { acceptance: acc } : {}) });
       setV(out); setOv(next);
     } catch (e) {
       setFieldErr(rejectText(e as Error) ?? (e as Error).message);

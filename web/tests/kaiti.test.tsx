@@ -15,7 +15,7 @@ import { renderWith, rig, until } from "./helpers";
 beforeEach(() => { localStorage.clear(); window.history.pushState(null, "", "/new"); });
 afterEach(cleanup);
 
-const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external" | "zero" | "open") => KAITI.drafts[k];
+const rec = (k: "practice" | "command" | "refuse" | "outbound" | "external" | "zero" | "open" | "raw") => KAITI.drafts[k];
 const SECRET = "PD-7Q2M9XKD";
 
 describe("视图模型", () => {
@@ -144,6 +144,30 @@ describe("输入框与确认卡", () => {
     const st = await r.api.status(rec("open").out.pid);
     expect(st.goal.accept).toBe("open");
     expect(st.problem.scope.map((x) => x.resource)).toEqual(["workspace"]); // 开题零出站
+  });
+
+  it("起草不可用：没选严格判定的题按原话直开开放道；选了执行模型时交回 raw，不再调起草模型（地图 Q38）", async () => {
+    const raw = rec("raw").out;
+    expect(raw.lane).toBe("open");
+    expect(raw.draft).toBeNull();
+    expect(raw.notes.map((n) => n.code)).toEqual(["draft_unavailable"]);
+    expect(raw.notes[0].text).toContain("按原话开题");
+    const r = rig();
+    const { container } = renderWith(r, <Kaiti />);
+    fireEvent.click(await waitFor(() => { const b = container.querySelector<HTMLButtonElement>('button[data-field="run-model"]'); expect(b?.disabled).toBe(false); return b!; }));
+    const pick = await waitFor(() => { const el = document.querySelector<HTMLSelectElement>('[data-field="run-model-select"]'); expect(el?.options.length).toBe(3); return el!; });
+    fireEvent.change(pick, { target: { value: "light" } });
+    fireEvent.change(container.querySelector('[data-field="kaiti-text"]')!, { target: { value: rec("raw").text } });
+    fireEvent.keyDown(container.querySelector('[data-field="kaiti-text"]')!, { key: "Enter" });
+    await waitFor(() => expect(window.location.pathname).toBe(`/p/${raw.pid}`));
+    const vets = r.fetch.calls.filter((c) => c.url === "/v1/drafts").map((c) => JSON.parse(String(c.body)));
+    expect(vets).toHaveLength(2);
+    expect(vets[1]).toMatchObject({ raw: true, overrides: { model: "light" } });
+    expect(vets[1].draft).toBeUndefined();
+    const st = await r.api.status(raw.pid);
+    expect(st.goal.accept).toBe("open");
+    expect(st.goal.statement.value).toBe(rec("raw").text);
+    expect(st.problem.prefs).toEqual({ model: "light" });
   });
 
   it("运行时扩权开着：开题零出站，原文地址只作展示，卡上没有风险可改", async () => {

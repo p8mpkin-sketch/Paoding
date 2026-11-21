@@ -21,7 +21,7 @@ export function kaitiExtract(text: string): KaitiExtract {
   return byText(KAITI.extract, text)?.[1].out ?? { text, spans: [], answers: 0 };
 }
 
-export function kaitiDraft(body: { text: string; draft?: unknown; overrides?: unknown; acceptance?: unknown }): KaitiVetted | Error {
+export function kaitiDraft(body: { text: string; draft?: unknown; raw?: boolean; overrides?: unknown; acceptance?: unknown }): KaitiVetted | Error {
   const hit = byText(KAITI.drafts, body.text);
   if (!hit) {
     const refuse = KAITI.drafts.refuse.out;
