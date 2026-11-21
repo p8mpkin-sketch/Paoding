@@ -2,7 +2,7 @@
   "dossier": "001",
   "name": "replayable-live",
   "title": "可回放的实时性",
-  "status": "readings_ready",
+  "status": "adopted",
   "identified": "2026-11-20",
   "fire": {
     "id": "h6.activity-ledger",
@@ -52,6 +52,13 @@
   "outcome_proposed": "huolian",
   "jie_proposed": 2,
   "metrics": { "cycle_days": 0, "kernel_lines": 0, "slots": ["H6", "H4"], "trial_cost_usd_milli": 0, "reverts": 0 },
-  "verdict": null,
+  "verdict": {
+    "by": "cz",
+    "date": "2026-11-20",
+    "outcome": "huolian",
+    "jie": 2,
+    "basis": "#118 按体质改动行数 = 0 验收合入（c91d2f2）",
+    "conditions": ["anchor_interval_s = 30", "anchor_cap = 200，超出改轮末批量入账", "真模型运行读数由 cz 跑"]
+  },
   "reverts": []
 }
