@@ -1,0 +1,632 @@
+{
+ "v": 1,
+ "note": "决策原子与原子归属（08 §5.1、附表 D）：每个原子归唯一一个火位或体质项，带经脉与参数类型签名（规则族）；keys 把清单的 params 键映到原子（H1 的键在 forms.<席位> 之下）。量具表，引擎只读；scope.lanes 是分区条件（按道），不算原子、不判冲突。",
+ "atoms": {
+  "session.tools": {
+   "home": "H1",
+   "meaning": "会话的工具集合",
+   "ports": [
+    "M2",
+    "M4"
+   ],
+   "families": {
+    "set": {
+     "tools": "list"
+    }
+   }
+  },
+  "session.prompt": {
+   "home": "H1",
+   "meaning": "会话的提示资产",
+   "ports": [
+    "M3"
+   ],
+   "families": {
+    "files": {
+     "prompt": "obj"
+    }
+   }
+  },
+  "session.kb_cite": {
+   "home": "H1",
+   "meaning": "会话引用资料的方式",
+   "ports": [
+    "M7"
+   ],
+   "families": {
+    "mode": {
+     "kb_cite": "str"
+    }
+   }
+  },
+  "session.focus": {
+   "home": "H1",
+   "meaning": "会话的关注点与复述",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "rules": {
+     "focus": "list",
+     "restate": "str"
+    }
+   }
+  },
+  "session.end": {
+   "home": "H1",
+   "meaning": "会话的结束条件",
+   "ports": [
+    "M1:deliver"
+   ],
+   "families": {
+    "on_event": {
+     "ends_on": "str"
+    }
+   }
+  },
+  "session.stages": {
+   "home": "H1",
+   "meaning": "阶段划分与推进条件",
+   "ports": [
+    "M2",
+    "M4"
+   ],
+   "families": {
+    "exec_proof": {
+     "stage_proof": "str",
+     "stage_ledger": "bool"
+    }
+   }
+  },
+  "session.relay": {
+   "home": "H1",
+   "meaning": "接力规则",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "flag": {
+     "relay": "bool"
+    },
+    "bounded": {
+     "max_relays": "int",
+     "copy_workspace": "bool"
+    }
+   }
+  },
+  "session.runner": {
+   "home": "H1",
+   "meaning": "会话由谁执行（模型或确定性程序）",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "runner": {
+     "model": "bool",
+     "runner": "str"
+    }
+   }
+  },
+  "orch.order": {
+   "home": "H2",
+   "meaning": "派工次序",
+   "ports": [
+    "M1:lease",
+    "M4"
+   ],
+   "families": {
+    "fixed": {
+     "order": "list",
+     "reason_before_explore": "bool"
+    }
+   }
+  },
+  "orch.rank": {
+   "home": "H2",
+   "meaning": "候选意图的排序",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "by_key": {
+     "explore_rank": "str"
+    }
+   }
+  },
+  "orch.reserve": {
+   "home": "H2",
+   "meaning": "预算预留规则（比例，不含绝对值）",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "shares": {
+     "reserve": "obj",
+     "keep_verify_share": "bool"
+    }
+   }
+  },
+  "tool.order": {
+   "home": "H3",
+   "meaning": "工具面的次序",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "list": {
+     "order": "list"
+    }
+   }
+  },
+  "tool.grant": {
+   "home": "H3",
+   "meaning": "扩权走哪个工具",
+   "ports": [
+    "M1:request_scope"
+   ],
+   "families": {
+    "tool": {
+     "grant_tool": "str"
+    }
+   }
+  },
+  "tool.set": {
+   "home": "H3",
+   "meaning": "附加的工具集合",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "set": {
+     "tools": "list"
+    }
+   }
+  },
+  "tool.shape": {
+   "home": "H3",
+   "meaning": "某个工具的参数形状",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "shape": {
+     "shape": "obj"
+    }
+   }
+  },
+  "ctx.package": {
+   "home": "H4",
+   "meaning": "会话包内容",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "views": {
+     "package": "str"
+    }
+   }
+  },
+  "ctx.compress": {
+   "home": "H4",
+   "meaning": "压缩的触发与保留规则",
+   "ports": [
+    "M3",
+    "M4"
+   ],
+   "families": {
+    "fold": {
+     "trigger_at_context": "num",
+     "keep_recent_turns": "int",
+     "anchor_kinds": "list"
+    },
+    "truncate": {
+     "max_items": "int",
+     "keep_recent_turns": "int"
+    }
+   }
+  },
+  "ctx.relay_notes": {
+   "home": "H4",
+   "meaning": "接力笔记的格式",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "notes": {
+     "relay_notes": "str",
+     "format": "str"
+    }
+   }
+  },
+  "kb.index": {
+   "home": "H5",
+   "meaning": "切分与索引",
+   "ports": [
+    "M4",
+    "M7"
+   ],
+   "families": {
+    "index": {
+     "index": "str",
+     "vectorizer": "str"
+    }
+   }
+  },
+  "kb.rank": {
+   "home": "H5",
+   "meaning": "检索排序",
+   "ports": [
+    "M4",
+    "M7"
+   ],
+   "families": {
+    "rank": {
+     "rank": "str",
+     "top_k": "int"
+    }
+   }
+  },
+  "kb.verify": {
+   "home": "H5",
+   "meaning": "检索结果的核对",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "flag": {
+     "verify": "bool"
+    }
+   }
+  },
+  "view.live": {
+   "home": "H6",
+   "meaning": "实时表面",
+   "ports": [
+    "M1:register_artifact",
+    "M4"
+   ],
+   "families": {
+    "ledger": {
+     "ledger_roles": "list",
+     "poll_ms": "int"
+    }
+   }
+  },
+  "view.replay": {
+   "home": "H6",
+   "meaning": "回放",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "anchors": {
+     "anchor_interval_s": "int",
+     "anchor_cap": "int"
+    }
+   }
+  },
+  "view.drill": {
+   "home": "H6",
+   "meaning": "钻取与登记分类",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "registers": {
+     "registers": "list"
+    }
+   }
+  },
+  "view.surface": {
+   "home": "H6",
+   "meaning": "工作台上的表面",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "surfaces": {
+     "surfaces": "list"
+    }
+   }
+  },
+  "report.layout": {
+   "home": "H7",
+   "meaning": "交付排版",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "sections": {
+     "sections": "list",
+     "group_by": "str",
+     "unconfirmed_label": "str"
+    }
+   }
+  },
+  "report.claim_link": {
+   "home": "H7",
+   "meaning": "主张与证据的关联显示",
+   "ports": [
+    "M4"
+   ],
+   "families": {
+    "window": {
+     "window": "str",
+     "show": "str"
+    }
+   }
+  },
+  "draft.parse": {
+   "home": "H8",
+   "meaning": "原话解析",
+   "ports": [
+    "M3"
+   ],
+   "families": {
+    "rule": {
+     "draft": "str"
+    }
+   }
+  },
+  "draft.route": {
+   "home": "H8",
+   "meaning": "分道建议与解析用的模型",
+   "ports": [
+    "M3"
+   ],
+   "families": {
+    "model": {
+     "model": "str"
+    }
+   }
+  },
+  "kernel.event": {
+   "home": "T4",
+   "meaning": "新事件种类或字段",
+   "ports": [],
+   "families": {}
+  },
+  "kernel.evidence": {
+   "home": "T5",
+   "meaning": "新证据类别或可采信规则",
+   "ports": [],
+   "families": {}
+  },
+  "kernel.egress": {
+   "home": "T2",
+   "meaning": "新出站规则",
+   "ports": [],
+   "families": {}
+  },
+  "kernel.seat": {
+   "home": "T1",
+   "meaning": "新席位或席位权能",
+   "ports": [],
+   "families": {}
+  },
+  "kernel.budget": {
+   "home": "T3",
+   "meaning": "预算执行：计量、拒绝、预留的原子性",
+   "ports": [],
+   "families": {}
+  },
+  "kernel.verdict": {
+   "home": "T1",
+   "meaning": "判定来源、终态",
+   "ports": [],
+   "families": {}
+  }
+ },
+ "keys": [
+  {
+   "slot": "H1",
+   "key": "forms.*.tools",
+   "atom": "session.tools"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.prompt",
+   "atom": "session.prompt"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.kb_cite",
+   "atom": "session.kb_cite"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.focus",
+   "atom": "session.focus"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.restate",
+   "atom": "session.focus"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.ends_on",
+   "atom": "session.end"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.stage_proof",
+   "atom": "session.stages"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.stage_ledger",
+   "atom": "session.stages"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.relay",
+   "atom": "session.relay"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.model",
+   "atom": "session.runner"
+  },
+  {
+   "slot": "H1",
+   "key": "forms.*.runner",
+   "atom": "session.runner"
+  },
+  {
+   "slot": "H2",
+   "key": "order",
+   "atom": "orch.order"
+  },
+  {
+   "slot": "H2",
+   "key": "reason_before_explore",
+   "atom": "orch.order"
+  },
+  {
+   "slot": "H2",
+   "key": "explore_rank",
+   "atom": "orch.rank"
+  },
+  {
+   "slot": "H2",
+   "key": "reserve",
+   "atom": "orch.reserve"
+  },
+  {
+   "slot": "H2",
+   "key": "keep_verify_share",
+   "atom": "orch.reserve"
+  },
+  {
+   "slot": "H3",
+   "key": "order",
+   "atom": "tool.order"
+  },
+  {
+   "slot": "H3",
+   "key": "grant_tool",
+   "atom": "tool.grant"
+  },
+  {
+   "slot": "H3",
+   "key": "tools",
+   "atom": "tool.set"
+  },
+  {
+   "slot": "H4",
+   "key": "package",
+   "atom": "ctx.package"
+  },
+  {
+   "slot": "H4",
+   "key": "relay_notes",
+   "atom": "ctx.relay_notes"
+  },
+  {
+   "slot": "H4",
+   "key": "format",
+   "atom": "ctx.relay_notes"
+  },
+  {
+   "slot": "H4",
+   "key": "trigger_at_context",
+   "atom": "ctx.compress"
+  },
+  {
+   "slot": "H4",
+   "key": "keep_recent_turns",
+   "atom": "ctx.compress"
+  },
+  {
+   "slot": "H4",
+   "key": "anchor_kinds",
+   "atom": "ctx.compress"
+  },
+  {
+   "slot": "H5",
+   "key": "index",
+   "atom": "kb.index"
+  },
+  {
+   "slot": "H5",
+   "key": "vectorizer",
+   "atom": "kb.index"
+  },
+  {
+   "slot": "H5",
+   "key": "verify",
+   "atom": "kb.verify"
+  },
+  {
+   "slot": "H6",
+   "key": "ledger_roles",
+   "atom": "view.live"
+  },
+  {
+   "slot": "H6",
+   "key": "poll_ms",
+   "atom": "view.live"
+  },
+  {
+   "slot": "H6",
+   "key": "anchor_interval_s",
+   "atom": "view.replay"
+  },
+  {
+   "slot": "H6",
+   "key": "anchor_cap",
+   "atom": "view.replay"
+  },
+  {
+   "slot": "H6",
+   "key": "registers",
+   "atom": "view.drill"
+  },
+  {
+   "slot": "H6",
+   "key": "surfaces",
+   "atom": "view.surface"
+  },
+  {
+   "slot": "H7",
+   "key": "sections",
+   "atom": "report.layout"
+  },
+  {
+   "slot": "H7",
+   "key": "group_by",
+   "atom": "report.layout"
+  },
+  {
+   "slot": "H7",
+   "key": "unconfirmed_label",
+   "atom": "report.layout"
+  },
+  {
+   "slot": "H7",
+   "key": "window",
+   "atom": "report.claim_link"
+  },
+  {
+   "slot": "H7",
+   "key": "show",
+   "atom": "report.claim_link"
+  },
+  {
+   "slot": "H8",
+   "key": "draft",
+   "atom": "draft.parse"
+  },
+  {
+   "slot": "H8",
+   "key": "model",
+   "atom": "draft.route"
+  },
+  {
+   "slot": "*",
+   "key": "lanes",
+   "atom": "scope.lanes"
+  }
+ ]
+}

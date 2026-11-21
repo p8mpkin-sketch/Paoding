@@ -20,7 +20,7 @@ from .dan import Dan
 
 ATTEMPTS = 3
 DRAFTS = ("main", "extra1", "extra2")
-DRAFT_ZH = {"main": "主稿", "extra1": "萃丹一稿", "extra2": "萃丹二稿"}
+DRAFT_ZH = {"main": "主稿", "extra1": "第二稿", "extra2": "第三稿"}  # 给人看的（E-U4）：不用内部名词
 
 
 def evidence(cand: Mapping[str, Any], observations: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -111,8 +111,12 @@ def distill(
     ctx: checks.Context,
     *,
     rnd: int = 1,
+    dry: bool = False,
 ) -> Result:
-    """一个候选的萃意（第 1–10 步）。`rnd` 是第几轮（cz 在闸点 2 退回重做时加一），进丹调用的键。"""
+    """一个候选的萃意（第 1–10 步）。`rnd` 是第几轮（cz 在闸点 2 退回重做时加一），进丹调用的键。
+
+    `dry`（试算，09 §3）：只要主稿一稿；K1–K5、K7、K8 照跑，不过只标不重写（K8 指令痕迹例外，照样重写）；
+    不调萃丹与盲审。"""
     obs = evidence(cand, observations)
     tokens: dict[str, list[int]] = {"heavy": [0, 0], "mid": [0, 0]}
 
@@ -132,8 +136,20 @@ def distill(
         main.name = "main"
         if main.ok:
             break
+        if dry and all(c["ok"] for c in main.checks if c["id"] == "K8"):
+            break  # 试算只标不重写；唯一的例外是指令痕迹（K8）：来源里埋的话不能带进任何产物（11 §5 N3）
         errors = [f"{c['id']}：{c.get('detail', '')}" for c in main.checks if not c["ok"] and not c.get("advisory")]
     assert main is not None
+    if dry:
+        ess = main.body
+        ess["drafts"] = {"n": 1, "chosen": "main", "agreement": 0}
+        ess["checks"] = [c for c in main.checks if c["id"] != "K6"]
+        ess = {
+            k: ess[k]
+            for k in ("v", "candidate", "masked", "provenance", "field_refs", "drafts", "checks", "plain_summary")
+            if k in ess
+        }
+        return Result(ess, checks.hard_ok(ess["checks"]), tokens)
     extras = []
     for name in DRAFTS[1:]:
         d = ask("extra", f"{base}:{name}", [])

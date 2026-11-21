@@ -8,6 +8,7 @@ K 检验只对遮蔽视图做；K6 是读数（advisory），其余是硬门（E
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -177,7 +178,7 @@ def v_candidates(doc: Mapping[str, Any], ctx: Context) -> list[dict[str, Any]]:
         result("V2", _dupes([c["id"] for c in cands])),
         result("V3", _v3_candidates(doc, ctx)),
         result("V4", _v4_candidates(cands, ctx)),
-        result("V5", _plain(doc.get("plain_summary", ""))),
+        result("V5", _plain(displayed(doc, "candidates"))),
         result("V6", _copy_problems(_human_strings(doc), ctx) + _fences(doc)),
         result("V7", _v7(doc, ctx)),
         {"id": "V8", "ok": True, "detail": NOT_HERE},
@@ -191,7 +192,7 @@ def v_candidates(doc: Mapping[str, Any], ctx: Context) -> list[dict[str, Any]]:
 def v_essence(doc: Mapping[str, Any], ctx: Context, picked: Sequence[str]) -> list[dict[str, Any]]:
     """火意的校验（闸点 2 交付之前）。"""
     masked_strings = text.free_text(doc.get("masked", {}))
-    v5 = _plain(doc.get("plain_summary", "")) + [h for s in masked_strings for h in text.code_structure_hits(s)]
+    v5 = _plain(displayed(doc, "essence")) + [h for s in masked_strings for h in text.code_structure_hits(s)]
     v5 += [f"外部专名 {h}" for s in masked_strings for h in text.name_hits(s, ctx.names)]
     v5 += [h for s in masked_strings for h in text.instruction_hits(s)]
     return [
@@ -272,8 +273,51 @@ def _v4_candidates(cands: Sequence[Mapping[str, Any]], ctx: Context) -> list[str
     return out
 
 
-def _plain(summary: str) -> list[str]:
-    return [f"给人看的摘要里有内部名词 {t}" for t in data.table("vocab")["internal_terms"] if t in summary]
+def _plain(strings: str | Iterable[str]) -> list[str]:
+    """E-U4：给人看的自由文本栏（不只 plain_summary）不出现内部设计名词，用常规技术词。"""
+    rows = [strings] if isinstance(strings, str) else list(strings)
+    out = []
+    for t in data.table("vocab")["internal_terms"]:
+        hit = next((s for s in rows if t in s), None)
+        if hit is not None:
+            out.append(f"给人看的文字里有内部名词 {t}：{hit[:30]}")
+    return out
+
+
+def displayed(doc: Mapping[str, Any], kind: str) -> list[str]:
+    """界面会显示的自由文本栏（engine-ui §4–§5）。受控枚举、编号、清单草稿与炼档八栏不在其中：
+    枚举由界面映射，清单与炼档是给实现线看的仓库文件。"""
+    out: list[str] = [str(doc.get("plain_summary", ""))]
+    if kind == "candidates":
+        for c in doc.get("candidates", []):
+            sh = c.get("seed", {}).get("shihuo", {})
+            out += [c.get("title", ""), c.get("recommend", {}).get("why", ""), c.get("dedupe", {}).get("note", "")]
+            out += [str(sh.get(k, "")) for k in ("phenomenon", "gap", "is_fire")]
+        for n in doc.get("not_fire", []):
+            out += [n.get("what", ""), n.get("why", "")]
+    elif kind == "essence":
+        out += list(text.free_text(doc.get("masked", {})))
+        out += list(doc.get("drafts", {}).get("disagreements", []))
+    elif kind == "placement":
+        out += [str(v) for v in doc.get("arms", {}).values()]
+        for r in doc.get("readings", []):
+            out += [str(r.get(k, "")) for k in ("dim", "gate", "run")]
+        conf = doc.get("conflicts", {})
+        for row in [*conf.get("fires", []), *conf.get("kernel", []), *conf.get("candidates", [])]:
+            out += [str(row.get("note", "")), str(row.get("partition_by", ""))]
+        for st in doc.get("steps", []):
+            out += [st.get("do", ""), st.get("accept", "")]
+        out += [s.get("part", "") for s in doc.get("split", [])]
+        if doc.get("new_slot"):
+            out += [str(v) for k, v in doc["new_slot"].items() if isinstance(v, str)]
+    elif kind == "dry_run":
+        for it in doc.get("items", []):
+            out += [it.get("why", ""), *it.get("conflicts", [])]
+            out += list(text.free_text(it.get("essence_draft", {})))
+    elif kind == "handoff":
+        out += [o.get("why", "") for o in doc.get("order", [])]
+        out += [h.get("note", "") for h in doc.get("held", [])]
+    return [s for s in out if s]
 
 
 def _human_strings(doc: Mapping[str, Any]) -> list[str]:
@@ -311,3 +355,141 @@ def _v12(doc: Mapping[str, Any], ctx: Context) -> list[str]:
     if ctx.out_of_scope_requests:
         out.append(f"越出立项来源的扩权申请 {ctx.out_of_scope_requests} 次")
     return out
+
+
+# ---------------------------------------------------------------- 入位方案与试算报告（V8–V10 在这里才适用）
+
+_BUDGET_KEY = re.compile(r"(usd|milli|budget|token|cost|price|dollar|金额|预算|花费)", re.I)
+_BUDGET_VAL = re.compile(r"(\$\s*\d|\d[\d,_]*\s*(tokens?|美元|元|usd)\b)", re.I)
+
+
+def budget_numbers(obj: Any, path: str = "") -> list[str]:
+    """V8 的后半：清单的 params 里不写预算绝对值（金额、token 数一类的键名与数值模式；01 §8）。"""
+    out = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            here = f"{path}.{k}" if path else str(k)
+            if _BUDGET_KEY.search(str(k)) and isinstance(v, (int, float)) and not isinstance(v, bool):
+                out.append(f"params.{here} 是预算绝对值")
+            out += budget_numbers(v, here)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out += budget_numbers(v, f"{path}.{i}")
+    elif isinstance(obj, str) and _BUDGET_VAL.search(obj):
+        out.append(f"params.{path} 写了金额或 token 数")
+    return out
+
+
+def v8(p: Mapping[str, Any]) -> list[str]:
+    from .. import shapes
+
+    out = []
+    for f in [p.get("fire", {}), *p.get("group", [])]:
+        out += shapes.check(dict(f))
+        out += budget_numbers(f.get("params", {}))
+    return out
+
+
+def v9(p: Mapping[str, Any], essence: Mapping[str, Any], *, steps_required: bool = True) -> list[str]:
+    from . import ruwei
+
+    out = []
+    if p.get("kernel_forecast"):
+        out.append(f"体质影响预判不为空：{p['kernel_forecast']}")
+    again = ruwei.kernel_forecast(p.get("steps", []))
+    if again:
+        out.append(f"实现步骤碰到体质路径：{again}")
+    if steps_required and not p.get("steps"):
+        out.append("没有实现步骤")
+    out += [s for s in ruwei.kernel_issues(essence, p)] if "conflicts" in p and "split" in p else []
+    return out
+
+
+def v10(p: Mapping[str, Any], essence: Mapping[str, Any]) -> list[str]:
+    from . import ruwei
+
+    out = []
+    rows = {r["dim"]: r for r in p.get("readings", [])}
+    for e in essence.get("masked", {}).get("fusion", {}).get("emergent", []):
+        r = rows.get(e["dim"])
+        if r is None or r.get("kind") != "新生":
+            out.append(f"新生维 {e['dim']} 没有预登记")
+        elif r.get("gate") is None:
+            out.append(f"新生维 {e['dim']} 没有门槛")
+        if not (e.get("why_zero_B") and e.get("why_zero_A1")):
+            out.append(f"新生维 {e['dim']} 缺“按构造为零”的理由")
+    for m in ruwei.mandatory_readings(p):
+        if m["dim"] not in rows:
+            out.append(f"必登的 {m['dim']} 没有登记")
+    return out
+
+
+def _v3_placement(p: Mapping[str, Any]) -> list[str]:
+    from .. import shapes
+
+    active = data.active_refs()
+    ids = {r.partition("@")[0] for r in active}
+    out = [
+        f"{a['atom']} 的拥有者 {a['owner_now']} 不在功法里"
+        for a in p["atoms"]
+        if a.get("owner_now") not in (None, *active)
+    ]
+    out += [f"冲突对象 {c['fire']} 不在功法里" for c in p["conflicts"]["fires"] if c["fire"] not in active]
+    for f in [p["fire"], *p["group"]]:
+        out += [f"{f['id']} 顶替的 {x} 不是生效的火" for x in f["lineage"]["from"] if x not in ids]
+    if p.get("replaces") and p["replaces"] not in ids:
+        out.append(f"替换的 {p['replaces']} 不是生效的火")
+    out += [f"{x} 已有同名清单" for x in (p["fire"]["id"], *[g["id"] for g in p["group"]]) if x in shapes.fire_ids()]
+    return out
+
+
+def v_placement(
+    p: Mapping[str, Any], essence: Mapping[str, Any], ctx: Context, confirmed: Sequence[str]
+) -> list[dict[str, Any]]:
+    """入位方案的校验（闸点 3 交付之前，导入时再跑一遍）。"""
+    d, _ = formulas.difficulty(p.get("difficulty", {}).get("parts", {}))
+    v4 = [] if d == p.get("difficulty", {}).get("value") else [f"难度重算为 {d}"]
+    dims = [r["dim"] for r in p.get("readings", [])]
+    return [
+        result("V1", schema.errors(p, "placement")),
+        result("V2", _dupes(dims) + _dupes([str(s["n"]) for s in p.get("steps", [])])),
+        result("V3", _v3_placement(p)),
+        result("V4", v4),
+        result("V5", _plain(displayed(p, "placement"))),
+        result("V6", _copy_problems(list(text.strings(p)), ctx) + _fences(p)),
+        result("V7", _v7(essence, ctx)),
+        result("V8", v8(p)),
+        result("V9", v9(p, essence)),
+        result("V10", v10(p, essence)),
+        result("V11", [] if p.get("candidate") in confirmed else [f"{p.get('candidate')} 没有在闸点 2 确认"]),
+        result("V12", _v12(p, ctx)),
+    ]
+
+
+def v_dry_run(doc: Mapping[str, Any], ctx: Context) -> list[dict[str, Any]]:
+    """试算报告：全部校验照跑，只标不拦（09 §3）。"""
+    picked = set(doc.get("auto_picked", []))
+    return [
+        result("V1", schema.errors(doc, "dry-run")),
+        result("V2", _dupes([it["candidate"] for it in doc.get("items", [])])),
+        result("V3", _v3_candidates(doc.get("candidates", {}), ctx)),
+        result("V4", _v4_candidates(doc.get("candidates", {}).get("candidates", []), ctx)),
+        result("V5", _plain(displayed(doc, "dry_run"))),
+        result("V6", _copy_problems([s for it in doc.get("items", []) for s in text.strings(it)], ctx) + _fences(doc)),
+        result("V7", _v7(doc.get("candidates", {}), ctx)),
+        {"id": "V8", "ok": True, "detail": "试算不写清单草稿"},
+        result(
+            "V9",
+            [
+                f"{it['candidate']} 可能触到内核 {it['kernel_forecast']}"
+                for it in doc.get("items", [])
+                if it["kernel_forecast"]
+            ],
+        ),
+        {"id": "V10", "ok": True, "detail": "试算不预登记读数"},
+        result(
+            "V11",
+            [f"{it['candidate']} 不在自动取的候选里" for it in doc.get("items", []) if it["candidate"] not in picked],
+        ),
+        result("V12", _v12(doc, ctx)),
+    ]

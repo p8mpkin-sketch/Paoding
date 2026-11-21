@@ -5,7 +5,7 @@
    "key": "cuiyi:C1:r1:blind",
    "role": "blind",
    "tier": "mid",
-   "input_sha256": "f600e17bbb6f62a4cc809a65b756ae6832988eb84d68df8770e686e6d3a6442f",
+   "input_sha256": "30fcff1e305e1f5afb677f446694d13c5df8da63c1bc7c4fa19333a32e0282a2",
    "output": {
     "guess": "看不出出自哪里，像一类常见的智能体框架做法",
     "sketches": [
@@ -135,7 +135,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -314,7 +314,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -484,7 +484,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -663,7 +663,7 @@
        {
         "dim": "双证判定覆盖率",
         "dir": "up",
-        "why_zero_B": "本火只有作者引用，没有系统关联可比",
+        "why_zero_B": "现有做法只有作者引用，没有系统关联可比",
         "why_zero_A1": "照搬只挂系统关联、代替作者引用显示，不做比对",
         "measure": "structural",
         "how": "开放道交付的每条带引用的主张都得到一致或存疑的判定",
@@ -727,7 +727,7 @@
    "key": "cuiyi:C2:r1:blind",
    "role": "blind",
    "tier": "mid",
-   "input_sha256": "9144b82bbbe93f36a150402c7d872f7ac611f006041b804edbb1b693058a9462",
+   "input_sha256": "f688dc32e58fe95a9d12046268776fd648f0b3f7204273e81c69b13d43f184d2",
    "output": {
     "guess": "看不出出自哪里，像一类常见的智能体框架做法",
     "sketches": [
@@ -889,7 +889,7 @@
        "kind": "parametric",
        "statement": "结束条件同为以交付结束，多了阶段推进",
        "resolution": "replace",
-       "how": "同一席位只能有一个形态，新形态顶替独行，独行进常设留出"
+       "how": "同一会话角色只能有一个形态，新形态顶替独行，独行进对照留出"
       }
      ],
      "fusion": {
@@ -898,7 +898,7 @@
        {
         "dim": "阶段确认可回放率",
         "dir": "up",
-        "why_zero_B": "本火没有阶段，没有完成点可回放",
+        "why_zero_B": "现有做法没有阶段，没有完成点可回放",
         "why_zero_A1": "照搬时阶段记录只在工作区文件里，不入事件账，回放不到",
         "measure": "structural",
         "how": "假会话剧本在若干阶段点记下面板内容，事后按 as_of 回放逐字节比对",
@@ -907,7 +907,7 @@
        {
         "dim": "阶段确认防篡改检出率",
         "dir": "up",
-        "why_zero_B": "本火没有阶段记录",
+        "why_zero_B": "现有做法没有阶段记录",
         "why_zero_A1": "照搬的阶段记录不成链，改了查不出",
         "measure": "structural",
         "how": "改动任一已入账阶段条目的一个字节，链校验必报错",
@@ -1119,7 +1119,7 @@
        "kind": "parametric",
        "statement": "结束条件同为以交付结束，多了阶段推进",
        "resolution": "replace",
-       "how": "同一席位只能有一个形态，新形态顶替独行，独行进常设留出"
+       "how": "同一会话角色只能有一个形态，新形态顶替独行，独行进对照留出"
       }
      ],
      "fusion": {
@@ -1128,7 +1128,7 @@
        {
         "dim": "阶段确认可回放率",
         "dir": "up",
-        "why_zero_B": "本火没有阶段，没有完成点可回放",
+        "why_zero_B": "现有做法没有阶段，没有完成点可回放",
         "why_zero_A1": "照搬时阶段记录只在工作区文件里，不入事件账，回放不到",
         "measure": "structural",
         "how": "假会话剧本在若干阶段点记下面板内容，事后按 as_of 回放逐字节比对",
@@ -1340,7 +1340,7 @@
        "kind": "parametric",
        "statement": "结束条件同为以交付结束，多了阶段推进",
        "resolution": "replace",
-       "how": "同一席位只能有一个形态，新形态顶替独行，独行进常设留出"
+       "how": "同一会话角色只能有一个形态，新形态顶替独行，独行进对照留出"
       }
      ],
      "fusion": {
@@ -1349,7 +1349,7 @@
        {
         "dim": "阶段确认可回放率",
         "dir": "up",
-        "why_zero_B": "本火没有阶段，没有完成点可回放",
+        "why_zero_B": "现有做法没有阶段，没有完成点可回放",
         "why_zero_A1": "照搬时阶段记录只在工作区文件里，不入事件账，回放不到",
         "measure": "structural",
         "how": "假会话剧本在若干阶段点记下面板内容，事后按 as_of 回放逐字节比对",
@@ -1358,7 +1358,7 @@
        {
         "dim": "阶段确认防篡改检出率",
         "dir": "up",
-        "why_zero_B": "本火没有阶段记录",
+        "why_zero_B": "现有做法没有阶段记录",
         "why_zero_A1": "照搬的阶段记录不成链，改了查不出",
         "measure": "structural",
         "how": "改动任一已入账阶段条目的一个字节，链校验必报错",
@@ -1423,7 +1423,7 @@
    "key": "cuiyi:C3:r1:blind",
    "role": "blind",
    "tier": "mid",
-   "input_sha256": "aea0bd845762ef6a642017665e35246527b1506119a8176bece7214b603936a7",
+   "input_sha256": "4d3eaeeb9848e7e2da2a1763664a1ddc37de8b2a8d02ef44857b276a57019652",
    "output": {
     "guess": "看不出出自哪里，像一类常见的智能体框架做法",
     "sketches": [
@@ -1587,7 +1587,7 @@
        {
         "dim": "压缩后锚点可解析率",
         "dir": "up",
-        "why_zero_B": "本火不压缩，没有摘要",
+        "why_zero_B": "现有做法不压缩，没有摘要",
         "why_zero_A1": "照搬的摘要不带锚点",
         "measure": "structural",
         "how": "假会话剧本触发折叠，逐个解析摘要里的锚点",
@@ -1813,7 +1813,7 @@
        {
         "dim": "压缩后锚点可解析率",
         "dir": "up",
-        "why_zero_B": "本火不压缩，没有摘要",
+        "why_zero_B": "现有做法不压缩，没有摘要",
         "why_zero_A1": "照搬的摘要不带锚点",
         "measure": "structural",
         "how": "假会话剧本触发折叠，逐个解析摘要里的锚点",
@@ -2030,7 +2030,7 @@
        {
         "dim": "压缩后锚点可解析率",
         "dir": "up",
-        "why_zero_B": "本火不压缩，没有摘要",
+        "why_zero_B": "现有做法不压缩，没有摘要",
         "why_zero_A1": "照搬的摘要不带锚点",
         "measure": "structural",
         "how": "假会话剧本触发折叠，逐个解析摘要里的锚点",
@@ -2419,6 +2419,739 @@
    "tokens_out": 140
   },
   {
+   "key": "ruwei:C1:r1:design:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "e02131cd4268bf113782dcd5d388213ce68b169f3fc5a3441091d9a3751c16e5",
+   "output": {
+    "arms": {
+     "B": "当前配置原样（只有作者引用）",
+     "A1": "照搬：按先后自动挂执行记录，代替作者引用显示，不比对",
+     "F": "h7.dual-proof：并排比对，双证与引用存疑",
+     "B1": "第 2 阶重跑；结构读数确定性，噪声底 0"
+    },
+    "readings": [
+     {
+      "dim": "双证判定覆盖率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "web 单测与读端纯函数测试：test_dual_proof_covers_every_cited_claim"
+     },
+     {
+      "dim": "引用存疑检出率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "test_seeded_miscitation_is_flagged"
+     },
+     {
+      "dim": "作者引用显示不变",
+      "kind": "本火",
+      "dir": "up",
+      "gate": "相同",
+      "test": "web 单测：作者引用一栏与 B 逐项相同"
+     },
+     {
+      "dim": "读数分列不合并",
+      "kind": "本火",
+      "dir": "up",
+      "gate": "过",
+      "test": "eval/tests/test_open_lane_isolation.py"
+     },
+     {
+      "dim": "结果页加载时长",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "<= B + 噪声底",
+      "test": "web e2e（mock）"
+     }
+    ],
+    "steps": [
+     {
+      "do": "读端纯函数：按活动链给每条主张算关联窗口，与作者引用求交，出一致、存疑、无关联三种判定",
+      "slot": "H7",
+      "where": [
+       "web/src/（结果页的数据层）"
+      ],
+      "tests": [
+       "test_dual_proof_covers_every_cited_claim",
+       "test_seeded_miscitation_is_flagged"
+      ],
+      "kernel_lines": 0,
+      "accept": "两条新生维的结构读数为 100%"
+     },
+     {
+      "do": "结果页并排显示作者引用与系统关联，系统关联用叙述色、不着证据色",
+      "slot": "H7",
+      "where": [
+       "web/src/（结果页组件）"
+      ],
+      "tests": [
+       "web 单测"
+      ],
+      "kernel_lines": 0,
+      "accept": "作者引用一栏与 B 相同"
+     },
+     {
+      "do": "外部方案移植组的配置：show=replace_refs、不比对",
+      "slot": "H7",
+      "where": [
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "web 单测"
+      ],
+      "kernel_lines": 0,
+      "accept": "外部方案移植组的双证判定按构造为 0"
+     }
+    ]
+   },
+   "tokens_in": 60000,
+   "tokens_out": 6000
+  },
+  {
+   "key": "ruwei:C1:r1:place:1",
+   "role": "placer",
+   "tier": "mid",
+   "input_sha256": "3ac107648da78031cd8e26b31f3f6cca9bdf514a704080511fde2835081f03b6",
+   "output": {
+    "atoms": [
+     {
+      "atom": "report.auto_attach",
+      "mechanism_steps": [
+       2,
+       3
+      ],
+      "params": {
+       "window": "previous_delivery_to_claim_turn",
+       "show": "side_by_side"
+      },
+      "emergent": true
+     }
+    ],
+    "fire": {
+     "id": "h7.dual-proof",
+     "params": {
+      "window": "previous_delivery_to_claim_turn",
+      "show": "side_by_side",
+      "lanes": [
+       "open"
+      ]
+     },
+     "assets": [],
+     "organ": {
+      "class": "感知官",
+      "retire_signal": "连续 30 份交付的作者引用与系统关联全部一致（占位）",
+      "enable_when": "开放道交付带活动链时",
+      "control_arm": "h7.result@1（只有作者引用）"
+     }
+    },
+    "group": [],
+    "resolutions": [],
+    "new_slot": null,
+    "plain_summary": "结果页新增一栏系统找到的相关执行记录，和作者引用对照显示。只读，不改内核。"
+   },
+   "tokens_in": 12000,
+   "tokens_out": 2500
+  },
+  {
+   "key": "ruwei:C1:r1:place:2",
+   "role": "placer",
+   "tier": "mid",
+   "input_sha256": "0e88c827ab2236849fe6f2237931e12a12bd17939277c03a476f16bb270e0bfb",
+   "output": {
+    "atoms": [
+     {
+      "atom": "report.claim_link",
+      "mechanism_steps": [
+       2,
+       3
+      ],
+      "params": {
+       "window": "previous_delivery_to_claim_turn",
+       "show": "side_by_side"
+      },
+      "emergent": true
+     }
+    ],
+    "fire": {
+     "id": "h7.dual-proof",
+     "params": {
+      "window": "previous_delivery_to_claim_turn",
+      "show": "side_by_side",
+      "lanes": [
+       "open"
+      ]
+     },
+     "assets": [],
+     "organ": {
+      "class": "感知官",
+      "retire_signal": "连续 30 份交付的作者引用与系统关联全部一致（占位）",
+      "enable_when": "开放道交付带活动链时",
+      "control_arm": "h7.result@1（只有作者引用）"
+     }
+    },
+    "group": [],
+    "resolutions": [],
+    "new_slot": null,
+    "plain_summary": "结果页新增一栏系统找到的相关执行记录，和作者引用对照显示。只读，不改内核。"
+   },
+   "tokens_in": 12000,
+   "tokens_out": 2500
+  },
+  {
+   "key": "ruwei:C2:r1:design:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "8f3d16f59d2be87d3c1127bc006234dedf2892329d922cc6d959054058c2242b",
+   "output": {
+    "arms": {
+     "B": "当前配置原样（h1.solo@2、h7.result@1）",
+     "A1": "照搬：阶段清单与确认输出记在工作区文件，交付时附上，不入活动链（stage_ledger=false）",
+     "F": "h1.staged + h7.result-stages：阶段完成点入活动链",
+     "B1": "第 2 阶重跑，估噪声"
+    },
+    "readings": [
+     {
+      "dim": "阶段确认可回放率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "adapter/tests/test_stage_ledger.py::test_stage_points_replay_byte_for_byte"
+     },
+     {
+      "dim": "阶段确认防篡改检出率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "adapter/tests/test_stage_ledger.py::test_tampered_stage_is_caught"
+     },
+     {
+      "dim": "阶段—留档对应率",
+      "kind": "异火",
+      "dir": "up",
+      "gate": ">= A1 − 噪声底",
+      "test": "adapter/tests/test_stage_ledger.py::test_each_confirmed_stage_cites_exec"
+     },
+     {
+      "dim": "无留档却记为已确认的阶段数",
+      "kind": "本火",
+      "dir": "down",
+      "gate": 0,
+      "test": "adapter/tests/test_stage_ledger.py::test_narration_never_confirms"
+     },
+     {
+      "dim": "交付率",
+      "kind": "共有",
+      "dir": "up",
+      "gate": ">= B − 噪声底",
+      "run": "开放道前后同提示（04 §4）"
+     },
+     {
+      "dim": "每次交付花费、墙钟",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "<= max(B, A1) + 噪声底",
+      "run": "开放道前后同提示"
+     },
+     {
+      "dim": "每题新增事件数",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "预登记上限（占位）",
+      "test": "adapter/tests/test_stage_ledger.py::test_event_budget"
+     }
+    ],
+    "steps": [
+     {
+      "do": "写阶段推进的提示资产，并把新形态的清单定稿",
+      "slot": "H1",
+      "where": [
+       "adapter/prompts/",
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "fenjue/tests/test_fenjue.py（静态验体）"
+      ],
+      "kernel_lines": 0,
+      "accept": "清单过静态检查，资产 sha256 一致"
+     },
+     {
+      "do": "活动条目加“阶段完成点”一类，引用执行留档，随既有分段入账",
+      "slot": "H1",
+      "where": [
+       "graph/src/paoding_graph/views.py"
+      ],
+      "tests": [
+       "adapter/tests/test_stage_ledger.py"
+      ],
+      "kernel_lines": 0,
+      "accept": "两条新生维的结构读数为 100%"
+     },
+     {
+      "do": "交付时每个阶段一条主张，引用该阶段的执行留档；只有自述的阶段记为无执行确认",
+      "slot": "H1",
+      "where": [
+       "adapter/src/paoding_adapter/tools.py"
+      ],
+      "tests": [
+       "adapter/tests/test_stage_ledger.py::test_narration_never_confirms"
+      ],
+      "kernel_lines": 0,
+      "accept": "内核的交付校验照旧通过，不加字段"
+     },
+     {
+      "do": "结果页按阶段分组显示主张与留档",
+      "slot": "H7",
+      "where": [
+       "web/src/（结果页组件）"
+      ],
+      "tests": [
+       "web 单测"
+      ],
+      "kernel_lines": 0,
+      "accept": "无阶段的交付显示与今天相同"
+     },
+     {
+      "do": "外部方案移植组的配置：stage_ledger=false",
+      "slot": "H1",
+      "where": [
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "adapter/tests/test_stage_ledger.py"
+      ],
+      "kernel_lines": 0,
+      "accept": "外部方案移植组的新生维读数按构造为 0"
+     }
+    ]
+   },
+   "tokens_in": 60000,
+   "tokens_out": 6000
+  },
+  {
+   "key": "ruwei:C2:r1:design:2",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "1308c73f7637d2b2a33dd3d1213e617f7521fafd5098d299fcc820331af9840d",
+   "output": {
+    "arms": {
+     "B": "当前配置原样（h1.solo@2、h7.result@1）",
+     "A1": "照搬：阶段清单与确认输出记在工作区文件，交付时附上，不入活动链（stage_ledger=false）",
+     "F": "h1.staged + h7.result-stages：阶段完成点入活动链",
+     "B1": "第 2 阶重跑，估噪声"
+    },
+    "readings": [
+     {
+      "dim": "阶段确认可回放率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "adapter/tests/test_stage_ledger.py::test_stage_points_replay_byte_for_byte"
+     },
+     {
+      "dim": "阶段确认防篡改检出率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "adapter/tests/test_stage_ledger.py::test_tampered_stage_is_caught"
+     },
+     {
+      "dim": "阶段—留档对应率",
+      "kind": "异火",
+      "dir": "up",
+      "gate": ">= A1 − 噪声底",
+      "test": "adapter/tests/test_stage_ledger.py::test_each_confirmed_stage_cites_exec"
+     },
+     {
+      "dim": "无留档却记为已确认的阶段数",
+      "kind": "本火",
+      "dir": "down",
+      "gate": 0,
+      "test": "adapter/tests/test_stage_ledger.py::test_narration_never_confirms"
+     },
+     {
+      "dim": "交付率",
+      "kind": "共有",
+      "dir": "up",
+      "gate": ">= B − 噪声底",
+      "run": "开放道前后同提示（04 §4）"
+     },
+     {
+      "dim": "每次交付花费、墙钟",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "<= max(B, A1) + 噪声底",
+      "run": "开放道前后同提示"
+     },
+     {
+      "dim": "每题新增事件数",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "预登记上限（占位）",
+      "test": "adapter/tests/test_stage_ledger.py::test_event_budget"
+     }
+    ],
+    "steps": [
+     {
+      "do": "写阶段推进的提示资产，并把新形态的清单定稿",
+      "slot": "H1",
+      "where": [
+       "adapter/prompts/",
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "fenjue/tests/test_fenjue.py（静态验体）"
+      ],
+      "kernel_lines": 0,
+      "accept": "清单过静态检查，资产 sha256 一致"
+     },
+     {
+      "do": "活动条目加“阶段完成点”一类，引用执行留档，随既有分段入账",
+      "slot": "H1",
+      "where": [
+       "adapter/src/paoding_adapter/activity.py"
+      ],
+      "tests": [
+       "adapter/tests/test_stage_ledger.py"
+      ],
+      "kernel_lines": 0,
+      "accept": "两条新生维的结构读数为 100%"
+     },
+     {
+      "do": "交付时每个阶段一条主张，引用该阶段的执行留档；只有自述的阶段记为无执行确认",
+      "slot": "H1",
+      "where": [
+       "adapter/src/paoding_adapter/tools.py"
+      ],
+      "tests": [
+       "adapter/tests/test_stage_ledger.py::test_narration_never_confirms"
+      ],
+      "kernel_lines": 0,
+      "accept": "内核的交付校验照旧通过，不加字段"
+     },
+     {
+      "do": "结果页按阶段分组显示主张与留档",
+      "slot": "H7",
+      "where": [
+       "web/src/（结果页组件）"
+      ],
+      "tests": [
+       "web 单测"
+      ],
+      "kernel_lines": 0,
+      "accept": "无阶段的交付显示与今天相同"
+     },
+     {
+      "do": "外部方案移植组的配置：stage_ledger=false",
+      "slot": "H1",
+      "where": [
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "adapter/tests/test_stage_ledger.py"
+      ],
+      "kernel_lines": 0,
+      "accept": "外部方案移植组的新生维读数按构造为 0"
+     }
+    ]
+   },
+   "tokens_in": 60000,
+   "tokens_out": 6000
+  },
+  {
+   "key": "ruwei:C2:r1:place:1",
+   "role": "placer",
+   "tier": "mid",
+   "input_sha256": "1e20ae6d6462b3f884499bb4cd61d14cd7681532108f4881204c852798a17797",
+   "output": {
+    "atoms": [
+     {
+      "atom": "session.stages",
+      "mechanism_steps": [
+       1,
+       4
+      ],
+      "params": {
+       "stage_proof": "exec"
+      },
+      "emergent": true
+     },
+     {
+      "atom": "session.end",
+      "mechanism_steps": [
+       3
+      ],
+      "params": {
+       "ends_on": "deliver"
+      },
+      "emergent": false
+     },
+     {
+      "atom": "report.layout",
+      "mechanism_steps": [
+       3
+      ],
+      "params": {
+       "group_by": "stage"
+      },
+      "emergent": false
+     }
+    ],
+    "fire": {
+     "id": "h1.staged",
+     "params": {
+      "forms": {
+       "solve": {
+        "tools": [
+         "exec",
+         "show",
+         "deliver"
+        ],
+        "prompt": {
+         "files": [
+          "solve.md",
+          "staged.md"
+         ]
+        },
+        "stage_proof": "exec",
+        "stage_ledger": true,
+        "relay": true,
+        "ends_on": "deliver"
+       }
+      }
+     },
+     "assets": [
+      {
+       "name": "adapter/prompts/staged.md"
+      }
+     ],
+     "organ": {
+      "class": "感知官",
+      "retire_signal": "无阶段的独行在同一组提示词上的交付率与有据率落在噪声底内（占位）",
+      "enable_when": "开放道",
+      "control_arm": "h1.solo@2（无阶段）"
+     },
+     "seats": [
+      "solve"
+     ]
+    },
+    "group": [
+     {
+      "slot": "H7",
+      "id": "h7.result-stages",
+      "params": {
+       "group_by": "stage",
+       "unconfirmed_label": "无执行确认"
+      },
+      "assets": [],
+      "organ": {
+       "class": "感知官",
+       "retire_signal": "按阶段分组的结果页打开后展开率低于 5%（占位）",
+       "enable_when": "交付带阶段时",
+       "control_arm": "h7.result@1（平铺）"
+      }
+     }
+    ],
+    "resolutions": [
+     {
+      "atom": "session.end",
+      "fire": "h1.solo@2",
+      "resolution": "replace",
+      "note": "同一会话角色只能有一个形态（lease.form 按会话角色取），不能分区并存"
+     },
+     {
+      "atom": "report.layout",
+      "fire": "h7.result@1",
+      "resolution": "replace",
+      "note": "排版参数多了按阶段分组；没有阶段的交付照平铺显示"
+     }
+    ],
+    "new_slot": null,
+    "plain_summary": "新的会话策略顶替现有的单会话策略：分阶段做，每阶段附检查输出；结果页按阶段分组。内核不改。"
+   },
+   "tokens_in": 12000,
+   "tokens_out": 2500
+  },
+  {
+   "key": "ruwei:C3:r1:design:1",
+   "role": "main",
+   "tier": "heavy",
+   "input_sha256": "d8103c78a19a505d0a3106dcb096d44547ffbd2cbb2f5f5418cd8b83be2ad19f",
+   "output": {
+    "arms": {
+     "B": "当前配置原样（不压缩，NOTES.md 接力）",
+     "A1": "照搬：到阈值折叠成不带锚点的摘要（anchor_kinds=[]）",
+     "F": "h4.anchored-fold：带锚折叠",
+     "B1": "第 2 阶重跑，估噪声"
+    },
+    "readings": [
+     {
+      "dim": "压缩后锚点可解析率",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 1.0,
+      "test": "adapter/tests/test_anchored_fold.py::test_every_anchor_resolves"
+     },
+     {
+      "dim": "有锚事实占比",
+      "kind": "新生",
+      "dir": "up",
+      "gate": 0.9,
+      "run": "真模型长任务（测试方跑）"
+     },
+     {
+      "dim": "跨接力重复执行率",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "<= B − 噪声底",
+      "run": "开放道前后同提示"
+     },
+     {
+      "dim": "长任务交付率",
+      "kind": "异火",
+      "dir": "up",
+      "gate": ">= A1 − 噪声底",
+      "run": "开放道前后同提示"
+     },
+     {
+      "dim": "每次交付花费、墙钟",
+      "kind": "共有",
+      "dir": "down",
+      "gate": "<= max(B, A1) + 噪声底",
+      "run": "开放道前后同提示"
+     }
+    ],
+    "steps": [
+     {
+      "do": "折叠的触发与保留规则：按端点代理的计量读数判断用量，最近四轮不折叠",
+      "slot": "H4",
+      "where": [
+       "adapter/src/paoding_adapter/session.py",
+       "adapter/prompts/fold.md"
+      ],
+      "tests": [
+       "adapter/tests/test_anchored_fold.py::test_trigger"
+      ],
+      "kernel_lines": 0,
+      "accept": "假会话剧本在阈值处触发一次"
+     },
+     {
+      "do": "摘要逐条带锚点，写入前过凭据遮盖，写进工作区的接力文件",
+      "slot": "H4",
+      "where": [
+       "adapter/src/paoding_adapter/relay.py"
+      ],
+      "tests": [
+       "adapter/tests/test_anchored_fold.py::test_every_anchor_resolves",
+       "tests/fenjue/trials.py T2"
+      ],
+      "kernel_lines": 0,
+      "accept": "锚点全部可解析，金丝雀不出现"
+     },
+     {
+      "do": "按道分区：只在开放道启用",
+      "slot": "H4",
+      "where": [
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "tests/fenjue/zero_diff.py --check"
+      ],
+      "kernel_lines": 0,
+      "accept": "严格道事件日志与任务包不变"
+     },
+     {
+      "do": "外部方案移植组的配置：anchor_kinds=[]",
+      "slot": "H4",
+      "where": [
+       "fenjue/src/paoding_fenjue/fires/"
+      ],
+      "tests": [
+       "adapter/tests/test_anchored_fold.py"
+      ],
+      "kernel_lines": 0,
+      "accept": "外部方案移植组的锚点可解析率按构造为 0"
+     }
+    ]
+   },
+   "tokens_in": 60000,
+   "tokens_out": 6000
+  },
+  {
+   "key": "ruwei:C3:r1:place:1",
+   "role": "placer",
+   "tier": "mid",
+   "input_sha256": "547bd1b7398b11995ad656f79a984b1bea6e7b5bc3d7674441a6dbad26862544",
+   "output": {
+    "atoms": [
+     {
+      "atom": "ctx.compress",
+      "mechanism_steps": [
+       1,
+       2
+      ],
+      "params": {
+       "trigger_at_context": 0.7,
+       "keep_recent_turns": 4
+      },
+      "emergent": true
+     },
+     {
+      "atom": "ctx.relay_notes",
+      "mechanism_steps": [
+       3
+      ],
+      "params": {
+       "format": "anchored_digest"
+      },
+      "emergent": false
+     }
+    ],
+    "fire": {
+     "id": "h4.anchored-fold",
+     "params": {
+      "trigger_at_context": 0.7,
+      "keep_recent_turns": 4,
+      "anchor_kinds": [
+       "exec",
+       "seq",
+       "activity"
+      ],
+      "lanes": [
+       "open"
+      ]
+     },
+     "assets": [
+      {
+       "name": "adapter/prompts/fold.md"
+      }
+     ],
+     "organ": {
+      "class": "感知官",
+      "retire_signal": "模型上下文变长后，不折叠的长任务交付率与折叠的落在噪声底内（占位）",
+      "enable_when": "开放道",
+      "control_arm": "不折叠（h4.views-notes@1 原样）"
+     }
+    },
+    "group": [],
+    "resolutions": [
+     {
+      "atom": "ctx.relay_notes",
+      "fire": "h4.views-notes@1",
+      "resolution": "partition",
+      "partition_by": "题的道（goal.accept = open）",
+      "note": "严格道的接力笔记照旧"
+     }
+    ],
+    "new_slot": null,
+    "plain_summary": "新增一个上下文管理模块：开放式任务里上下文快满时压缩，压缩要点带原始记录链接。和现有的上下文模块按任务类型分开用，内核不改。"
+   },
+   "tokens_in": 12000,
+   "tokens_out": 2500
+  },
+  {
    "key": "shihuo:patterns:1",
    "role": "main",
    "tier": "heavy",
@@ -2489,7 +3222,7 @@
       "is_fire": "是：分阶段推进并以执行留档确认阶段完成是一类做法，不绑定某个界面或某家实现",
       "recommend": {
        "level": "recommend",
-       "why": "体质改动预计为 0，新生维是结构读数，CI 就能证；与已入功法的活动链直接相接"
+       "why": "内核改动预计为 0，新生维是结构读数，CI 就能证；与已集成的活动链直接相接"
       }
      },
      {
@@ -2528,7 +3261,7 @@
       "is_fire": "是：按上下文用量折叠历史并以摘要接力是一类做法",
       "recommend": {
        "level": "recommend",
-       "why": "长任务里接力次数与重复执行是明确的成本；体质改动预计为 0"
+       "why": "长任务里接力次数与重复执行是明确的成本；内核改动预计为 0"
       }
      },
      {

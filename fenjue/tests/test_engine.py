@@ -250,9 +250,11 @@ def test_intake_shape_and_mode_are_checked(tmp_path):
     eng = _engine(tmp_path)
     with pytest.raises(EngineError, match="立项单不合"):
         eng.start({"v": 1})
-    intake = cases.intake("alpha", "code") | {"mode": "dry_run"}
-    with pytest.raises(EngineError, match="正式模式"):
+    intake = cases.intake("alpha", "code") | {"mode": "from_bang"}
+    with pytest.raises(EngineError, match="正式与试算"):
         eng.start(intake)
+    with pytest.raises(EngineError, match="只有正式模式能复用试算"):
+        eng.start(cases.intake("alpha", "code", "dry_run"), reuse=tmp_path)
 
 
 class Flaky:
@@ -308,7 +310,7 @@ def test_gate_1_needs_a_valid_pick_and_applies_title_edits(tmp_path):
 
 
 def test_gate_2_edits_are_rechecked_and_overrides_are_recorded(tmp_path):
-    eng = _engine(tmp_path)
+    eng = _engine(tmp_path, dan=Recorder(Script("alpha", "code")))  # 改过的火意是新的丹输入：用脚本，不回放
     eng.start(cases.intake("alpha", "code"))
     eng.follow_up(cases.g1_block(eng.get("candidates.json")))
     d = eng.follow_up("【决定 v1】闸点 2\n改：C1.essence.nope = x\n确认：C1")
@@ -316,7 +318,7 @@ def test_gate_2_edits_are_rechecked_and_overrides_are_recorded(tmp_path):
     d = eng.follow_up("【决定 v1】闸点 2\n改：C1.essence.mechanism = x\n确认：C1")
     assert any("只能改文字栏" in n for n in d.needs)
     d = eng.follow_up("【决定 v1】闸点 2\n改：C1.essence.statement = 照 cairnwork 那样分阶段\n确认：C1")
-    assert eng.state["step"] == "S5"
+    assert eng.state["step"] == "G3" and d.gate == "G3"
     ess = eng.get("essence:C1")
     assert ess["masked"]["statement"] == "照 cairnwork 那样分阶段"
     assert ess["human_edits"][0]["pointer"] == "/masked/statement"

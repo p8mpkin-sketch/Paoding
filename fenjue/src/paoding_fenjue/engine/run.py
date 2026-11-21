@@ -1,8 +1,9 @@
-"""吞噬引擎的工作流（docs/design/fenjue/09-engine.md §2、§4、§6）：S0 立项 → S3 识火 → G1 → S4 萃意 → G2。
+"""吞噬引擎的工作流（docs/design/fenjue/09-engine.md §2–§4、§6）：
+S0 立项 → S3 识火 → G1 → S4 萃意 → G2 → S5 入位与火序 → G3 → S6 交接包；试算模式一口气走完、出试算报告。
 
-这一期是**最小版本**：识火与萃意走到闸点 2，在合成夹具上用录好的丹输出过线（E1 的量具 + E3/E4 的流程骨架）。
 还没有接进内核：交付（`Delivery`）就是将来 `deliver` 的内容（人读报告 + 结构化产物的 sha256 + needs），
-闸点的决定块就是将来 cz `follow_up` 的正文。入位与火序（S5）、交接（S6）、试算模式下一期做。
+闸点的决定块就是将来 cz `follow_up` 的正文。每次交付的报告末尾附“产物 → Artifact id → sha256”对照表（界面 E-U5）；
+没接内核时 Artifact id 是按 sha256 给的本地占位（`local_artifact_id`），接上之后换成 `register_artifact` 返回的 id。
 
 状态外置：工作区里的 `run.json`（run.schema.json）是检查点，`obs.jsonl` 是只追加的观察库，`artifacts/<sha256>.json`
 是内容寻址的产物。任何时候中断，新的 `Engine` 读 `run.json` 从第一个未完成的单元接着做；已完成的单元不重做，
@@ -18,10 +19,26 @@ from pathlib import Path
 from typing import Any
 
 from ..shapes import digest
-from . import budget, checks, cuiyi, data, decision, schema, shihuo, survey, text
+from . import budget, checks, cuiyi, data, decision, handoff, ruwei, schema, shihuo, survey, text
 from .dan import Dan, new_nonce
 
 ENGINE_FIRE = "h1.tunshi@1"
+DRY_RUN_PICK = 3  # 试算按 P 自动取前 3（〔占位〕，09 §3）
+READ_TIERS = ("light", "mid", "heavy")
+
+
+def local_artifact_id(name: str, sha: str) -> str:
+    """没接内核时的 Artifact id 占位：按 sha256 取，同一份产物同一个 id。"""
+    return f"local:{sha[:16]}"
+
+
+def artifact_table(arts: Mapping[str, str], artifact_id: Callable[[str, str], str] = local_artifact_id) -> str:
+    """E-U5：交付末尾的固定格式对照表。界面按这张表取结构化产物，不必等工作区的 run.json。"""
+    if not arts:
+        return ""
+    rows = ["", "", "## 产物对照", "", "| 产物 | Artifact id | sha256 |", "| --- | --- | --- |"]
+    rows += [f"| {name} | {artifact_id(name, sha)} | {sha} |" for name, sha in arts.items()]
+    return "\n".join(rows)
 
 
 class EngineError(RuntimeError):
@@ -40,6 +57,8 @@ class Config:
     budget_usd_milli: int | None = None  # 不给就按预算先验算
     nonce: Callable[[], str] = new_nonce
     by: str = "cz"
+    locks: list[dict[str, Any]] = field(default_factory=list)  # 在途炼档占着的火位 {slot, dossier}（火位锁）
+    artifact_id: Callable[[str, str], str] = local_artifact_id
 
 
 @dataclass
@@ -144,14 +163,26 @@ class Engine:
 
     # ------------------------------------------------------------ S0 立项
 
-    def start(self, intake: dict[str, Any]) -> Delivery:
-        """S0–S3：立项、快照、勘察、识火，交付闸点 1。已有 run.json 就接着做。"""
+    def _out(self, d: Delivery) -> Delivery:
+        d.answer = d.answer + artifact_table(d.artifacts, self.cfg.artifact_id)
+        return d
+
+    def start(self, intake: dict[str, Any], *, reuse: Path | None = None) -> Delivery:
+        """S0–S3：立项、快照、勘察、识火，交付闸点 1（试算模式一口气走到试算报告）。已有 run.json 就接着做。
+
+        reuse：试算转正式（09 §3）——复用那次试算的快照、勘察与观察（按快照身份核对，不重读），
+        识火按存下的提议重做差距比对（公式，不花 token），从闸点 1 开始。"""
+        return self._out(self._start(intake, reuse))
+
+    def _start(self, intake: dict[str, Any], reuse: Path | None) -> Delivery:
         if not self.state:
             errs = schema.errors(intake, "intake")
             if errs:
                 raise EngineError(f"立项单不合 Schema：{errs[:3]}")
-            if intake["mode"] != "formal":
-                raise EngineError("这一期只做正式模式；试算模式随入位一起做")
+            if intake["mode"] not in ("formal", "dry_run"):
+                raise EngineError(f"这一期做正式与试算两种模式，不做 {intake['mode']}")
+            if reuse is not None and intake["mode"] != "formal":
+                raise EngineError("只有正式模式能复用试算")
             refused = list(intake.get("refused", []))
             keep = []
             for s in intake["sources"]:
@@ -183,8 +214,27 @@ class Engine:
                 why = "；".join(f"来源 {r['no']}：{r['why']}" for r in refused)
                 return Delivery(None, "partial", f"立项没有成：{why}。没有发出任何请求。", {}, [why], passed=False)
             self.x["sources"] = [s["no"] for s in keep]
+            if reuse is not None:
+                self._reuse(reuse)
             self._save_state()
-        return self.resume()
+        return self._resume()
+
+    def _reuse(self, prev: Path) -> None:
+        old = json.loads((prev / "run.json").read_text(encoding="utf-8"))
+        if old.get("mode") != "dry_run":
+            raise EngineError("只能复用试算的运行")
+        keep = ("snapshot:", "survey:", "read:")
+        for u in old["units"]:
+            if u["id"].startswith(keep) and u["state"] == "done":
+                self.state["units"].append(dict(u))
+        for name, sha in old["artifacts"].items():
+            if name.startswith(keep) or name == "candidates.proposal":
+                src = prev / "artifacts" / f"{sha}.json"
+                (self.ws / "artifacts" / f"{sha}.json").write_bytes(src.read_bytes())
+                self.state["artifacts"][name] = sha
+        if (prev / "obs.jsonl").exists():
+            (self.ws / "obs.jsonl").write_bytes((prev / "obs.jsonl").read_bytes())
+        self.x["reused_from"] = old["run"]
 
     @property
     def intake(self) -> dict[str, Any]:
@@ -208,6 +258,8 @@ class Engine:
                 raise EngineError(f"来源 {s['no']} 的材料没有定版（地址类来源要先经扩权卡抓取）")
             snap = survey.load_snapshot(sid, s["form"], mat)
             self._snaps[sid] = snap
+            if self._done(f"snapshot:{sid}") and self.get(f"snapshot:{sid}")["identity"] != survey.identity(snap):
+                raise EngineError(f"快照 {sid} 与上次不同：材料变了，不能复用（重新立项）")
             if not self._done(f"snapshot:{sid}"):
                 body = {
                     "id": sid,
@@ -225,7 +277,10 @@ class Engine:
             tiers = [self.get(f"snapshot:{sid}")["size_tier"] for sid in self._snaps]
             tier = max(tiers, key=lambda t: ["S", "M", "L", "XL"].index(t))
             n = int(self.intake.get("max_candidates", 3))
-            self.x["budget_usd_milli"] = self.cfg.budget_usd_milli or budget.run_budget(self.cfg.prior, tier, min(n, 3))
+            dry = self.state["mode"] == "dry_run"
+            self.x["budget_usd_milli"] = self.cfg.budget_usd_milli or budget.run_budget(
+                self.cfg.prior, tier, min(n, 3), dry_run=dry
+            )
         if early:
             self.state["step"] = "S2"
         for sid, snap in self._snaps.items():
@@ -270,6 +325,8 @@ class Engine:
         snaps = [(self._snaps[sid], self._surveys[sid]) for sid in self._snaps]
         tiers = [self.get(f"snapshot:{sid}")["size_tier"] for sid in self._snaps]
         read_budget = max(survey.READ_BUDGET[t] for t in tiers)
+        if self.state["mode"] == "dry_run":
+            read_budget //= 2  # 试算：读预算减半（09 §3）
         focus = list(self.intake.get("focus", []))
         coverage: list[dict[str, Any]] = []
         used = 0
@@ -324,11 +381,15 @@ class Engine:
             doc: dict[str, Any] = {}
             proposal: Mapping[str, Any] = {}
             passed = False
+            stored = self.get("candidates.proposal") if self.x.get("reused_from") else None
             for attempt in range(1, shihuo.ATTEMPTS + 1):
                 self._mark("candidates", "S3", "doing", attempts=attempt)
-                r = self.dan.call("main", f"shihuo:patterns:{attempt}", shihuo.propose_payload(inp, errors))
-                self._spend("S3", "heavy", r.tokens_in, r.tokens_out)
-                proposal = r.output if isinstance(r.output, dict) else {}
+                if stored is not None:  # 试算转正式：按存下的提议重做差距比对，不调丹
+                    proposal, stored = stored, None
+                else:
+                    r = self.dan.call("main", f"shihuo:patterns:{attempt}", shihuo.propose_payload(inp, errors))
+                    self._spend("S3", "heavy", r.tokens_in, r.tokens_out)
+                    proposal = r.output if isinstance(r.output, dict) else {}
                 doc, errors = shihuo.build(inp, proposal)
                 if doc:
                     vres = shihuo.validate(doc, ctx)
@@ -339,11 +400,14 @@ class Engine:
             if not doc:
                 raise EngineError(f"主丹三次都没给出能建清单的提议：{errors[:3]}")
             self.put("candidates.json", doc)
+            self.put("candidates.proposal", dict(proposal))
             self.put(
                 "candidates.needs",
                 shihuo.needs(doc, inp, proposal) + ([] if passed else [f"未过：{e}" for e in errors]),
             )
             self._mark("candidates", "S3", "done", output=self.state["artifacts"]["candidates.json"])
+        if self.state["mode"] == "dry_run":
+            return self._dry_run()
         return self._deliver_g1()
 
     def _budget_cut(self, step: str, uid: str) -> Delivery:
@@ -372,9 +436,12 @@ class Engine:
     # ------------------------------------------------------------ 闸点
 
     def follow_up(self, body: str, *, follow_up_seq: int | None = None) -> Delivery:
-        """cz 的追问正文（带决定块）。G1 之后进萃意，G2 之后停在入位之前（下一期）。"""
+        """cz 的追问正文（带决定块）。G1 之后进萃意，G2 之后进入位与火序，G3 之后出交接包。"""
+        return self._out(self._follow_up(body, follow_up_seq))
+
+    def _follow_up(self, body: str, follow_up_seq: int | None) -> Delivery:
         step = self.state.get("step")
-        if step not in ("G1", "G2"):
+        if step not in ("G1", "G2", "G3"):
             raise EngineError(f"现在不在闸点上（{step}）")
         try:
             dec = decision.parse(body)
@@ -391,10 +458,12 @@ class Engine:
         self._save_state()
         if step == "G1":
             return self._apply_g1(dec)
-        return self._apply_g2(dec, gate["follow_up_seq"])
+        if step == "G2":
+            return self._apply_g2(dec, gate["follow_up_seq"])
+        return self._apply_g3(dec)
 
     def _redeliver(self, step: str, problems: list[str]) -> Delivery:
-        d = self._deliver_g1() if step == "G1" else self._deliver_g2()
+        d = {"G1": self._deliver_g1, "G2": self._deliver_g2, "G3": self._deliver_g3}[step]()
         d.needs = [*problems, *d.needs]
         return d
 
@@ -413,7 +482,7 @@ class Engine:
             }
             self.state["gates"][-1]["decision"] = dec
             self._save_state()
-            return self.resume()
+            return self._resume()
         if problems or not picked:
             if not picked:
                 problems.append("请至少选一个候选")
@@ -431,12 +500,18 @@ class Engine:
         self.x["picked"] = picked
         self.state["step"] = "S4"
         self._save_state()
-        return self.resume()
+        return self._resume()
 
     # ------------------------------------------------------------ S4 萃意
 
     def _cuiyi(self) -> Delivery:
+        cut = self._cuiyi_units()
+        return cut if cut is not None else self._deliver_g2()
+
+    def _cuiyi_units(self) -> Delivery | None:
+        """每个选中候选的萃意单元；只在预算份额用完时返回一次部分交付。"""
         doc = self.get("candidates.json")
+        dry = self.state["mode"] == "dry_run"
         obs = self.observations()
         ctx = self.context()
         rounds: dict[str, int] = self.x.setdefault("rounds", {})
@@ -448,7 +523,7 @@ class Engine:
                 return self._budget_cut("S4", uid)
             cand = next(c for c in doc["candidates"] if c["id"] == cid)
             self._mark(uid, "S4", "doing", depends_on=[self.state["artifacts"]["candidates.json"]])
-            res = cuiyi.distill(self.dan, cand, obs, ctx, rnd=int(rounds.get(cid, 1)))
+            res = cuiyi.distill(self.dan, cand, obs, ctx, rnd=int(rounds.get(cid, 1)), dry=dry)
             for tier, (tin, tout) in res.tokens.items():
                 self._spend("S4", tier, tin, tout)
             vres = checks.v_essence(res.essence, ctx, self.x["picked"])
@@ -461,7 +536,7 @@ class Engine:
                 output=sha,
                 summary=f"{cid}：{'过' if res.passed else '未过'}，取 {res.essence['drafts']['chosen']}",
             )
-        return self._deliver_g2()
+        return None
 
     def _deliver_g2(self) -> Delivery:
         self.state["step"] = "G2"
@@ -541,7 +616,7 @@ class Engine:
                 self._mark(f"cuiyi:{cid}", "S4", "void")
             self.state["step"] = "S4"
             self._save_state()
-            return self.resume()
+            return self._resume()
         confirmed = [c for c in dec.get("confirm", []) if c in self.x["picked"]]
         pending = [c for c in self.x["picked"] if c not in confirmed]
         self.x["confirmed"] = confirmed
@@ -551,16 +626,326 @@ class Engine:
             return self._redeliver("G2", [f"还没有确认：{', '.join(pending)}"])
         self.state["step"] = "S5"
         self._save_state()
-        arts = {f"essence:{c}": self.state["artifacts"][f"essence:{c}"] for c in confirmed}
-        msg = f"已确认 {', '.join(confirmed)} 的核心做法。下一步是落位、排序与交接，这一期还没有实现。"
-        return Delivery(None, "partial", msg, arts, ["落位与排序在下一期实现（09 §2.1 的 S5）"])
+        return self._ruwei()
+
+    # ------------------------------------------------------------ S5 入位与火序
+
+    def _ruwei(self) -> Delivery:
+        doc = self.get("candidates.json")
+        confirmed = list(self.x.get("confirmed", []))
+        self.state["step"] = "S5"
+        rounds: dict[str, int] = self.x.setdefault("rounds_s5", {})
+        deps: dict[str, list[str]] = self.x.setdefault("depends", {})
+        problems: dict[str, list[str]] = self.x.setdefault("placement_problems", {})
+        dry = self.state["mode"] == "dry_run"
+        for cid in confirmed:
+            uid = f"ruwei:{cid}"
+            dep = [self.state["artifacts"][f"essence:{cid}"]]
+            unit = self._unit(uid)
+            if self._done(uid) and unit is not None and unit.get("depends_on") == dep:
+                continue
+            if self._stage_left("S5") <= 0:
+                return self._budget_cut("S5", uid)
+            cand = next(c for c in doc["candidates"] if c["id"] == cid)
+            ess = self.get(f"essence:{cid}")
+            self._mark(uid, "S5", "doing", depends_on=dep)
+            res = ruwei.place(self.dan, cand, ess, rnd=int(rounds.get(cid, 1)), full=not dry, locks=self.cfg.locks)
+            for tier, (tin, tout) in res.tokens.items():
+                if tin or tout:
+                    self._spend("S5", tier, tin, tout)
+            deps[cid] = res.depends_on
+            problems[cid] = res.problems
+            sha = self.put(f"placement:{cid}", res.placement)
+            self._mark(
+                uid,
+                "S5",
+                "done",
+                output=sha,
+                summary=f"{cid}：{res.placement['fire']['slot']}，难度 {res.placement['difficulty']['value']}"
+                + (f"，未过 {len(res.problems)} 项" if res.problems else ""),
+            )
+        if dry:
+            return self._dry_report()
+        placements = {cid: self.get(f"placement:{cid}") for cid in confirmed}
+        names = {c["id"]: c["name"] for c in doc["candidates"]}
+        rels = ruwei.relations(placements, deps, self.cfg.bang, names)
+        ctx = self.context()
+        for cid, p in placements.items():
+            p["conflicts"]["candidates"] = rels[cid]
+            p["checks"] = []
+            p["checks"] = checks.v_placement(p, self.get(f"essence:{cid}"), ctx, confirmed)
+            self.put(f"placement:{cid}", p)
+        self.put("order.json", ruwei.order(doc["candidates"], placements))
+        self._save_state()
+        return self._deliver_g3()
+
+    def _deliver_g3(self) -> Delivery:
+        self.state["step"] = "G3"
+        if not any(g["gate"] == "G3" and "decision" not in g for g in self.state["gates"]):
+            self.state["gates"].append({"gate": "G3", "deliver_seq": self._next_seq()})
+        confirmed = list(self.x.get("confirmed", []))
+        placements = [self.get(f"placement:{c}") for c in confirmed]
+        order = self.get("order.json")
+        text_ = report_g3(placements, order, self.get("candidates.json"))
+        self.put("report:G3", {"v": 1, "gate": "G3", "markdown": text_})
+        self._save_state()
+        arts = {f"placement:{c}": self.state["artifacts"][f"placement:{c}"] for c in confirmed}
+        arts["order.json"] = self.state["artifacts"]["order.json"]
+        arts["report:G3"] = self.state["artifacts"]["report:G3"]
+        needs = []
+        passed = True
+        for p in placements:
+            bad = [c["id"] for c in p["checks"] if not c["ok"]]
+            more = self.x.get("placement_problems", {}).get(p["candidate"], [])
+            if bad or more:
+                passed = False
+                needs.append(f"{p['candidate']} 未过：{', '.join(bad + more)[:300]}")
+        needs.append("请逐个决定：交实现线、搁置（写理由）或排除（写理由）；可勾选把报告存进资料库（闸点 3）")
+        return Delivery("G3", "answered", text_, arts, needs, passed=passed)
+
+    def _apply_g3(self, dec: dict[str, Any]) -> Delivery:
+        confirmed = list(self.x.get("confirmed", []))
+        order = self.get("order.json")
+        problems = [f"决定块里这一行没读懂：{ln}" for ln in dec.get("unparsed", [])]
+        to_impl = list(dec.get("to_implementation", []))
+        hold = {r["candidate"]: r.get("why", "") for r in dec.get("hold", [])}
+        excl = {r["candidate"]: r.get("why", "") for r in dec.get("exclude", [])}
+        named = set(to_impl) | set(hold) | set(excl) | {b for b in dec.get("back", []) if b.startswith("C")}
+        problems += [f"没有入位的候选 {c}" for c in sorted(named - set(confirmed))]
+        held = {h["candidate"]: h for h in order["held"]}
+        for c in to_impl:
+            if c in held:
+                problems.append(f"{c} 在挂起（{held[c].get('note', held[c]['why'])}），不能直接交实现线")
+        if any(b.startswith("闸点") for b in dec.get("back", [])):
+            # 入位单元不作废：重新确认时火意没变的直接复用（_ruwei 比对依赖），改过或退回过的才重跑
+            self.x["confirmed"] = []
+            self.state["step"] = "G2"
+            self._save_state()
+            return self._deliver_g2()
+        back = [b for b in dec.get("back", []) if b.startswith("C") and b in confirmed]
+        if problems:
+            self.state["gates"][-1].pop("decision", None)
+            self._save_state()
+            return self._redeliver("G3", problems)
+        if back:
+            rounds = self.x.setdefault("rounds_s5", {})
+            for c in back:
+                rounds[c] = int(rounds.get(c, 1)) + 1
+                self._mark(f"ruwei:{c}", "S5", "void")
+            self.state["gates"][-1].pop("decision", None)
+            self._save_state()
+            return self._ruwei()
+        pending = [c for c in confirmed if c not in named]
+        if pending:
+            self.state["gates"][-1].pop("decision", None)
+            self._save_state()
+            return self._redeliver("G3", [f"还没有决定：{', '.join(pending)}"])
+        self.x["g3"] = {
+            "to_implementation": to_impl,
+            "hold": hold,
+            "exclude": excl,
+            "library_import": bool(dec.get("library_import")),
+        }
+        self.state["step"] = "S6"
+        self._save_state()
+        return self._handoff()
+
+    # ------------------------------------------------------------ S6 交接包
+
+    def _fates(self, doc: Mapping[str, Any]) -> dict[str, tuple[str, str, str]]:
+        g3 = self.x.get("g3", {})
+        g1: dict[str, Any] = next(
+            (g.get("decision", {}) for g in self.state["gates"] if g["gate"] == "G1" and "decision" in g), {}
+        )
+        g1_excl = {r["candidate"]: r.get("why", "") for r in g1.get("exclude", [])}
+        out: dict[str, tuple[str, str, str]] = {}
+        for c in doc["candidates"]:
+            cid = c["id"]
+            if cid in g3.get("to_implementation", []):
+                out[cid] = ("G3", "handed_off", "交实现线，导入后填档号")
+            elif cid in g3.get("hold", {}):
+                out[cid] = ("G3", "", f"搁置：{g3['hold'][cid] or '未写理由'}")
+            elif cid in g3.get("exclude", {}):
+                out[cid] = ("G3", "excluded", g3["exclude"][cid])
+            elif cid in self.x.get("dropped", []):
+                out[cid] = ("G2", "", "第 2 次确认时放弃")
+            elif cid in g1_excl:
+                out[cid] = ("G1", "excluded", g1_excl[cid])
+            else:
+                out[cid] = ("G1", "", "第 1 次确认时没有选")
+        return out
+
+    def _handoff(self) -> Delivery:
+        doc = self.get("candidates.json")
+        g3 = self.x["g3"]
+        order = self.get("order.json")
+        arts = self.state["artifacts"]
+        held = [dict(h) for h in order["held"]]
+        for cid, why in g3["hold"].items():
+            if any(h["candidate"] == cid for h in held):
+                continue
+            row: dict[str, Any] = next((o for o in order["order"] if o["candidate"] == cid), {})
+            waits = [w for w in row.get("waits_for", []) if w in g3["to_implementation"] or w.startswith("炼档")]
+            if waits:
+                note = f"第 3 次确认时搁置：{why or '等前一个定论'}；等 {'、'.join(waits)} 定论后做映射复核"
+                held.append({"candidate": cid, "why": "slot_locked", "note": note[:300]})
+        items = []
+        for cid in g3["to_implementation"]:
+            c = next(x for x in doc["candidates"] if x["id"] == cid)
+            ess = self.get(f"essence:{cid}")
+            p = self.get(f"placement:{cid}")
+            items.append(
+                {
+                    "candidate": cid,
+                    "decision": "to_implementation",
+                    "seed": c["seed"],
+                    "cuiyi": handoff.render_cuiyi(ess, self.cfg.by),
+                    "essence": ess,
+                    "placement": p,
+                    "artifacts": {
+                        "candidates": arts["candidates.json"],
+                        "essence": arts[f"essence:{cid}"],
+                        "placement": arts[f"placement:{cid}"],
+                        "report": arts["report:G3"],
+                    },
+                }
+            )
+        essences = {c: self.get(f"essence:{c}") for c in self.x.get("confirmed", [])}
+        updates = handoff.bang_updates(
+            self.cfg.bang,
+            doc,
+            run=self.cfg.run,
+            mode="formal",
+            date=self.cfg.date,
+            fates=self._fates(doc),
+            essences=essences,
+            artifacts=[arts["candidates.json"], arts["order.json"]],
+        )
+        proposals = [
+            {"dim": g["dim"], "change": "add_dim", "why": f"{c['title']}：外部有、剖面里没有这一维"[:300]}
+            for c in doc["candidates"]
+            for g in c["gaps"]
+            if g["type"] == "new_dim"
+        ]
+        g3_gate = next(g for g in reversed(self.state["gates"]) if g["gate"] == "G3")
+        h: dict[str, Any] = {
+            "v": 1,
+            "run": self.cfg.run,
+            "basis": doc["basis"],
+            "decided_by": self.cfg.by,
+            "date": self.cfg.date,
+            "g3_follow_up_seq": g3_gate["follow_up_seq"],
+            "order": order["order"],
+            "held": held,
+            "items": items,
+            "bang_updates": updates,
+            "profile_proposals": proposals,
+            "library_import": g3["library_import"],
+            "validator": [{"id": f"V{i}", "ok": True} for i in range(1, 13)],
+        }
+        h["validator"] = handoff.v_handoff(h, self.context(), g3["to_implementation"])
+        sha = self.put("handoff.json", h)
+        text_ = report_handoff(h)
+        rsha = self.put("report:S6", {"v": 1, "gate": "S6", "markdown": text_})
+        self.state["step"] = "done"
+        self._save_state()
+        needs = []
+        if items:
+            needs.append("交实现线的做法：在主仓库的工作分支跑 uv run python scripts/lianhua.py import <交接包>")
+        if g3["library_import"]:
+            needs.append("报告存进资料库：由界面以你的身份导入（只作参考，不作依据）")
+        passed = checks.hard_ok(h["validator"])
+        if not passed:
+            needs.insert(0, "交接包校验未过：" + "；".join(c["id"] for c in h["validator"] if not c["ok"]))
+        return Delivery(None, "answered", text_, {"handoff.json": sha, "report:S6": rsha}, needs, passed=passed)
+
+    # ------------------------------------------------------------ 试算（09 §3）
+
+    def _dry_run(self) -> Delivery:
+        doc = self.get("candidates.json")
+        if "picked" not in self.x:
+            self.x["picked"] = [c["id"] for c in doc["candidates"][:DRY_RUN_PICK]]
+            self.state["step"] = "S4"
+            self._save_state()
+        if self.state["step"] in ("S3", "S4"):
+            cut = self._cuiyi_units()
+            if cut is not None:
+                return cut
+            self.x["confirmed"] = list(self.x["picked"])
+            self.state["step"] = "S5"
+            self._save_state()
+        return self._ruwei()
+
+    def _dry_report(self) -> Delivery:
+        doc = self.get("candidates.json")
+        ctx = self.context()
+        items = []
+        for cid in self.x["picked"]:
+            ess = self.get(f"essence:{cid}")
+            p = self.get(f"placement:{cid}")
+            outcome, why = ruwei.likely_outcome(ess, p)
+            items.append(
+                {
+                    "candidate": cid,
+                    "essence_draft": ess["masked"],
+                    "slot": p["fire"]["slot"],
+                    "group_slots": [g["slot"] for g in p["group"]],
+                    "replaces": p["replaces"],
+                    "conflicts": ruwei.conflict_lines(p),
+                    "kernel_forecast": ruwei.kernel_areas(p),
+                    "difficulty": p["difficulty"]["value"],
+                    "likely_outcome": outcome,
+                    "why": why,
+                    "checks": ess["checks"],
+                }
+            )
+        tiers = [self.get(f"snapshot:{sid}")["size_tier"] for sid in self._snaps]
+        tier = max(tiers, key=lambda t: ["S", "M", "L", "XL"].index(t))
+        est = estimate(self.cfg.prior, tier, len(items))
+        lic = doc["basis"]["snapshots"][0]["license"]
+        report: dict[str, Any] = {
+            "v": 1,
+            "mode": "dry_run",
+            "run": self.cfg.run,
+            "candidates": doc,
+            "auto_picked": list(self.x["picked"]),
+            "items": items,
+            "estimate": est,
+            "plain_summary": dry_summary(items, est, lic),
+        }
+        vres = checks.v_dry_run(report, ctx)
+        sha = self.put("dry_run.json", report)
+        self.put("dry_run.v", vres)
+        fates = {c: ("S5", "dry_run", "预评估过") for c in self.x["picked"]}
+        updates = handoff.bang_updates(
+            self.cfg.bang,
+            doc,
+            run=self.cfg.run,
+            mode="dry_run",
+            date=self.cfg.date,
+            fates=fates,
+            essences={c: self.get(f"essence:{c}") for c in self.x["picked"]},
+            artifacts=[sha],
+        )
+        usha = self.put("bang_updates.json", updates)
+        self.state["step"] = "done"
+        self._save_state()
+        needs = ["这是预评估：单稿、不盲审、不写实现步骤，不能直接交实现线；要正式走一遍就复用这次的快照与观察重开一题"]
+        bad = [c["id"] for c in vres if not c["ok"]]
+        if bad:
+            needs.insert(0, f"校验未过（只标不拦）：{', '.join(bad)}")
+        arts = {"dry_run.json": sha, "bang_updates.json": usha}
+        return Delivery(None, "answered", report_dry_run(report), arts, needs, passed=not bad)
 
     # ------------------------------------------------------------ 续做
 
     def resume(self) -> Delivery:
         """从 run.json 的当前步接着做。"""
+        return self._out(self._resume())
+
+    def _resume(self) -> Delivery:
         step = self.state.get("step")
-        if step in ("failed", "S5", "done"):
+        if step in ("failed", "done"):
             raise EngineError(f"这次运行已停在 {step}")
         if step == "paused_budget":
             cut = [u for u in self.state["units"] if u["state"] == "budget_cut"]
@@ -571,12 +956,20 @@ class Engine:
         self._snapshot()
         if not self._done("candidates"):
             return self._shihuo()
+        if self.state["mode"] == "dry_run":
+            return self._dry_run()
         if step == "G1":
             return self._deliver_g1()
         if step == "S4":
             return self._cuiyi()
         if step == "G2":
             return self._deliver_g2()
+        if step == "S5":
+            return self._ruwei()
+        if step == "G3":
+            return self._deliver_g3()
+        if step == "S6":
+            return self._handoff()
         raise EngineError(f"不认识的步：{step}")
 
     def add_budget(self, usd_milli: int) -> None:
@@ -639,3 +1032,160 @@ def report_g2(essences: Sequence[Mapping[str, Any]]) -> str:
             lines += ["", "三稿分歧：" + "；".join(e["drafts"]["disagreements"])]
         lines.append("")
     return "\n".join(lines)
+
+
+KIND_ZH = {"新生": "新增", "异火": "外部方案优势", "本火": "基线保障", "共有": "通用"}
+ARM_ZH = {"B": "基线", "A1": "外部方案移植", "F": "融合方案", "B1": "基线复跑", "A0": "外部原版"}
+RES_ZH = {
+    "coexist": "并存",
+    "param": "作为参数暴露",
+    "partition": "按条件分开用",
+    "replace": "替换",
+    "reject": "不收",
+    "fused_away": "已在设计里化解",
+    "split_to_kernel": "拆成单独的内核修订",
+}
+REL_ZH = {"compatible": "互不影响", "sequential": "有先后", "depends_on": "依赖", "exclusive": "二选一"}
+HELD_ZH = {
+    "exclusive_pending": "二选一待你定",
+    "waits_structural": "要先定新模块槽",
+    "waits_kernel_split": "要先做内核修订",
+    "cycle": "先后关系成环",
+    "slot_locked": "模块槽占用，排队",
+}
+OUTCOME_ZH = {
+    "promising_huolian": "有望带来新能力",
+    "at_most_helian": "最多是全面提升",
+    "maybe_binghuo": "可能没有增益",
+}
+
+
+def _placement_card(p: Mapping[str, Any]) -> list[str]:
+    f = p["fire"]
+    lines = [
+        f"## {p['candidate']}：{f['id']}（模块槽 {f['slot']}）",
+        "",
+        p.get("plain_summary", ""),
+        "",
+        f"- 兼及：{'、'.join(f.get('also_touches', [])) or '无'}；模块组："
+        + ("、".join(f"{g['id']}（{g['slot']}）" for g in p["group"]) or "无"),
+        f"- 替换：{p['replaces'] or '无，与现有模块并存'}" + ("（被替换的留作对照）" if p["replaces"] else ""),
+        f"- 内核改动：0 行（预判{'为空' if not p['kernel_forecast'] else '：' + '、'.join(p['kernel_forecast'])}）；"
+        f"难度 {p['difficulty']['value']}",
+    ]
+    if p.get("arms"):
+        lines += ["", "**对照组**：" + "；".join(f"{ARM_ZH.get(k, k)}：{v}" for k, v in p["arms"].items())]
+    if p.get("readings"):
+        lines += ["", "| 指标 | 类别 | 方向 | 门槛 | 怎么量 |", "| --- | --- | --- | --- | --- |"]
+        for r in p["readings"]:
+            how = r.get("test") or r.get("run") or "—"
+            must = "（必登）" if r.get("mandatory") else ""
+            arrow = "↑" if r["dir"] == "up" else "↓"
+            lines.append(
+                f"| {r['dim']}{must} | {KIND_ZH.get(r['kind'], r['kind'])} | {arrow} | {r.get('gate', '—')} | {how} |"
+            )
+    if p.get("steps"):
+        lines += ["", "**实现步骤**："]
+        lines += [
+            f"{s['n']}. {s['do']}（{s['slot']}，{'、'.join(s['where'])}；验收：{s['accept']}）" for s in p["steps"]
+        ]
+    conf = p["conflicts"]
+    rows = [f"{c['fire']}：{RES_ZH.get(c['resolution'], c['resolution'])}" for c in conf["fires"]]
+    rows += [f"内核 {c['kernel']}：{RES_ZH.get(c['resolution'], c['resolution'])}" for c in conf["kernel"]]
+    rows += [f"{c['other']}：{REL_ZH.get(c['relation'], c['relation'])}" for c in conf["candidates"]]
+    rows += [f"{lk['slot']} 被在途的集成记录 {lk['dossier']} 占用" for lk in conf["slot_locks"]]
+    if rows:
+        lines += ["", "**冲突**：" + "；".join(rows)]
+    bad = [c["id"] for c in p.get("checks", []) if not c["ok"]]
+    if bad:
+        lines += ["", f"> **校验未过**：{', '.join(bad)}"]
+    lines.append("")
+    return lines
+
+
+def report_g3(placements: Sequence[Mapping[str, Any]], order: Mapping[str, Any], candidates: Mapping[str, Any]) -> str:
+    titles = {c["id"]: c["title"] for c in candidates["candidates"]}
+    lines = ["# 方案分析：映射与集成顺序", "", "## 集成顺序", ""]
+    for o in order["order"]:
+        waits = f"；等 {'、'.join(o['waits_for'])}" if o.get("waits_for") else ""
+        lines.append(f"{o['position']}. {o['candidate']} {titles.get(o['candidate'], '')}：{o['why']}{waits}")
+    for h in order["held"]:
+        lines.append(f"- 暂缓 {h['candidate']}：{HELD_ZH.get(h['why'], h['why'])}（{h.get('note', '')}）")
+    lines.append("")
+    for p in placements:
+        lines += _placement_card(p)
+    return "\n".join(lines)
+
+
+def report_handoff(h: Mapping[str, Any]) -> str:
+    lines = ["# 方案分析：交接", ""]
+    if h["items"]:
+        lines.append("交给实现线的做法（按集成顺序串行导入，前一个定论后再导入下一个）：")
+        for it in h["items"]:
+            f, plain = it["placement"]["fire"], it["placement"]["plain_summary"]
+            lines.append(f"- {it['candidate']} {it['seed']['title']}：{f['id']}（{f['slot']}），{plain}")
+    else:
+        lines.append("这次没有交给实现线的做法。")
+    if h.get("held"):
+        lines += ["", "暂缓："] + [f"- {x['candidate']}：{HELD_ZH.get(x['why'], x['why'])}" for x in h["held"]]
+    lic = h["basis"]["snapshots"][0]["license"]
+    if lic.get("reuse") == "idea_only":
+        lines += ["", f"来源许可证 {lic.get('spdx') or lic['status']}：实现时不得打开原码，只借思路。"]
+    lines += ["", f"候选方案的变化 {len(h['bang_updates'])} 条，由导入命令写入、随 PR 审。"]
+    bad = [c["id"] for c in h["validator"] if not c["ok"]]
+    lines += ["", "交接包校验 V1–V12 " + ("全过。" if not bad else f"未过：{', '.join(bad)}。")]
+    return "\n".join(lines)
+
+
+def report_dry_run(r: Mapping[str, Any]) -> str:
+    lines = [
+        "# 预评估",
+        "",
+        r["plain_summary"],
+        "",
+        "| 编号 | 核心机制 | 模块槽 | 替换 | 内核 | 难度 | 可能的结局 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for it in r["items"]:
+        kern = "、".join(it["kernel_forecast"]) or "不改"
+        lines.append(
+            f"| {it['candidate']} | {it['essence_draft']['statement']} | {it['slot']} | {it['replaces'] or '无'} | "
+            f"{kern} | {it.get('difficulty', '—')} | {OUTCOME_ZH[it['likely_outcome']]}：{it['why']} |"
+        )
+    e = r["estimate"]
+    tok = "；".join(
+        f"{ {'light': '轻量', 'mid': '标准', 'heavy': '高性能'}[k] } 入 {v['in']:,} 出 {v['out']:,}"
+        for k, v in e["tokens"].items()
+    )
+    lines += ["", f"正式走一遍的预估：{tok}；约 {e['minutes']} 分钟机器时间（占位估算）。"]
+    lines += ["", "预评估是单稿、不盲审、不写实现步骤，不能直接交实现线。"]
+    return "\n".join(lines)
+
+
+def estimate(prior: budget.Prior, size_tier: str, n: int) -> dict[str, Any]:
+    """试算报告里“正式走一遍”的预估：按预算先验的 token 表，S4、S5 按候选数乘。"""
+    tokens: dict[str, dict[str, int]] = {}
+    for key, (tin, tout) in prior.tokens(size_tier).items():
+        step, tier = key.split(".")
+        k = n if step in ("S4", "S5") else 1
+        row = tokens.setdefault(tier, {"in": 0, "out": 0})
+        row["in"] += tin * k
+        row["out"] += tout * k
+    ordered = {t: tokens[t] for t in READ_TIERS if t in tokens}
+    total_in = sum(v["in"] for v in ordered.values())
+    return {
+        "tokens": ordered,
+        "minutes": -(-total_in // 50_000),
+        "budget_usd_milli": budget.run_budget(prior, size_tier, max(1, n)),
+    }
+
+
+def dry_summary(items: Sequence[Mapping[str, Any]], est: Mapping[str, Any], lic: Mapping[str, Any]) -> str:
+    good = sum(1 for it in items if it["likely_outcome"] == "promising_huolian")
+    kern = sum(1 for it in items if it["kernel_forecast"])
+    head = f"预评估：自动取了优先级最高的 {len(items)} 个做法，{good} 个有望带来新能力"
+    head += "，内核都不用改。" if not kern else f"，{kern} 个可能要先做内核修订。"
+    tail = f"正式走一遍预计约 {est['minutes']} 分钟机器时间，外加你三次确认。"
+    if lic.get("reuse") == "idea_only":
+        tail += f"来源是 {lic.get('spdx') or lic['status']}，只借思路。"
+    return (head + tail)[:600]

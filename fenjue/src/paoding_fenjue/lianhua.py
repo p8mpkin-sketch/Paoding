@@ -127,8 +127,11 @@ def ruwei(
     arms: dict[str, str],
     readings: list[dict[str, Any]],
     preregistered: str = "",
+    group: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """火位与清单草稿、替换谁、各臂是什么、预登记读数（02 §5、03 §4）。读数登记之后不能改。"""
+    """火位与清单草稿、替换谁、各臂是什么、预登记读数（02 §5、03 §4）。读数登记之后不能改。
+
+    group：火组的其余成员（12 §2.3），每个 {fire, replaces}；跨火位、行为有变的模式一个火位一团火，一份炼档一起走。"""
     d = _need(d, "ruwei")
     missing = [k for k in CUIYI[:7] if not (d["cuiyi"] or {}).get(k)]
     if missing:
@@ -151,12 +154,28 @@ def ruwei(
             raise StepError(f"新生维 {r['dim']} 要登记门槛 gate")
     if not readings:
         raise StepError("至少登记一维读数")
+    members = [dict(m) for m in group or []]
+    for m in members:
+        gf = m.get("fire") or {}
+        lacks = [k for k in FIRE_KEYS if k not in gf]
+        if lacks:
+            raise StepError(f"火组成员 {gf.get('id')} 的清单缺 {lacks}")
+        if gf["slot"] not in SLOTS or gf["slot"] == fire["slot"]:
+            raise StepError(f"火组成员 {gf['id']} 的火位 {gf['slot']} 要是主火之外的另一个火位")
+        if gf["lineage"].get("dossier") != d["dossier"]:
+            raise StepError(f"火组成员 {gf['id']} 的 lineage.dossier 要写本档档号")
+        if m.get("replaces") is not None and m["replaces"] not in gf["lineage"]["from"]:
+            raise StepError(f"火组成员 {gf['id']} 替换的 {m['replaces']} 要写进它的 lineage.from")
+    if len({fire["slot"], *[m["fire"]["slot"] for m in members]}) != 1 + len(members):
+        raise StepError("火组里一个火位只能有一团火")
     d["fire"] = copy.deepcopy(fire)
     d["replaces"] = replaces
     d["arms"] = dict(arms)
     d["readings"] = [dict(r) for r in readings]
     d["preregistered"] = preregistered or f"本档第三节（{d['dossier']}，入位时登记）"
-    d["metrics"]["slots"] = [fire["slot"]]
+    d["metrics"]["slots"] = [fire["slot"], *[m["fire"]["slot"] for m in members]]
+    if members:
+        d["group"] = [{"fire": copy.deepcopy(m["fire"]), "replaces": m.get("replaces")} for m in members]
     d["status"] = "placed"
     return d
 
@@ -282,23 +301,32 @@ def _ref(f: dict[str, Any]) -> str:
     return f"{f['id']}@{f['ver']}"
 
 
+def members(d: dict[str, Any]) -> list[tuple[dict[str, Any], str | None]]:
+    """炼档里的每团火与它替换谁：主火在前，火组成员（12 §2.3）在后。"""
+    return [(d["fire"], d["replaces"]), *[(m["fire"], m.get("replaces")) for m in d.get("group") or []]]
+
+
 def install(g: dict[str, Any], d: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-    """把炼档里的火装进功法（不动品阶与品阶史）：顶替 replaces 那团，被顶替的进常设留出。
-    返回 (新功法, 被顶替那团的 "id@ver")。验体用它造候选功法（体质试炼换上这团火再跑一遍），定阶用它改功法。"""
+    """把炼档里的火装进功法（不动品阶与品阶史）：顶替 replaces 那团，被顶替的进常设留出；火组整组一起装。
+    返回 (新功法, 主火顶替的那团 "id@ver")。验体用它造候选功法（体质试炼换上这团火再跑一遍），定阶用它改功法。"""
     g = copy.deepcopy(g)
-    f, slot = d["fire"], d["fire"]["slot"]
-    refs = list(g["fires"].get(slot, []))
-    old = None
-    if d["replaces"]:
-        old = next((r for r in refs if r.partition("@")[0] == d["replaces"]), None)
-        if old is None:
-            raise StepError(f"功法 {slot} 里没有要顶替的 {d['replaces']}")
-        refs[refs.index(old)] = _ref(f)
-        g.setdefault("holdout", {})[slot] = [*g.get("holdout", {}).get(slot, []), old]
-    else:
-        refs.append(_ref(f))
-    g["fires"][slot] = refs
-    return g, old
+    first = None
+    for i, (f, replaces) in enumerate(members(d)):
+        slot = f["slot"]
+        refs = list(g["fires"].get(slot, []))
+        old = None
+        if replaces:
+            old = next((r for r in refs if r.partition("@")[0] == replaces), None)
+            if old is None:
+                raise StepError(f"功法 {slot} 里没有要顶替的 {replaces}")
+            refs[refs.index(old)] = _ref(f)
+            g.setdefault("holdout", {})[slot] = [*g.get("holdout", {}).get(slot, []), old]
+        else:
+            refs.append(_ref(f))
+        g["fires"][slot] = refs
+        if i == 0:
+            first = old
+    return g, first
 
 
 def jue(
@@ -342,32 +370,37 @@ def jue(
 
 
 def sanhuo(d: dict[str, Any], g: dict[str, Any], by: str, date: str, why: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    """散火：火位指回上一团火（留出里的那团回到生效），新火拿掉；炼档第七节记一行；品阶记一次降阶，原来的升阶记录不抹。"""
+    """散火：火位指回上一团火（留出里的那团回到生效），新火拿掉；火组整组一起散；炼档第七节记一行；
+    品阶记一次降阶，原来的升阶记录不抹。"""
     d = _need(d, "sanhuo")
     g = copy.deepcopy(g)
-    f, slot = d["fire"], d["fire"]["slot"]
-    refs = list(g["fires"].get(slot, []))
-    if _ref(f) not in refs:
-        raise StepError(f"功法 {slot} 里没有 {_ref(f)}：已经散过了？")
-    back = None
-    if d["replaces"]:
-        held = g.get("holdout", {}).get(slot, [])
-        back = next((r for r in held if r.partition("@")[0] == d["replaces"]), None)
-        if back is None:
-            raise StepError(f"常设留出里没有 {d['replaces']}：上一团火已删，散不回去")
-        g["holdout"][slot] = [r for r in held if r != back]
-        if not g["holdout"][slot]:
-            del g["holdout"][slot]
-        refs[refs.index(_ref(f))] = back
-    else:
-        refs.remove(_ref(f))
-    g["fires"][slot] = refs
+    first = None
+    for i, (f, replaces) in enumerate(members(d)):
+        slot = f["slot"]
+        refs = list(g["fires"].get(slot, []))
+        if _ref(f) not in refs:
+            raise StepError(f"功法 {slot} 里没有 {_ref(f)}：已经散过了？")
+        back = None
+        if replaces:
+            held = g.get("holdout", {}).get(slot, [])
+            back = next((r for r in held if r.partition("@")[0] == replaces), None)
+            if back is None:
+                raise StepError(f"常设留出里没有 {replaces}：上一团火已删，散不回去")
+            g["holdout"][slot] = [r for r in held if r != back]
+            if not g["holdout"][slot]:
+                del g["holdout"][slot]
+            refs[refs.index(_ref(f))] = back
+        else:
+            refs.remove(_ref(f))
+        g["fires"][slot] = refs
+        if i == 0:
+            first = back
     g["jie"] = g["jie"] - 1
     g["history"] = [
         *g["history"],
         {"jie": g["jie"], "change": f"散火：{d['title']}（炼档 {d['dossier']}）", "reverts": d["dossier"]},
     ]
-    d["reverts"] = [*d["reverts"], {"by": by, "date": date, "why": why, **({"back_to": back} if back else {})}]
+    d["reverts"] = [*d["reverts"], {"by": by, "date": date, "why": why, **({"back_to": first} if first else {})}]
     d["metrics"]["reverts"] = len(d["reverts"])
     d["status"] = "reverted"
     return d, g
@@ -391,6 +424,49 @@ def _cell(x: Any) -> str:
     if isinstance(x, float) and x.is_integer():
         x = int(x)
     return str(x).replace("|", "\\|").replace("\n", " ")
+
+
+def _engine_sections(d: dict[str, Any]) -> list[str]:
+    """由方案分析导入的炼档（有 engine 键）：第三节后加“冲突报告”“实现步骤”两小节（12 §2.4）。"""
+    e = d.get("engine")
+    if not e:
+        return []
+    px = e.get("placement_extra", {})
+    c = px.get("conflicts", {})
+    lines = ["### 冲突报告", "", "| 与谁 | 决定 | 种类 | 化解 | 说明 |", "| --- | --- | --- | --- | --- |"]
+    for r in c.get("fires", []):
+        note = r.get("note", "") + (f"（分区：{r['partition_by']}）" if r.get("partition_by") else "")
+        cells = [r["fire"], r["atom"], r["kind"], r["resolution"], note]
+        lines.append("| " + " | ".join(_cell(x) for x in cells) + " |")
+    for r in c.get("kernel", []):
+        lines.append(f"| {_cell(r['kernel'])} | — | 体质 | {_cell(r['resolution'])} | {_cell(r.get('note'))} |")
+    for r in c.get("candidates", []):
+        lines.append(f"| {_cell(r['other'])} | — | 候选之间 | {_cell(r['relation'])} | {_cell(r.get('note'))} |")
+    for r in c.get("slot_locks", []):
+        lines.append(f"| 炼档 {_cell(r['dossier'])} | — | 火位锁 | 排队 | {_cell(r['slot'])} |")
+    lines += [
+        "",
+        f"体质影响预判：{_cell('、'.join(px.get('kernel_forecast') or [])) if px.get('kernel_forecast') else '空'}。",
+        "",
+    ]
+    lines += [
+        "### 实现步骤",
+        "",
+        "| # | 做什么 | 火位 | 在哪 | 测试 | 体质行数 | 验收 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for s in px.get("steps", []):
+        lines.append(
+            f"| {s['n']} | {_cell(s['do'])} | {_cell(s['slot'])} | {_cell('、'.join(s['where']))} | "
+            f"{_cell('、'.join(s['tests']))} | {s['kernel_lines']} | {_cell(s['accept'])} |"
+        )
+    lines += [
+        "",
+        f"来源：方案分析 `{_cell(e.get('run'))}` 的 {_cell(e.get('candidate'))}；"
+        "产物 sha256 见炼档 JSON 的 engine.artifacts。",
+        "",
+    ]
+    return lines
 
 
 def render(d: dict[str, Any]) -> str:
@@ -432,8 +508,15 @@ def render(d: dict[str, Any]) -> str:
         f"启用条件：{_cell(o.get('enable_when'))}；对照臂：{_cell(o.get('control_arm'))} |",
         f"| 替换谁 | {_cell(d.get('replaces') and d['replaces'] + '（入功法后进常设留出）') or '并存'} |",
         f"| 预登记读数 | {_cell(d.get('preregistered'))}，见第五节的表（入位时写下，之后不改） |",
-        "",
     ]
+    for m in d.get("group") or []:
+        gf = m["fire"]
+        lines.append(
+            f"| 火组成员 | `{_cell(gf.get('id'))}@{_cell(gf.get('ver'))}`（{_cell(gf.get('slot'))}），"
+            f"替换 {_cell(m.get('replaces')) if m.get('replaces') else '无（并存）'} |"
+        )
+    lines.append("")
+    lines += _engine_sections(d)
     if d.get("design_verdict"):
         dv = d["design_verdict"]
         lines += [f"设计裁决（值得炼）：{dv['by']}，{dv['date']}{('，' + dv['note']) if dv.get('note') else ''}。", ""]

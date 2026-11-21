@@ -244,7 +244,7 @@ def test_three_draft_disagreement_is_listed(g2_runs):
     eng, _ = g2_runs[("alpha", "code")]
     ess = eng.get("essence:C1")
     assert ess["drafts"]["chosen"] == "main"
-    assert any("萃丹二稿没有" in s for s in ess["drafts"]["disagreements"])
+    assert any("第三稿没有" in s for s in ess["drafts"]["disagreements"])
 
 
 def test_canary_in_a_draft_is_caught_and_rewritten(g2_runs):
@@ -267,12 +267,12 @@ def test_no_canary_or_secret_in_any_artifact(g2_runs, fx, form):
 
 
 @pytest.mark.parametrize("fx,form", cases.TO_GATE_2)
-def test_gate_2_confirm_moves_to_placement(g2_runs, fx, form):
+def test_gate_2_confirm_places_and_delivers_gate_3(g2_runs, fx, form):
     eng, _ = g2_runs[(fx, form)]
     d = eng.follow_up(cases.g2_block(list(eng.x["picked"])))
-    assert eng.state["step"] == "S5"
+    assert eng.state["step"] == "G3" and d.gate == "G3" and d.outcome == "answered"
     assert eng.x["confirmed"] == eng.x["picked"]
-    assert set(d.artifacts) == {f"essence:{c}" for c in eng.x["picked"]}
-    assert [g["gate"] for g in eng.state["gates"]] == ["G1", "G2"]
-    assert all("decision" in g for g in eng.state["gates"])
+    assert set(d.artifacts) == {f"placement:{c}" for c in eng.x["picked"]} | {"order.json", "report:G3"}
+    assert [g["gate"] for g in eng.state["gates"]] == ["G1", "G2", "G3"]
+    assert all("decision" in g for g in eng.state["gates"][:2])
     assert schema.errors(eng.state, "run") == []
