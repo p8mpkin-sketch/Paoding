@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 import time
+import traceback
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -211,9 +212,13 @@ class Feedback:
 
 
 def _unit_owns(unit: str, key: str) -> bool:
-    """台账里的单元（run.json 的 units）与调用键的对应：入位与提炼按“单元号:”开头，识别候选的键以 shihuo 开头。"""
+    """台账里的单元（run.json 的 units）与调用键的对应：入位与提炼按“单元号:”开头，识别候选的键以 shihuo 开头，
+    片段阅读（read:<火位>）按键里倒数第二段的火位认。别的火位的阅读、别的单元的调用输入都不变（备忘照常命中）。"""
     if unit.startswith(("ruwei:", "cuiyi:")):
         return key.startswith(unit + ":")
+    if unit.startswith("read:"):  # 片段阅读：键是 read:<片段键>:<火位>:<次数>，片段键里也有冒号，所以从尾部数
+        parts = key.split(":")
+        return len(parts) >= 4 and parts[0] == "read" and parts[-2] == unit.partition(":")[2]
     return unit == "candidates" and key.startswith("shihuo:")
 
 
@@ -246,6 +251,7 @@ class Session:
         self.dan: Dan = Memo(dan, self.root / "calls.jsonl")
         self.evidence: dict[str, str] = {}  # 来源编号 → 支撑“这份材料就是它”的 Artifact（材料本身，或抓取的执行留档）
         self._registered: dict[str, str] = self._load("registered.json") or {}
+        self._repaired: dict[str, str] = self._load("repaired.json") or {}  # 被拒的原 sha → 重产登记的 sha
         self._eng: Engine | None = None
         doc = self._load(ATTEMPTS_FILE)
         self.attempts: list[dict[str, Any]] = list(doc["rows"]) if isinstance(doc, dict) else []
@@ -285,6 +291,11 @@ class Session:
                 (self.root / "registered.json").write_text(
                     json.dumps(self._registered, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8"
                 )
+                if cur != sha:
+                    self._repaired[sha] = cur
+                    (self.root / "repaired.json").write_text(
+                        json.dumps(self._repaired, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+                    )
                 if history:
                     self.say(f"产物 {name} 第 {tries + 1} 次登记通过（前 {tries} 次被拒，已按原因重产）")
                 return self._registered[sha]
@@ -302,6 +313,13 @@ class Session:
             "refused", unit=None, reason=f"产物 {name} 登记被拒 {len(history)} 次：{history[-1]['errors'][0]}"
         )
         raise ProductRefused(name, history)
+
+    def final_of(self, name: str, sha: str) -> tuple[str, str | None]:
+        """交付里的产物表：sha256 必须是那个 Artifact 编号实际登记的内容。重产过的给新的，并附一行说明。"""
+        new = self._repaired.get(sha)
+        if new is None:
+            return sha, None
+        return new, f"{name}：原 {sha[:12]} 被拒，已按原因重产（{new[:12]}）"
 
     def _write_product(self, name: str, obj: Any) -> str:
         """重产的产物落盘（与引擎自己存产物的格式相同），并让引擎的检查点改认它。"""
@@ -330,6 +348,11 @@ class Session:
         (self.root / ATTEMPTS_FILE).write_text(
             json.dumps({"v": 1, "rows": self.attempts}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
         )
+
+    def _log_defect(self) -> None:
+        """缺陷的调用栈：只给排错用，写在工作区的 defects.log，不进台账里给模型看的话，也不进交付。"""
+        with (self.root / "defects.log").open("a", encoding="utf-8") as f:
+            f.write(f"=== 第 {self.attempt_no} 次尝试 ===\n{traceback.format_exc()}\n")
 
     def _doing_unit(self) -> str | None:
         """出事时正在做的单元（run.json 里停在 doing 的那个）。"""
@@ -465,6 +488,7 @@ class Session:
             by=str(intake.get("requested_by") or b.get("by") or "cz"),
             locks=list(b.get("locks") or []),
             artifact_id=self.artifact_id,
+            artifact_final=self.final_of,
         )
         self._eng = Engine(self.root, Feedback(self.dan, lambda: self.attempts), mats, cfg)
         return self._eng
@@ -490,6 +514,7 @@ class Session:
                 return g
             d = g
         except Exception as e:  # noqa: BLE001  引擎自己的缺陷：不能让会话崩掉（崩了就是原样重跑、最后无声地停）
+            self._log_defect()
             unit = self._doing_unit()
             where = unit or (self._load("run.json") or {}).get("step") or "启动"
             what = f"{type(e).__name__}: {e}"

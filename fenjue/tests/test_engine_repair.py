@@ -173,7 +173,7 @@ class Strict(Host):
 
     def __init__(self, brief, ws, refuse=None):
         super().__init__(brief)
-        self.ws, self.refuse, self.paths = ws, refuse, []
+        self.ws, self.refuse, self.paths, self.by_id = ws, refuse, [], {}
 
     def call(self, name, args):
         if name != "check":
@@ -185,6 +185,7 @@ class Strict(Host):
         if errs:
             return {"ok": False, "code": "schema_error", "detail": "；".join(errs), "errors": errs}
         self.n += 1
+        self.by_id[f"a_{100 + self.n}"] = args["path"]
         return {"ok": True, "artifact": f"a_{100 + self.n}"}
 
 
@@ -274,6 +275,19 @@ def test_chain_registration_refused_then_reproduced_then_accepted_in_a_whole_dry
     doc = json.loads((tmp_path / "analysis" / "run.json").read_text(encoding="utf-8"))
     sha = doc["artifacts"]["bang_updates.json"]  # 引擎的检查点也改认了重产的那份
     assert json.loads((tmp_path / "analysis" / "artifacts" / f"{sha}.json").read_text(encoding="utf-8"))["name"]
+    # 交付里的“产物对照”：每行的 sha256 都是那个 Artifact id 实际登记内容的哈希；重产过的有说明行
+    answer = (tmp_path / "analysis" / "answer.md").read_text(encoding="utf-8")
+    rows = {
+        c[0]: (c[1], c[2])
+        for c in (r.strip("| ").split(" | ") for r in answer.splitlines() if r.startswith("| ") and ".json" in r)
+    }
+    for name, (aid, row_sha) in rows.items():
+        assert host.by_id[aid] == f"analysis/artifacts/{row_sha}.json", name
+    bang_id, bang_sha = rows["bang_updates.json"]
+    rejected = host.paths[1].rsplit("/", 1)[1][:-5]
+    assert bang_sha == sha and bang_sha != rejected
+    assert f"bang_updates.json：原 {rejected[:12]} 被拒，已按原因重产（{sha[:12]}）" in answer
+    assert "原 " not in "".join(r for r in answer.splitlines() if r.startswith("| dry_run.json"))
 
 
 # ---------------------------------------------------------------- 修复三：尝试之间的反馈与耗尽终局
@@ -356,13 +370,61 @@ def test_a_defect_in_the_last_try_is_reported_even_when_it_is_the_first_try(tmp_
     assert d["outcome"] == "blocked" and "共尝试 1 次" in d["needs"][0] and "ZeroDivisionError" in "\n".join(d["needs"])
 
 
+def test_a_defect_while_reading_a_fragment_is_fed_back_to_that_slots_reads_only(tmp_path, monkeypatch):
+    from paoding_fenjue.engine import shihuo
+
+    real, boom = shihuo._parse_reader, {"left": 1}
+
+    def flaky(*a, **kw):
+        if boom["left"]:
+            boom["left"] -= 1
+            raise KeyError("observations")
+        return real(*a, **kw)
+
+    monkeypatch.setattr(shihuo, "_parse_reader", flaky)
+    rec = cases.recording("delta", "code", ".dry")
+    s1 = kernel.Session(tmp_path, _dry_brief(tmp_path, relays_left=4), ByKey(rec), Host(_dry_brief(tmp_path)))
+    assert s1.run().status == "relay"
+    (row,) = json.loads((tmp_path / "analysis" / "attempts.json").read_text(encoding="utf-8"))["rows"]
+    assert row["unit"].startswith("read:H") and "KeyError" in row["reason"]
+    slot = row["unit"].partition(":")[2]
+    spy = Spy(rec)
+    s2 = kernel.Session(tmp_path, _dry_brief(tmp_path, relays_left=3), spy, Host(_dry_brief(tmp_path)))
+    assert s2.run().status == "delivered"
+    carried = [k for k, p in spy.seen if "prior_failures" in p]
+    assert carried and all(k.startswith("read:") and k.split(":")[-2] == slot for k in carried)
+    assert not any(  # 别的调用的输入不变：这个火位的读丹调用一次不漏地带了，别的一次不带
+        k.startswith("read:") and k.split(":")[-2] == slot for k, p in spy.seen if "prior_failures" not in p
+    )
+    assert not any(not k.startswith("read:") for k in carried)
+
+
+def test_the_call_stack_of_a_defect_goes_to_a_debug_file_only(tmp_path, monkeypatch):
+    def boom(*a, **kw):
+        raise AttributeError("secret-detail")
+
+    monkeypatch.setattr(ruwei, "skeleton", boom)
+    brief = _dry_brief(tmp_path, relays_left=0)
+    host = Host(brief)
+    kernel.Session(tmp_path, brief, ByKey(cases.recording("delta", "code", ".dry")), host).run()
+    log = (tmp_path / "analysis" / "defects.log").read_text(encoding="utf-8")
+    assert "Traceback" in log and "in boom" in log and "secret-detail" in log
+    assert "Traceback" not in json.dumps(host.delivered()) and "Traceback" not in (
+        tmp_path / "analysis" / "attempts.json"
+    ).read_text(encoding="utf-8")
+
+
 def test_prior_failures_reach_the_model_prompt_and_only_for_the_unit_that_failed():
     payload = {"template": "ruwei/place/v1", "candidate": {"id": "C1"}, "prior_failures": ["上次崩在 forms 的形状"]}
     req = pills.render("placer", "ruwei:C1:r1:place:1", payload, "h1.tunshi@1")
     assert "前几次尝试在这一步没做成" in req.user and "上次崩在 forms 的形状" in req.user
     assert '"prior_failures"' not in req.user  # 只在专栏里出现一次，不再混进“输入”的 JSON
     assert kernel._unit_owns("ruwei:C1", "ruwei:C1:r1:design:2") and not kernel._unit_owns("ruwei:C1", "ruwei:C10:r1:x")
-    assert kernel._unit_owns("candidates", "shihuo:patterns:1") and not kernel._unit_owns("read:H1", "read:s1:a:H1:1")
+    assert kernel._unit_owns("candidates", "shihuo:patterns:1")
+    # 片段阅读：按键里倒数第二段的火位认（片段键里也有冒号）
+    assert kernel._unit_owns("read:H1", "read:s1:README.md:1-14:H1:1")
+    assert not kernel._unit_owns("read:H1", "read:s1:README.md:1-14:H2:1")
+    assert not kernel._unit_owns("read:H1", "ruwei:C1:r1:place:1")
 
 
 def test_the_unit_that_was_doing_when_it_crashed_is_what_the_ledger_names(tmp_path):
