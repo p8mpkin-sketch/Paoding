@@ -306,7 +306,104 @@ export function staticScripts(): Script[] {
   // 端点代理按请求记账：一次模型调用一条 cost（与会话活动里的 turn 按序号对齐）
   for (const [u, w, ti, to, tc] of [[52, 6, 4200, 600, 0], [61, 7, 4700, 640, 3800], [58, 6, 5600, 690, 4500], [65, 7, 6500, 670, 5800]] as const)
     r.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: ti, tokens_cached: tc, tokens_out: to, usd_milli: u, wall_s: w, price_table: "prices@1" }));
-  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }, { pid: r.pid, steps: r.steps }];
+  // demo-8：开放道，部分完成（任务页排版的示例）。答案是一份长的 Markdown：多级标题、九列的清单表（含档位列）、
+  // 带 sha256 的产物对照表、代码块、嵌套列表；交付里有“要你补的”。用来看长内容的滚动与表格、摘要值的排版。
+  const w = new Builder("demo-8");
+  const want = "梳理这个仓库里各处的重试与超时写法，列一份清单，标出值得统一的地方，并给出改造的先后顺序。";
+  w.input("statement", `${want}\n`);
+  w.open("示例题：梳理重试与超时的写法", want, {
+    goal: { statement: want, accept: "open" },
+    scope: [{ resource: "workspace", pattern: "", actions: ["read", "write"], risk: "r0" }],
+    budget: { usd_milli: 3000, wall_s: 2400, verify_share: 0.2, bootstrap_share: 0.3 },
+    judges: [], profile: { info: "complete", judge: "none", reversibility: "r0" },
+    prefs: { model: "default" },
+  });
+  w.lease("S1", "solve");
+  w.exec("e_grep", "S1", "shell", "rg -n 'retry|timeout|backoff' --type py -c | sort -t: -k2 -nr | head -8", "svc/client/http.py:41\nsvc/queue/consumer.py:27\nsvc/storage/blob.py:19\nsvc/jobs/runner.py:14\nsvc/notify/mail.py:9\nsvc/auth/token.py:6\nsvc/search/index.py:5\nsvc/export/csv.py:3\n");
+  w.exec("e_test", "S1", "shell", "python -m pytest tests/resilience -q", "..............F...\n1 failed, 17 passed in 12.41s\n", 1);
+  w.exec("e_sum", "S1", "shell", "sha256sum out/inventory.csv out/unify-plan.md out/retry_policy.py", "3fa2c1d09b7e4a6f8d2c5e1b0a9f7c3d4e6b8a1c2d5f7e9b0c3a6d8f1e4b9e4b  out/inventory.csv\n8c1e5a7d3b9f0246ace8135790bdf2468ace13579bdf02468ace13579bdf0a1c  out/unify-plan.md\nd4b7a9c2e6f1083b5d7f9a1c3e5b7d9f0a2c4e6b8d0f1a3c5e7b9d1f3a5c7e2f  out/retry_policy.py\n");
+  w.authored("answer", "S1", [
+    "仓库里有 9 处各写各的重试与超时，其中 4 处值得先统一：HTTP 客户端、队列消费、对象存储和任务执行器。它们占了全部重试代码的八成，而且彼此的退避算法不一致。",
+    "",
+    "# 清单",
+    "",
+    "| 编号 | 做法 | 主要位置 | 价值 | 置信 | 难度 | 风险 | 优先级 | 建议 |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| R-01 | 固定间隔重试 3 次，不区分错误类型 | `svc/client/http.py` | 高 | 高 | 低 | 低 | P0 | 换成带抖动的指数退避，只对 5xx 与连接错误重试 |",
+    "| R-02 | 消费失败立即重新入队，没有上限 | `svc/queue/consumer.py` | 高 | 高 | 中 | 中 | P0 | 加最大次数与死信队列；重试间隔跟着次数涨 |",
+    "| R-03 | 读超时写死 30 秒，写操作没有超时 | `svc/storage/blob.py` | 高 | 中 | 低 | 中 | P1 | 超时改成配置项，写操作补上超时 |",
+    "| R-04 | 任务整体超时后不取消子进程 | `svc/jobs/runner.py` | 高 | 中 | 高 | 高 | P1 | 超时后先发终止信号，宽限期过了再强杀 |",
+    "| R-05 | 发信失败只记日志，不重试 | `svc/notify/mail.py` | 中 | 高 | 低 | 低 | P2 | 接入统一策略即可 |",
+    "| R-06 | 令牌刷新失败时无限循环 | `svc/auth/token.py` | 中 | 中 | 低 | 高 | P1 | 加上限；到上限后把错误抛给调用方 |",
+    "| R-07 | 建索引时遇到 429 会原地等 60 秒 | `svc/search/index.py` | 低 | 中 | 低 | 低 | P3 | 读响应里的等待秒数，没有再退避 |",
+    "| R-08 | 导出大文件没有总超时 | `svc/export/csv.py` | 低 | 低 | 中 | 低 | P3 | 先观察，暂不动 |",
+    "| R-09 | 测试里用真实的 sleep 等重试 | `tests/resilience/` | 中 | 高 | 低 | 低 | P2 | 换成可注入的时钟，测试能快十倍 |",
+    "",
+    "## 各处的耗时",
+    "",
+    "| 位置 | 重试代码行数 | 最坏等待 | 占比 |",
+    "| :--- | ---: | ---: | ---: |",
+    "| HTTP 客户端 | 41 | 9 秒 | 33% |",
+    "| 队列消费 | 27 | 无上限 | 22% |",
+    "| 对象存储 | 19 | 30 秒 | 15% |",
+    "| 任务执行器 | 14 | 无上限 | 11% |",
+    "| 其余五处 | 23 | 60 秒 | 19% |",
+    "",
+    "# 统一方案",
+    "",
+    "建议抽出一个策略对象，各处只声明“重试几次、等多久、哪些错误值得重试”：",
+    "",
+    "```python",
+    "@dataclass(frozen=True)",
+    "class RetryPolicy:",
+    "    attempts: int = 4",
+    "    base_delay: float = 0.2      # 秒",
+    "    max_delay: float = 8.0",
+    "    jitter: float = 0.25         # 上下浮动 25%",
+    "    retry_on: tuple[type[Exception], ...] = (ConnectionError, TimeoutError)",
+    "```",
+    "",
+    "改造顺序：",
+    "",
+    "1. 先落 **R-01** 与 **R-02**：改动小、收益最大，而且互不依赖",
+    "2. 再做 R-03、R-06：都只是加上限和配置项",
+    "   - R-06 要先确认调用方能处理抛出来的错误",
+    "   - R-03 的默认值沿用现在的 30 秒，不改行为",
+    "3. 最后做 R-04：要动子进程管理，单独排期",
+    "",
+    "> 没有把握的地方：R-04 的宽限期该设多长，取决于最慢的任务要多久才能安全退出，这个我没有数据。",
+    "",
+    "# 产物对照",
+    "",
+    "| 产物 | 说明 | 大小 | sha256 |",
+    "| --- | --- | --- | --- |",
+    "| `out/inventory.csv` | 上面这份清单的原始数据 | 2.1 KB | 3fa2c1d09b7e4a6f8d2c5e1b0a9f7c3d4e6b8a1c2d5f7e9b0c3a6d8f1e4b9e4b |",
+    "| `out/unify-plan.md` | 统一方案的完整说明 | 6.4 KB | 8c1e5a7d3b9f0246ace8135790bdf2468ace13579bdf02468ace13579bdf0a1c |",
+    "| `out/retry_policy.py` | 策略对象的草稿实现 | 1.3 KB | d4b7a9c2e6f1083b5d7f9a1c3e5b7d9f0a2c4e6b8d0f1a3c5e7b9d1f3a5c7e2f |",
+    "",
+    "三份产物都在工作区的 `out/` 目录里；对照值是交付前用 `sha256sum` 算的。",
+    "",
+  ].join("\n"), "text/markdown");
+  w.ev(adapter("S1", "solve"), "deliver", (i) => ({
+    outcome: "partial", answer: i.answer,
+    claims: [
+      { text: "仓库里与重试、超时有关的代码集中在 8 个文件，HTTP 客户端最多", refs: [i.e_grep] },
+      { text: "现有的韧性测试 18 条里有 1 条本来就是红的，与这次梳理无关", refs: [i.e_test] },
+      { text: "三份产物的 sha256 与答案里的对照表一致", refs: [i.e_sum] },
+      { text: "R-04 超时后子进程会留下来继续跑", refs: [] },
+    ],
+    self_check: [
+      { what: "清单里的 9 处逐个打开文件核对过行号", result: "pass", refs: [i.e_grep] },
+      { what: "产物写完后重新算了一遍 sha256", result: "pass", refs: [i.e_sum] },
+      { what: "没有在真实流量下验证“占八成”这个说法，只按代码行数估的", result: "skipped", refs: [] },
+    ],
+    unverified: ["R-04 的子进程残留只读了代码，没有实际复现", "各处的“最坏等待”是按代码里的常数算的，没有测"],
+    needs: ["R-04 的宽限期：最慢的任务从收到终止信号到安全退出，大概要多久？", "队列的死信处理：你们现在有没有死信队列，叫什么名字？", "能不能给一份最近一周的重试次数统计，我好核对“占八成”这个说法"],
+  }), "dlv");
+  for (const [u, ti, tc, to] of [[260, 6100, 0, 720], [310, 7400, 5600, 880], [340, 8800, 7000, 1400]] as const)
+    w.ev(adapter("S1", "solve"), "cost", (i) => ({ task_id: i.S1, source: "proxy", model: "model-a", tokens_in: ti, tokens_cached: tc, tokens_out: to, usd_milli: u, wall_s: 9, price_table: "prices@1" }));
+  w.release("S1", "solve", 280);
+  return [{ pid: b.pid, steps: b.steps }, { pid: c.pid, steps: c.steps }, { pid: d.pid, steps: d.steps }, { pid: e.pid, steps: e.steps }, { pid: o.pid, steps: o.steps }, { pid: r.pid, steps: r.steps }, { pid: w.pid, steps: w.steps }];
 }
 
 /** 复核会话（地图 Q34）的示例活动：读交付里的依据、重跑一条自检、交回读数。 */

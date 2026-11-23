@@ -18,15 +18,6 @@ const COL = 124, NW = 108, NH = 38, LANE = 72, BELOW = 34, YOU = 56, PAD = 16, F
 
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
 
-/** 按显示宽度截断：汉字算两格，其余一格；节点里放不下就省略。 */
-const clip = (s: string, n: number) => {
-  let w = 0;
-  for (let i = 0; i < s.length; i++) {
-    w += /[\u2e80-\uffff]/.test(s[i]) ? 1.9 : 1;
-    if (w > n) return `${s.slice(0, Math.max(1, i - 1))}…`;
-  }
-  return s;
-};
 
 function rx(n: GNode): number {
   if (n.kind === "call") return n.entry.tool === "exec" || n.entry.ev?.kind === "register_artifact" ? 2 : 10;
@@ -115,7 +106,7 @@ export function ExecGraph({ data, vm, seq, live, onLocate }: { data: TraceData; 
                 if (e.kind === "relay") { const mx = (x1 + x2) / 2; return <path key={i} className="xg-e relay" d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} markerEnd="url(#xg-arrow)" />; }
                 return <line key={i} className="xg-e seq" x1={x1} y1={y1} x2={x2} y2={y2} />;
               })}
-              {g.nodes.map((n) => {
+              {g.nodes.map((n, ni) => {
                 const p = pos.get(n.id)!;
                 const turn = n.kind === "turn" ? (n.entry.item as ActTurn | undefined) : undefined;
                 return (
@@ -123,11 +114,17 @@ export function ExecGraph({ data, vm, seq, live, onLocate }: { data: TraceData; 
                     transform={`translate(${p.x},${p.y})`} role="button" tabIndex={0} data-node={n.id} data-node-kind={n.kind} data-node-state={n.state}
                     aria-label={`${n.label} ${n.sub}`} aria-pressed={sel === n.id}
                     onClick={() => setSel(sel === n.id ? null : n.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSel(n.id); } }}>
-                    <title>{`${n.label} ${n.sub}`}</title>
                     <rect width={p.w} height={p.h} rx={rx(n)} />
                     {n.state === "now" && <rect className="xg-pulse" width={p.w} height={p.h} rx={rx(n)} />}
-                    <text x={10} y={n.below ? 16 : 16} className="xg-t">{clip(n.label, 12)}</text>
-                    {!n.below && <text x={10} y={30} className="xg-s">{clip(turn ? `${tok(turn.in)}→${tok(turn.out)}` : n.sub, 14)}</text>}
+                    {/* 框里放完整的字，超出框的部分裁掉（不在文字里加省略号，也不另放 title）：框里的字与节点的名字（aria-label）是同一串，读屏与语音操作对得上；完整内容点开在检视里看 */}
+                    <clipPath id={`xg-clip-${ni}`}><rect width={Math.max(p.w - 14, 0)} height={p.h} /></clipPath>
+                    <g clipPath={`url(#xg-clip-${ni})`}>
+                      {/* 一个 text 里两行（tspan），中间一个空格：文字内容与 aria-label 逐字相同 */}
+                      <text x={10} y={16}>
+                        <tspan className="xg-t">{n.label}</tspan>{!n.below && " "}
+                        {!n.below && <tspan className="xg-s" x={10} y={30}>{turn ? `${tok(turn.in)}→${tok(turn.out)}` : n.sub}</tspan>}
+                      </text>
+                    </g>
                   </g>
                 );
               })}

@@ -130,7 +130,7 @@
 @keyframes xg-pulse { 0% { opacity: .9; } 50% { opacity: .15; } 100% { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) { .xg-n .xg-pulse, .tr-live i, .tr-follow.on .tl-dot, .tr-st.now::after { animation: none; } }
 .xg-n.sel rect, .xg-n:focus-visible rect { stroke-width: 3; stroke: var(--ink); }
-.xg-insp { position: sticky; top: 12px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); font-size: var(--fs-sm); min-width: 0; }
+.xg-insp { position: sticky; top: 50px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); font-size: var(--fs-sm); min-width: 0; }
 .xg-insp .ws-h { margin: 0 0 8px; }
 .xg-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 0 0 8px; }
 .xg-body-d { overflow-wrap: anywhere; }
@@ -147,7 +147,7 @@
 .tk-fx .tk-frow.on { background: var(--paper-2); box-shadow: inset 2px 0 0 var(--ink); }
 .tk-fgh { display: flex; justify-content: space-between; padding: 10px 0 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--rule-2); }
 .tk-fprov { display: block; font-size: var(--fs-xs); }
-.tk-fx-r { position: sticky; top: 12px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); min-width: 0; max-height: calc(100vh - 120px); overflow: auto; }
+.tk-fx-r { position: sticky; top: 50px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); min-width: 0; max-height: calc(100vh - 230px); overflow: auto; }
 .tk-fx-rh { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 8px; }
 
 /* 右栏：模型调用 */
