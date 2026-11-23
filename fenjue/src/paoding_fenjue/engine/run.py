@@ -493,6 +493,11 @@ class Engine:
         """给一份交付补上产物对照表（E-U5）。"""
         return self._out(d)
 
+    def adopt(self, name: str, sha: str) -> None:
+        """产物登记被拒后重产了一份：以重产的为准（登记自愈，13 §6）。"""
+        self.state["artifacts"][name] = sha
+        self._save_state()
+
     def set_budget(self, usd_milli: int) -> None:
         """这次运行的预算以题的预算为准（接进内核后每个会话开头对一次；追问里追加的预算就这样进来）。"""
         if usd_milli > 0 and self.state and self.x.get("budget_usd_milli") != usd_milli:
@@ -1012,7 +1017,12 @@ class Engine:
             essences={c: self.get(f"essence:{c}") for c in self.x["picked"]},
             artifacts=[sha],
         )
-        usha = self.put("bang_updates.json", updates)
+        # 产物登记只收 JSON 对象（kernel.product_errors）：更新列表放在 bang_updates 键下，与交接包同一个键名，
+        # `lianhua bang apply` 两种形状都认
+        usha = self.put(
+            "bang_updates.json",
+            {"v": 1, "run": self.cfg.run, "mode": "dry_run", "bang_updates": updates},
+        )
         self.state["step"] = "done"
         self._save_state()
         needs = ["这是预评估：单稿、不盲审、不写实现步骤，不能直接交实现线；要正式走一遍就复用这次的快照与观察重开一题"]

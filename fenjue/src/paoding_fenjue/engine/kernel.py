@@ -23,8 +23,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from .. import shapes
 from . import budget, data, materials, schema, survey
-from .dan import Dan, Memo, Unavailable
+from .dan import Dan, Memo, Reply, Unavailable
 from .run import Config, Delivery, Engine, EngineError
 
 ANALYSIS = "analysis"  # 工作区里引擎的目录：run.json、engine.json、obs.jsonl、artifacts/、calls.jsonl
@@ -39,6 +40,9 @@ SINGLE_NAME = {
     "service": "material.json",
 }
 ADDRESS_VIAS = ("repo_url", "doc_url", "service_url")
+ATTEMPTS_FILE = "attempts.json"  # 尝试台账：每个没走到交付的会话留一行（为什么没做成），下一个会话读它
+REGISTER_RETRIES = 2  # 同一份产物登记被拒后，最多重产再登记这么多次（总共至多 3 次登记）
+ATTEMPT_KIND_ZH = {"defect": "程序出错", "unavailable": "模型端点调不通", "refused": "产物登记被拒"}
 
 
 class Tools(Protocol):
@@ -153,6 +157,66 @@ def product_errors(name: str, obj: Any) -> list[str]:
     return schema.errors(obj, kind)[:8]
 
 
+class ProductRefused(EngineError):
+    """一份产物重产重登记之后仍被拒：`history` 逐次写明期望什么、实际是什么、宿主怎么说。"""
+
+    def __init__(self, name: str, history: list[dict[str, Any]]) -> None:
+        last = history[-1]
+        super().__init__(f"产物 {name} 没有登记成：{'；'.join(last['errors'])}")
+        self.name, self.history = name, history
+
+
+def describe_shape(obj: Any) -> str:
+    if isinstance(obj, dict):
+        return f"JSON 对象（键 {sorted(obj)[:12]}）"
+    if isinstance(obj, list):
+        return f"JSON 列表（{len(obj)} 项）"
+    return f"{type(obj).__name__}"
+
+
+def refusal_info(name: str, obj: Any, r: Mapping[str, Any]) -> dict[str, Any]:
+    """宿主拒收一份产物的原因，整理成回喂用的机器可读形状：期望什么、实际拿到什么、宿主逐条怎么说。"""
+    kind = product_kind(name)
+    errs = [str(e) for e in (r.get("errors") or [])] or [str(r.get("detail") or r.get("code") or r)]
+    return {
+        "name": name,
+        "code": r.get("code"),
+        "expected": "JSON 对象" + (f"，合 {kind} Schema" if kind else ""),
+        "got": describe_shape(obj),
+        "errors": errs[:8],
+    }
+
+
+def reproduce_product(name: str, obj: Any, info: Mapping[str, Any]) -> dict[str, Any] | None:
+    """按拒收原因重产一份。产物都是引擎按 Schema 造出来的（模型的输出先过 Schema 才成产物），没有哪一份由模型直接写，
+    所以重产是确定性的：形状错（不是对象）就把原内容放进对象里；内容错（Schema、凭据）没有办法自动改，交还 None。"""
+    if isinstance(obj, dict):
+        return None
+    key = "bang_updates" if name == "bang_updates.json" else "items"
+    return {"v": 1, "name": name, key: obj}
+
+
+class Feedback:
+    """带着上几次尝试的失败原因调模型：台账里记着哪个单元没做成，那个单元的调用多带一栏 `prior_failures`。
+    输入变了，调用备忘（Memo）就不会拿上一次的回答原样充数——这正是 trial-b-2 五次原样重来的缺口。"""
+
+    def __init__(self, inner: Dan, rows: Callable[[], list[dict[str, Any]]]) -> None:
+        self.inner, self.rows = inner, rows
+
+    def call(self, role: str, key: str, payload: Mapping[str, Any]) -> Reply:
+        notes = [str(r["note"]) for r in self.rows() if r.get("note") and _unit_owns(str(r.get("unit") or ""), key)]
+        if notes:
+            payload = {**payload, "prior_failures": notes[-5:]}
+        return self.inner.call(role, key, payload)
+
+
+def _unit_owns(unit: str, key: str) -> bool:
+    """台账里的单元（run.json 的 units）与调用键的对应：入位与提炼按“单元号:”开头，识别候选的键以 shihuo 开头。"""
+    if unit.startswith(("ruwei:", "cuiyi:")):
+        return key.startswith(unit + ":")
+    return unit == "candidates" and key.startswith("shihuo:")
+
+
 def _clip(items: list[str], n: int = NEEDS_MAX, chars: int = NEED_CHARS) -> list[str]:
     out = [str(x).strip()[:chars] for x in items if str(x).strip()]
     if len(out) > n:
@@ -182,6 +246,10 @@ class Session:
         self.dan: Dan = Memo(dan, self.root / "calls.jsonl")
         self.evidence: dict[str, str] = {}  # 来源编号 → 支撑“这份材料就是它”的 Artifact（材料本身，或抓取的执行留档）
         self._registered: dict[str, str] = self._load("registered.json") or {}
+        self._eng: Engine | None = None
+        doc = self._load(ATTEMPTS_FILE)
+        self.attempts: list[dict[str, Any]] = list(doc["rows"]) if isinstance(doc, dict) else []
+        self.attempt_no = max((int(r.get("attempt", 0)) for r in self.attempts), default=0) + 1  # 本会话是第几次
 
     # ------------------------------------------------------------ 小工具
 
@@ -202,17 +270,88 @@ class Session:
         return doc
 
     def artifact_id(self, name: str, sha: str) -> str:
-        """交付里的产物对照表：每份产物经 `check` 登记成 Artifact，表里写内核给的编号。"""
+        """交付里的产物对照表：每份产物经 `check` 登记成 Artifact，表里写内核给的编号。
+
+        被拒不立刻放弃：把拒收原因整理成“期望什么、实际什么”，能重产就重产再登记（最多 REGISTER_RETRIES 次）；
+        还是不行才报 ProductRefused，交付里写明重试了几次、每次错在哪。"""
         if sha in self._registered:
             return self._registered[sha]
-        r = self.tools.call("check", {"name": name, "path": f"{ANALYSIS}/artifacts/{sha}.json"})
-        if r.get("ok") is False or not r.get("artifact"):
-            raise EngineError(f"产物 {name} 没有登记成：{r.get('detail') or r.get('errors') or r}")
-        self._registered[sha] = str(r["artifact"])
-        (self.root / "registered.json").write_text(
-            json.dumps(self._registered, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+        history: list[dict[str, Any]] = []
+        cur = sha
+        for tries in range(REGISTER_RETRIES + 1):
+            r = self.tools.call("check", {"name": name, "path": f"{ANALYSIS}/artifacts/{cur}.json"})
+            if r.get("ok") is not False and r.get("artifact"):
+                self._registered[sha] = self._registered[cur] = str(r["artifact"])
+                (self.root / "registered.json").write_text(
+                    json.dumps(self._registered, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+                )
+                if history:
+                    self.say(f"产物 {name} 第 {tries + 1} 次登记通过（前 {tries} 次被拒，已按原因重产）")
+                return self._registered[sha]
+            info = refusal_info(name, self._load(f"artifacts/{cur}.json"), r)
+            history.append(info)
+            if tries == REGISTER_RETRIES:
+                break
+            fixed = reproduce_product(name, self._load(f"artifacts/{cur}.json"), info)
+            if fixed is None:
+                info["reproduce"] = "这类错误没有自动重产的办法"
+                break
+            cur = self._write_product(name, fixed)
+            info["reproduce"] = f"已重产为 {cur[:12]}，再登记"
+        self._note_attempt(
+            "refused", unit=None, reason=f"产物 {name} 登记被拒 {len(history)} 次：{history[-1]['errors'][0]}"
         )
-        return self._registered[sha]
+        raise ProductRefused(name, history)
+
+    def _write_product(self, name: str, obj: Any) -> str:
+        """重产的产物落盘（与引擎自己存产物的格式相同），并让引擎的检查点改认它。"""
+        sha = shapes.digest(obj)
+        path = self.root / "artifacts" / f"{sha}.json"
+        if not path.exists():
+            path.write_text(json.dumps(obj, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        if self._eng is not None:
+            self._eng.adopt(name, sha)
+        return sha
+
+    # ------------------------------------------------------------ 尝试台账（没走到交付的会话为什么没做成）
+
+    def _note_attempt(self, kind: str, *, unit: str | None, reason: str, note: str | None = None) -> None:
+        run = self._load("run.json") or {}
+        self.attempts.append(
+            {
+                "attempt": self.attempt_no,
+                "kind": kind,
+                "step": run.get("step"),
+                "unit": unit,
+                "reason": reason[:400],
+                **({"note": note[:500]} if note else {}),
+            }
+        )
+        (self.root / ATTEMPTS_FILE).write_text(
+            json.dumps({"v": 1, "rows": self.attempts}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+        )
+
+    def _doing_unit(self) -> str | None:
+        """出事时正在做的单元（run.json 里停在 doing 的那个）。"""
+        run = self._load("run.json") or {}
+        return next((u["id"] for u in run.get("units", []) if u.get("state") == "doing"), None)
+
+    def _give_up(self, kind: str, why: str, *, unit: str | None = None, note: str | None = None) -> Delivery | Outcome:
+        """这个会话没法往下做。还有接力次数：记台账、留检查点，下一个会话带着原因接着做；
+        次数用完了：交一份 blocked，写明共试了几次、各败在哪里——不无声地停。"""
+        self._note_attempt(kind, unit=unit, reason=why, note=note)
+        if int(self.brief.get("relays_left", 0)) > 0:
+            return Outcome("relay", f"{why}；检查点留着，下一个会话带着原因接着做")
+        rows = self.attempts
+        lines = [
+            f"第 {r['attempt']} 次：{ATTEMPT_KIND_ZH.get(str(r['kind']), r['kind'])}"
+            f"{'（' + str(r['unit']) + '）' if r.get('unit') else ''}：{r['reason']}"
+            for r in rows
+        ]
+        tries = len({r["attempt"] for r in rows})
+        head = f"共尝试 {tries} 次，次数用完仍没做成：{why}；检查点留着，修好之后追问一句“继续”即可接着做"
+        needs = _clip([head, *lines])
+        return Delivery(None, "blocked", head + "\n\n" + "\n".join(f"- {x}" for x in lines), {}, needs, passed=False)
 
     # ------------------------------------------------------------ 材料定版
 
@@ -327,18 +466,43 @@ class Session:
             locks=list(b.get("locks") or []),
             artifact_id=self.artifact_id,
         )
-        return Engine(self.root, self.dan, mats, cfg)
+        self._eng = Engine(self.root, Feedback(self.dan, lambda: self.attempts), mats, cfg)
+        return self._eng
 
     def run(self) -> Outcome:
         try:
             d = self._advance()
+        except ProductRefused as e:
+            tries = [
+                f"第 {i} 次：期望 {h['expected']}，实际 {h['got']}；宿主说：{'；'.join(h['errors'])}"
+                f"{'；' + h['reproduce'] if h.get('reproduce') else ''}"
+                for i, h in enumerate(e.history, 1)
+            ]
+            msg = f"这一步做不下去：{e}（登记 {len(e.history)} 次，重试 {len(e.history) - 1} 次）"
+            d = Delivery(
+                None, "blocked", msg + "\n\n" + "\n".join(f"- {t}" for t in tries), {}, [msg, *tries], passed=False
+            )
         except EngineError as e:
             d = Delivery(None, "blocked", f"这一步做不下去：{e}", {}, [str(e)], passed=False)
         except Unavailable as e:
-            if int(self.brief.get("relays_left", 0)) > 0:
-                return Outcome("relay", f"模型端点暂时调不通（{e}）；检查点留着，下一个会话接着做")
-            msg = f"模型端点调不通（{e}）；检查点留着，恢复后追问一句“继续”即可接着做"
-            d = Delivery(None, "blocked", msg, {}, [msg], passed=False)
+            g = self._give_up("unavailable", f"模型端点暂时调不通（{e}）", unit=self._doing_unit())
+            if isinstance(g, Outcome):
+                return g
+            d = g
+        except Exception as e:  # noqa: BLE001  引擎自己的缺陷：不能让会话崩掉（崩了就是原样重跑、最后无声地停）
+            unit = self._doing_unit()
+            where = unit or (self._load("run.json") or {}).get("step") or "启动"
+            what = f"{type(e).__name__}: {e}"
+            g = self._give_up(
+                "defect",
+                f"{where} 处理时程序出错：{what}",
+                unit=unit,
+                note=f"上一次会话在 {unit or '这一步'} 处理你的输出时程序报错（{what[:200]}）。"
+                "多半是输出的形状不对：检查应是对象的字段有没有写成字符串、应是列表的有没有写成单个值，按输出形状重写。",
+            )
+            if isinstance(g, Outcome):
+                return g
+            d = g
         if d is None:
             return Outcome("relay", "这一轮没有新的交付")
         if d.stop == "budget:task" and int(self.brief.get("relays_left", 0)) > 0 and self._money_left():
@@ -346,7 +510,19 @@ class Session:
             return Outcome("relay", d.needs[0] if d.needs else "会话预留用完", d)
         if d.stop == "budget:task":  # 预留用完而题里也没剩多少：光说“继续”接不下去，要先追加预算
             d.needs = [*d.needs[:1], "这道题的预算已基本用完：追加预算后追问一句“继续”"]
-        return self._deliver(d)
+        try:
+            return self._deliver(d)
+        except ProductRefused as e:  # 交付表里的产物登记不上：照样交一份写明原因的 blocked
+            return self._deliver(
+                Delivery(
+                    None,
+                    "blocked",
+                    f"这一步做不下去：{e}",
+                    {},
+                    [str(e), *[x for h in e.history for x in h["errors"]]],
+                    passed=False,
+                )
+            )
 
     def _money_left(self) -> bool:
         """题的预算是否还够再开一个会话（至少剩一成，且不少于 0.2 美元）。求解会话的预留通常就是题里剩下的全部，

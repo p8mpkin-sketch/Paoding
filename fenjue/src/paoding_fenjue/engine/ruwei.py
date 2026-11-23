@@ -13,7 +13,7 @@ from __future__ import annotations
 import copy
 import re
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -199,6 +199,7 @@ def placer_payload(
         },
         "seats": {k: list(v) for k, v in sorted(SEATS.items())},
         "seat_forms": seat_forms(),
+        "rules": rules_card(),
         "schema": "placer.v1：atoms[{atom, mechanism_steps, params, emergent, why_other}], fire{id, seats, params, "
         "assets, organ}, group[{slot, id, params, assets, organ}], resolutions[{atom, fire, resolution, "
         "partition_by, note}], new_slot, depends_on, plain_summary",
@@ -232,10 +233,13 @@ def _port_key(p: str) -> tuple[int, str]:
 
 
 def _tool_ports(params: Mapping[str, Any]) -> set[str]:
-    out = set()
-    for form in (params.get("forms") or {}).values():
-        for t in form.get("tools", []):
-            out |= {f"M1:{ev}" for ev in shapes.TOOL_EVENTS.get(t, ())}
+    out: set[str] = set()
+    forms = params.get("forms")
+    for form in forms.values() if isinstance(forms, dict) else ():
+        tools = form.get("tools") if isinstance(form, dict) else None  # 形状不对的由 sanitize 报，这里不崩
+        for t in tools if isinstance(tools, list) else ():
+            if isinstance(t, str):
+                out |= {f"M1:{ev}" for ev in shapes.TOOL_EVENTS.get(t, ())}
     return out
 
 
@@ -316,7 +320,7 @@ def skeleton(
     """第 2–8 步与第 12 步的一半（体质原子、拆分）：确定性，丹的提议只作输入。"""
     owners = owners if owners is not None else ownership()
     table = atoms()
-    problems: list[str] = []
+    proposal, problems = sanitize(proposal)
     rows: list[dict[str, Any]] = []
     emergent_homes: list[str] = []
     split = [dict(s) for s in essence["masked"].get("split", [])]
@@ -741,6 +745,240 @@ def order(cands: Sequence[Mapping[str, Any]], placements: Mapping[str, Mapping[s
     return {"order": rows, "held": held}
 
 
+# ---------------------------------------------------------------- 预检：提议的形状、规则卡与可操作的错误
+#
+# 预检就是入位自己的校验：同一个 `skeleton`（和 V8 用的 `shapes.check`）在每次提议后立刻跑，错误带着“哪条规则、怎么改”
+# 交回位丹重来。规则卡与改法都从现行的表（SEATS、TOOL_EVENTS、原子表、功法）现取，不另存一份，规则随修炼变了卡跟着变。
+
+
+def _kind(v: Any) -> str:
+    return type(v).__name__
+
+
+def sanitize(proposal: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """位丹的提议先过一道形状护栏：写错形状的地方丢掉并报一条可操作的错，后面的校验不会被它崩掉。"""
+    problems: list[str] = []
+    out: dict[str, Any] = dict(proposal)
+
+    def listed(key: str, what: str) -> list[Any]:
+        v = out.get(key, [])
+        if isinstance(v, list):
+            return v
+        problems.append(f"{key} 须是列表（{what}），收到 {_kind(v)}")
+        return []
+
+    atoms_in = listed("atoms", "atoms[{atom, mechanism_steps, params, emergent, why_other}]")
+    out["atoms"] = []
+    for i, a in enumerate(atoms_in):
+        if not isinstance(a, dict):
+            problems.append(f"atoms[{i}] 须是对象 {{atom, mechanism_steps, params, ...}}，收到 {_kind(a)}")
+            continue
+        a = dict(a)
+        if not isinstance(a.get("mechanism_steps", []), list):
+            problems.append(f"atoms[{i}].mechanism_steps 须是整数列表，收到 {_kind(a['mechanism_steps'])}")
+            a["mechanism_steps"] = []
+        out["atoms"].append(a)
+    out["resolutions"] = [
+        x for x in listed("resolutions", "resolutions[{atom, fire, resolution, ...}]") if isinstance(x, dict)
+    ]
+    out["depends_on"] = listed("depends_on", "候选编号列表")
+    groups_in = listed("group", "group[{slot, id, params, assets, organ}]")
+    out["group"] = []
+    for i, g in enumerate(groups_in):
+        if isinstance(g, dict):
+            out["group"].append(_sanitize_fire(g, f"group[{i}]", problems, seats=False))
+        else:
+            problems.append(f"group[{i}] 须是对象 {{slot, id, params, assets, organ}}，收到 {_kind(g)}")
+    fire = out.get("fire")
+    if fire is None or isinstance(fire, dict):
+        out["fire"] = _sanitize_fire(fire or {}, "fire", problems, seats=True)
+    else:
+        problems.append(f"fire 须是对象 {{id, seats, params, assets, organ}}，收到 {_kind(fire)}")
+        out["fire"] = _sanitize_fire({}, "fire", problems, seats=True)
+    return out, problems
+
+
+def _form_example() -> str:
+    """现行一个 H1 形态的写法（取今天 solve 席位上的那团火），告诉位丹 params.forms.<席位> 里是什么。"""
+    try:
+        ref = seat_forms().get("solve")
+        form = shapes.fire_at(ref)["params"]["forms"]["solve"] if ref else {}
+        keys = ", ".join(f"{k}: {_kind(v)}" for k, v in form.items())
+        return f"{ref} 的 params.forms.solve 是对象 {{{keys}}}"
+    except (KeyError, TypeError, AttributeError):
+        return "params.forms.<席位> 是对象 {tools: [...], prompt: {...}, ends_on: ...}"
+
+
+def _sanitize_fire(f: Mapping[str, Any], at: str, problems: list[str], *, seats: bool) -> dict[str, Any]:
+    out = dict(f)
+    if seats:
+        v = out.get("seats", [])
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            problems.append(f"{at}.seats 须是席位名列表，收到 {_kind(v)}")
+            out["seats"] = [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+    if not isinstance(out.get("assets", []), list):
+        problems.append(f"{at}.assets 须是 [{{name}}] 列表，收到 {_kind(out['assets'])}")
+        out["assets"] = []
+    params = out.get("params", {})
+    if not isinstance(params, dict):
+        problems.append(f"{at}.params 须是对象，收到 {_kind(params)}")
+        params = {}
+    else:
+        params = dict(params)
+    forms = params.get("forms")
+    if forms is not None:
+        if not isinstance(forms, dict):
+            problems.append(f"{at}.params.forms 须是对象 {{席位: 形态对象}}，收到 {_kind(forms)}")
+            params.pop("forms")
+        else:
+            clean: dict[str, Any] = {}
+            for seat, form in forms.items():
+                if not isinstance(form, dict):
+                    problems.append(
+                        f"{at}.params.forms.{seat} 须是形态对象，收到 {_kind(form)}（{form!r:.40}）："
+                        f"形态要把工具、提示等写在这个对象里，不能写形态编号；{_form_example()}"
+                    )
+                    clean[seat] = {}
+                    continue
+                form = dict(form)
+                if not isinstance(form.get("tools", []), list):
+                    problems.append(f"{at}.params.forms.{seat}.tools 须是工具名列表，收到 {_kind(form['tools'])}")
+                    form["tools"] = []
+                clean[seat] = form
+            params["forms"] = clean
+    out["params"] = params
+    return out
+
+
+def rules_card() -> dict[str, Any]:
+    """落位规则卡：每一条都从现行的表里现取，随提议一起交给位丹。"""
+    forms_now = seat_forms()
+    by_ev: dict[str, list[str]] = {}
+    for tool, evs in shapes.TOOL_EVENTS.items():
+        for ev in evs:
+            by_ev.setdefault(ev, []).append(tool)
+    return {
+        "seats": {s: list(evs) for s, evs in sorted(SEATS.items())},
+        "tool_events": {t: list(evs) for t, evs in sorted(shapes.TOOL_EVENTS.items()) if evs},
+        "seat_rule": "给某个席位的形态里写的工具，它要提交的事件必须在这个席位的清单里（seats）；"
+        "越界的工具要去掉，或把这条形态绑到别的席位",
+        "id_rule": "新火的 id 以火位小写加点开头（H1→h1.，H2→h2.），后面只用小写字母、数字与连字符，"
+        "不能与现有清单同名：" + "、".join(sorted(shapes.fire_ids())),
+        "conflict_rule": {
+            "parametric": list(ALLOWED["parametric"]),
+            "semantic": list(ALLOWED["semantic"]),
+            "H1": ["replace", "reject"],
+            "note": "冲突的种类由参数类型判，不由你判；语义冲突不能当作并存（coexist）化解，"
+            "要在 replace / partition / reject 里选；H1 同一席位上只能替换",
+        },
+        "replace_rule": {
+            "seat_forms": forms_now,
+            "note": "H1 的新形态要写 seats；每个席位今天都只有一个形态，新形态只能顶替它，"
+            "而且一团新火至多顶替一团旧火——seats 里的各个席位今天必须是同一团旧火占着的，否则拆成各自的提议",
+        },
+        "group_rule": "火组成员（group）的火位上必须至少有一个决策原子；"
+        "只读、不改行为的内容写进兼及火位（also_slots），不要立火组成员",
+        "other_rule": "选 other 的原子要写 why_other，并给 new_slot（name、decides、why_not_existing）",
+        "form_shape": _form_example(),
+        "events_to_tools": {ev: sorted(ts) for ev, ts in sorted(by_ev.items())},
+    }
+
+
+_Fixer = Callable[[re.Match[str]], str]
+_FIXES: list[tuple[re.Pattern[str], str, _Fixer]] = []
+
+
+def _fix(pattern: str, rule: str) -> Callable[[_Fixer], _Fixer]:
+    def deco(fn: _Fixer) -> _Fixer:
+        _FIXES.append((re.compile(pattern), rule, fn))
+        return fn
+
+    return deco
+
+
+@_fix(r"^席位 (\w+) 不能提交 (\w+)", "seat_rule")
+def _fix_seat(m: re.Match[str]) -> str:
+    seat, ev = m.group(1), m.group(2)
+    tools = sorted(t for t, evs in shapes.TOOL_EVENTS.items() if ev in evs)
+    able = [s for s, evs in SEATS.items() if ev in evs]
+    return (
+        f"席位 {seat} 只能提交 {list(SEATS.get(seat, ()))}；"
+        f"把形态里会提交 {ev} 的工具（{'、'.join(tools) or '无'}）去掉，"
+        f"或把这条形态改绑到能提交 {ev} 的席位（{'、'.join(able) or '没有'}）"
+    )
+
+
+@_fix(r"是(parametric|semantic)冲突，不能用 (\w+) 化解", "conflict_rule")
+def _fix_conflict(m: re.Match[str]) -> str:
+    return f"{m.group(1)} 冲突只能在 {list(ALLOWED[m.group(1)])} 里选一种，把这条 resolutions 的 resolution 改掉"
+
+
+@_fix(r"要以 (\w+)\. 开头", "id_rule")
+def _fix_id(m: re.Match[str]) -> str:
+    return f"id 改成 {m.group(1)}.<小写字母、数字、连字符>，例如 {m.group(1)}.layered-prompt（不要下划线与大写）"
+
+
+@_fix(r"一团火只能顶替一团", "replace_rule")
+def _fix_replace(m: re.Match[str]) -> str:
+    return f"seats 里只留今天由同一团旧火占着的席位（现在是 {seat_forms()}），其余席位拆成另一个提议"
+
+
+@_fix(r"要一团火组成员", "group_rule")
+def _fix_group(m: re.Match[str]) -> str:
+    return "在 group 里为这个火位写一个成员（slot、id、params、assets、organ），或把这个行为并回主火位的原子"
+
+
+@_fix(r"没有任何决策原子", "group_rule")
+def _fix_group_empty(m: re.Match[str]) -> str:
+    return "这个火位上没有决策原子：把它从 group 去掉，只读的内容写进主火位的兼及火位"
+
+
+@_fix(r"没有这个决策原子", "atoms")
+def _fix_atom(m: re.Match[str]) -> str:
+    return "atoms 里的 atom 只能从输入的 atoms 表里选；表里没有就选 other 并写 why_other"
+
+
+@_fix(r"已经有了", "id_rule")
+def _fix_dup(m: re.Match[str]) -> str:
+    return "新火另起一个没用过的 id（见 rules.id_rule 里的现有清单）"
+
+
+@_fix(r"须是", "shape")
+def _fix_shape(m: re.Match[str]) -> str:
+    return f"按输出形状改成要求的类型；{_form_example()}"
+
+
+def explain(problem: str) -> dict[str, str]:
+    """一条校验错误 → {problem, rule, fix}：哪条规则、怎么改。认不得的给通用提示，原文始终保留。"""
+    for pat, rule, fn in _FIXES:
+        m = pat.search(problem)
+        if m:
+            return {"problem": problem, "rule": rule, "fix": fn(m)}
+    return {"problem": problem, "rule": "rules", "fix": "对照输入里的 rules 逐条检查后重写这一处"}
+
+
+def advice_text(a: Mapping[str, str]) -> str:
+    return f"{a['problem']}｜规则 {a['rule']}｜怎么改：{a['fix']}"
+
+
+def precheck(
+    cand: Mapping[str, Any],
+    essence: Mapping[str, Any],
+    proposal: Mapping[str, Any],
+    *,
+    owners: Mapping[str, list[Owner]] | None = None,
+    locks: Sequence[Mapping[str, Any]] = (),
+) -> tuple[Skeleton, list[dict[str, str]]]:
+    """提交前的检查：就是入位的校验（`skeleton`，单一事实源），每条错误配上规则与改法。无错误时第二项为空。"""
+    from . import checks  # 校验器在 checks 里；这里只调用，不另写一份（循环引用，函数内导入）
+
+    sk = skeleton(cand, essence, proposal, owners=owners, locks=locks)
+    if not sk.problems:
+        # 清单本身的体检（V8：shapes.check 与“params 不写预算绝对值”）：闸点 3 才发现就晚了，提交前先过一遍
+        sk.problems.extend(checks.v8(sk.placement))
+    return sk, [explain(p) for p in sk.problems]
+
+
 # ---------------------------------------------------------------- 一个候选的入位
 
 
@@ -772,10 +1010,10 @@ def place(
         tokens["mid"][0] += r.tokens_in
         tokens["mid"][1] += r.tokens_out
         prop = r.output if isinstance(r.output, dict) else {}
-        sk = skeleton(cand, essence, prop, owners=owners, locks=locks)
+        sk, advice = precheck(cand, essence, prop, owners=owners, locks=locks)
         if not sk.problems:
             break
-        errors = list(sk.problems)
+        errors = [advice_text(a) for a in advice]
     assert sk is not None
     if not full or sk.problems:
         p = copy.deepcopy(sk.placement)
