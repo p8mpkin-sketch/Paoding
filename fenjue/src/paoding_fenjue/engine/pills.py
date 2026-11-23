@@ -37,7 +37,7 @@ MAX_TOKENS = {
 # 活动面板与日志里给人看的步骤名（常规技术词，不用内部名词）
 ROLE_ZH = {"reader": "片段阅读", "main": "主分析", "extra": "并行草稿", "blind": "独立复核", "placer": "归位分析"}
 STEP_ZH = {"read": "阅读片段", "shihuo": "识别候选", "cuiyi": "提炼要点", "ruwei": "归位与实验设计"}
-_HIDDEN = ("template", "excerpt", "nonce", "errors", "schema")
+_HIDDEN = ("template", "excerpt", "nonce", "errors", "schema", "prior_failures")
 
 
 class NoPrompt(LookupError):
@@ -91,6 +91,12 @@ def render(role: str, key: str, payload: Mapping[str, Any], form_ref: str) -> Re
         parts.append(
             "## 上一次的输出没有通过检查\n\n逐条改正后重新输出完整结果：\n\n"
             + "\n".join(f"- {e[:500]}" for e in errors[:30])
+        )
+    prior = [str(e) for e in payload.get("prior_failures", [])]
+    if prior:  # 前几次会话在这一步没做成：把原因带进来，别原样重来（13 §3）
+        parts.append(
+            "## 前几次尝试在这一步没做成\n\n这一步之前被整个重做过，原因如下；这次要避开同样的问题：\n\n"
+            + "\n".join(f"- {e[:500]}" for e in prior[-5:])
         )
     body = {k: v for k, v in payload.items() if k not in _HIDDEN}
     parts.append("## 输入\n\n" + json.dumps(body, ensure_ascii=False, indent=1, sort_keys=True))

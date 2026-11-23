@@ -33,12 +33,24 @@ def local_artifact_id(name: str, sha: str) -> str:
     return f"local:{sha[:16]}"
 
 
-def artifact_table(arts: Mapping[str, str], artifact_id: Callable[[str, str], str] = local_artifact_id) -> str:
+def artifact_table(
+    arts: Mapping[str, str],
+    artifact_id: Callable[[str, str], str] = local_artifact_id,
+    final_of: Callable[[str, str], tuple[str, str | None]] | None = None,
+) -> str:
     """E-U5：交付末尾的固定格式对照表。界面按这张表取结构化产物，不必等工作区的 run.json。"""
     if not arts:
         return ""
     rows = ["", "", "## 产物对照", "", "| 产物 | Artifact id | sha256 |", "| --- | --- | --- |"]
-    rows += [f"| {name} | {artifact_id(name, sha)} | {sha} |" for name, sha in arts.items()]
+    notes: list[str] = []
+    for name, sha in arts.items():
+        aid = artifact_id(name, sha)  # 登记时可能重产：先取编号，再按“编号实际登记的内容”取 sha256
+        final, note = final_of(name, sha) if final_of else (sha, None)
+        rows.append(f"| {name} | {aid} | {final} |")
+        if note:
+            notes.append(note)
+    if notes:
+        rows += ["", *notes]
     return "\n".join(rows)
 
 
@@ -60,6 +72,8 @@ class Config:
     by: str = "cz"
     locks: list[dict[str, Any]] = field(default_factory=list)  # 在途炼档占着的火位 {slot, dossier}（火位锁）
     artifact_id: Callable[[str, str], str] = local_artifact_id
+    # 登记时产物被重产过：(名, 原 sha256) → (实际登记的 sha256, 说明行)；不重产就是 (原 sha256, None)
+    artifact_final: Callable[[str, str], tuple[str, str | None]] | None = None
 
 
 @dataclass
@@ -176,7 +190,9 @@ class Engine:
     # ------------------------------------------------------------ S0 立项
 
     def _out(self, d: Delivery) -> Delivery:
-        d.answer = d.answer + artifact_table(d.artifacts, self.cfg.artifact_id)
+        d.answer = d.answer + artifact_table(d.artifacts, self.cfg.artifact_id, self.cfg.artifact_final)
+        if self.cfg.artifact_final is not None:  # 交付里的产物表也改认实际登记的那份
+            d.artifacts = {n: self.cfg.artifact_final(n, s)[0] for n, s in d.artifacts.items()}
         return d
 
     def start(self, intake: dict[str, Any], *, reuse: Path | None = None) -> Delivery:
@@ -492,6 +508,11 @@ class Engine:
     def finish(self, d: Delivery) -> Delivery:
         """给一份交付补上产物对照表（E-U5）。"""
         return self._out(d)
+
+    def adopt(self, name: str, sha: str) -> None:
+        """产物登记被拒后重产了一份：以重产的为准（登记自愈，13 §6）。"""
+        self.state["artifacts"][name] = sha
+        self._save_state()
 
     def set_budget(self, usd_milli: int) -> None:
         """这次运行的预算以题的预算为准（接进内核后每个会话开头对一次；追问里追加的预算就这样进来）。"""
@@ -1012,7 +1033,12 @@ class Engine:
             essences={c: self.get(f"essence:{c}") for c in self.x["picked"]},
             artifacts=[sha],
         )
-        usha = self.put("bang_updates.json", updates)
+        # 产物登记只收 JSON 对象（kernel.product_errors）：更新列表放在 bang_updates 键下，与交接包同一个键名，
+        # `lianhua bang apply` 两种形状都认
+        usha = self.put(
+            "bang_updates.json",
+            {"v": 1, "run": self.cfg.run, "mode": "dry_run", "bang_updates": updates},
+        )
         self.state["step"] = "done"
         self._save_state()
         needs = ["这是预评估：单稿、不盲审、不写实现步骤，不能直接交实现线；要正式走一遍就复用这次的快照与观察重开一题"]

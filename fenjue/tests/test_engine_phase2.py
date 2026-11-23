@@ -567,7 +567,9 @@ def test_dry_run_report(dry):
     assert not any(k.endswith((":extra1", ":extra2", ":blind")) or ":design:" in k for k in keys)
     assert "cuiyi:C1:r1:main:2" in keys  # 指令痕迹（K8）例外：照样重写，金丝雀不进试算报告
     assert set(r["estimate"]["tokens"]) == {"light", "mid", "heavy"} and r["estimate"]["minutes"] > 0
-    ups = eng.get("bang_updates.json")
+    doc = eng.get("bang_updates.json")
+    assert isinstance(doc, dict) and doc["mode"] == "dry_run"  # 登记只收对象（trial-a-2 / c-2 被拒的根因）
+    ups = doc["bang_updates"]
     assert {u["status"] for u in ups if u["op"] == "set_status"} == {"dry_run"}
     assert [u["entry"]["status"] for u in ups if u["op"] == "add"] == ["dry_run"]
     assert "预评估" in d.answer and "不能直接交实现线" in d.answer
