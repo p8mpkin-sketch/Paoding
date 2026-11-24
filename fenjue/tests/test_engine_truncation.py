@@ -59,11 +59,57 @@ def test_a_cut_off_reply_gets_an_honest_error_not_the_empty_proposal_symptoms():
     d = Scripted(CUT, GOOD)
     res = ruwei.place(d, _cand(), _essence(), full=False)
     (err,) = d.seen[1][1]["errors"]
-    assert "截断" in err and "rules.length_limits" in err and str(PLACE_CAP) in err
+    assert "截断" in err and "思考" in err and str(PLACE_CAP) in err
+    for wrong in ("压短", "整份重写", "length_limits"):  # 截断的原因是思考占了上限，不是字段长，不能叫模型缩短
+        assert wrong not in err
+    assert "不用缩短" in err
     for symptom in ("没有拆出任何决策原子", "要写席位", "要以 h7. 开头"):
         assert symptom not in err
     assert res.problems == [] and [a["kind"] for a in res.attempts] == ["truncated", "ok"]
-    assert "length_limits" in d.seen[0][1]["rules"] and "whole_output" in d.seen[0][1]["rules"]["length_limits"]
+    rules = d.seen[0][1]["rules"]
+    assert "length_limits" not in rules and "思考" in rules["output_note"]
+
+
+def test_the_output_limits_leave_room_for_thinking():
+    m = pills.MAX_TOKENS
+    assert m["ruwei/place/v1"] == m["shihuo/v1"] == 24_000
+    assert m["reader/v1"] == m["cuiyi/blind/v1"] == 8_000
+    assert m["cuiyi/main/v1"] == m["cuiyi/extra/v1"] == m["ruwei/design/v1"] == 16_000
+
+
+def test_a_refusal_is_its_own_kind_and_is_not_retried():
+    d = Scripted(Reply(None, 10, 3, "refusal"), GOOD)
+    res = ruwei.place(d, _cand(), _essence(), full=False)
+    assert len(d.seen) == 1  # 不再重试同一个请求
+    assert [a["kind"] for a in res.attempts] == ["refused"]
+    (p,) = res.problems
+    assert "模型拒绝了这次请求" in p and "截断" not in p and "JSON" not in p
+
+
+def test_a_refused_design_stops_too_and_keeps_the_skeleton():
+    d = Scripted(GOOD, Reply(None, 10, 3, "refusal"))
+    res = ruwei.place(d, _cand(), _essence(emergent=False), full=True)
+    assert len(d.seen) == 2 and [a["kind"] for a in res.attempts] == ["ok", "refused"]
+    assert res.problems and "模型拒绝了这次请求" in res.problems[0]
+
+
+def test_the_attempt_after_a_cut_also_carries_the_earlier_validation_problems():
+    d = Scripted(BAD, CUT, GOOD)
+    ruwei.place(d, _cand(), _essence(), full=False)
+    errs = d.seen[2][1]["errors"]
+    assert len(errs) >= 2 and "没有这个决策原子：report.magic" in errs[0] and "截断" in errs[-1]
+    d = Scripted(BAD, Reply(None, 10, 300, "end_turn"), GOOD)  # 解析不出同理
+    ruwei.place(d, _cand(), _essence(), full=False)
+    assert "report.magic" in d.seen[2][1]["errors"][0] and "解析不出" in d.seen[2][1]["errors"][-1]
+
+
+def test_the_design_attempt_after_a_cut_also_carries_the_earlier_problems():
+    cap = pills.MAX_TOKENS["ruwei/design/v1"]
+    bad_design = {"arms": {}, "readings": [], "steps": []}
+    d = Scripted(GOOD, bad_design, Reply(None, 1, cap, "max_tokens"), bad_design)
+    ruwei.place(d, _cand(), _essence(emergent=False), full=True)
+    errs = d.seen[3][1]["errors"]
+    assert len(errs) >= 2 and "截断" in errs[-1] and not any("截断" in e for e in errs[:-1])
 
 
 def test_not_json_is_its_own_error():
