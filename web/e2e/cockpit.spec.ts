@@ -99,7 +99,7 @@ test("时间轴回放：跳到早先的序号，写操作禁用，链接带 as_o
 test("窄屏（手机宽度）：右栏落到正文下面，结构一栏里选中节点后检视在下方；没有横向滚动", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openCockpit(page, "demo-1");
-  const col = (await page.locator(".tk-col").boundingBox())!;
+  const col = (await page.locator(".tk-scroll").boundingBox())!;
   const rail = (await page.locator(".tk-rail").boundingBox())!;
   expect(rail.y).toBeGreaterThanOrEqual(col.y + col.height - 1);
   await page.locator('[data-task-tab="struct"]').click();

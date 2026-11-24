@@ -8,7 +8,7 @@ import { hashOf, levelOf, parse, plainOf, tsv, type Block, type Inline, type Lis
 import { shortHash, visible } from "../model/text";
 
 /** 复制按钮：复制成功后图标换成勾，读屏器听到“已复制”。剪贴板不可用（非安全上下文）时说出来，不装作成功。 */
-export function CopyButton({ text, label, className = "" }: { text: string; label: string; className?: string }) {
+export function CopyButton({ text, label, className = "", word = false }: { text: string; label: string; className?: string; /** 把名字写在按钮上（默认只有图标） */ word?: boolean }) {
   const [st, setSt] = useState<"idle" | "ok" | "fail">("idle");
   useEffect(() => {
     if (st === "idle") return;
@@ -21,8 +21,9 @@ export function CopyButton({ text, label, className = "" }: { text: string; labe
     void c.writeText(text).then(() => setSt("ok"), () => setSt("fail"));
   };
   return (
-    <button type="button" className={`pr-copy ${className}`} data-action="copy" data-copied={st} aria-label={st === "fail" ? `复制不了：${label}` : label} title={label} onClick={copy}>
+    <button type="button" className={`pr-copy${word ? " pr-copy-word" : ""} ${className}`} data-action="copy" data-copied={st} aria-label={st === "fail" ? `复制不了：${label}` : label} title={label} onClick={copy}>
       {st === "ok" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+      {word && <span aria-hidden="true">{label}</span>}
       <span className="sr-only" role="status">{st === "ok" ? "已复制" : st === "fail" ? "复制不了：浏览器没有开放剪贴板" : ""}</span>
       {st === "fail" && <span className="pr-copy-fail" aria-hidden="true">复制不了</span>}
     </button>

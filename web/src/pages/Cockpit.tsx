@@ -33,6 +33,7 @@ import type { Filter } from "../model/trace";
 import { TaskRail } from "../ui/TaskRail";
 import { SessionActivity } from "../ui/SessionActivity";
 import { TaskResult } from "../ui/TaskResult";
+import { Boundary } from "../ui/Boundary";
 
 type Sheet = { kind: "todo"; key: string } | { kind: "hint"; id: string } | { kind: "inject" } | null;
 
@@ -258,6 +259,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           {live && asOf === null && <span className="tl-live t2"><span className="tl-dot" aria-hidden="true" />实时更新</span>}
         </div>
         <div className="tk-pane" role="tabpanel" id="tk-pane" aria-labelledby={`tk-tab-${cur}`} data-pane={cur}>
+          {/* 每一栏包一层错误边界：一栏排不出来，只换掉这一栏，标题、别的栏与输入框照常可用 */}
+          <Boundary resetKey={`${cur}@${vm.seq}`} fallback={(e) => <div className="tk-broken" role="alert" data-pane-broken={cur}><b>“{TAB_WORD[cur]}”这一栏显示不出来</b><p>原因：<Plain text={e.message || e.name} /></p><p className="t2">别的栏、时间轴与输入框照常可用；任务有新进展时会自动再试一次。</p></div>}>
           {cur === "result" && <TaskResult vm={vm} onReply={dock ? replyInDock : undefined} />}
           {cur === "steps" && <TaskTrace data={tr} vm={vm} seq={vm.seq} live={live && asOf === null} filter={filter} onFilter={setFilter} focus={focus} onScope={openScope} />}
           {cur === "files" && <TaskFiles pid={pid} seq={vm.seq} />}
@@ -294,6 +297,7 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
               </aside>
             </div>
           )}
+          </Boundary>
         </div>
         </div>
         <footer className="bottom">

@@ -118,6 +118,9 @@ const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const QUOTE = /^\s{0,3}>\s?(.*)$/;
 const isRow = (l: string) => l.trim().startsWith("|");
 
+/** 列表嵌套的层数上限（含最外一层）。 */
+export const LIST_DEPTH = 32;
+
 function list(lines: string[]): ListBlock {
   type Raw = { indent: number; ordered: boolean; start: number; text: string };
   const raw: Raw[] = [];
@@ -126,22 +129,22 @@ function list(lines: string[]): ListBlock {
     if (m) raw.push({ indent: m[1].replace(/\t/g, "    ").length, ordered: /\d/.test(m[2]), start: Number.parseInt(m[2], 10) || 1, text: m[3] });
     else if (raw.length) raw[raw.length - 1].text += `\n${l.trim()}`;      // 续行并进上一项
   }
-  const build = (from: number, indent: number): [ListBlock, number] => {
-    const block: ListBlock = { k: "list", ordered: raw[from].ordered, start: raw[from].start, items: [] };
-    let i = from;
-    while (i < raw.length && raw[i].indent >= indent) {
-      if (raw[i].indent > indent && block.items.length) {
-        const [child, next] = build(i, raw[i].indent);
-        block.items[block.items.length - 1].children = child;
-        i = next;
-      } else {
-        block.items.push({ inl: inline(raw[i].text), children: null });
-        i++;
-      }
+  // 用一个栈按缩进搭树，不递归：缩进每行多一格的畸形答案可以有上万层，递归会把调用栈撑爆。
+  // 嵌套最多 LIST_DEPTH 层；更深的缩进并进最深的那一层，当作它的同级项，内容一个字不丢。
+  const root: ListBlock = { k: "list", ordered: raw[0].ordered, start: raw[0].start, items: [] };
+  const stack: { block: ListBlock; indent: number }[] = [{ block: root, indent: raw[0].indent }];
+  for (const r of raw) {
+    while (stack.length > 1 && r.indent < stack[stack.length - 1].indent) stack.pop();
+    const top = stack[stack.length - 1];
+    if (r.indent > top.indent && top.block.items.length > 0 && stack.length < LIST_DEPTH) {
+      const child: ListBlock = { k: "list", ordered: r.ordered, start: r.start, items: [{ inl: inline(r.text), children: null }] };
+      top.block.items[top.block.items.length - 1].children = child;
+      stack.push({ block: child, indent: r.indent });
+    } else {
+      top.block.items.push({ inl: inline(r.text), children: null });
     }
-    return [block, i];
-  };
-  return build(0, raw[0].indent)[0];
+  }
+  return root;
 }
 
 export function parse(text: string): Block[] {

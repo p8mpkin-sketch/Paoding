@@ -2,7 +2,7 @@
 // 边界：表格里的竖线与缺格、紧跟段落的列表与表格、没闭合的代码块、摘要值的认法、控制字符、不产出标记与链接。
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cells, hashOf, inline, levelOf, parse, plainOf, tsv, type TableBlock } from "../src/model/prose";
+import { cells, hashOf, inline, levelOf, LIST_DEPTH, parse, plainOf, tsv, type ListBlock, type TableBlock } from "../src/model/prose";
 import { Prose } from "../src/ui/Prose";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -46,6 +46,62 @@ describe("切块（纯函数）", () => {
     expect(parse("")).toEqual([]);
     expect(parse(" \n\n \r\n")).toEqual([]);
   });
+});
+
+/** 列表树的最深层数与全部项的文字（不递归地走，免得测试自己先爆栈）。 */
+function walk(root: ListBlock): { depth: number; texts: string[] } {
+  const texts: string[] = [];
+  let depth = 0;
+  const todo: [ListBlock, number][] = [[root, 1]];
+  while (todo.length) {
+    const [b, d] = todo.pop()!;
+    depth = Math.max(depth, d);
+    for (let i = b.items.length - 1; i >= 0; i--) if (b.items[i].children) todo.push([b.items[i].children!, d + 1]);
+    for (const it of b.items) texts.push(plainOf(it.inl));
+  }
+  return { depth, texts };
+}
+
+describe("畸形的列表（cz 2026-11-24 审出的白屏：缩进每行多一格，上万层）", () => {
+  it("嵌套有上限：超过的缩进并进最深一层当同级项，一个字不丢；回到浅缩进时照常回到外层", () => {
+    const md = Array.from({ length: 40 }, (_, i) => `${" ".repeat(i)}- 第 ${i} 项`).join("\n") + "\n- 回到最外层";
+    const l = parse(md)[0] as ListBlock;
+    const w = walk(l);
+    expect(w.depth).toBe(LIST_DEPTH);
+    expect(w.texts).toHaveLength(41);
+    expect(new Set(w.texts)).toEqual(new Set([...Array.from({ length: 40 }, (_, i) => `第 ${i} 项`), "回到最外层"]));
+    expect(l.items.map((i) => plainOf(i.inl))).toEqual(["第 0 项", "回到最外层"]);
+    // 最深一层收下了所有更深的项：32 层用掉 32 项，其余 8 项是它的同级
+    let deepest = l;
+    while (deepest.items[0].children) deepest = deepest.items[0].children;
+    expect(deepest.items).toHaveLength(40 - LIST_DEPTH + 1);
+  });
+
+  it("两万行阶梯缩进：切得出、排得出，不爆栈；两万项的字都在页面上", () => {
+    const N = 20_000;
+    const text = Array.from({ length: N }, (_, i) => `${" ".repeat(i)}- 第 ${i} 项`).join("\n");
+    const blocks = parse(text);
+    expect(blocks).toHaveLength(1);
+    const w = walk(blocks[0] as ListBlock);
+    expect(w.depth).toBe(LIST_DEPTH);
+    expect(w.texts).toHaveLength(N);
+    const { container } = render(<Prose text={text} />);
+    const items = container.querySelectorAll("li");
+    expect(items).toHaveLength(N);
+    const seen = new Set<string>();
+    for (const li of items) seen.add(li.firstElementChild!.textContent!);
+    expect(seen.size).toBe(N);
+    for (const i of [0, 1, 31, 32, 9_999, N - 1]) expect(seen.has(`第 ${i} 项`), String(i)).toBe(true);
+    expect(container.querySelectorAll("ul").length).toBe(LIST_DEPTH);
+  }, 120_000);
+
+  it("同样的阶梯用在有序列表、引文与表格行上也不爆栈", () => {
+    const N = 12_000;
+    expect(walk(parse(Array.from({ length: N }, (_, i) => `${" ".repeat(i)}${i + 1}. 项`).join("\n"))[0] as ListBlock).texts).toHaveLength(N);
+    expect(parse(Array.from({ length: N }, () => "> 引").join("\n"))).toHaveLength(1);
+    expect((parse(`| a |\n|---|\n${Array.from({ length: N }, (_, i) => `| ${i} |`).join("\n")}`)[0] as TableBlock).rows).toHaveLength(N);
+    expect(parse(Array.from({ length: N }, (_, i) => `${"#".repeat((i % 6) + 1)} 标题`).join("\n"))).toHaveLength(N);
+  }, 60_000);
 });
 
 describe("表格", () => {

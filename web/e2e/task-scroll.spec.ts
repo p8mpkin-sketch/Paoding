@@ -26,6 +26,20 @@ async function wheel(page: Page, over: string, dy: number) {
   await page.mouse.move(b.x + Math.min(b.width / 2, 300), b.y + Math.min(b.height / 2, 200));
   await page.mouse.wheel(0, dy);
   await page.waitForTimeout(150);
+  await settled(page);
+}
+/** 等滚动落定：各滚动区的位置连续几帧不变。 */
+function settled(page: Page) {
+  return page.evaluate(() => new Promise<void>((done) => {
+    let last = "", same = 0;
+    const tick = () => {
+      const now = [...document.querySelectorAll("[data-task-scroll], .tk-rail, .cockpit.task")].map((e) => e.scrollTop).join() + `,${scrollY}`;
+      same = now === last ? same + 1 : 0;
+      last = now;
+      if (same >= 4) done(); else requestAnimationFrame(tick);
+    };
+    tick();
+  }));
 }
 
 test("长结果：滚轮能一路滚到最后一节；标签条吸在顶上；时间轴与输入条留在原地；文档本身不变长", async ({ page }) => {
@@ -102,13 +116,13 @@ test("右栏自己滚，不带着正文走；各节从上往下排，不被拉�
   const max = await rail.evaluate((e) => e.scrollHeight - e.clientHeight);
   expect(max).toBeGreaterThan(0);
   await wheel(page, ".tk-rail", 100_000);
-  expect(await rail.evaluate((e) => e.scrollTop)).toBe(max);
+  await expect.poll(() => rail.evaluate((e) => e.scrollTop)).toBe(max);     // 滚轮事件是异步送达的，等它落定
   expect((await metrics(page)).top).toBe(0);
   await expect(page.locator(".tk-rail > :last-child")).toBeInViewport();
   // 视口很高时各节之间只有固定的间距（原来会被拉开成一大片空白）
   await page.setViewportSize({ width: 1360, height: 2000 });
-  const gaps = await rail.evaluate((e) => [...e.children].map((c) => c.getBoundingClientRect()).map((r, i, a) => (i ? r.top - a[i - 1].bottom : 0)));
-  expect(Math.max(...gaps)).toBeLessThanOrEqual(19);
+  const gap = () => rail.evaluate((e) => Math.max(...[...e.children].map((c) => c.getBoundingClientRect()).map((r, i, a) => (i ? r.top - a[i - 1].bottom : 0))));
+  await expect.poll(gap).toBeLessThanOrEqual(19);                            // 改视口后等重新排版
 });
 
 test("中等宽度（右栏排到下面）：整页一个滚动区，滚得到右栏；输入条吸在底部", async ({ page }) => {
@@ -122,6 +136,13 @@ test("中等宽度（右栏排到下面）：整页一个滚动区，滚得到�
   expect(Math.abs(dock.y + dock.height - 700)).toBeLessThanOrEqual(1);
   await wheel(page, ".cockpit.task", 100_000);
   await expect(page.locator(".tk-rail > :last-child")).toBeInViewport();
+  // 次序：正文、右栏、时间轴；时间轴在页面最底下（紧挨着吸底的输入条），不夹在正文与右栏之间
+  const rail = (await page.locator(".tk-rail").boundingBox())!;
+  const tl = (await page.locator(".tk-col > .bottom").boundingBox())!;
+  const dockEnd = (await page.locator("[data-dock]").boundingBox())!;
+  expect(tl.y).toBeGreaterThanOrEqual(rail.y + rail.height - 1);
+  expect(Math.abs(tl.y + tl.height - dockEnd.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(dockEnd.y + dockEnd.height - 700)).toBeLessThanOrEqual(1);
   expect(await pageGrew(page)).toEqual({ h: 0, w: 0 });
 });
 
@@ -132,11 +153,23 @@ test("手机宽度：整个页面滚动，标签条吸顶，滚得到最后；�
   await page.mouse.move(200, 400);
   await page.mouse.wheel(0, 900);
   await page.waitForTimeout(150);
+  await settled(page);
   expect(await page.evaluate(() => scrollY)).toBe(900);
   expect((await page.locator(".tk-tabs").boundingBox())!.y).toBeLessThanOrEqual(1);
+  // 输入条一路吸在视口底部
+  const dock = (await page.locator("[data-dock]").boundingBox())!;
+  expect(Math.abs(dock.y + dock.height - 844)).toBeLessThanOrEqual(1);
   await page.mouse.wheel(0, 100_000);
   await page.waitForTimeout(150);
-  await expect(page.locator(".tk-rail > :last-child")).toBeInViewport();
+  await settled(page);
+  // 滚到页面最底：右栏在时间轴上面，时间轴与输入条在最底下
+  const rail = (await page.locator(".tk-rail").boundingBox())!;
+  const tl = (await page.locator(".tk-col > .bottom").boundingBox())!;
+  const end = (await page.locator("[data-dock]").boundingBox())!;
+  expect(tl.y).toBeGreaterThanOrEqual(rail.y + rail.height - 1);
+  expect(Math.abs(tl.y + tl.height - end.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(end.y + end.height - 844)).toBeLessThanOrEqual(1);
+  await expect(page.locator(".tk-col > .bottom")).toBeInViewport();
   expect((await pageGrew(page)).w).toBeLessThanOrEqual(0);
 });
 
@@ -178,6 +211,10 @@ test("结果一栏：概要点过去跳到那一节；“要你补的”把焦�
   await expect(chip.locator(".pr-hash-t")).toHaveText("3fa2c1d0…9e4b");
   await chip.locator(".pr-hash-v").click();
   await expect(chip.locator(".pr-hash-t")).toHaveText("3fa2c1d09b7e4a6f8d2c5e1b0a9f7c3d4e6b8a1c2d5f7e9b0c3a6d8f1e4b9e4b");
+  // 摘要值展开后表格变挤：首列的文件名不从词中间折行（每个都还是一行高）
+  const names = page.locator("[data-answer] [data-prose-table]").nth(2).locator("tbody tr > :first-child .pr-code");
+  await expect(names).toHaveCount(3);
+  for (const n of await names.all()) expect((await n.boundingBox())!.height).toBeLessThan(26);
   await chip.locator('[data-action="copy"]').click();
   await expect(chip.locator('[data-action="copy"]')).toHaveAttribute("data-copied", "ok");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("3fa2c1d09b7e4a6f8d2c5e1b0a9f7c3d4e6b8a1c2d5f7e9b0c3a6d8f1e4b9e4b");

@@ -106,7 +106,8 @@ ul.pr-list { list-style: disc; } ol.pr-list { list-style: decimal; }
 .pr-tbl { border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); overflow: hidden; }
 .pr-tbl-bar { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--rule); background: var(--paper-2); font-size: var(--fs-xs); line-height: 1.5; }
 .pr-tbl-n { font-weight: 600; color: var(--ink); }
-.pr-tbl-scroll { overflow: auto; max-height: min(72vh, 680px); }
+/* contain: paint —— 表格比滚动区宽时（文件名不折行、列多），多出来的宽度只留在这个滚动区里，不算进外层页面的宽度（手机上会让整页横向滚动） */
+.pr-tbl-scroll { overflow: auto; contain: paint; max-height: min(72vh, 680px); }
 .pr-tbl table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); line-height: 1.6; }
 .pr-tbl th, .pr-tbl td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; font-weight: 400; background: var(--sheet); }
 .pr-tbl thead th { position: sticky; top: 0; z-index: 2; padding: 8px 12px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); white-space: nowrap; border-bottom-color: var(--rule-2); }
@@ -119,6 +120,8 @@ ul.pr-list { list-style: disc; } ol.pr-list { list-style: decimal; }
 .pr-tbl .pr-c-tag, .pr-tbl .pr-c-hash { white-space: nowrap; }
 .pr-tbl .pr-a-left { text-align: left; } .pr-tbl .pr-a-right { text-align: right; } .pr-tbl .pr-a-center { text-align: center; }
 .pr-nil { color: var(--ink-3); }
+/* 表格里的代码片段（文件名、命令）不从词中间折：宁可让这一列宽一点、表格横向滚动 */
+.pr-tbl .pr-code { overflow-wrap: normal; white-space: nowrap; }
 /* 列多的表：按内容定宽、横向滚动，首列留在原地 */
 .pr-tbl[data-wide="true"] table { width: max-content; min-width: 100%; }
 .pr-tbl[data-wide="true"] .pr-c-text { min-width: 168px; max-width: 320px; }
@@ -152,6 +155,16 @@ button.tk-vstat:hover { border-color: var(--ink-3); color: var(--ink); }
 .tk-vstat.need b { color: var(--zhu-ink); }
 .tk-vstat.off { border-style: dashed; background: none; }
 .tk-vstat.off b { font-family: var(--sans); font-size: var(--fs-xs); color: var(--ink-2); }
+
+/* 一块内容排不出来时原地的说法（ui/Boundary.tsx） */
+.tk-broken { display: grid; gap: 6px; padding: 14px 16px; border: 1px solid var(--zhu-line); border-radius: var(--r); background: var(--zhu-soft); font-size: var(--fs-sm); line-height: 1.6; }
+.tk-broken b { font-size: var(--fs-md); }
+.tk-broken p { margin: 0; overflow-wrap: anywhere; }
+.tk-broken .plain { font-family: var(--mono); font-size: var(--fs-xs); }
+.tk-broken .t2 { color: var(--ink-2); }
+.tk-ans > .tk-broken { margin: 16px 18px 18px; }
+.pr-copy-word { gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--rule-2); border-radius: var(--r-sm); background: var(--sheet); color: var(--ink); font: 500 var(--fs-xs) var(--sans); }
+.pr-copy-word:hover { border-color: var(--ink-3); background: var(--sheet); }
 
 /* 严格判定任务的结构化报告（ui/ResultReport.tsx）：同一套块 */
 .tk-verdict-ic.ok { color: var(--qing); }
@@ -276,13 +289,17 @@ span.tk-vstat { cursor: default; }
 .tk-reach li.off { text-decoration: line-through; color: var(--ink-3); }
 .tk-rail .sess-list { padding: 0; }
 
-/* 窄于 1100：右栏排到下面，整页（.cockpit.task）一个滚动区；输入条吸在底部 */
+/* 窄于 1100：右栏排到下面，整页（.cockpit.task）一个滚动区。
+   次序是 正文 → 右栏 → 时间轴 → 输入条：时间轴在页面最底下，输入条吸在视口底部（一直够得着）。
+   左栏在这里不成盒子（display: contents），它的三块直接排进整页的纵向排列里。 */
 @media (max-width: 1100px) {
-  .cockpit.task { display: block; overflow-x: hidden; overflow-y: auto; }
-  .tk-col { height: auto; min-height: auto; }
-  .tk-scroll { flex: none; overflow: visible; }
-  .tk-dock { position: sticky; bottom: 0; z-index: 5; }
-  .tk-rail { height: auto; overflow: visible; border-left: 0; border-top: 1px solid var(--rule); }
+  .cockpit.task { display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; }
+  .tk-col { display: contents; }
+  .tk-scroll { order: 1; flex: none; overflow: visible; }
+  .tk-rail { order: 2; flex: none; height: auto; overflow: visible; border-left: 0; border-top: 1px solid var(--rule); }
+  .tk-col > .bottom { order: 3; min-width: 0; max-width: 100%; overflow-x: clip; }
+  .tk-col > .bottom .timeline, .tk-col > .bottom .timeline-ctl { min-width: 0; max-width: 100%; }
+  .tk-dock { order: 4; position: sticky; bottom: 0; z-index: 5; }
 }
 /* 手机：外壳改成整页滚动（shell.css），任务页不再自己滚 */
 @media (max-width: 599.98px) {

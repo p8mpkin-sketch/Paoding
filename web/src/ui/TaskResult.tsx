@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { KnChunk } from "../api/knowledge-types";
 import type { ArtifactView, Delivery, GroundBrief, Review } from "../api/types";
 import { useServices } from "../app/context";
+import { Boundary } from "./Boundary";
 import { btnClass } from "../kit";
 import type { ViewModel } from "../model/viewmodel";
 import { CopyButton, Prose } from "./Prose";
@@ -99,6 +100,18 @@ function Refs({ refs, onRef }: { refs: GroundBrief[]; onRef: (id: string) => voi
   return <span className="tk-refs">{refs.map((r) => <button key={r.id} type="button" className={`tk-ref${r.class === "knowledge" ? " kn" : ""}`} data-ref={r.id} data-ref-class={r.class} onClick={() => onRef(r.id)}>{r.class === "knowledge" ? `资料 ${r.id}` : r.id}</button>)}</span>;
 }
 
+/** 答案排不出来时卡片里的说法：写明原因，原文照样能复制、能在“文件”一栏打开；页面其余部分不受影响。 */
+function AnswerBroken({ error, text }: { error: Error; text: string }) {
+  return (
+    <div className="tk-broken" role="alert" data-answer-broken>
+      <b>答案显示不出来</b>
+      <p>原因：<Plain text={error.message || error.name} /></p>
+      <p className="t2">答案本身没有丢（{text.length.toLocaleString("en-US")} 个字符）：可以复制原文，或到“文件”一栏打开它。下面的依据、自查与追问照常可用。</p>
+      <p><CopyButton text={text} label="复制答案原文" word /></p>
+    </div>
+  );
+}
+
 /** 答案正文：会话写的（authored）按叙述语域放；取 Blob 解成文字。 */
 function Answer({ id, seq }: { id: string; seq: number }) {
   const { api } = useServices();
@@ -115,7 +128,9 @@ function Answer({ id, seq }: { id: string; seq: number }) {
   return (
     <div className="tk-ans reg-narrative" data-register="narrative" data-answer={id}>
       <header className="tk-ans-h"><span className="reg-label">模型撰写</span><span className="t2">答案</span><span className="grow" />{text !== null && <CopyButton text={text} label="复制答案全文" />}</header>
-      {text === null ? <p className="t2">{err ? <>取不到答案：<Plain text={err} /></> : "读取答案…"}</p> : <Prose text={text} />}
+      {text === null ? <p className="t2">{err ? <>取不到答案：<Plain text={err} /></> : "读取答案…"}</p> : (
+        <Boundary resetKey={text} fallback={(e) => <AnswerBroken error={e} text={text} />}><Prose text={text} /></Boundary>
+      )}
     </div>
   );
 }
