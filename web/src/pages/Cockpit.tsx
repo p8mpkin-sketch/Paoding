@@ -33,6 +33,7 @@ import type { Filter } from "../model/trace";
 import { TaskRail } from "../ui/TaskRail";
 import { SessionActivity } from "../ui/SessionActivity";
 import { TaskResult } from "../ui/TaskResult";
+import { Boundary } from "../ui/Boundary";
 
 type Sheet = { kind: "todo"; key: string } | { kind: "hint"; id: string } | { kind: "inject" } | null;
 
@@ -89,6 +90,8 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   const [pickLease, setPickLease] = useState<string | null>(null);
   const [actOpen, setActOpen] = useState<boolean | null>(null); // null：按有没有在途的求解会话自动展开
   const actRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   // 过程的筛选（概要条的数字点过来会套上）与执行图“在过程里定位”的条目
   const [filter, setFilter] = useState<Filter>("all");
   const [focus, setFocus] = useState<string | null>(null);
@@ -143,11 +146,33 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
   // 结构：开放道只有执行图；严格判定缺省推理图（原来的前沿与图），可切到执行图
   const sview = open ? "exec" : structView ?? "reason";
   const openScope = (rid: string) => { const t = vm.todo.find((x) => x.why === "scope_request" && x.target === rid); if (t) { countUsage("todo"); setSheet({ kind: "todo", key: todoKey(t) }); } };
+  const dock = open && !vm.closed && asOf === null;
+  const replyInDock = () => document.getElementById("tk-dock-in")?.focus();
+  // 换栏：新的一栏从头看起。标签条已经吸在顶上时，把它留在顶上（不跳回页首）；没吸顶就不动
+  const pickTab = (k: Tab) => {
+    setTab(k);
+    // 标签条原本的位置 = 面板的上沿减去标签条的高（标签条吸顶后自己的 offsetTop 会跟着滚动走，不能用）
+    const box = scrollRef.current, bar = tabsRef.current, pane = bar?.nextElementSibling as HTMLElement | null;
+    if (!box || !bar || !pane) return;
+    const home = pane.offsetTop - bar.offsetHeight;
+    if (box.scrollTop > home) box.scrollTop = home;
+  };
+  // 左右方向键在四栏之间走，Home / End 到头尾（标签页的惯例）；只有当前一栏在 Tab 键顺序里
+  const onTabKey = (e: React.KeyboardEvent, keys: Tab[]) => {
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    const to = e.key === "Home" ? keys[0] : e.key === "End" ? keys[keys.length - 1] : d ? keys[(keys.indexOf(cur) + d + keys.length) % keys.length] : null;
+    if (!to) return;
+    e.preventDefault();
+    pickTab(to);
+    tabsRef.current?.querySelector<HTMLElement>(`[data-task-tab="${to}"]`)?.focus();
+  };
+  const tabKeys = (["result", "steps", "struct", "files"] as const).filter((k) => k !== "result" || hasResult);
   const meta = vm.closed ? `用了 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒` : `已跑 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`;
 
   return (
     <div className="cockpit task" data-seq={vm.seq} data-conn={asOf !== null ? "replay" : s.conn} data-inspect={node ? "node" : "none"} data-tab={cur} data-lane={vm.goal.accept}>
       <div className="tk-col">
+        <div className="tk-scroll" data-task-scroll ref={scrollRef}>
         <header className="topbar tk-head">
           <div className="topbar-primary tk-l1">
             <span className={`tk-st ${st.key}`} data-status={st.key}><i aria-hidden="true" />{st.word}</span>
@@ -226,15 +251,17 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
           <button type="button" className="ws-banner tk-act-show" data-action="activity-show" onClick={() => setActOpen(true)}>会话活动<span className="t2">{solves.some((l) => l.active) ? "已收起，点开看智能体在做什么" : "会话已结束，点开看它做过的每一步"}</span></button>
         )}
 
-        <div className="tk-tabs" role="tablist" aria-label="任务视图">
-          {(["result", "steps", "struct", "files"] as const).filter((k) => k !== "result" || hasResult).map((k) => (
-            <button key={k} type="button" role="tab" aria-selected={cur === k} data-task-tab={k} onClick={() => setTab(k)}>{TAB_WORD[k]}</button>
+        <div className="tk-tabs" role="tablist" aria-label="任务视图" ref={tabsRef} onKeyDown={(e) => onTabKey(e, tabKeys)}>
+          {tabKeys.map((k) => (
+            <button key={k} type="button" role="tab" id={`tk-tab-${k}`} aria-selected={cur === k} aria-controls="tk-pane" tabIndex={cur === k ? 0 : -1} data-task-tab={k} onClick={() => pickTab(k)}>{TAB_WORD[k]}</button>
           ))}
           <span className="grow" />
           {live && asOf === null && <span className="tl-live t2"><span className="tl-dot" aria-hidden="true" />实时更新</span>}
         </div>
-        <div className="tk-pane" role="tabpanel" aria-label={TAB_WORD[cur]}>
-          {cur === "result" && <TaskResult vm={vm} />}
+        <div className="tk-pane" role="tabpanel" id="tk-pane" aria-labelledby={`tk-tab-${cur}`} data-pane={cur}>
+          {/* 每一栏包一层错误边界：一栏排不出来，只换掉这一栏，标题、别的栏与输入框照常可用 */}
+          <Boundary resetKey={`${cur}@${vm.seq}`} fallback={(e) => <div className="tk-broken" role="alert" data-pane-broken={cur}><b>“{TAB_WORD[cur]}”这一栏显示不出来</b><p>原因：<Plain text={e.message || e.name} /></p><p className="t2">别的栏、时间轴与输入框照常可用；任务有新进展时会自动再试一次。</p></div>}>
+          {cur === "result" && <TaskResult vm={vm} onReply={dock ? replyInDock : undefined} />}
           {cur === "steps" && <TaskTrace data={tr} vm={vm} seq={vm.seq} live={live && asOf === null} filter={filter} onFilter={setFilter} focus={focus} onScope={openScope} />}
           {cur === "files" && <TaskFiles pid={pid} seq={vm.seq} />}
           {cur === "struct" && (
@@ -270,11 +297,13 @@ function CockpitView({ session, pid, asOf, node }: { session: ProblemSession; pi
               </aside>
             </div>
           )}
+          </Boundary>
+        </div>
         </div>
         <footer className="bottom">
           <Timeline ticks={session.log.ticks} head={s.head} asOf={asOf} onSeek={(a) => { countUsage("timeline"); go({ asOf: a }); }} link={link} />
         </footer>
-        {open && !vm.closed && asOf === null && (
+        {dock && (
           <TaskDock pid={pid} head={s.head} mode={waitingLook ? "follow" : "hint"} disabled={!writable} />
         )}
       </div>

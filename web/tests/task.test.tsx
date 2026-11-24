@@ -148,3 +148,90 @@ describe("开放道任务页（假后端 demo-6）", () => {
     await waitFor(() => expect(document.querySelector("[data-evidence] [data-artifact]")).not.toBeNull());
   });
 });
+
+describe("结果一栏的排版与四栏的滚动结构（假后端 demo-8：长答案，部分完成，有要你补的）", () => {
+  const open8 = async () => {
+    const r = rig();
+    const v = renderWith(r, <Cockpit pid="demo-8" asOf={null} node={null} />);
+    await waitFor(() => expect($(v.container, "[data-answer] [data-prose-table]")).not.toBeNull());
+    return { r, ...v };
+  };
+
+  it("答案排成文章：三张表各带表头条，九列的清单是宽表且档位列成了档位记号；产物对照的 sha256 收成短的、能复制", async () => {
+    const { container } = await open8();
+    const tables = [...container.querySelectorAll("[data-answer] [data-prose-table]")];
+    expect(tables.map((t) => `${t.getAttribute("data-rows")}x${t.getAttribute("data-cols")}`)).toEqual(["9x9", "5x4", "3x4"]);
+    expect(tables.map((t) => t.getAttribute("data-wide"))).toEqual(["true", "false", "false"]);
+    expect(tables[0].querySelectorAll(".pr-tag")).toHaveLength(9 * 5);          // 价值、置信、难度、风险、优先级
+    expect(tables[0].querySelector("tbody th")!.textContent).toBe("R-01");
+    expect(tables[1].querySelectorAll("tbody td.pr-c-num")).toHaveLength(10);   // 行数与占比是数；“无上限”那列不是
+    const hashes = [...tables[2].querySelectorAll("[data-hash]")];
+    expect(hashes).toHaveLength(3);
+    expect(hashes[0].querySelector(".pr-hash-t")!.textContent).toBe("3fa2c1d0…9e4b");
+    expect(hashes[0].querySelector('[data-action="copy"]')).not.toBeNull();
+    expect($(container, "[data-answer] [data-prose-code]")!.textContent).toContain("class RetryPolicy");
+    expect($(container, '[data-answer] header [data-action="copy"]')!.getAttribute("aria-label")).toBe("复制答案全文");
+  });
+
+  it("“没有经过独立判定”带一排数出来的概要；点一项跳到那一节并把焦点放过去", async () => {
+    const { container } = await open8();
+    const v = $(container, '[data-verdict="self"]')!;
+    expect(v.getAttribute("data-outcome")).toBe("partial");
+    expect(v.textContent).toContain("部分完成");
+    const stat = (k: string) => v.querySelector<HTMLElement>(`[data-jump="${k}"]`)!;
+    expect(stat("needs").textContent).toBe("3件事要你补");
+    expect(stat("claims").textContent).toBe("3/4条依据有执行记录");
+    expect(stat("self-check").textContent).toBe("2/3项自查通过");
+    expect(stat("unverified").textContent).toBe("2处没验证");
+    expect(v.querySelector('[data-jump="review"]')).toBeNull();                  // 没有复核：只说“无”，不是按钮
+    expect(v.querySelector(".tk-vstat.off")!.textContent).toBe("无独立复核");
+    fireEvent.click(stat("unverified"));
+    expect(document.activeElement).toBe($(container, "[data-unverified]"));
+    fireEvent.click(stat("claims"));
+    expect(document.activeElement).toBe($(container, "[data-claims]"));
+  });
+
+  it("“要你补的”是一个块：标题带数、每件事一行、底下的按钮把焦点送到输入框；回放时没有输入框也就没有这个按钮", async () => {
+    const { container, r, unmount } = await open8();
+    const n = $(container, "[data-needs]")!;
+    expect(n.querySelector("h2")!.textContent).toBe("要你补的3");
+    expect(n.querySelectorAll("[data-need]")).toHaveLength(3);
+    expect(n.textContent).toContain("补上这些，它可以把剩下的做完");
+    fireEvent.click(n.querySelector('[data-action="reply-needs"]')!);
+    expect(document.activeElement).toBe($(container, '[data-field="follow-up"]'));
+    unmount();
+    const head = (await r.api.status("demo-8")).head;
+    const replay = renderWith(r, <Cockpit pid="demo-8" asOf={head} node={null} />);
+    await waitFor(() => expect($(replay.container, "[data-needs]")).not.toBeNull());
+    expect($(replay.container, "[data-dock]")).toBeNull();
+    expect($(replay.container, '[data-action="reply-needs"]')).toBeNull();
+  });
+
+  it("四栏共用一个滚动区：标题、四栏与内容都在里面，时间轴与输入条在外面；标签页连着面板，方向键换栏", async () => {
+    const { container } = await open8();
+    const box = $(container, "[data-task-scroll]")!;
+    for (const sel of [".tk-head", '[role="tablist"]', '[role="tabpanel"]']) expect(box.querySelector(sel), sel).not.toBeNull();
+    expect(box.querySelector("[data-timeline]")).toBeNull();
+    expect(box.querySelector("[data-dock]")).toBeNull();
+    expect($(container, ".tk-col > .bottom [data-timeline]")).not.toBeNull();
+    const tab = (k: string) => $(container, `[data-task-tab="${k}"]`)!;
+    const pane = $(container, '[role="tabpanel"]')!;
+    expect(pane.getAttribute("aria-labelledby")).toBe("tk-tab-result");
+    expect(tab("result").getAttribute("aria-controls")).toBe(pane.id);
+    expect(["result", "steps", "struct", "files"].map((k) => tab(k).tabIndex)).toEqual([0, -1, -1, -1]);
+    fireEvent.keyDown(tab("result"), { key: "ArrowRight" });
+    expect(tab("steps").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tab("steps"));
+    expect($(container, '[role="tabpanel"]')!.getAttribute("data-pane")).toBe("steps");
+    fireEvent.keyDown(tab("steps"), { key: "End" });
+    expect(tab("files").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tab("files"), { key: "ArrowRight" });                        // 到头绕回第一栏
+    expect(tab("result").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tab("result"), { key: "ArrowLeft" });
+    expect(tab("files").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tab("files"), { key: "Home" });
+    expect(tab("result").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tab("result"), { key: "a" });                               // 别的键不动
+    expect(tab("result").getAttribute("aria-selected")).toBe("true");
+  });
+});

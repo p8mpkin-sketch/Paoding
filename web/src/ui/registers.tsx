@@ -12,6 +12,7 @@ import { countUsage } from "../app/usage";
 import { sha256Hex } from "../model/hash";
 import { isEvidence, registerOf, REGISTER_LABEL } from "../model/register";
 import { headTail, shortHash, visible } from "../model/text";
+import { CopyButton } from "./Prose";
 
 /** 一切来自日志的文本都经它显示：纯文本节点，不解析 Markdown、HTML，不把网址变成链接。 */
 export function Plain({ text }: { text: string }) {
@@ -94,6 +95,7 @@ export function HashBadge({ hash }: { hash: string }) {
   return (
     <span className="hash-badge" title={hash}>
       sha256 <code>{shortHash(hash)}</code>
+      <CopyButton text={hash} label="复制完整的 sha256" />
       <button type="button" className="btn-small" onClick={verify} disabled={v === "running"} data-action="local-verify">
         本地校验
       </button>

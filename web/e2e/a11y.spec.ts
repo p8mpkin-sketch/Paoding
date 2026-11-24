@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const TOKEN = "mock-human-token";
-const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/capability", "/capability/analyses", "/capability/analyses/p_fixture_delta_code", "/capability/analyses/p_fixture_alpha_code/process", "/capability/analyses/p_fixture_gamma_code", "/capability/analyses/p_fixture_beta_code", "/capability/analyses/p_fixture_delta_code.dry", "/capability/candidates", "/models", "/knowledge", "/knowledge/memory", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5"];
+const PAGES = ["/", "/today", "/inbox", "/problems", "/new", "/import", "/import/platform", "/readings", "/capability", "/capability/analyses", "/capability/analyses/p_fixture_delta_code", "/capability/analyses/p_fixture_alpha_code/process", "/capability/analyses/p_fixture_gamma_code", "/capability/analyses/p_fixture_beta_code", "/capability/analyses/p_fixture_delta_code.dry", "/capability/candidates", "/models", "/knowledge", "/knowledge/memory", "/settings", "/p/demo-1", "/p/demo-3", "/p/demo-4", "/p/demo-5", "/p/demo-6", "/p/demo-7", "/p/demo-8"];
 const THEMES = ["light", "dark", "contrast"];
 
 test.beforeEach(async ({ page, request }) => {
@@ -53,7 +53,7 @@ for (const theme of THEMES) {
       expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
     };
     await page.locator("[data-todo-item] button").first().click();
-    await expect(page.locator(".tk-col > .sheet")).toBeVisible();
+    await expect(page.locator(".tk-scroll > .sheet")).toBeVisible();
     await scan("卡片");
     await page.locator('[data-action="tab-graph"]').click();
     await expect(page.locator(".graph-wrap")).toBeVisible();
@@ -91,6 +91,64 @@ for (const theme of THEMES) {
     await page.locator('[data-task-tab="steps"]').click();
     await expect(page.locator("[data-step]").first()).toBeVisible();
     await scan("过程");
+  });
+}
+
+// 结果一栏的排版（任务页滚动与排版修复）：答案里的表格（宽表、数列、产物对照的摘要值）、代码块、
+// “没有经过独立判定”的概要、“要你补的”、依据与依据抽屉；摘要值展开与复制之后；再加文件栏的预览与过程栏。
+// 整页扫（不限定区域），滚到中间和底部各扫一次：吸顶的标签条盖在内容上时对比度也要过。
+for (const theme of THEMES) {
+  test(`axe：结果页的表格、产物对照、要你补的与依据（${theme}）`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    const scan = async (what: string) => {
+      await page.waitForTimeout(200);
+      const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(r.violations.map((v) => `${what} ${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+    };
+    await page.goto("/p/demo-8");
+    await expect(page.locator("[data-conn-label]")).toHaveText("实时");
+    await expect(page.locator("[data-answer] [data-prose-table]")).toHaveCount(3);
+    await expect(page.locator("[data-needs] [data-need]")).toHaveCount(3);
+    await scan("结果（顶部）");
+    await page.locator('[data-prose-table][data-wide="true"] tbody tr').nth(3).hover();   // 行悬停的底色
+    await page.locator("[data-task-scroll]").evaluate((e) => { e.scrollTop = 700; });
+    await scan("新表格（滚到中间）");
+    const chip = page.locator("[data-answer] [data-hash]").first();
+    await chip.locator(".pr-hash-v").click();
+    await expect(chip).toHaveAttribute("data-open", "true");
+    await chip.locator('[data-action="copy"]').click();
+    await scan("产物对照（摘要值展开、点过复制）");
+    await page.locator('[data-jump="needs"]').click();
+    await expect(page.locator("[data-needs]")).toBeFocused();
+    await scan("要你补的");
+    await page.locator("[data-task-scroll]").evaluate((e) => { e.scrollTop = e.scrollHeight; });
+    await scan("依据（滚到底）");
+    await page.locator("[data-claim] [data-ref]").first().click();
+    await expect(page.locator("[data-evidence] [data-artifact]")).toBeVisible();
+    await scan("依据抽屉");
+    await page.keyboard.press("Escape");
+    await page.locator('[data-task-tab="files"]').click();
+    await expect(page.locator("[data-file-trust]")).toBeVisible();
+    await scan("文件");
+    await page.locator('[data-task-tab="steps"]').click();
+    await expect(page.locator("[data-step]").first()).toBeVisible();
+    await scan("过程");
+    await page.locator('[data-task-tab="struct"]').click();
+    await expect(page.locator('[role="tabpanel"]')).toHaveAttribute("data-pane", "struct");
+    await scan("结构");
+  });
+}
+
+// 手机宽度下的结果一栏（整页滚动、表格横向滚动）
+for (const theme of THEMES) {
+  test(`axe：结果页的表格与要你补的，手机宽度（${theme}）`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript((t) => localStorage.setItem("paoding.theme", t), theme);
+    await page.goto("/p/demo-8");
+    await expect(page.locator("[data-answer] [data-prose-table]")).toHaveCount(3);
+    await page.waitForTimeout(200);
+    const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(r.violations.map((v) => `${v.id}（${v.impact}）× ${v.nodes.length}：${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
   });
 }
 

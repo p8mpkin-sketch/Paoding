@@ -41,7 +41,7 @@ describe("外壳", () => {
     expect(an).toBeGreaterThan(0);
     await waitFor(() => expect(container.querySelector('[data-nav="evolution"] .ct')?.textContent).toMatch(new RegExp(`^${an}`)));
     expect(container.querySelector('[data-nav="inbox"] .ct')?.textContent).toMatch(new RegExp(`^${waiting + an}`));
-    expect(container.querySelectorAll(".shell-pins li")).toHaveLength(running.length);
+    expect(container.querySelectorAll(".shell-pins li")).toHaveLength(Math.min(running.length, 6)); // 侧栏最多钉 6 个
   });
 
   it("没有令牌时状态行写只读", async () => {

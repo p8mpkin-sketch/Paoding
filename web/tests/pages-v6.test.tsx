@@ -115,10 +115,10 @@ describe("三页（假后端）", () => {
     expect($(container, '[data-chart="outcomes"] [data-seg-row="self"]')).not.toBeNull();
     expect($(container, '[data-chart="by-model"]')!.textContent).toContain("model-a");
     expect($(container, "[data-by-authority] [data-authority=\"human\"]")).not.toBeNull();
-    // 开放道单独成表（地图 Q35）：交付、采纳、复核读数（demo-6 的交付有一份复核）
+    // 开放道单独成表（地图 Q35）：交付、采纳、复核读数（demo-6 的交付有一份复核；demo-8 交付了但没有复核）
     await waitFor(() => expect($(container, '[data-open-readings] [data-tile="open-review"] .big')?.textContent).toBe("1"));
     expect($(container, '[data-tile="open-review"]')!.textContent).toContain("有据 4");
-    expect($(container, '[data-tile="open-deliveries"] .big')!.textContent).toBe("1");
+    expect($(container, '[data-tile="open-deliveries"] .big')!.textContent).toBe("2");
     const first = () => $(container, "[data-rd-row]")!.getAttribute("data-rd-row");
     const before = first();
     fireEvent.click($(container, '[data-sort="spent"]')!);

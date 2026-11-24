@@ -15,7 +15,7 @@ function SessionRow({ l, onSelect, onOpen, openId }: { l: LeaseRow; onSelect: (i
         <b>{LEASE_WORD[l.kind] ?? l.kind}</b>
         <span className="k-mono ink3">{l.id}</span>
         <span className="grow" />
-        {onOpen && <button type="button" className="sess-target" data-action="lease-activity" aria-pressed={openId === l.id} onClick={() => onOpen(l.id)} aria-label={`看会话 ${l.id} 的活动`}>看活动</button>}
+        {onOpen && <button type="button" className="sess-target" data-action="lease-activity" aria-pressed={openId === l.id} onClick={() => onOpen(l.id)} aria-label={`看活动：会话 ${l.id}`}>看活动</button>}
         {l.target && <button type="button" className="sess-target k-mono" data-action="lease-target" onClick={() => onSelect(l.target!)} aria-label={`检视 ${l.target}`}>{l.target}</button>}
       </div>
       <div className="t2 sess-meta">

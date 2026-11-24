@@ -2,13 +2,15 @@
 // 历次交付与追问按序号排在下面。判定道与人工验收道：沿用结构化报告（ResultReport）。
 // 只排版 status.goal 的原样字段：内核只校验“引用是真的”，不校验结论对不对，页面也不替它判。
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CircleAlert, CornerDownLeft, ShieldOff, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { KnChunk } from "../api/knowledge-types";
 import type { ArtifactView, Delivery, GroundBrief, Review } from "../api/types";
 import { useServices } from "../app/context";
+import { Boundary } from "./Boundary";
 import { btnClass } from "../kit";
 import type { ViewModel } from "../model/viewmodel";
+import { CopyButton, Prose } from "./Prose";
 import { ArtifactCard, Plain, Text } from "./registers";
 import { ResultReport } from "./ResultReport";
 
@@ -98,28 +100,15 @@ function Refs({ refs, onRef }: { refs: GroundBrief[]; onRef: (id: string) => voi
   return <span className="tk-refs">{refs.map((r) => <button key={r.id} type="button" className={`tk-ref${r.class === "knowledge" ? " kn" : ""}`} data-ref={r.id} data-ref-class={r.class} onClick={() => onRef(r.id)}>{r.class === "knowledge" ? `资料 ${r.id}` : r.id}</button>)}</span>;
 }
 
-/** 极小的 Markdown 排版：段落、标题、列表、竖线表格。只为让会话写的答案读起来像文章；内容一律按纯文本放进节点。 */
-export function Prose({ text }: { text: string }) {
-  const blocks = text.replace(/\r\n/g, "\n").split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+/** 答案排不出来时卡片里的说法：写明原因，原文照样能复制、能在“文件”一栏打开；页面其余部分不受影响。 */
+function AnswerBroken({ error, text }: { error: Error; text: string }) {
   return (
-    <>
-      {blocks.map((b, i) => {
-        const lines = b.split("\n");
-        if (lines.length >= 2 && lines.every((l) => l.trim().startsWith("|"))) {
-          const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
-          const body = lines.filter((l, k) => !(k === 1 && /^[\s|:-]+$/.test(l)));
-          const [head, ...rows] = body.map(cells);
-          return (
-            <div key={i} className="tk-tbl-wrap"><table className="tk-tbl"><thead><tr>{head.map((c, k) => <th key={k}>{c}</th>)}</tr></thead>
-              <tbody>{rows.map((r, k) => <tr key={k}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table></div>
-          );
-        }
-        if (lines.every((l) => /^\s*([-*]|\d+\.)\s/.test(l))) return <ul key={i}>{lines.map((l, k) => <li key={k}>{l.replace(/^\s*([-*]|\d+\.)\s/, "")}</li>)}</ul>;
-        const h = /^(#{1,4})\s+(.*)$/.exec(lines[0]);
-        if (h && lines.length === 1) return <h3 key={i} className="tk-ph">{h[2]}</h3>;
-        return <p key={i}>{lines.join("\n")}</p>;
-      })}
-    </>
+    <div className="tk-broken" role="alert" data-answer-broken>
+      <b>答案显示不出来</b>
+      <p>原因：<Plain text={error.message || error.name} /></p>
+      <p className="t2">答案本身没有丢（{text.length.toLocaleString("en-US")} 个字符）：可以复制原文，或到“文件”一栏打开它。下面的依据、自查与追问照常可用。</p>
+      <p><CopyButton text={text} label="复制答案原文" word /></p>
+    </div>
   );
 }
 
@@ -138,8 +127,10 @@ function Answer({ id, seq }: { id: string; seq: number }) {
   }, [api, id, seq]);
   return (
     <div className="tk-ans reg-narrative" data-register="narrative" data-answer={id}>
-      <span className="reg-label">模型撰写</span>
-      {text === null ? <p className="t2">{err ? <>取不到答案：<Plain text={err} /></> : "读取答案…"}</p> : <Prose text={text} />}
+      <header className="tk-ans-h"><span className="reg-label">模型撰写</span><span className="t2">答案</span><span className="grow" />{text !== null && <CopyButton text={text} label="复制答案全文" />}</header>
+      {text === null ? <p className="t2">{err ? <>取不到答案：<Plain text={err} /></> : "读取答案…"}</p> : (
+        <Boundary resetKey={text} fallback={(e) => <AnswerBroken error={e} text={text} />}><Prose text={text} /></Boundary>
+      )}
     </div>
   );
 }
@@ -154,7 +145,7 @@ function ReviewView({ r, d, onRef }: { r: Review; d: Delivery; onRef: (id: strin
   const rr = n.reruns;
   const reran = rr.pass + rr.fail + rr.not_rerun;
   return (
-    <section className="tk-sec tk-review" data-review={r.id}>
+    <section className="tk-sec tk-review" data-review={r.id} tabIndex={-1}>
       <h2>独立复核<small data-review-readings>{n.claims} 条主张里 {n.supported} 条有据、{n.unsupported} 条引用不符、{n.unclear} 条看不出{reran > 0 && <>；自检重跑 {rr.pass} 过、{rr.fail} 不过、{rr.not_rerun} 条没能重跑</>}{n.counterexamples > 0 && <>；{n.counterexamples} 条反例</>}</small></h2>
       <p className="tk-review-note t2">另起一个会话，没有参与求解，只读交付与留档逐条核对。这是参考读数，不是判定，不改变任务的状态。</p>
       <div className="reg-narrative" data-register="narrative"><span className="reg-label">复核会话撰写</span><Text t={r.summary} block={false} /></div>
@@ -181,22 +172,71 @@ function ReviewView({ r, d, onRef }: { r: Review; d: Delivery; onRef: (id: strin
   );
 }
 
-function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id: string) => void }) {
+/** 跳到本次交付里的一节（概要条上的数字点过来）：滚到那一节并把焦点放上去，读屏器接着往下读。 */
+function jump(from: HTMLElement, sel: string) {
+  const el = from.closest("[data-delivery]")?.querySelector<HTMLElement>(sel);
+  if (!el) return;
+  el.scrollIntoView?.({ block: "start" });
+  el.focus({ preventScroll: true });
+}
+
+/** “没有经过独立判定”：这次交付有多少是有据的，一眼看全。数字都是数出来的（交付登记的字段），不是页面的判断。 */
+function SelfVerdict({ d, backed, cited }: { d: Delivery; backed: number; cited: number }) {
+  const pass = d.self_check.filter((c) => c.result === "pass").length;
+  const stat = (key: string, sel: string, num: ReactNode, word: string, tone = "") => (
+    <li key={key}><button type="button" className={`tk-vstat ${tone}`} data-jump={key} onClick={(e) => jump(e.currentTarget, sel)}><b className="num">{num}</b><span>{word}</span></button></li>
+  );
+  return (
+    <aside className="tk-verdict" data-verdict="self" data-outcome={d.outcome} aria-label="判定状态">
+      <ShieldOff className="tk-verdict-ic" aria-hidden="true" />
+      <div className="tk-verdict-t">
+        <b>没有经过独立判定</b>
+        <span>以上是智能体自己的结论（{OUTCOME_WORD[d.outcome]}）。下面是它实际跑过的依据，和它没验证的地方。</span>
+      </div>
+      <ul className="tk-verdict-nums" aria-label="这次交付的概要">
+        {d.needs.length > 0 && stat("needs", "[data-needs]", d.needs.length, "件事要你补", "need")}
+        {d.claims.length > 0 && stat("claims", "[data-claims]", <>{backed}<i>/{d.claims.length}</i></>, cited > 0 ? `条依据有执行记录，${cited} 条引用资料` : "条依据有执行记录", backed < d.claims.length ? "warn" : "ok")}
+        {d.self_check.length > 0 && stat("self-check", "[data-self-check]", <>{pass}<i>/{d.self_check.length}</i></>, "项自查通过", pass < d.self_check.length ? "warn" : "ok")}
+        {d.unverified.length > 0 && stat("unverified", "[data-unverified]", d.unverified.length, "处没验证", "warn")}
+        {d.review ? stat("review", "[data-review]", "有", "独立复核的读数") : <li><span className="tk-vstat off"><b>无</b><span>独立复核</span></span></li>}
+      </ul>
+    </aside>
+  );
+}
+
+function DeliveryView({ d, seq, onRef, onReply }: { d: Delivery; seq: number; onRef: (id: string) => void; onReply?: (() => void) | undefined }) {
   // “N 条里 M 条有执行记录”只数执行记录与材料；引用资料另计“K 条引用了资料”，不进 M（cz 验收附加条件 1）
   const backed = d.claims.filter((c) => c.supported).length;
   const cited = d.claims.filter((c) => c.cited).length;
   return (
     <div className="tk-delivery" data-delivery={d.id} data-outcome={d.outcome}>
       {d.answer && <Answer id={d.answer} seq={seq} />}
-      <div className="tk-verdict" data-verdict="self"><b>没有经过独立判定</b><span>以上是智能体自己的结论（{OUTCOME_WORD[d.outcome]}）。下面是它实际跑过的依据，和它没验证的地方。</span></div>
+      <SelfVerdict d={d} backed={backed} cited={cited} />
       {d.needs.length > 0 && (
-        <section className="tk-sec" data-needs>
-          <h2>要你补的</h2>
-          <ul className="tk-li">{d.needs.map((n, i) => <li key={i}><span className="tk-mk need">{i + 1}</span><Text t={n} block={false} /></li>)}</ul>
+        <section className="tk-sec tk-needs" data-needs tabIndex={-1} aria-labelledby={`${d.id}-needs`}>
+          <header className="tk-needs-h">
+            <CircleAlert aria-hidden="true" />
+            <h2 id={`${d.id}-needs`}>要你补的<span className="tk-ct need">{d.needs.length}</span></h2>
+            <p>{d.outcome === "blocked" ? "它卡在这里了：补上这些，它才能接着做。" : "补上这些，它可以把剩下的做完。"}</p>
+          </header>
+          <ol className="tk-needs-l">
+            {d.needs.map((n, i) => (
+              <li key={i} data-need={i}>
+                <span className="tk-mk need" aria-hidden="true">{i + 1}</span>
+                <span className="grow"><Text t={n} block={false} /></span>
+              </li>
+            ))}
+          </ol>
+          {onReply && (
+            <footer className="tk-needs-f">
+              <button type="button" className={btnClass("line", "sm")} data-action="reply-needs" onClick={onReply}><CornerDownLeft aria-hidden="true" />在下面的输入框里补上</button>
+              <span className="t2">补充会作为追问交给它，它接着之前的工作区做。</span>
+            </footer>
+          )}
         </section>
       )}
       {d.claims.length > 0 && (
-        <section className="tk-sec" data-claims>
+        <section className="tk-sec" data-claims tabIndex={-1}>
           <h2>依据<small data-claims-count>{d.claims.length} 条里 {backed} 条有执行记录{cited > 0 && <span data-cited-count>；{cited} 条引用了资料</span>}</small></h2>
           <ul className="tk-li">
             {d.claims.map((c, i) => (
@@ -209,7 +249,7 @@ function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id:
         </section>
       )}
       {d.self_check.length > 0 && (
-        <section className="tk-sec" data-self-check>
+        <section className="tk-sec" data-self-check tabIndex={-1}>
           <h2>它自己查过的</h2>
           <ul className="tk-li">
             {d.self_check.map((c, i) => (
@@ -222,9 +262,9 @@ function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id:
         </section>
       )}
       {d.unverified.length > 0 && (
-        <section className="tk-sec" data-unverified>
-          <h2>没验证的</h2>
-          <ul className="tk-li">{d.unverified.map((u, i) => <li key={i}><span className="tk-mk">·</span><Text t={u} block={false} /></li>)}</ul>
+        <section className="tk-sec" data-unverified tabIndex={-1}>
+          <h2>没验证的<small>{d.unverified.length} 处</small></h2>
+          <ul className="tk-li">{d.unverified.map((u, i) => <li key={i}><span className="tk-mk dot" aria-hidden="true" /><Text t={u} block={false} /></li>)}</ul>
         </section>
       )}
       {d.review && <ReviewView r={d.review} d={d} onRef={onRef} />}
@@ -234,7 +274,7 @@ function DeliveryView({ d, seq, onRef }: { d: Delivery; seq: number; onRef: (id:
 
 const FEEDBACK_WORD = { adopted: "你采纳了这次交付", rejected: "你没有采纳这次交付", none: "关闭任务时没有给反馈" } as const;
 
-export function TaskResult({ vm }: { vm: ViewModel }) {
+export function TaskResult({ vm, onReply }: { vm: ViewModel; onReply?: (() => void) | undefined }) {
   const [ref, setRef] = useState<string | null>(null);
   const o = vm.open;
   if (vm.goal.accept !== "open") return vm.closed ? <ResultReport vm={vm} /> : <p className="t2">还没有结果。</p>;
@@ -247,7 +287,7 @@ export function TaskResult({ vm }: { vm: ViewModel }) {
     <div className="tk-result" data-result data-open-result>
       {vm.closed && o.feedback && <p className="tk-fb" data-feedback={o.feedback}>{FEEDBACK_WORD[o.feedback]}。</p>}
       {asked.length > 0 && <div className="tk-fb" data-asked>你在这次交付之后追问了：<Text t={asked.at(-1)!.text} block={false} />。它正接着之前的工作区做，做完会再交一次。</div>}
-      <DeliveryView d={last} seq={vm.seq} onRef={setRef} />
+      <DeliveryView d={last} seq={vm.seq} onRef={setRef} onReply={onReply} />
       {rounds.length > 0 && (
         <section className="tk-sec" data-rounds>
           <h2>之前的几轮</h2>
