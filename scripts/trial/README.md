@@ -71,7 +71,8 @@ uv run python scripts/trial/trial.py open --url http://127.0.0.1:8200 --token-fi
 uv run python scripts/trial/trial.py report --url http://127.0.0.1:8200 --home ~/paoding-analysis
 ```
 
-写出 `trial-report.md`（每道题：钉住的提交与许可证、花费、事件计数、每次交付与“需要”、工作区走到哪一步、试算结论与估算、
+写出 `trial-report.md`（每道题：钉住的提交与许可证、花费、事件计数、每次交付与“需要”、模型调用的读数——调用次数、
+截断次数、上游超时次数、重试与白等的秒数、最慢的一次调用、各模板的输出范围——工作区走到哪一步、试算结论与估算、
 产物里记的许可证）。把它贴回线程，我来整理成验收读数，对照 [11 §2](../../docs/design/fenjue/11-acceptance.md) 的预期。
 `~/paoding-analysis/analyses/<题号>/` 是完整的工作区导出，有问题时我会请你再贴其中的某个文件。
 

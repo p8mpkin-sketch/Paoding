@@ -7,13 +7,18 @@
 它做三件事，其余都在 `paoding_fenjue` 的引擎里（`analysis.Session`）：
 
 1. 工具：经 MCP 调宿主的 `intake`、`fetch`、`check`、`deliver`；
-2. 模型：把引擎的每一次调用渲染成一条 Messages 请求发给端点代理，按档位取模型；429 的预算拒绝交回引擎停在
-   当前单元，暂时性的失败有限次重试，重试不过交回“端点调不通”；
+2. 模型：把引擎的每一次调用渲染成一条流式的 Messages 请求发给端点代理，按档位取模型；429 的预算拒绝交回引擎
+   停在当前单元，暂时性的失败有限次重试，重试不过交回“端点调不通”；每次调用的用时、重试与停止原因记在工作区的
+   `analysis/model_calls.jsonl`，汇总在 `analysis/model_stats.json`，思考块的原文记在 `analysis/thinking.jsonl`；
 3. 事件：每次模型调用、每次工具调用各出事件，活动面板据此显示在做哪一步；事件里只有步骤名、对象编号与用量，
    不带外部原文，也不带模型的输出。
 
 这里用标准库直接发 HTTP，而不用官方 SDK：它跑在只有 Python 标准库的模型容器里，请求必须经我们自己的端点代理
-计量（T3），而且每次调用都是无工具、非流式的一问一答，没有 SDK 能省掉的东西。请求体不带采样参数与思考配置。
+计量（T3），而且每次调用都是无工具的一问一答，没有 SDK 能省掉的东西。请求体不带采样参数与思考配置。
+
+时限（13-kernel.md §3.2 的表）：流式之后，一次模型调用不再是“整段生成完才有首字节”，所以不设“等整段”的时限，
+改成两条——流上多久没有任何字节（`MODEL_IDLE_S`，真正起作用的那条），与一次调用的总时限（`MODEL_CALL_S`，兜底）。
+端点代理等上游的 600 秒不动（它是体质文件），驱动的静默时限必须比它短，所以起作用的总是驱动这一条。
 
 只用标准库与 `paoding_fenjue.contract`、`paoding_graph`（都只用标准库）；以 `python -I` 运行。
 容器里这两个包挂在 `PD_LIB` 指的目录下。
@@ -21,16 +26,19 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import signal
+import socket
 import sys
 import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +57,15 @@ from paoding_fenjue.contract import (  # noqa: E402
 
 MCP_NAME = "paoding"
 API_VERSION = "2023-06-01"
-HTTP_TIMEOUT_S = 900.0  # 一次模型调用或一次工具调用（fetch 在沙箱里下载）最长等这么久
+HTTP_TIMEOUT_S = 900.0  # 一次工具调用（fetch 在沙箱里下载）最长等这么久；模型调用不用它，见下面三条
+CONNECT_S = 30.0  # 连上端点代理（本机或容器里的中继）最长等这么久
+# 流上多久没有任何字节就放弃这一次（含发出请求后等响应头）。上游每隔一会儿有 ping 或增量，正常的慢不会撞它；
+# 撞它的是上游挂住。它必须短于端点代理等上游的时限（proxy.py 里 600 秒，体质文件不改），这样先到的总是这一条。
+MODEL_IDLE_S = 300.0
+MODEL_IDLE_MAX_S = 540.0  # 配置能给的最大值：比代理的 600 秒留出一分钟
+# 一次调用从发出到收完的总时限（兜底：字节一直在滴但永远收不完）。24000 token 的上限按 10 token/秒也收得完
+MODEL_CALL_S = 2400.0
+THINKING_KEEP = 200_000  # 一次调用的思考原文在 thinking.jsonl 里最多留这么多字
 KEEPALIVE_S = 20.0
 # 暂时性失败（408、409、非预算的 429、5xx、连不上）之后各等多久再试；PD_RETRY_WAITS 可改（测试用短的）
 RETRY_WAITS = tuple(float(x) for x in os.environ.get("PD_RETRY_WAITS", "2,8,30").split(",") if x.strip())
@@ -150,6 +166,273 @@ def post(url: str, body: Mapping[str, Any], headers: Mapping[str, str], timeout:
         return status, data[:300].decode("utf-8", "replace")
 
 
+class StreamFailed(Exception):
+    """一次流式调用没有收完。kind：connect（连不上代理）| idle（流上静默超过时限）| deadline（超过总时限）|
+    cut（流断了，没有停止原因）| stream_error（流里的 error 事件）。都按暂时性失败重试。"""
+
+    def __init__(self, kind: str, detail: str = "") -> None:
+        super().__init__(f"{kind}: {detail}" if detail else kind)
+        self.kind, self.detail = kind, detail
+
+
+class Assembly:
+    """把 Messages 的流事件拼回一条非流式形状的回答（model、usage、stop_reason、content）。
+
+    用量：message_start 给输入侧，message_delta 给累计输出；哪边给了什么都收，null 不覆盖已有的数（与代理的计量
+    同一个规矩，各家兼容端点放的位置不一样）。内容块按下标拼；没有 content_block_start 就来增量的（有的兼容端点
+    这样）按增量的类型现开一块。认不得的事件与增量忽略（ping、签名、工具参数）。"""
+
+    def __init__(self) -> None:
+        self.model, self.stop = "", ""
+        self.usage: dict[str, Any] = {}
+        self.blocks: dict[int, dict[str, Any]] = {}
+        self.done = False
+        self.error = ""
+
+    def take(self, d: Any) -> None:
+        if not isinstance(d, dict):
+            return
+        t = d.get("type")
+        if t == "error":
+            err = d.get("error")
+            e: Mapping[str, Any] = err if isinstance(err, dict) else {}
+            self.error = str(e.get("type") or e.get("message") or "error")[:200]
+            return
+        raw = d.get("message")
+        msg: Mapping[str, Any] = raw if isinstance(raw, dict) else {}
+        if isinstance(msg.get("model"), str) and msg["model"]:
+            self.model = msg["model"]
+        for u in (msg.get("usage"), d.get("usage")):
+            if isinstance(u, dict):
+                self.usage.update({k: v for k, v in u.items() if v is not None})
+        idx = d.get("index")
+        i = idx if isinstance(idx, int) and not isinstance(idx, bool) else 0
+        if t == "content_block_start":
+            cb = d.get("content_block")
+            block: dict[str, Any] = dict(cb) if isinstance(cb, dict) else {}
+            if block.get("type") == "text":
+                block["text"] = str(block.get("text") or "")
+            elif block.get("type") == "thinking":
+                block["thinking"] = str(block.get("thinking") or "")
+            self.blocks[i] = block
+        elif t == "content_block_delta":
+            raw_delta = d.get("delta")
+            delta: Mapping[str, Any] = raw_delta if isinstance(raw_delta, dict) else {}
+            for kind, field in (("text_delta", "text"), ("thinking_delta", "thinking")):
+                if delta.get("type") == kind and isinstance(delta.get(field), str):
+                    b = self.blocks.setdefault(i, {"type": field, field: ""})
+                    if b.get("type") == field:
+                        b[field] = str(b.get(field) or "") + delta[field]
+        elif t == "message_delta":
+            raw_delta = d.get("delta")
+            delta = raw_delta if isinstance(raw_delta, dict) else {}
+            if delta.get("stop_reason"):
+                self.stop = str(delta["stop_reason"])
+        elif t == "message_stop":
+            self.done = True
+
+    @property
+    def complete(self) -> bool:
+        """收完了：见到 message_stop，或至少见到了停止原因（有的兼容端点不发 message_stop）。"""
+        return self.done or bool(self.stop)
+
+    def message(self) -> dict[str, Any]:
+        content = [self.blocks[k] for k in sorted(self.blocks)]
+        return {"model": self.model, "usage": dict(self.usage), "stop_reason": self.stop, "content": content}
+
+
+def stream_post(
+    url: str,
+    body: Mapping[str, Any],
+    headers: Mapping[str, str],
+    idle_s: float,
+    total_s: float,
+    clock: Callable[[], float] = time.monotonic,
+) -> tuple[int, Any, dict[str, float]]:
+    """发一条流式的 Messages 请求，交回 (状态码, 回答, 计时)。回答是拼好的非流式形状；出错的响应（4xx、5xx）交回
+    它的 JSON。端点不理会 `stream`、照旧回一整个 JSON 的，也认。计时：first_byte_s（发出到响应头）、elapsed_s。
+
+    没收完抛 StreamFailed。两条时限各管各的：套接字的读超时是 `idle_s`（每等一次字节至多这么久），总时限由一个
+    定时器到点关掉套接字（读超时管不住“一直有字节但收不完”）。不走环境里的代理。"""
+    u = urllib.parse.urlsplit(url)
+    cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
+    conn = cls(u.netloc, timeout=CONNECT_S)
+    t0 = clock()
+    timing: dict[str, float] = {}
+    expired = threading.Event()
+
+    def expire() -> None:
+        expired.set()
+        try:
+            if conn.sock is not None:
+                conn.sock.shutdown(socket.SHUT_RDWR)  # 让阻塞着的读立刻返回；close 做不到
+        except OSError:
+            pass
+
+    watchdog = threading.Timer(total_s, expire)
+    watchdog.daemon = True
+    stage = "connect"
+    asm: Assembly | None = None
+    try:
+        conn.connect()
+        conn.sock.settimeout(idle_s)
+        watchdog.start()
+        stage = "wait"
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        path = (u.path or "/") + (f"?{u.query}" if u.query else "")
+        conn.request("POST", path, body=data, headers={"content-type": "application/json", **headers})
+        resp = conn.getresponse()
+        timing["first_byte_s"] = round(clock() - t0, 3)
+        stage = "read"
+        status = int(resp.status)
+        ctype = (resp.getheader("content-type") or "").lower()
+        if status >= 400 or not ctype.startswith("text/event-stream"):
+            raw = resp.read()
+            try:
+                out: Any = json.loads(raw) if raw else None
+            except ValueError:
+                out = raw[:300].decode("utf-8", "replace")
+            return status, out, timing
+        asm = Assembly()
+        lines: list[bytes] = []
+        # 见到 message_stop 之后也读到流真的结束：代理是“先入账再收尾”，读到结束才保证这次的花费已经落账
+        while True:
+            line = resp.readline()
+            if not line:
+                break
+            line = line.rstrip(b"\r\n")
+            if line:
+                lines.append(line)
+                continue
+            _feed(asm, lines)
+            lines = []
+        _feed(asm, lines)  # 末尾没有空行收口的最后一个事件
+        if asm.error:
+            raise StreamFailed("stream_error", asm.error)
+        if expired.is_set() and not asm.done:  # 定时器关掉套接字后，读到的是“流结束”而不是异常
+            raise StreamFailed("deadline", f"超过一次调用的总时限 {total_s:g} 秒")
+        if not asm.complete:
+            raise StreamFailed("cut", "流在停止原因之前就结束了")
+        return status, asm.message(), timing
+    except StreamFailed:
+        raise
+    except (OSError, http.client.HTTPException) as e:
+        why = f"{type(e).__name__}: {e}"[:200]
+        if asm is not None and asm.done and not asm.error:
+            return 200, asm.message(), timing  # 回答已经收全，只是收尾没等到：照常用
+        if expired.is_set():
+            raise StreamFailed("deadline", f"超过一次调用的总时限 {total_s:g} 秒") from None
+        if stage == "connect":
+            raise StreamFailed("connect", why) from None
+        if isinstance(e, TimeoutError):
+            where = "等响应头" if stage == "wait" else "流上"
+            raise StreamFailed("idle", f"{where}超过 {idle_s:g} 秒没有任何字节") from None
+        raise StreamFailed("cut", why) from None
+    finally:
+        watchdog.cancel()
+        timing["elapsed_s"] = round(clock() - t0, 3)
+        conn.close()
+
+
+def _feed(asm: Assembly, lines: list[bytes]) -> None:
+    for line in lines:
+        if line.startswith(b"data:"):
+            try:
+                asm.take(json.loads(line[5:].strip()))
+            except ValueError:
+                continue
+
+
+def is_timeout(status: int, why: str) -> bool:
+    """这一次失败算不算“上游超时”：驱动自己等到时限（静默、总时限），或代理报上游读超时（502 带 TimeoutError）、504。"""
+    return status == 504 or why.startswith(("idle", "deadline")) or "TimeoutError" in why or "timed out" in why
+
+
+class CallLog:
+    """模型调用的流水（工作区 `analysis/`，随工作区接力到下一个会话，随导出给人读）。
+
+    - `model_calls.jsonl`：每次真的发出去的调用一行（取备忘的不算）：键、模板、模型、上限、结果、停止原因、
+      token、用时、首字节、输出速度、每次没成的尝试（原因与用时）。不带提示词，不带模型的输出。
+    - `model_stats.json`：上面的汇总，每次调用后重算——截断几次、上游超时几次、重试几次、最慢的一次是哪个、
+      各模板各多少次。下次重跑要量的三个数直接读它。
+    - `thinking.jsonl`：模型回了思考块时，这次调用的思考原文一行（过长截掉）。它是模型的输出，可能复述外部原文，
+      所以只留在工作区，不进事件流（13 §3.1）。
+    写不成只在 stderr 记一笔：流水不是事件账的一部分，不能让它把分析打断。"""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def add(self, row: Mapping[str, Any], thinking: list[str]) -> None:
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            with (self.root / "model_calls.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            if thinking:
+                text = "\n\n".join(thinking)
+                doc = {"key": row.get("key"), "at": row.get("at"), "chars": len(text), "text": text[:THINKING_KEEP]}
+                with (self.root / "thinking.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(doc, ensure_ascii=False, sort_keys=True) + "\n")
+            tmp = self.root / ".model_stats.json.tmp"
+            tmp.write_text(json.dumps(summarize(self.rows()), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            os.replace(tmp, self.root / "model_stats.json")
+        except OSError as e:
+            sys.stderr.write(f"[tunshi] 调用流水没有写成：{type(e).__name__}: {e}\n")
+
+    def rows(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for line in (self.root / "model_calls.jsonl").read_text(encoding="utf-8").splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue  # 写到一半被打断的那一行：不认
+            if isinstance(r, dict):
+                out.append(r)
+        return out
+
+
+def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """调用流水的汇总。最慢的一次按“单次请求的用时”比（不含失败的尝试与重试之间的等待；那些另计在 retries 里）。"""
+
+    def n(r: Mapping[str, Any], k: str) -> float:
+        v = r.get(k)
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+
+    def tries(r: Mapping[str, Any]) -> list[dict[str, Any]]:
+        a = r.get("failed_attempts")
+        return [x for x in a if isinstance(x, dict)] if isinstance(a, list) else []
+
+    by: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        t = by.setdefault(
+            str(r.get("template") or "?"),
+            {"calls": 0, "max_tokens": int(n(r, "max_tokens")), "truncated": 0, "out_min": None, "out_max": 0},
+        )
+        t["calls"] += 1
+        t["truncated"] += 1 if r.get("outcome") == "truncated" else 0
+        if r.get("outcome") in ("ok", "truncated", "refused"):
+            out_n = int(n(r, "tokens_out"))
+            t["out_min"] = out_n if t["out_min"] is None else min(t["out_min"], out_n)
+            t["out_max"] = max(t["out_max"], out_n)
+    done = [r for r in rows if n(r, "elapsed_s") > 0]
+    slow = max(done, key=lambda r: n(r, "elapsed_s"), default=None)
+    slowest = None
+    if slow is not None:
+        keys = ("key", "template", "elapsed_s", "first_byte_s", "tokens_out", "tokens_per_s", "outcome")
+        slowest = {k: slow.get(k) for k in keys}
+    return {
+        "v": 1,
+        "calls": len(rows),
+        "truncated": sum(1 for r in rows if r.get("outcome") == "truncated"),
+        "refused": sum(1 for r in rows if r.get("outcome") == "refused"),
+        "gave_up": sum(1 for r in rows if r.get("outcome") in ("unavailable", "rejected", "budget")),
+        "retries": sum(len(tries(r)) for r in rows),
+        "upstream_timeouts": sum(1 for r in rows for a in tries(r) if a.get("timeout")),
+        "wasted_s": round(sum(n(a, "elapsed_s") for r in rows for a in tries(r)), 1),
+        "slowest": slowest,
+        "by_template": dict(sorted(by.items())),
+    }
+
+
 class Mcp:
     """宿主工具端点的客户端（MCP over HTTP：initialize → tools/list → tools/call）。"""
 
@@ -210,7 +493,7 @@ def _shown(name: str, out: Mapping[str, Any]) -> Any:
 
 
 class ModelDan:
-    """真模型的调用（`Dan`）：一次调用 = 一条 Messages 请求，经端点代理。"""
+    """真模型的调用（`Dan`）：一次调用 = 一条流式的 Messages 请求，经端点代理。"""
 
     def __init__(
         self,
@@ -221,10 +504,17 @@ class ModelDan:
         default_model: str,
         events: Events,
         sleep: Any = time.sleep,
+        *,
+        log: CallLog | None = None,
+        idle_s: float = MODEL_IDLE_S,
+        call_s: float = MODEL_CALL_S,
     ) -> None:
         self.url = base_url.rstrip("/") + "/v1/messages"
         self.token, self.form_ref, self.models, self.default_model = token, form_ref, dict(models), default_model
-        self.events, self.sleep = events, sleep
+        self.events, self.sleep, self.log = events, sleep, log
+        # 静默时限不许等于或超过代理等上游的时限：否则先到的是代理那条，这里量到的就不是真正起作用的那个
+        self.idle_s = min(max(float(idle_s), 1.0), MODEL_IDLE_MAX_S)
+        self.call_s = max(float(call_s), self.idle_s)
 
     def call(self, role: str, key: str, facts: Mapping[str, Any]) -> Reply:
         try:
@@ -239,26 +529,81 @@ class ModelDan:
             "max_tokens": req.max_tokens,
             "system": req.system,
             "messages": [{"role": "user", "content": req.user}],
+            "stream": True,
         }
-        headers = {"x-api-key": self.token, "anthropic-version": API_VERSION}
+        headers = {"x-api-key": self.token, "anthropic-version": API_VERSION, "accept": "text/event-stream"}
         self.events.say(pills.label(role, key))
+        row: dict[str, Any] = {
+            "v": 1,
+            "at": round(time.time(), 3),
+            "key": key,
+            "role": role,
+            "template": req.template,
+            "model": model,
+            "max_tokens": req.max_tokens,
+            "failed_attempts": [],
+        }
+        thinking: list[str] = []
+        try:
+            return self._ask(model, body, headers, row, thinking)
+        finally:
+            row.setdefault("outcome", "interrupted")  # 软线或终止打断在半路
+            if self.log is not None:
+                self.log.add(row, thinking)
+
+    def _ask(
+        self, model: str, body: Mapping[str, Any], headers: Mapping[str, str], row: dict[str, Any], thinking: list[str]
+    ) -> Reply:
+        """发出去、重试、归类。`row` 是这次调用在流水里的那一行，边做边填（抛出去的也留得下）。"""
         last = ""
         for wait in (*RETRY_WAITS, None):
-            status, out = post(self.url, body, headers, HTTP_TIMEOUT_S)
+            t0 = time.monotonic()
+            try:
+                status, out, timing = stream_post(self.url, body, headers, self.idle_s, self.call_s)
+                why = _error_type(out) or (out if isinstance(out, str) else "")
+            except StreamFailed as e:
+                status, out, timing, why = 0, None, {}, str(e)
             if status == 200 and isinstance(out, dict):
-                return self._reply(model, out)
-            kind = _error_type(out)
-            last = f"{status or '连不上'} {kind or (out if isinstance(out, str) else '')}".strip()[:300]
-            if status == 429 and kind in BUDGET_SCOPES:
-                raise BudgetExhausted(BUDGET_SCOPES[kind], last)
+                reply = self._reply(model, out)
+                blocks = [b for b in out.get("content") or [] if isinstance(b, dict)]
+                thinking.extend(str(b.get("thinking") or "") for b in blocks if b.get("type") == "thinking")
+                thinking[:] = [t for t in thinking if t.strip()]
+                secs = float(timing.get("elapsed_s") or 0.0)
+                cut = reply.stop == "max_tokens" or reply.tokens_out >= int(body["max_tokens"])
+                row.update(
+                    outcome="refused" if reply.stop == "refusal" else "truncated" if cut else "ok",
+                    stop=reply.stop,
+                    tokens_in=reply.tokens_in,
+                    tokens_out=reply.tokens_out,
+                    elapsed_s=secs,
+                    first_byte_s=timing.get("first_byte_s"),
+                    tokens_per_s=round(reply.tokens_out / secs, 1) if secs > 0 else None,
+                    thinking_blocks=sum(1 for b in blocks if b.get("type") in ("thinking", "redacted_thinking")),
+                    thinking_chars=sum(len(t) for t in thinking),
+                )
+                return reply
+            last = f"{status or '没收完'} {why}".strip()[:300]
+            failed = {
+                "status": status,
+                "why": str(why)[:200],
+                "timeout": is_timeout(status, str(why)),
+                "elapsed_s": round(time.monotonic() - t0, 3),
+            }
+            row["failed_attempts"].append(failed)
+            if status == 429 and why in BUDGET_SCOPES:
+                row["outcome"] = "budget"
+                raise BudgetExhausted(BUDGET_SCOPES[str(why)], last)
             if status == 401:  # 任务令牌已撤（会话正在被收掉）：不重试
+                row["outcome"] = "unavailable"
                 raise Unavailable(f"任务令牌已失效（{last}）")
             if status not in RETRYABLE and status != 0:
                 # 400、403、404、413 一类：配置或请求本身的问题，重试与接力都救不了，如实交给人
+                row["outcome"] = "rejected"
                 raise EngineError(f"模型端点拒绝了请求（{last}）；请检查这个档位的模型与端点配置")
             if wait is None:
                 break
             self.sleep(wait)
+        row["outcome"] = "unavailable"
         raise Unavailable(last)
 
     def _reply(self, model: str, out: Mapping[str, Any]) -> Reply:
@@ -311,7 +656,17 @@ def run(flags: Mapping[str, Any], events: Events) -> str:
     brief = tools.call("intake", {})
     if brief.get("ok") is False:
         raise RuntimeError(f"取不到简报：{brief.get('code')} {brief.get('detail')}")
-    dan = ModelDan(base, token, str(brief["form"]), brief.get("models") or {}, str(flags.get("--model") or ""), events)
+    dan = ModelDan(
+        base,
+        token,
+        str(brief["form"]),
+        brief.get("models") or {},
+        str(flags.get("--model") or ""),
+        events,
+        log=CallLog(Path.cwd() / analysis.ANALYSIS),
+        idle_s=float(brief.get("model_idle_s") or MODEL_IDLE_S),
+        call_s=float(brief.get("model_call_s") or MODEL_CALL_S),
+    )
     sess = analysis.Session(Path.cwd(), brief, dan, tools, closing=brief.get("closing") or None, say=events.say)
     out = sess.run()
     return f"{out.status}：{out.detail}"[:300]

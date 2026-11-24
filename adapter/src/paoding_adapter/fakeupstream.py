@@ -11,9 +11,17 @@ dialect 模拟别家 Anthropic 兼容端点（真实测试报告 P0-C，DeepSeek
 路径以 /chat/completions 结尾时按 OpenAI Chat Completions 回（openai_tool、error 两个 dialect 键见 _openai）。
 usage 原样回报：可以用 OpenAI 式或 DeepSeek 式的字段名，也可以带 null。
 
-reply 给出时（方案分析的测试：按请求回放录好的输出），非流式的 /v1/messages 先问它：它拿到请求体，交回
-None（照旧回 "hi"）或一个字典：text（回文）、usage、stop_reason、model 各自覆盖缺省；带 status 时回那个状态码，
-响应体取 body。它只是测试替身的出口，仍然不生成任何内容。
+reply 给出时（方案分析的测试：按请求回放录好的输出），/v1/messages 先问它：它拿到请求体，交回
+None（照旧回 "hi"）或一个字典：text（回文）、content（内容块）、usage、stop_reason、model 各自覆盖缺省；带 status 时
+回那个状态码，响应体取 body。请求是流式的就把同一份回答拆成 SSE 事件回（思考块、文字块各按增量给），另认几个只管
+“流怎么走”的键，用来演上游的毛病：
+- stall_s：收到请求后先睡这么久再回响应头（上游挂住）
+- gap_s：message_start 之后睡这么久再给内容（流上静默）
+- drip_s：每个增量之间睡这么久（慢速生成）；pings：每个增量前先发一个 ping
+- cut：给了一部分内容就把连接断掉，不给停止原因（流中断）
+- stream_error：内容之后发一个 error 事件（值是错误类型）而不是停止原因
+- no_stop_event：不发 message_stop（有的兼容端点这样）；as_json：不理会 stream，照旧回整个 JSON
+它只是测试替身的出口，仍然不生成任何内容。
 """
 
 from __future__ import annotations
@@ -22,6 +30,7 @@ import gzip
 import json
 import ssl
 import threading
+import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -65,6 +74,11 @@ class FakeUpstream:
                 dl = up.dialect
                 if self.path.endswith("/chat/completions"):
                     return self._openai(body)
+                if body.get("stream") and up.reply is not None:
+                    said = up.reply(body) or {}
+                    if not said.get("status") and not said.get("as_json"):
+                        return self._stream(said)
+                    body = {**body, "stream": False, "_said": said}
                 if body.get("stream"):
                     out_keys = ("output_tokens", "completion_tokens")
                     if dl.get("usage_at") == "delta":
@@ -95,7 +109,10 @@ class FakeUpstream:
                     )
                     ctype = "text/event-stream"
                 else:
-                    said = (up.reply(body) if up.reply is not None else None) or {}
+                    if "_said" in body:
+                        said = body["_said"]
+                    else:
+                        said = (up.reply(body) if up.reply is not None else None) or {}
                     if said.get("status"):
                         data = json.dumps(said.get("body") or {}).encode()
                         self.send_response(int(said["status"]))
@@ -124,6 +141,67 @@ class FakeUpstream:
                 self.send_header("content-length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _stream(self, said: dict[str, Any]) -> None:
+                """按 reply 给的回答回一条 SSE 流（分块传输，逐事件写出，所以客户端真的是边收边读）。"""
+                if said.get("stall_s"):
+                    time.sleep(float(said["stall_s"]))
+                usage = {} if up.dialect.get("no_usage") else dict(said.get("usage", up.usage))
+                out_n = usage.pop("output_tokens", None)
+                blocks = said.get("content")
+                if blocks is None:
+                    blocks = [{"type": "text", "text": said.get("text", "hi")}]
+                self.send_response(200)
+                self.send_header("content-type", "text/event-stream")
+                self.send_header("transfer-encoding", "chunked")
+                self.end_headers()
+
+                def emit(name: str, d: dict[str, Any]) -> None:
+                    data = b"event: %s\ndata: %s\n\n" % (name.encode(), json.dumps(d, ensure_ascii=False).encode())
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
+                    self.wfile.flush()
+
+                def pieces(text: str) -> list[str]:
+                    n = max(1, len(text) // 3)
+                    return [text[i : i + n] for i in range(0, len(text), n)] or [""]
+
+                try:
+                    start = {"id": "m1", "type": "message", "role": "assistant", "model": said.get("model", up.model)}
+                    if usage or out_n is not None:
+                        start["usage"] = {**usage, "output_tokens": 1}
+                    emit("message_start", {"type": "message_start", "message": start})
+                    if said.get("gap_s"):
+                        time.sleep(float(said["gap_s"]))
+                    for i, b in enumerate(blocks):
+                        kind = b.get("type")
+                        field = "thinking" if kind == "thinking" else "text" if kind == "text" else None
+                        head = {**b, field: ""} if field else dict(b)
+                        emit("content_block_start", {"type": "content_block_start", "index": i, "content_block": head})
+                        for part in pieces(str(b.get(field, ""))) if field else []:
+                            if said.get("pings"):
+                                emit("ping", {"type": "ping"})
+                            if said.get("drip_s"):
+                                time.sleep(float(said["drip_s"]))
+                            delta = {"type": f"{field}_delta", field: part}
+                            emit("content_block_delta", {"type": "content_block_delta", "index": i, "delta": delta})
+                            if said.get("cut"):
+                                self.close_connection = True
+                                return  # 不写收尾的零长块：连接就这么断了
+                        emit("content_block_stop", {"type": "content_block_stop", "index": i})
+                    if said.get("stream_error"):
+                        err = {"type": str(said["stream_error"]), "message": "fake upstream error"}
+                        emit("error", {"type": "error", "error": err})
+                    else:
+                        stop = {"stop_reason": said.get("stop_reason", "end_turn"), "stop_sequence": None}
+                        final: dict[str, Any] = {"type": "message_delta", "delta": stop}
+                        if out_n is not None:
+                            final["usage"] = {"output_tokens": out_n}
+                        emit("message_delta", final)
+                        if not said.get("no_stop_event"):
+                            emit("message_stop", {"type": "message_stop"})
+                    self.wfile.write(b"0\r\n\r\n")
+                except OSError:  # 客户端等不及先走了
+                    self.close_connection = True
 
             def _openai(self, body: dict[str, Any]) -> None:
                 """OpenAI Chat Completions：dialect 的 openai_tool=True 时回一个工具调用，error=状态码 时回错误。"""
