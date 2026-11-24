@@ -250,6 +250,9 @@ def intake(h: ToolHost, a: Obj) -> dict[str, Any]:
         "access_wait_s": float(prof.get("access_wait_s", 600)),
         "access_poll_s": float(prof.get("access_poll_s", 5)),
     }
+    for k in ("model_idle_s", "model_call_s"):  # 模型调用的两条时限（13 §3.2）；没配就用驱动程序的缺省
+        if prof.get(k) is not None:
+            out[k] = float(prof[k])
     if doc is not None:
         out["intake"] = doc
     else:

@@ -65,7 +65,8 @@ def test_an_analysis_runs_from_opening_to_handoff_across_four_sessions(trig):  #
     by_model = {b["model"] for b in rig.replay.requests}
     assert by_model == {MODELS["light"], MODELS["heavy"]}
     for b in rig.replay.requests:
-        assert set(b) == {"model", "max_tokens", "system", "messages"} and b["system"].strip()
+        assert set(b) == {"model", "max_tokens", "system", "messages", "stream"} and b["system"].strip()
+        assert b["stream"] is True  # 流式：首字节不用等整段生成完（13 §3.2）
         assert len(b["messages"]) == 1 and b["messages"][0]["role"] == "user"
     reads = [b for b in rig.replay.requests if b["model"] == MODELS["light"]]
     assert reads and all('<external-data nonce="' in b["messages"][0]["content"] for b in reads)

@@ -150,3 +150,36 @@ def test_open_via_repo_lets_the_session_fetch(trial, stubbed):
     assert (
         argv[argv.index("--repo") + 1] == f"https://github.com/o/a@{SHA}" and argv[argv.index("--pid") + 1] == "trial-a"
     )
+
+
+def test_the_report_reads_the_model_call_numbers_straight_off_the_workspace(trial, tmp_path):
+    """每次重跑要量的三个数（截断次数、上游超时次数、最慢一次调用的用时）在 trial-report.md 里直接有。"""
+    assert "没有流水" in trial.model_call_lines(tmp_path)[0]
+    (tmp_path / "model_stats.json").write_text("{", encoding="utf-8")
+    assert "读不出来" in trial.model_call_lines(tmp_path)[0]
+    stats = {
+        "calls": 56,
+        "truncated": 0,
+        "refused": 0,
+        "gave_up": 0,
+        "retries": 2,
+        "upstream_timeouts": 2,
+        "wasted_s": 600.4,
+        "slowest": {
+            "key": "ruwei:C1:place:2",
+            "template": "ruwei/place/v1",
+            "elapsed_s": 486.0,
+            "first_byte_s": 2.1,
+            "tokens_out": 6768,
+            "tokens_per_s": 13.9,
+            "outcome": "ok",
+        },
+        "by_template": {
+            "reader/v1": {"calls": 48, "max_tokens": 8000, "truncated": 0, "out_min": 747, "out_max": 3033},
+        },
+    }
+    (tmp_path / "model_stats.json").write_text(json.dumps(stats), encoding="utf-8")
+    text = "\n".join(trial.model_call_lines(tmp_path))
+    assert "56 次；截断 0 次" in text and "上游超时 2 次" in text and "白等 600.4 秒" in text
+    assert "最慢的一次调用：486.0 秒（ruwei:C1:place:2" in text and "13.9 token/秒" in text
+    assert "reader/v1（上限 8000）：48 次，截断 0 次，输出 747–3033 token" in text

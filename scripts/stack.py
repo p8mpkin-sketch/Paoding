@@ -247,9 +247,19 @@ def analysis_config(raw: object) -> dict:
 
     enabled：开成方案分析实例——开题抄分析实例的功法，solve 席位的会话跑固定流程的驱动程序；
     by：缺省立项单里的“谁要的”；pains：记录在案的痛点 [{dim, anchor}]（打分用）；canaries：产物里出现即判不过的串；
-    access_wait_s：取材时等人批访问申请的时限（秒，到了就交付“受阻”请人去批）。
+    access_wait_s：取材时等人批访问申请的时限（秒，到了就交付“受阻”请人去批）；
+    model_idle_s：一次模型调用的流上多久没有任何字节就放弃重试（秒，10–540；必须短于端点代理等上游的 600 秒，
+    这样真正起作用的总是这一条）；model_call_s：一次模型调用的总时限（秒，60–7200，不小于 model_idle_s）。
     外部方案榜与在途记录占着的模块槽取自仓库（docs/design/fenjue/），各档位的模型取自设置层的模型档案。"""
-    out = {"enabled": False, "by": "cz", "pains": [], "canaries": [], "access_wait_s": 600}
+    out = {
+        "enabled": False,
+        "by": "cz",
+        "pains": [],
+        "canaries": [],
+        "access_wait_s": 600,
+        "model_idle_s": 300,
+        "model_call_s": 2400,
+    }
     if raw is None:
         return out
     if not isinstance(raw, dict) or set(raw) - set(out):
@@ -265,6 +275,11 @@ def analysis_config(raw: object) -> dict:
     w = out["access_wait_s"]
     if isinstance(w, bool) or not isinstance(w, (int, float)) or not 0 <= w <= 3600:
         raise ValueError("analysis.access_wait_s 取 0 到 3600 秒")
+    idle, total = out["model_idle_s"], out["model_call_s"]
+    if isinstance(idle, bool) or not isinstance(idle, (int, float)) or not 10 <= idle <= 540:
+        raise ValueError("analysis.model_idle_s 取 10 到 540 秒（要短于端点代理等上游的 600 秒）")
+    if isinstance(total, bool) or not isinstance(total, (int, float)) or not max(60, idle) <= total <= 7200:
+        raise ValueError("analysis.model_call_s 取 60 到 7200 秒，且不小于 model_idle_s")
     return out
 
 
@@ -593,6 +608,8 @@ class Stack:
             "prices": prices,
             "access_wait_s": a["access_wait_s"],
             "access_poll_s": 5,
+            "model_idle_s": a["model_idle_s"],
+            "model_call_s": a["model_call_s"],
         }
 
     def _analysis_models(self) -> tuple[dict, dict]:

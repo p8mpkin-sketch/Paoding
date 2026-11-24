@@ -200,6 +200,36 @@ def open_cases(a: argparse.Namespace) -> int:
 # ---------------------------------------------------------------- report
 
 
+def model_call_lines(ws: Path) -> list[str]:
+    """模型调用的读数：驱动程序每次调用后重算的汇总（`model_stats.json`，13-kernel.md §3.2）。
+    每次重跑要量的三个数——截断次数、上游超时次数、最慢一次调用的用时——直接从这里读。"""
+    f = ws / "model_stats.json"
+    if not f.exists():
+        return ["- 模型调用：没有流水（会话还没有调过模型，或这道题是流式改造之前跑的）"]
+    try:
+        st = json.loads(f.read_text(encoding="utf-8"))
+    except ValueError:
+        return ["- 模型调用：model_stats.json 读不出来"]
+    out = [
+        f"- 模型调用：{st.get('calls')} 次；截断 {st.get('truncated')} 次；拒答 {st.get('refused')} 次；"
+        f"上游超时 {st.get('upstream_timeouts')} 次；失败后重试 {st.get('retries')} 次"
+        f"（白等 {st.get('wasted_s')} 秒）；没做成 {st.get('gave_up')} 次"
+    ]
+    slow = st.get("slowest")
+    if isinstance(slow, dict):
+        out.append(
+            f"- 最慢的一次调用：{slow.get('elapsed_s')} 秒（{slow.get('key')}，{slow.get('template')}，"
+            f"输出 {slow.get('tokens_out')} token，"
+            f"{slow.get('tokens_per_s')} token/秒，首字节 {slow.get('first_byte_s')} 秒，{slow.get('outcome')}）"
+        )
+    for name, t in sorted((st.get("by_template") or {}).items()):
+        out.append(
+            f"  - {name}（上限 {t.get('max_tokens')}）：{t.get('calls')} 次，截断 {t.get('truncated')} 次，"
+            f"输出 {t.get('out_min')}–{t.get('out_max')} token"
+        )
+    return out
+
+
 def report(a: argparse.Namespace) -> int:
     home = Path(a.home).expanduser()
     rec_path = Path("trial-record.json")
@@ -230,6 +260,7 @@ def report(a: argparse.Namespace) -> int:
                 rules = json.dumps(e.get("body", {}).get("rules"), ensure_ascii=False)[:300]
                 lines.append(f"- 访问申请（序号 {e['seq']}）：{rules}")
         ws = home / "analyses" / pid
+        lines += model_call_lines(ws)
         run_f = ws / "run.json"
         if run_f.exists():
             run = json.loads(run_f.read_text(encoding="utf-8"))
