@@ -761,6 +761,7 @@ class Engine:
                     self._spend("S5", tier, tin, tout)
             deps[cid] = res.depends_on
             problems[cid] = res.problems
+            self.x.setdefault("placement_attempts", {})[cid] = res.attempts  # 逐次留档：第几次、截断与否、问题
             sha = self.put(f"placement:{cid}", res.placement)
             self._mark(
                 uid,

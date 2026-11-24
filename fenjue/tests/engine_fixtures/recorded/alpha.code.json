@@ -1021,7 +1021,7 @@
    "key": "ruwei:C1:r1:place:1",
    "role": "placer",
    "tier": "mid",
-   "input_sha256": "9d5e533f2b6d693bf2881c75a8c74adf4656860fd0dfcc3c2c8a6e9a95f012ba",
+   "input_sha256": "3758c401b13a3804c3e6fc0ac5e78b6ef6174809a4ff161b77d2ae9701e8db98",
    "output": {
     "atoms": [
      {

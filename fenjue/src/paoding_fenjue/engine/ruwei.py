@@ -20,8 +20,8 @@ from typing import Any
 from .. import shapes
 from ..lianhua import KERNEL_PATHS
 from ..tables import SEATS
-from . import data, formulas
-from .dan import Dan
+from . import data, formulas, pills
+from .dan import Dan, Reply, truncated
 
 ATTEMPTS = 3
 TYPES: dict[str, tuple[type, ...]] = {
@@ -594,6 +594,9 @@ def complete(sk: Skeleton, essence: Mapping[str, Any], design: Mapping[str, Any]
     p["kernel_forecast"] = kernel_forecast(steps)
     if p["kernel_forecast"]:
         problems.append(f"实现步骤碰到体质路径 {p['kernel_forecast']}：退回第 2 步，把那一部分拆去体质修炼")
+    from . import checks  # 循环引用，函数内导入
+
+    problems += checks._plain([x for x in checks.displayed(p, "placement") if x not in _human_text(sk.placement)])
     finish(p, sk, essence)
     return p, problems
 
@@ -850,6 +853,20 @@ def _sanitize_fire(f: Mapping[str, Any], at: str, problems: list[str], *, seats:
     return out
 
 
+# 各栏的篇幅上限（写进规则卡）。trial-b-3 里位丹 7 次调用有 3 次写满 12000 token 被截断：膨胀的是把设计细节整块抄进
+# atoms[].params 与 fire.params（提示词片段、层次、逐条规则），以及逐条很长的 note / organ 句子。参数只要决策点的取值。
+LENGTH_LIMITS: dict[str, str] = {
+    "whole_output": "整份输出不超过约 3000 token（硬上限 12000 含思考，到了就被截断）",
+    "atoms": "至多 8 个决策点；每个 params 至多 6 个键、每个值是短取值（一个词、数、短句），不要把设计细节整块抄进来",
+    "fire.params": "只写形态必需的键（工具、提示词文件名、结束方式、是否接力）；提示词的层次、片段、逐条规则不写",
+    "fire.assets": "至多 6 个，只写 name",
+    "organ": "四句话各不超过 80 字",
+    "resolutions.note": "每条不超过 120 字",
+    "plain_summary": "不超过 300 字",
+    "design": "arms 每句不超过 150 字；readings 至多 8 条；steps 至多 10 步、每步 do 不超过 80 字",
+}
+
+
 def rules_card() -> dict[str, Any]:
     """落位规则卡：每一条都从现行的表里现取，随提议一起交给位丹。"""
     forms_now = seat_forms()
@@ -879,6 +896,7 @@ def rules_card() -> dict[str, Any]:
         "group_rule": "火组成员（group）的火位上必须至少有一个决策原子；"
         "只读、不改行为的内容写进兼及火位（also_slots），不要立火组成员",
         "other_rule": "选 other 的原子要写 why_other，并给 new_slot（name、decides、why_not_existing）",
+        "length_limits": LENGTH_LIMITS,
         "form_shape": _form_example(),
         "events_to_tools": {ev: sorted(ts) for ev, ts in sorted(by_ev.items())},
     }
@@ -961,6 +979,18 @@ def advice_text(a: Mapping[str, str]) -> str:
     return f"{a['problem']}｜规则 {a['rule']}｜怎么改：{a['fix']}"
 
 
+def _human_text(p: Mapping[str, Any]) -> list[str]:
+    """位丹提议里给人看的自由文本栏（V5 对入位方案查的那几栏里，位丹写的部分）。"""
+    out = [str(p.get("plain_summary", ""))]
+    for row in p.get("conflicts", {}).get("fires", []):
+        out += [str(row.get("note", "")), str(row.get("partition_by", ""))]
+    for f in [p.get("fire", {}), *p.get("group", [])]:
+        out += [str(v) for v in f.get("organ", {}).values()]
+    if p.get("new_slot"):
+        out += [str(v) for v in p["new_slot"].values() if isinstance(v, str)]
+    return [x for x in out if x]
+
+
 def precheck(
     cand: Mapping[str, Any],
     essence: Mapping[str, Any],
@@ -976,6 +1006,8 @@ def precheck(
     if not sk.problems:
         # 清单本身的体检（V8：shapes.check 与“params 不写预算绝对值”）：闸点 3 才发现就晚了，提交前先过一遍
         sk.problems.extend(checks.v8(sk.placement))
+    # 给人看的文字不许有内部名词（V5 用的同一张表同一个函数）：写出来就当场交回，别等校验报“未过”
+    sk.problems.extend(checks._plain(_human_text(sk.placement)))
     return sk, [explain(p) for p in sk.problems]
 
 
@@ -988,6 +1020,32 @@ class Result:
     problems: list[str]
     tokens: dict[str, list[int]]
     depends_on: list[str]
+    attempts: list[dict[str, Any]] = field(default_factory=list)  # 逐次留档：第几次、截断与否、问题
+
+
+def _ask(
+    dan: Dan, role: str, key: str, payload: Mapping[str, Any], template: str, step: str, log: list[dict[str, Any]]
+) -> tuple[Reply, dict[str, Any] | None, list[str]]:
+    """问一次，分清三种“拿不到可用输出”：截断、不是 JSON 对象、有内容。没有内容时交回如实的错误，不当空提议去校验。"""
+    r = dan.call(role, key, payload)
+    limit = pills.MAX_TOKENS[template]
+    row: dict[str, Any] = {"step": step, "attempt": int(key.rsplit(":", 1)[1]), "tokens_out": r.tokens_out}
+    if isinstance(r.output, dict):
+        row["kind"] = "content"
+        log.append(row)
+        return r, r.output, []
+    if truncated(r, limit):
+        row["kind"] = "truncated"
+        msg = (
+            f"上一次的输出写到 {limit} token 的上限被截断了，JSON 不完整，所以没有可用的内容（不是空提议）。"
+            "整份重写并压短：各栏篇幅上限见输入里的 rules.length_limits；参数只写决策点的取值，说明各写一句话"
+        )
+    else:
+        row["kind"] = "not_json"
+        msg = "上一次的输出解析不出 JSON 对象：只输出一个 JSON 对象，不要前后说明、代码围栏或多个对象"
+    row["problems"] = [msg]
+    log.append(row)
+    return r, None, [msg]
 
 
 def place(
@@ -999,39 +1057,75 @@ def place(
     full: bool = True,
     locks: Sequence[Mapping[str, Any]] = (),
 ) -> Result:
-    """位丹拆原子（至多 3 次，错误交回）→ 确定性骨架 →（正式）主丹写各臂、读数、步骤（至多 3 次，错误交回）。"""
+    """位丹拆原子（至多 3 次，错误交回）→ 确定性骨架 →（正式）主丹写各臂、读数、步骤（至多 3 次，错误交回）。
+
+    放弃时记的是最后一次“有内容”的尝试的问题；之后的截断或解析不出另记在逐次留档里（`attempts`）。"""
     owners = ownership()
     tokens: dict[str, list[int]] = {"mid": [0, 0], "heavy": [0, 0]}
     base = f"ruwei:{cand['id']}:r{rnd}"
+    log: list[dict[str, Any]] = []
     errors: list[str] = []
-    sk: Skeleton | None = None
+    sk: Skeleton | None = None  # 最后一次有内容的骨架
+    last_empty: list[str] = []
     for attempt in range(1, ATTEMPTS + 1):
-        r = dan.call("placer", f"{base}:place:{attempt}", placer_payload(cand, essence, errors, owners))
+        r, prop, bad = _ask(
+            dan,
+            "placer",
+            f"{base}:place:{attempt}",
+            placer_payload(cand, essence, errors, owners),
+            "ruwei/place/v1",
+            "place",
+            log,
+        )
         tokens["mid"][0] += r.tokens_in
         tokens["mid"][1] += r.tokens_out
-        prop = r.output if isinstance(r.output, dict) else {}
+        if prop is None:
+            errors = last_empty = bad
+            continue
+        last_empty = []
         sk, advice = precheck(cand, essence, prop, owners=owners, locks=locks)
+        log[-1]["problems"] = list(sk.problems)
         if not sk.problems:
+            log[-1]["kind"] = "ok"
             break
         errors = [advice_text(a) for a in advice]
-    assert sk is not None
+    if sk is None:  # 三次都没有内容：骨架取空提议的，问题就是截断或解析不出，不是“空提议”的症状
+        sk = skeleton(cand, essence, {}, owners=owners, locks=locks)
+        sk.problems[:] = last_empty
     if not full or sk.problems:
         p = copy.deepcopy(sk.placement)
         finish(p, sk, essence)
-        return Result(p, list(sk.problems), tokens, sk.depends_on)
+        return Result(p, list(sk.problems), tokens, sk.depends_on, log)
     errors = []
-    placement: dict[str, Any] = {}
+    placement: dict[str, Any] | None = None
     problems: list[str] = []
+    last_empty = []
     for attempt in range(1, ATTEMPTS + 1):
-        r = dan.call("main", f"{base}:design:{attempt}", design_payload(sk.placement, essence, errors))
+        r, design, bad = _ask(
+            dan,
+            "main",
+            f"{base}:design:{attempt}",
+            design_payload(sk.placement, essence, errors),
+            "ruwei/design/v1",
+            "design",
+            log,
+        )
         tokens["heavy"][0] += r.tokens_in
         tokens["heavy"][1] += r.tokens_out
-        design = r.output if isinstance(r.output, dict) else {}
+        if design is None:
+            errors = last_empty = bad
+            continue
+        last_empty = []
         placement, problems = complete(sk, essence, design)
+        log[-1]["problems"] = list(problems)
         if not problems:
+            log[-1]["kind"] = "ok"
             break
         errors = list(problems)
-    return Result(placement, problems, tokens, sk.depends_on)
+    if placement is None:  # 设计三次都没有内容：骨架照样交，问题如实写
+        placement, problems = complete(sk, essence, {})
+        problems = last_empty
+    return Result(placement, problems, tokens, sk.depends_on, log)
 
 
 def conflict_lines(p: Mapping[str, Any]) -> list[str]:

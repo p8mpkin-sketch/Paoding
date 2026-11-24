@@ -403,3 +403,19 @@ def test_output_that_is_not_a_json_object_is_asked_again_with_the_reason(trig, b
     assert len(asked) == 1 and key.rsplit(":", 1)[0] + ":2" in rig.replay.calls
     retry = next(b for b in rig.replay.requests if b["messages"][0]["content"].startswith("# 调用 " + key[:-1] + "2"))
     assert "上一次的输出没有通过检查" in retry["messages"][0]["content"]
+
+
+def test_the_driver_hands_the_stop_reason_to_the_engine():
+    """被输出上限截断的回答：引擎要凭停止原因认出截断（trial-b-3），不能只看到“没有 JSON”。"""
+    from paoding_adapter import tunshi_cli
+
+    dan = tunshi_cli.ModelDan("http://x", "t", "h1.tunshi@1", {}, "m", tunshi_cli.Events("s"))
+    cut = {
+        "content": [{"type": "text", "text": '{"atoms": ['}],
+        "stop_reason": "max_tokens",
+        "usage": {"output_tokens": 12000},
+    }
+    r = dan._reply("m", cut)
+    assert r.output is None and r.stop == "max_tokens" and r.tokens_out == 12000
+    ok = {"content": [{"type": "text", "text": '{"a": 1}'}], "stop_reason": "end_turn", "usage": {}}
+    assert dan._reply("m", ok).output == {"a": 1}

@@ -24,6 +24,12 @@ from typing import Any, Protocol
 
 from ..shapes import digest
 
+
+def truncated(r: Reply, limit: int) -> bool:
+    """这次回答是被输出上限截断的：停止原因是 max_tokens，或用掉的输出 token 正好到了上限（端点不报停止原因时）。"""
+    return r.stop == "max_tokens" or (limit > 0 and r.tokens_out >= limit)
+
+
 ROLES = {"reader": "light", "main": "heavy", "extra": "heavy", "blind": "mid", "placer": "mid"}
 
 
@@ -32,6 +38,7 @@ class Reply:
     output: Any
     tokens_in: int = 0
     tokens_out: int = 0
+    stop: str = ""  # 模型的停止原因（max_tokens = 输出到上限被截断）；回放与备忘里没有就是空
 
 
 class Dan(Protocol):
@@ -78,7 +85,7 @@ class Recorded:
         if e["role"] != role or e["input_sha256"] != sha:
             raise StaleRecording(f"录音过期：{key} 的输入变了（录的 {e['input_sha256'][:12]}，现在 {sha[:12]}）")
         self.calls.append(key)
-        return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)))
+        return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)), str(e.get("stop", "")))
 
 
 Answer = Callable[[str, str, Mapping[str, Any]], Reply]
@@ -100,6 +107,7 @@ class Recorder:
                 "output": r.output,
                 "tokens_in": r.tokens_in,
                 "tokens_out": r.tokens_out,
+                **({"stop": r.stop} if r.stop else {}),
             }
         )
         return r
@@ -136,7 +144,7 @@ class Memo:
         e = self._seen.get((key, sha))
         if e is not None and e.get("role") == role:
             self.hits += 1
-            return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)))
+            return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)), str(e.get("stop", "")))
         r = self.inner.call(role, key, payload)
         row = {
             "key": key,
@@ -145,6 +153,7 @@ class Memo:
             "output": r.output,
             "tokens_in": r.tokens_in,
             "tokens_out": r.tokens_out,
+            **({"stop": r.stop} if r.stop else {}),
         }
         self._seen[(key, sha)] = row
         with self.path.open("a", encoding="utf-8") as f:
