@@ -104,6 +104,89 @@ describe("畸形的列表（cz 2026-11-24 审出的白屏：缩进每行多一�
   }, 60_000);
 });
 
+describe("缩进不规整的列表（cz 2026-11-24 第二轮审出的丢项：后来的浅缩进子项把已有的子列表盖掉）", () => {
+  const all = (md: string) => {
+    const b = parse(md);
+    expect(b).toHaveLength(1);
+    return walk(b[0] as ListBlock).texts;
+  };
+
+  it("先 4 格后 2 格的两个子项都在：四项一项不少，后一个并进已有的子列表", () => {
+    const md = "- a\n    - a1\n  - a2\n- b";
+    expect(all(md).sort()).toEqual(["a", "a1", "a2", "b"]);
+    const l = parse(md)[0] as ListBlock;
+    expect(l.items.map((i) => plainOf(i.inl))).toEqual(["a", "b"]);
+    expect(l.items[0].children!.items.map((i) => plainOf(i.inl))).toEqual(["a1", "a2"]);
+    const { container } = render(<Prose text={md} />);
+    expect([...container.querySelectorAll("li")].map((li) => li.firstElementChild!.textContent)).toEqual(["a", "a1", "a2", "b"]);
+  });
+
+  it("有序列表 6 格、4 格、3 格逐步变浅：五项都在，原文次序不变", () => {
+    const md = "1. 一\n      1. 一甲\n    2. 一乙\n   3. 一丙\n2. 二";
+    expect(all(md).sort()).toEqual(["一", "一丙", "一乙", "一甲", "二"].sort());
+    const l = parse(md)[0] as ListBlock;
+    expect(l.items.map((i) => plainOf(i.inl))).toEqual(["一", "二"]);
+    expect(l.items[0].children!.items.map((i) => plainOf(i.inl))).toEqual(["一甲", "一乙", "一丙"]);
+    const { container } = render(<Prose text={md} />);
+    expect([...container.querySelectorAll("li")].map((li) => li.firstElementChild!.textContent)).toEqual(["一", "一甲", "一乙", "一丙", "二"]);
+  });
+
+  it("变浅以后再变深：接在并进去的那一项下面，不丢", () => {
+    expect(all("- a\n      - a1\n   - a2\n     - a2x\n      - a2y\n  - a3\n- b").sort()).toEqual(["a", "a1", "a2", "a2x", "a2y", "a3", "b"]);
+  });
+
+  it("性质：随机缩进的列表，切出的项数等于原文行数，每一行的字都在，文档次序不变", () => {
+    // 固定种子的伪随机（mulberry32），失败时能照种子重放
+    const rng = (seed: number) => () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const order = (root: ListBlock) => {
+      // 先序（文档次序），不递归
+      const out: string[] = [];
+      const todo: ListBlock["items"] = [...root.items].reverse();
+      while (todo.length) {
+        const it = todo.pop()!;
+        out.push(plainOf(it.inl));
+        if (it.children) for (let i = it.children.items.length - 1; i >= 0; i--) todo.push(it.children.items[i]);
+      }
+      return out;
+    };
+    for (let seed = 1; seed <= 600; seed++) {
+      const r = rng(seed);
+      const n = 2 + Math.floor(r() * 40);
+      const maxIndent = [3, 8, 20, 90][seed % 4];
+      const want: string[] = [];
+      const lines = Array.from({ length: n }, (_, i) => {
+        const indent = i === 0 && seed % 3 ? 0 : Math.floor(r() * (maxIndent + 1));
+        const pad = seed % 7 === 0 && indent >= 4 ? "\t".repeat(Math.floor(indent / 4)) + " ".repeat(indent % 4) : " ".repeat(indent);
+        const mark = seed % 5 === 0 ? ["-", "*", "+", `${i + 1}.`, `${i + 1})`][Math.floor(r() * 5)] : seed % 2 ? "-" : `${i + 1}.`;
+        want.push(`第 ${i} 行`);
+        return `${pad}${mark} 第 ${i} 行`;
+      });
+      const md = lines.join("\n");
+      const blocks = parse(md);
+      expect(blocks.map((b) => b.k), `种子 ${seed}\n${md}`).toEqual(["list"]);
+      expect(walk(blocks[0] as ListBlock).texts, `种子 ${seed}\n${md}`).toHaveLength(n);
+      expect(order(blocks[0] as ListBlock), `种子 ${seed}\n${md}`).toEqual(want);
+    }
+  });
+
+  it("性质：随机缩进的列表排出来，li 的个数等于原文行数", () => {
+    let seed = 20261124;
+    const r = () => { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; return (seed >>> 0) / 4294967296; };
+    for (let k = 0; k < 40; k++) {
+      const n = 2 + Math.floor(r() * 30);
+      const md = Array.from({ length: n }, (_, i) => `${" ".repeat(Math.floor(r() * 12))}- 第 ${i} 行`).join("\n");
+      const { container, unmount } = render(<Prose text={md} />);
+      expect([...container.querySelectorAll("li")].map((li) => li.firstElementChild!.textContent), md).toEqual(Array.from({ length: n }, (_, i) => `第 ${i} 行`));
+      unmount();
+    }
+  });
+});
+
 describe("表格", () => {
   it("格里的竖线：反引号里的与转义的不算分隔", () => {
     expect(cells("| `a | b` | c \\| d | e |")).toEqual(["`a | b`", "c | d", "e"]);

@@ -130,18 +130,26 @@ function list(lines: string[]): ListBlock {
     else if (raw.length) raw[raw.length - 1].text += `\n${l.trim()}`;      // 续行并进上一项
   }
   // 用一个栈按缩进搭树，不递归：缩进每行多一格的畸形答案可以有上万层，递归会把调用栈撑爆。
-  // 嵌套最多 LIST_DEPTH 层；更深的缩进并进最深的那一层，当作它的同级项，内容一个字不丢。
+  // 嵌套最多 LIST_DEPTH 层；更深的缩进并进最深的那一层，当作它的同级项。
+  // 每一行列表项都恰好进一次 items，子列表只在父项还没有子列表时新建：层级可以不准，内容不能少。
   const root: ListBlock = { k: "list", ordered: raw[0].ordered, start: raw[0].start, items: [] };
   const stack: { block: ListBlock; indent: number }[] = [{ block: root, indent: raw[0].indent }];
   for (const r of raw) {
     while (stack.length > 1 && r.indent < stack[stack.length - 1].indent) stack.pop();
     const top = stack[stack.length - 1];
-    if (r.indent > top.indent && top.block.items.length > 0 && stack.length < LIST_DEPTH) {
-      const child: ListBlock = { k: "list", ordered: r.ordered, start: r.start, items: [{ inl: inline(r.text), children: null }] };
-      top.block.items[top.block.items.length - 1].children = child;
+    const item: ListItem = { inl: inline(r.text), children: null };
+    const parent = r.indent > top.indent ? top.block.items.at(-1) : undefined;
+    if (parent?.children) {
+      // 缩进不规整：同一父项下先来了缩进深的子项，又来了浅一点但仍比父项深的。并进已有的子列表当同级项，
+      // 不另建（另建会把已有的子列表盖掉，丢项）。这一层的缩进改记成较浅的这个，后面同样缩进的项接着排在这里。
+      parent.children.items.push(item);
+      stack.push({ block: parent.children, indent: r.indent });
+    } else if (parent && stack.length < LIST_DEPTH) {
+      const child: ListBlock = { k: "list", ordered: r.ordered, start: r.start, items: [item] };
+      parent.children = child;
       stack.push({ block: child, indent: r.indent });
     } else {
-      top.block.items.push({ inl: inline(r.text), children: null });
+      top.block.items.push(item);
     }
   }
   return root;
