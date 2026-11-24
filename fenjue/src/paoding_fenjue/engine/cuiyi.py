@@ -134,11 +134,14 @@ def distill(
     for attempt in range(1, ATTEMPTS + 1):
         main = ask("main", f"{base}:main:{attempt}", errors)
         main.name = "main"
-        if main.ok:
+        # 给人看的栏里的内部名词（V5 的同一张表同一个函数）：写出来就交回重写，不等到校验报“未过”（dry 也一样）
+        vocab = checks._plain(checks.displayed(main.body, "essence"))
+        if main.ok and not vocab:
             break
-        if dry and all(c["ok"] for c in main.checks if c["id"] == "K8"):
-            break  # 试算只标不重写；唯一的例外是指令痕迹（K8）：来源里埋的话不能带进任何产物（11 §5 N3）
+        if dry and all(c["ok"] for c in main.checks if c["id"] == "K8") and not vocab:
+            break  # 试算只标不重写；例外：指令痕迹（K8，11 §5 N3）与内部名词，都不能带进产物
         errors = [f"{c['id']}：{c.get('detail', '')}" for c in main.checks if not c["ok"] and not c.get("advisory")]
+        errors += [f"V5：{v}（换成常规的技术词）" for v in vocab]
     assert main is not None
     if dry:
         ess = main.body

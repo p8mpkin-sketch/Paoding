@@ -278,7 +278,7 @@ class ModelDan:
         # 拒答、被输出上限截断、没有文字块：都没有可用的 JSON。交回 None，引擎按“形状不对”带着说明重来（至多 2 次），
         # 花掉的 token 照记。不在这里重试，也不把半截输出当结果
         parsed = None if stop in ("refusal", "max_tokens") else pills.parse(text)
-        return Reply(parsed, tin, tout)
+        return Reply(parsed, tin, tout, stop)
 
 
 def _error_type(out: Any) -> str:

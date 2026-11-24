@@ -23,15 +23,17 @@ from . import data, schema
 from .dan import ROLES, fence
 
 PROMPTS_ASSET = "adapter/prompts"
-# 每种模板一次调用的输出上限（token）〔占位，取自丹方的用量表并留余量〕。上限含模型的思考：定得太紧，
-# 思考占掉额度后 JSON 会被截断（截断的输出一律不用）。非流式请求，所以不超过 16000。
+# 每种模板一次调用的输出上限（token）〔占位，取自丹方的用量表并留余量〕。上限含模型的思考：思考占掉额度后
+# JSON 会被截断（截断的输出一律不用）。trial-b-3 里位丹合法 JSON 才约 3000 字符，却用掉 8000–10800 token，
+# 所以归位 12000→24000、识别候选 16000→24000、阅读与复核 4000→8000；下一次重跑量截断率。
+# 驱动用非流式请求、单次最长等 900 秒；上限抬高后若端点拒绝大 max_tokens 或超时，再改流式（13-kernel.md §9.1）。
 MAX_TOKENS = {
-    "reader/v1": 4_000,
-    "shihuo/v1": 16_000,
+    "reader/v1": 8_000,
+    "shihuo/v1": 24_000,
     "cuiyi/main/v1": 16_000,
     "cuiyi/extra/v1": 16_000,
-    "cuiyi/blind/v1": 4_000,
-    "ruwei/place/v1": 12_000,
+    "cuiyi/blind/v1": 8_000,
+    "ruwei/place/v1": 24_000,
     "ruwei/design/v1": 16_000,
 }
 # 活动面板与日志里给人看的步骤名（常规技术词，不用内部名词）
