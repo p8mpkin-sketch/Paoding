@@ -1112,7 +1112,7 @@
    "key": "ruwei:C1:r1:place:1",
    "role": "placer",
    "tier": "mid",
-   "input_sha256": "3ac107648da78031cd8e26b31f3f6cca9bdf514a704080511fde2835081f03b6",
+   "input_sha256": "3c9ec967f3d3c309d3b76e34f23a50110bdf2411e00692668996224ee62d0c67",
    "output": {
     "atoms": [
      {
@@ -1157,7 +1157,7 @@
    "key": "ruwei:C1:r1:place:2",
    "role": "placer",
    "tier": "mid",
-   "input_sha256": "0e88c827ab2236849fe6f2237931e12a12bd17939277c03a476f16bb270e0bfb",
+   "input_sha256": "1c92823b6e57c77d222f127e51443fe380ca152b57103cd4a4683aed09dcb986",
    "output": {
     "atoms": [
      {
@@ -1202,7 +1202,7 @@
    "key": "ruwei:C2:r1:place:1",
    "role": "placer",
    "tier": "mid",
-   "input_sha256": "1e20ae6d6462b3f884499bb4cd61d14cd7681532108f4881204c852798a17797",
+   "input_sha256": "d7dc7374b5fce48c1abbc18475f56b550725df7d29f17a7d70269af635381bcb",
    "output": {
     "atoms": [
      {
@@ -1316,7 +1316,7 @@
    "key": "ruwei:C3:r1:place:1",
    "role": "placer",
    "tier": "mid",
-   "input_sha256": "547bd1b7398b11995ad656f79a984b1bea6e7b5bc3d7674441a6dbad26862544",
+   "input_sha256": "4bd34364c287654437093524b3d8b8764678df0067d83b3bb250481ce508ccff",
    "output": {
     "atoms": [
      {
