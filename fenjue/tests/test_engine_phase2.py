@@ -249,9 +249,17 @@ def _essence(emergent=True, conflicts=(), features=()):
                     "features": list(features),
                 }
             ],  # fmt: skip
+            # 九栏齐全：进归位的提炼结果必须如此（sections.gaps），手写的夹具也不例外
+            "premises": [{"id": "p1", "statement": "有记录可读", "holds_here": "yes", "why": "事件账里有"}],
+            "costs": [{"id": "c1", "cost": "多存一份记录", "kind": "storage", "here": "would_pay"}],
+            "overlaps": [],
             "conflicts": list(conflicts),
             "fusion": {"statement": "演示融合", "emergent": em if emergent else []},
             "split": [],
+            "implementations": [
+                {"sketch": "逐条记录", "primitives": ["记录"]},
+                {"sketch": "攒一批再对照", "primitives": ["记录", "对照"]},
+            ],
         },
     }
 

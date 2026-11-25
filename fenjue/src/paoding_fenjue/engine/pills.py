@@ -20,7 +20,7 @@ from typing import Any
 
 from .. import shapes
 from . import data, schema
-from .dan import ROLES, fence
+from .dan import ROLES, Reply, fence, truncated
 
 PROMPTS_ASSET = "adapter/prompts"
 # 每种模板一次调用的输出上限（token）〔占位，取自丹方的用量表并留余量〕。上限含模型的思考：思考占掉额度后
@@ -135,6 +135,22 @@ def parse(text: str) -> Any:
             continue
         return obj if isinstance(obj, dict) else None
     return None
+
+
+def empty_reply(r: Reply, template: str) -> tuple[str, str]:
+    """没有可用内容的回答分三种：拒答（refused）、被输出上限截断（truncated）、解析不出 JSON 对象（not_json）。
+    交回（类别，下一次带给模型的如实说明）。各步都用这一个分法，不把“没有内容”当成“内容不合格”去校验。"""
+    limit = MAX_TOKENS[template]
+    if r.stop == "refusal":
+        return "refused", (
+            "模型拒绝了这次请求（停止原因 refusal），没有产出内容；这不是输出格式的问题，不再重试同一个请求"
+        )
+    if truncated(r, limit):
+        return "truncated", (
+            f"上一次的输出用满了 {limit} token 的上限（思考也算在内）被截断，JSON 不完整，所以没有可用的内容。"
+            "这不是内容的问题，不用缩短各栏：直接重新输出完整的 JSON，思考从简"
+        )
+    return "not_json", "上一次的输出解析不出 JSON 对象：只输出一个 JSON 对象，不要前后说明、代码围栏或多个对象"
 
 
 def label(role: str, key: str) -> str:

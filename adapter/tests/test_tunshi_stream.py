@@ -11,6 +11,7 @@ import json
 import re
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -141,6 +142,78 @@ def test_a_stream_that_breaks_or_reports_an_error_is_not_taken_as_an_answer(upst
     with pytest.raises(StreamFailed) as e:
         stream_post(upstream({"text": "{}", "stream_error": "overloaded_error"}), BODY, {}, 5, 10)
     assert e.value.kind == "stream_error" and e.value.detail == "overloaded_error"
+
+
+def test_a_cut_says_how_much_had_arrived(upstream):
+    """trial-b 里那一次“流在停止原因之前就结束了”，代理和中继的日志里都没有记录：原因里要带上断在哪儿。"""
+    with pytest.raises(StreamFailed) as e:
+        stream_post(upstream({"text": '{"a": 1}', "cut": True}), BODY, {}, 5, 10)
+    m = re.search(r"已收到 (\d+) 个事件，最后一个是 (\w+)，共 (\d+) 字节", e.value.detail)
+    assert m and int(m.group(1)) >= 2 and m.group(2) == "content_block_delta" and int(m.group(3)) > 50
+    assert not tunshi_cli.is_timeout(0, str(e.value)) and len(str(e.value)) < 200  # 进得了流水里那一栏
+
+
+def test_assembly_counts_events_and_remembers_the_last_kind():
+    asm = Assembly()
+    for d in ({"type": "message_start", "message": {}}, {"type": "ping"}, "不是事件", {"no": "type"}):
+        asm.take(d)
+    assert asm.events == 3 and asm.last == ""  # 没有类型的事件也算数，最后一个的类型照实是空
+
+
+def until_close(ctype: str, chunk: bytes, every_s: float, for_s: float) -> tuple[str, list[float]]:
+    """一个“读到连接关闭为止”的上游：响应头里既没有 Content-Length 也不分块，然后每隔一会儿滴一段，滴很久。
+    交回（地址，[对方断开时已经过了多久]）。"""
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    gone: list[float] = []
+
+    def serve() -> None:
+        conn, _ = srv.accept()
+        t0 = time.monotonic()
+        try:
+            conn.settimeout(5)
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                buf += conn.recv(65536)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: " + ctype.encode() + b"\r\nConnection: close\r\n\r\n")
+            while time.monotonic() - t0 < for_s:
+                conn.sendall(chunk)
+                time.sleep(every_s)
+        except OSError:
+            pass
+        finally:
+            gone.append(time.monotonic() - t0)
+            conn.close()
+            srv.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return f"http://127.0.0.1:{srv.getsockname()[1]}/v1/messages", gone
+
+
+@pytest.mark.parametrize(
+    ("ctype", "chunk"),
+    [
+        ("text/event-stream", b'event: ping\ndata: {"type": "ping"}\n\n'),  # 流式，但不分块
+        ("application/json", b" "),  # 不理会 stream、回整段 JSON 的端点，同样读到关闭为止
+    ],
+)
+def test_the_total_limit_also_holds_for_a_reply_that_is_read_until_the_connection_closes(ctype, chunk):
+    """这种响应下 http.client 拿到响应头就把 conn.sock 置空，定时器原先关不到套接字：实测 1.5 秒的时限到 32 秒才报。
+    我们的代理始终分块，实际路径没事；直连别的端点会碰到。"""
+    url, gone = until_close(ctype, chunk, 0.2, 12)
+    t0 = time.monotonic()
+    with pytest.raises(StreamFailed) as e:
+        stream_post(url, BODY, {}, 5, 1.5)
+    took = time.monotonic() - t0
+    assert e.value.kind == "deadline" and "总时限 1.5 秒" in e.value.detail
+    assert 1.4 < took < 4, took  # 到点就放手：不是等到上游滴完的 12 秒
+    assert tunshi_cli.is_timeout(0, str(e.value))
+    for _ in range(40):  # 对方也确实看到连接断了（套接字真关了，不只是这边不读了）
+        if gone:
+            break
+        time.sleep(0.1)
+    assert gone and gone[0] < 6
 
 
 def test_a_proxy_that_cannot_be_reached_is_a_connect_failure():

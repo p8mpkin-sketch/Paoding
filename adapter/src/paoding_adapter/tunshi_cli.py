@@ -188,11 +188,14 @@ class Assembly:
         self.blocks: dict[int, dict[str, Any]] = {}
         self.done = False
         self.error = ""
+        self.events, self.last = 0, ""  # 收到几个事件、最后一个的类型：流断了的时候写进原因里
 
     def take(self, d: Any) -> None:
         if not isinstance(d, dict):
             return
         t = d.get("type")
+        self.events += 1
+        self.last = str(t or "")[:40]
         if t == "error":
             err = d.get("error")
             e: Mapping[str, Any] = err if isinstance(err, dict) else {}
@@ -253,21 +256,34 @@ def stream_post(
     它的 JSON。端点不理会 `stream`、照旧回一整个 JSON 的，也认。计时：first_byte_s（发出到响应头）、elapsed_s。
 
     没收完抛 StreamFailed。两条时限各管各的：套接字的读超时是 `idle_s`（每等一次字节至多这么久），总时限由一个
-    定时器到点关掉套接字（读超时管不住“一直有字节但收不完”）。不走环境里的代理。"""
+    定时器到点关掉套接字（读超时管不住“一直有字节但收不完”）。不走环境里的代理。
+
+    定时器关的是连上之后留下的那个套接字，不是 `conn.sock`：响应既不分块也没有长度（读到连接关闭为止）时，
+    http.client 拿到响应头就把 `conn.sock` 置空，套接字只剩响应对象手里的那一份，从 `conn` 上已经够不着了。
+
+    流断在停止原因之前（cut）时，原因里带上已经收到多少：几个事件、最后一个事件的类型、多少字节。"""
     u = urllib.parse.urlsplit(url)
     cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
     conn = cls(u.netloc, timeout=CONNECT_S)
     t0 = clock()
     timing: dict[str, float] = {}
     expired = threading.Event()
+    held: list[socket.socket] = []  # 连上之后的套接字，留给定时器关
+    got = {"bytes": 0}
 
     def expire() -> None:
         expired.set()
-        try:
-            if conn.sock is not None:
-                conn.sock.shutdown(socket.SHUT_RDWR)  # 让阻塞着的读立刻返回；close 做不到
-        except OSError:
-            pass
+        for sock in held:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)  # 让阻塞着的读立刻返回；close 做不到
+            except OSError:
+                pass
+
+    def seen() -> str:
+        if asm is None:
+            return f"已收到 {got['bytes']} 字节，还没有解析出事件"
+        last = f"，最后一个是 {asm.last or '没有类型的事件'}" if asm.events else ""
+        return f"已收到 {asm.events} 个事件{last}，共 {got['bytes']} 字节"
 
     watchdog = threading.Timer(total_s, expire)
     watchdog.daemon = True
@@ -276,6 +292,7 @@ def stream_post(
     try:
         conn.connect()
         conn.sock.settimeout(idle_s)
+        held.append(conn.sock)
         watchdog.start()
         stage = "wait"
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -288,6 +305,8 @@ def stream_post(
         ctype = (resp.getheader("content-type") or "").lower()
         if status >= 400 or not ctype.startswith("text/event-stream"):
             raw = resp.read()
+            if expired.is_set():  # 读到一半被定时器关掉：手里的是半截，不当成完整的回答去解析
+                raise StreamFailed("deadline", f"超过一次调用的总时限 {total_s:g} 秒")
             try:
                 out: Any = json.loads(raw) if raw else None
             except ValueError:
@@ -300,6 +319,7 @@ def stream_post(
             line = resp.readline()
             if not line:
                 break
+            got["bytes"] += len(line)
             line = line.rstrip(b"\r\n")
             if line:
                 lines.append(line)
@@ -312,7 +332,7 @@ def stream_post(
         if expired.is_set() and not asm.done:  # 定时器关掉套接字后，读到的是“流结束”而不是异常
             raise StreamFailed("deadline", f"超过一次调用的总时限 {total_s:g} 秒")
         if not asm.complete:
-            raise StreamFailed("cut", "流在停止原因之前就结束了")
+            raise StreamFailed("cut", f"流在停止原因之前就结束了（{seen()}）")
         return status, asm.message(), timing
     except StreamFailed:
         raise
@@ -327,7 +347,7 @@ def stream_post(
         if isinstance(e, TimeoutError):
             where = "等响应头" if stage == "wait" else "流上"
             raise StreamFailed("idle", f"{where}超过 {idle_s:g} 秒没有任何字节") from None
-        raise StreamFailed("cut", why) from None
+        raise StreamFailed("cut", f"{why}（{seen()}）" if stage == "read" else why) from None
     finally:
         watchdog.cancel()
         timing["elapsed_s"] = round(clock() - t0, 3)

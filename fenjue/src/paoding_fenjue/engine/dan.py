@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import json
 import secrets
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -56,6 +57,28 @@ class BudgetExhausted(RuntimeError):
 
 class Unavailable(RuntimeError):
     """模型端点此刻调不通（重试过了仍不行）。与预算无关：检查点留着，换一个会话接着做。"""
+
+
+class ReplyDefect(RuntimeError):
+    """处理某一次模型回答的代码出了错（原异常挂在 `__cause__`）。`key` 是那次调用的键。
+
+    只有这一种缺陷可以算到模型的回答头上、带着原因让模型重写：回答多半是没料到的形状。别处的缺陷（读上一步的产物、
+    算难度、写报告）与这一步的回答无关，让模型重写既花钱又改不了结果。"""
+
+    def __init__(self, key: str, cause: BaseException) -> None:
+        super().__init__(f"{type(cause).__name__}: {cause}")
+        self.key = key
+
+
+@contextmanager
+def reading(key: str) -> Iterator[None]:
+    """圈出“解析、校验这一次回答”的那段代码：里面抛出的异常包成 `ReplyDefect`。圈里不调模型、不做别的事。"""
+    try:
+        yield
+    except ReplyDefect:
+        raise
+    except Exception as e:
+        raise ReplyDefect(key, e) from e
 
 
 class StaleRecording(LookupError):
