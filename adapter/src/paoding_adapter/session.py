@@ -53,9 +53,13 @@ _STEP = {
     ("exec",): "在容器里执行",
     ("logs",): "读闸门记录",
 }
-# 容器命令失败时的错误类别：只从它的报错里认几种，原文不落盘（里面可能有路径）
+# 容器命令失败时的错误类别：只从它的报错里认几种，原文不落盘（里面可能有路径）。
+# 以换行结尾的写法只在一行的末尾认（“: not found\n”：有的容器服务在镜像不存在时，报错就以这几个字收尾）。
 _KINDS = (
-    (("no such image", "pull access denied", "manifest unknown", "not found: manifest"), "镜像不存在或拉不到"),
+    (
+        ("no such image", "pull access denied", "manifest unknown", "not found: manifest", ": not found\n"),
+        "镜像不存在或拉不到",
+    ),
     (("cannot connect to the docker daemon", "is the docker daemon running", "connection refused"), "连不上容器服务"),
     (("no space left",), "磁盘满了"),
     (("permission denied",), "没有权限"),
@@ -76,7 +80,8 @@ def launch_fault(e: BaseException) -> str:
         return f"{_step(e.cmd)}超时（等了 {int(e.timeout)} 秒）"
     if isinstance(e, subprocess.CalledProcessError):
         said = e.stderr.decode("utf-8", "replace") if isinstance(e.stderr, bytes) else str(e.stderr or "")
-        kind = next((zh for keys, zh in _KINDS if any(k in said.lower() for k in keys)), "")
+        said = said.lower().rstrip() + "\n"
+        kind = next((zh for keys, zh in _KINDS if any(k in said for k in keys)), "")
         return f"{_step(e.cmd)}失败（退出码 {e.returncode}{'，' + kind if kind else ''}）"
     if isinstance(e, OSError):
         code = errno.errorcode.get(e.errno or 0, "")
