@@ -26,6 +26,9 @@ def cli(tmp_path, monkeypatch):
     spec.loader.exec_module(mod)
     dossiers = tmp_path / "dossiers"
     shutil.copytree(ROOT / "docs/design/fenjue/dossiers", dossiers)
+    for extra in dossiers.glob("[0-9][0-9][0-9]-*"):  # 这里的断言按“仓库里只有记录 001”写的：之后开的记录不带进来
+        if not extra.name.startswith("001-"):
+            extra.unlink()
     pkg = tmp_path / "pkg"
     shutil.copytree(ROOT / "fenjue/src/paoding_fenjue/fires", pkg / "fires")
     shutil.copytree(ROOT / "fenjue/src/paoding_fenjue/archive", pkg / "archive")
@@ -85,7 +88,7 @@ def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path
     assert len(list((pkg / "archive/gongfa").iterdir())) == kept + 2
     e = json.loads((pkg / "gongfa.engine.json").read_text(encoding="utf-8"))
     assert e["variant"] == "engine" and e["jie"] == 3 and e["fires"]["H7"] == g["fires"]["H7"]
-    assert "h1.tunshi@1" in e["fires"]["H1"] and "h3.tunshi-tools@1" in e["fires"]["H3"]
+    assert "h1.tunshi@2" in e["fires"]["H1"] and "h3.tunshi-tools@1" in e["fires"]["H3"]
     md = (dossiers / f"{no}-result-first.md").read_text(encoding="utf-8")
     d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
     assert md == lh.render(d) and "| 结局 | 火莲 |" in md

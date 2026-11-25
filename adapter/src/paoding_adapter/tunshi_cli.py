@@ -111,7 +111,8 @@ class Events:
         self.emit({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
 
     def turn(self, model: str, usage: Mapping[str, Any], stop: str) -> None:
-        self.turns += 1
+        with self._lock:  # 按题读时几个调用并发着回来
+            self.turns += 1
         self.emit(
             {"type": "assistant", "message": {"model": model, "usage": dict(usage), "stop_reason": stop, "content": []}}
         )
@@ -381,8 +382,13 @@ class CallLog:
 
     def __init__(self, root: Path) -> None:
         self.root = root
+        self._lock = threading.Lock()  # 按题读时几个调用并发着回来：一次只写一行、只重算一遍汇总
 
     def add(self, row: Mapping[str, Any], thinking: list[str]) -> None:
+        with self._lock:
+            self._add(row, thinking)
+
+    def _add(self, row: Mapping[str, Any], thinking: list[str]) -> None:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             with (self.root / "model_calls.jsonl").open("a", encoding="utf-8") as f:

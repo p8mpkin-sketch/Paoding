@@ -200,3 +200,30 @@ def test_the_report_tells_the_two_kinds_of_unpassed_apart(trial):
     text = "\n".join(trial.dry_lines(new))
     assert "- 没有进入归位：C1（empty）：缺 statement" in text
     assert "- 检验未过但已入位：C2：K1（第 1 步的特征不在冲突栏里）" in text and "K6" not in text and "K3" not in text
+
+
+def test_the_report_says_which_route_a_run_took(trial, tmp_path):
+    """试算报告写明走的是哪条路；按题读时把过线要看的几样逐行打出来（14-question-led.md §7、§9）。"""
+    assert "没有记录" in trial.route_lines(tmp_path)[0]
+    line = "> 读法：题面没有点名具体的问题，走通用勘察。"
+    (tmp_path / "ql.json").write_text(json.dumps({"route": "general", "route_line": line}), encoding="utf-8")
+    assert trial.route_lines(tmp_path) == ["- 读法：题面没有点名具体的问题，走通用勘察。"]
+    doc = {
+        "route": "question_led",
+        "route_line": "> 读法：题面点名了 2 问，按题读。Q1 甲；Q2 乙",
+        "own": None,
+        "read": {"theirs": {"parts": 20, "files": 9, "lines": 4100}, "ours": {"parts": 0}, "facts": 180,
+                 "truncated": 1},
+        "stats": {
+            "items": 20, "supported": 15, "partial": 2, "unsupported": 1, "unverified": 2, "unverified_share": 0.1053,
+            "verified_pass_share": 0.8333, "citations": 40, "citations_theirs": 36, "citations_on_named": 30,
+            "named_share": 0.8333,
+        },
+        "pass": {"all_answered": True, "has_recommendation": True, "unverified_within_20pct": True},
+        "calls": 61, "tokens": 512000, "elapsed_s": 1500, "limits": {"call_cap": 85, "token_cap": 590000},
+    }  # fmt: skip
+    (tmp_path / "ql.json").write_text(json.dumps(doc), encoding="utf-8")
+    out = "\n".join(trial.route_lines(tmp_path))
+    assert "题面点名了 2 问，按题读" in out and "只对照能力清单" in out and "输出被截断 1 次" in out
+    assert "未核对 2（占留下的 11%）" in out and "核对通过率 83%" in out and "落在题面点名的文件上 30 处（83%）" in out
+    assert "未核对不超过两成 是" in out and "调用 61 次（上限 85）" in out and "用时 25.0 分钟" in out

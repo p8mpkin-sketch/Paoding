@@ -35,10 +35,21 @@ MAX_TOKENS = {
     "cuiyi/blind/v1": 8_000,
     "ruwei/place/v1": 24_000,
     "ruwei/design/v1": 16_000,
+    # 按题读（14-question-led.md §5）。上限含思考。按题阅读一次读约 300 行、交回至多 24 条细事实加 5 条观察：
+    # 可见输出约 3 千 token，思考按基线的比例（60 行约 2 千）估到 6 千以内，上限给到 16000，留一倍以上的余量；
+    # 仍被截断时带着说明重读一次。答题稿可见输出约 5 千，上限 32000。
+    "wenti/terms/v1": 6_000,
+    "wenti/pick/v1": 8_000,
+    "reader/q/v1": 16_000,
+    "shihuo/v2": 24_000,
+    "dati/v1": 32_000,
+    "dati/fix/v1": 16_000,
+    "heyan/v1": 12_000,
 }
 # 活动面板与日志里给人看的步骤名（常规技术词，不用内部名词）
 ROLE_ZH = {"reader": "片段阅读", "main": "主分析", "extra": "并行草稿", "blind": "独立复核", "placer": "归位分析"}
 STEP_ZH = {"read": "阅读片段", "shihuo": "识别候选", "cuiyi": "提炼要点", "ruwei": "归位与实验设计"}
+STEP_ZH |= {"wenti": "解析题面", "qread": "按题阅读", "dati": "撰写回答", "heyan": "回头核对"}
 _HIDDEN = ("template", "excerpt", "nonce", "errors", "schema", "prior_failures")
 
 
@@ -163,6 +174,12 @@ def label(role: str, key: str) -> str:
         body, _, attempt = rest.rpartition(":")
         where, _, slot = body.rpartition(":")
         return f"{step}：{where[:160]}（{slot}，第 {attempt} 次）"
+    if head == "qread":  # qread:<快照>:<路径>:<起行>-<止行>:<次数>：只留位置
+        _, rest = key.split(":", 1)
+        where, _, attempt = rest.rpartition(":")
+        return f"{step}：{where[:160]}（第 {attempt} 次）"
+    if head in ("wenti", "dati", "heyan"):
+        return f"{step}：{':'.join(key.split(':')[1:])[:60]}（{who}）"
     if head == "shihuo":
         return f"{step}：归纳观察（{who}，第 {key.rsplit(':', 1)[-1]} 次）"
     bits = key.split(":")

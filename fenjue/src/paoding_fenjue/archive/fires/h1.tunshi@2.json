@@ -1,0 +1,132 @@
+{
+ "id": "h1.tunshi",
+ "ver": 2,
+ "slot": "H1",
+ "seats": [
+  "solve"
+ ],
+ "ports": [
+  "M1:deliver",
+  "M1:register_artifact",
+  "M1:request_scope",
+  "M2",
+  "M3",
+  "M4"
+ ],
+ "params": {
+  "forms": {
+   "solve": {
+    "tools": [
+     "intake",
+     "fetch",
+     "check",
+     "deliver"
+    ],
+    "prompt": {
+     "files": [
+      "tunshi.md"
+     ],
+     "insert_after": "- deliver："
+    },
+    "kb_cite": "grounds",
+    "focus": [
+     "relay"
+    ],
+    "restate": "按固定流程把外部系统读成结构化的分析产物，走到下一个确认点就用 deliver 交付；停在确认点时把追问当作决定。",
+    "relay": true,
+    "ends_on": "deliver",
+    "driver": "tunshi",
+    "sandbox": true,
+    "fixed_tools": true,
+    "max_turns": 4000,
+    "pills": {
+     "reader/v1": "tunshi-reader.md",
+     "shihuo/v1": "tunshi-shihuo.md",
+     "cuiyi/main/v1": "tunshi-cuiyi.md",
+     "cuiyi/extra/v1": "tunshi-cuiyi.md",
+     "cuiyi/blind/v1": "tunshi-blind.md",
+     "ruwei/place/v1": "tunshi-place.md",
+     "ruwei/design/v1": "tunshi-design.md",
+     "shihuo/v2": "tunshi-shihuo-2.md",
+     "wenti/terms/v1": "tunshi-wenti.md",
+     "wenti/pick/v1": "tunshi-wenti-pick.md",
+     "reader/q/v1": "tunshi-reader-q.md",
+     "dati/v1": "tunshi-dati.md",
+     "dati/fix/v1": "tunshi-dati-fix.md",
+     "heyan/v1": "tunshi-heyan.md"
+    }
+   }
+  }
+ },
+ "assets": [
+  {
+   "name": "adapter/prompts/tunshi.md",
+   "sha256": "4cbed10724ff5ecf2d12da873be991e29fcdbc7bc495238c1dc4f6ff740df3cc"
+  },
+  {
+   "name": "adapter/prompts/tunshi-blind.md",
+   "sha256": "a75f2f63ab627803351fdeb742639aa71bb13fc9fa20c92753b3aa11d5a5eba0"
+  },
+  {
+   "name": "adapter/prompts/tunshi-cuiyi.md",
+   "sha256": "244db9d1c0586dc07897032de5008cce4b809851e4bcfe3f0a0813739bfc8319"
+  },
+  {
+   "name": "adapter/prompts/tunshi-design.md",
+   "sha256": "cfc34fa87a763dd4cdec4de5c25875ee111da528c090766df12446318dd55678"
+  },
+  {
+   "name": "adapter/prompts/tunshi-place.md",
+   "sha256": "68280f06086be90ee62e12b26f94327e8f9e24825601a80af4dfd5c00fab97b0"
+  },
+  {
+   "name": "adapter/prompts/tunshi-reader.md",
+   "sha256": "abdce68040d3abab3e8ffca35eaab35be415ec286ecccf2835888b777b58a17d"
+  },
+  {
+   "name": "adapter/prompts/tunshi-shihuo.md",
+   "sha256": "2973a5108dc726957acbf14e184f7755ffa5ac9bee4d9665bed0130ecb7b3f9d"
+  },
+  {
+   "name": "adapter/prompts/tunshi-shihuo-2.md",
+   "sha256": "e6dab29669c01c5a175e09afaa30fbf79ec3fb43d882ae2bd9f34410c15f6821"
+  },
+  {
+   "name": "adapter/prompts/tunshi-wenti.md",
+   "sha256": "843d697eaea5147aafff594c100ff3ef035c2c0c53e0fbc528187457e8b88046"
+  },
+  {
+   "name": "adapter/prompts/tunshi-wenti-pick.md",
+   "sha256": "270a862de42a1df5722f4c144addaac1f5517b190b813e253c44e0b6e479aa5e"
+  },
+  {
+   "name": "adapter/prompts/tunshi-reader-q.md",
+   "sha256": "d890fe51d9ca7b0ee15fcdf92d697db895cfef5b3ce718b10ad165101bc747d2"
+  },
+  {
+   "name": "adapter/prompts/tunshi-dati.md",
+   "sha256": "5d51dda5e9cd65a1df382ea73e3bd7b01c0f400668f70e79f12c5b2ca5549645"
+  },
+  {
+   "name": "adapter/prompts/tunshi-dati-fix.md",
+   "sha256": "6b58fd4c2918122c4c6d7e30687cca33e88ed44b60c9108b446829bd1c86f1f0"
+  },
+  {
+   "name": "adapter/prompts/tunshi-heyan.md",
+   "sha256": "c1a4094ebf5f11f03501de0614ffbd21526f8175d27377e143d73c79f8a1dff2"
+  }
+ ],
+ "organ": {
+  "class": "感知官",
+  "enable_when": "分析实例（功法取 gongfa.engine.json）里的开放道任务",
+  "control_arm": "人工走六步（lianhua.py 逐步填炼档）",
+  "retire_signal": "连续 10 次分析的候选在第 1 次确认时全部未被选中，或交接包导入后被退回重做的比例高于人工炼档"
+ },
+ "lineage": {
+  "dossier": "002",
+  "from": [
+   "h1.tunshi"
+  ]
+ },
+ "switch": "fires.H1"
+}

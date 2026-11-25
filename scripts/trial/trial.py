@@ -176,6 +176,12 @@ def open_cases(a: argparse.Namespace) -> int:
                 src = ["--upload", str(f), "--upload-origin", f"{c['repo']}@{sha}"]
             else:  # 让分析会话在沙箱里抓（要执行层能连 codeload.github.com:443）
                 src = ["--repo", f"{c['repo']}@{sha}"]
+            own_archive, own_origin = getattr(a, "own_archive", ""), getattr(a, "own_origin", "")
+            if own_archive:  # 我们自己仓库的归档作对照材料：出处要与配置里的 analysis.own_repo 是同一个地址
+                if not own_origin or "@" not in own_origin:
+                    raise SystemExit("--own-archive 要配 --own-origin <仓库地址>@<提交>：对照的是哪个提交要记进立项单")
+                src += ["--upload", str(Path(own_archive).expanduser()), "--upload-origin", own_origin]
+                row["own"] = {"origin": own_origin}
             short = re.sub(r"^https://github\.com/", "", c["repo"]).rstrip("/")
             r = subprocess.run(
                 [
@@ -230,6 +236,56 @@ def model_call_lines(ws: Path) -> list[str]:
     return out
 
 
+def route_lines(ws: Path) -> list[str]:
+    """这道题走的是哪条路，以及按题读时过线要看的几样（`ql.json`，14-question-led.md §9）。"""
+    f = ws / "ql.json"
+    if not f.exists():
+        return ["- 读法：没有记录（这道题是按题读上线之前跑的，或还没有交付过）"]
+    try:
+        q = json.loads(f.read_text(encoding="utf-8"))
+    except ValueError:
+        return ["- 读法：ql.json 读不出来"]
+    out = ["- " + str(q.get("route_line", "")).lstrip("> ").strip()]
+    if q.get("route") != "question_led":
+        return out
+    st, ok, read = q.get("stats") or {}, q.get("pass") or {}, q.get("read") or {}
+    own = q.get("own")
+    theirs, ours = read.get("theirs") or {}, read.get("ours") or {}
+    out.append(
+        f"- 按题读：读了对方 {theirs.get('parts', 0)} 部分（{theirs.get('files', 0)} 个文件、"
+        f"{theirs.get('lines', 0)} 行）、我们自己的 {ours.get('parts', 0)} 部分；细事实 {read.get('facts', 0)} 条；"
+        f"输出被截断 {read.get('truncated', 0)} 次；"
+        + (f"对照材料取自提交 {own.get('ref') or '（未记）'}" if own else "没有我们自己仓库的归档，只对照能力清单")
+    )
+    out.append(
+        f"- 结论 {st.get('items', 0)} 条：核对通过 {st.get('supported', 0)}，改写后通过 {st.get('partial', 0)}，"
+        f"不支持 {st.get('unsupported', 0)}，未核对 {st.get('unverified', 0)}"
+        f"（占留下的 {round(100 * float(st.get('unverified_share', 0)))}%）；核对通过率 "
+        f"{round(100 * float(st.get('verified_pass_share', 0)))}%"
+    )
+    out.append(
+        f"- 带行号的引用 {st.get('citations', 0)} 处，其中指向对方仓库 {st.get('citations_theirs', 0)} 处、"
+        f"落在题面点名的文件上 {st.get('citations_on_named', 0)} 处"
+        f"（{round(100 * float(st.get('named_share', 0)))}%）；行号由程序从读过的行区间推出，"
+        f"读的时候行区间对不上原文而丢掉的事实 {read.get('dropped', 0)} 条"
+    )
+    out.append(
+        f"- 过线三样里程序数得出的：每一问都有核对过的结论 {_yn(ok.get('all_answered'))}；"
+        f"有集成建议 {_yn(ok.get('has_recommendation'))}；未核对不超过两成 {_yn(ok.get('unverified_within_20pct'))}"
+    )
+    lim = q.get("limits") or {}
+    out.append(
+        f"- 用量（照实记录，不作过线）：调用 {q.get('calls')} 次（上限 {lim.get('call_cap')}），"
+        f"token {q.get('tokens')}（上限 {lim.get('token_cap')}），"
+        f"用时 {round(float(q.get('elapsed_s') or 0) / 60, 1)} 分钟"
+    )
+    return out
+
+
+def _yn(v: object) -> str:
+    return "是" if v else "否"
+
+
 def dry_lines(d: dict) -> list[str]:
     """预评估产物里要直接读到的几行：结论、自动选中与估算、没进归位的候选、检验未过但已入位的候选。"""
     lines = [
@@ -276,6 +332,7 @@ def report(a: argparse.Namespace) -> int:
                 rules = json.dumps(e.get("body", {}).get("rules"), ensure_ascii=False)[:300]
                 lines.append(f"- 访问申请（序号 {e['seq']}）：{rules}")
         ws = home / "analyses" / pid
+        lines += route_lines(ws)
         lines += model_call_lines(ws)
         run_f = ws / "run.json"
         if run_f.exists():
@@ -325,6 +382,16 @@ def main() -> int:
             )
             p.add_argument("--tag", default="", help="题号后缀：重跑时题号不能重复，例如 --tag 2 开出 trial-a-2")
             p.add_argument("--cache", default="trial-cache", help="下载的归档放在这里（可重复使用）")
+            p.add_argument(
+                "--own-archive",
+                default="",
+                help="可选：我们自己仓库的源码归档，作“我们的实现”对照材料随题上传（要与 --own-origin 同用）",
+            )
+            p.add_argument(
+                "--own-origin",
+                default="",
+                help="--own-archive 的出处：<仓库地址>@<提交>；地址要与配置里的 analysis.own_repo 相同",
+            )
     a = ap.parse_args()
     return {"setup": setup, "open": open_cases, "report": report}[a.cmd](a)
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -154,6 +155,7 @@ class Memo:
 
     def __post_init__(self) -> None:
         self._seen: dict[tuple[str, str], dict[str, Any]] = {}
+        self._lock = threading.Lock()  # 并发的调用各自问模型，记备忘时一次只写一行
         if self.path.exists():
             for line in self.path.read_text(encoding="utf-8").splitlines():
                 try:
@@ -178,9 +180,10 @@ class Memo:
             "tokens_out": r.tokens_out,
             **({"stop": r.stop} if r.stop else {}),
         }
-        self._seen[(key, sha)] = row
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        with self._lock:
+            self._seen[(key, sha)] = row
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
         return r
 
     def forget(self, prefixes: tuple[str, ...]) -> int:

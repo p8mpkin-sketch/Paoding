@@ -105,7 +105,7 @@ def test_an_analysis_instance_runs_an_analysis_through_its_first_two_confirmatio
         assert p["gongfa"]["digest"] == s.graph.cfg.gongfa[1]  # 开题记下的是分析实例的那一版
         (d1,) = wait_deliveries(s, "pa1", 1)
         lease = s.graph.state["leases"][d1["lease"]]
-        assert lease["form"] == "h1.tunshi@1" and d1["outcome"] == "partial"
+        assert lease["form"] == "h1.tunshi@2" and d1["outcome"] == "partial"
         # 各档位的模型取自设置层（这里只有一个缺省档案：三档都用它）；单价取端点代理的价目表
         prof = s._analysis_profile("pa1")
         assert prof["models"] == {
@@ -113,7 +113,10 @@ def test_an_analysis_instance_runs_an_analysis_through_its_first_two_confirmatio
             "mid": "claude-sonnet-5-5",
             "light": "claude-sonnet-5-5",
         }
-        assert prof["prices"]["heavy"] == [2000, 10000] and prof["bang"] and prof["locks"] == []
+        assert prof["prices"]["heavy"] == [2000, 10000] and prof["bang"]
+        # 在途的记录占着模块槽：此刻只有引擎自己的升级记录 002（H1，设计已裁、读数未出），cz 裁决后释放
+        assert prof["locks"] == [{"slot": "H1", "dossier": "002"}]
+        assert (prof["parallel"], prof["own_repo"], prof["question_led"]) == (4, "", True)
         assert {b["model"] for b in s.upstream.reply.requests} == {"claude-sonnet-5-5"}
         # 工作区导出给界面的读端点
         exported = s.cfg.home / "analyses" / "pa1"
@@ -153,6 +156,8 @@ def test_without_any_model_the_analysis_says_so(tmp_path, engine_env):
 def test_the_analysis_section_is_validated():
     assert analysis_config(None)["enabled"] is False
     assert analysis_config({"enabled": True})["access_wait_s"] == 600
+    cfg = analysis_config({"parallel": 2, "own_repo": "https://example.test/us/ours", "question_led": False})
+    assert (cfg["parallel"], cfg["question_led"]) == (2, False) and analysis_config(None)["parallel"] == 4
     for bad in (
         {"enabeld": True},
         {"enabled": "yes"},
@@ -161,6 +166,11 @@ def test_the_analysis_section_is_validated():
         {"access_wait_s": -1},
         {"access_wait_s": True},
         {"by": " "},
+        {"parallel": 0},
+        {"parallel": 9},
+        {"parallel": True},
+        {"own_repo": "git@host:us/ours"},
+        {"question_led": "no"},
         [],
     ):
         with pytest.raises(ValueError):
