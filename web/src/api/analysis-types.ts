@@ -162,7 +162,9 @@ export type AnDryRun = {
   auto_picked: string[];
   plain_summary: string;
   estimate: { tokens: Record<string, { in: number; out: number }>; minutes: number; budget_usd_milli?: number } | null;
-  items: { candidate: string; statement: string; slot: string; replaces: string | null; kernel_forecast: string[]; difficulty?: number; likely_outcome: string; why: string; conflicts: string[] }[];
+  items: { candidate: string; statement: string; slot: string; replaces: string | null; kernel_forecast: string[]; difficulty?: number; likely_outcome: string; why: string; conflicts: string[]; /** 没过的检验连同原因；都过是空串（旧后端没有这一项）。 */ unpassed?: string }[];
+  /** 自动取了但没有进入映射的做法（提炼不出）：empty 一栏都没有，incomplete 有内容但缺栏。旧产物没有这一栏。 */
+  not_placed?: { candidate: string; kind: "empty" | "incomplete" | string; why: string }[];
   validators: AnCheck[];
 };
 export type AnReportKind = "G1" | "G2" | "G3" | "handoff" | "dry_run";

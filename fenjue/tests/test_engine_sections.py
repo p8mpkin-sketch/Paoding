@@ -24,7 +24,7 @@ import cases  # noqa: E402
 from test_engine_kernel import ByKey, Host, brief_for  # noqa: E402
 from test_engine_phase2 import _cand, _essence, _organ  # noqa: E402
 
-from paoding_fenjue.engine import checks, cuiyi, handoff, kernel, pills, ruwei, sections  # noqa: E402
+from paoding_fenjue.engine import checks, cuiyi, handoff, kernel, pills, run, ruwei, schema, sections  # noqa: E402
 from paoding_fenjue.engine.dan import Reply, ReplyDefect, reading  # noqa: E402
 from paoding_fenjue.engine.run import report_g2  # noqa: E402
 
@@ -132,7 +132,11 @@ def test_still_wrong_after_the_rewrites_is_marked_undistilled_and_never_enters_p
     # 预评估报告里写明：条目里没有它（没有被评估），摘要、正文、待办都说了
     report = _artifact(tmp_path, "dry_run.json")
     assert [it["candidate"] for it in report["items"]] == ["C1", "C3"] and report["auto_picked"] == ["C1", "C2", "C3"]
-    assert "C2 提炼不出" in report["plain_summary"] and "3 个做法" in report["plain_summary"]
+    assert "3 个做法" in report["plain_summary"] and "2 个有望带来新能力" in report["plain_summary"]
+    assert "1 个提炼不出、没有进入归位（C2）" in report["plain_summary"] and "检验未过" not in report["plain_summary"]
+    # 结构化的那一栏与报告正文一致：trial-b 的形状是“一栏都没有”
+    assert report["not_placed"] == [{"candidate": "C2", "kind": "empty", "why": why[:300]}]
+    assert run.partition_problems(report) == []
     answer = (tmp_path / "analysis" / "answer.md").read_text(encoding="utf-8")
     assert "提炼不出，没有进入归位" in answer and f"- C2：{why}" in answer
     assert d["needs"][0].startswith("C2 提炼不出，没有进入归位")
@@ -141,6 +145,171 @@ def test_still_wrong_after_the_rewrites_is_marked_undistilled_and_never_enters_p
     rows = _artifact(tmp_path, "bang_updates.json")["bang_updates"]
     mine = [json.dumps(r, ensure_ascii=False) for r in rows if "提炼不出" in json.dumps(r, ensure_ascii=False)]
     assert len(mine) == 1 and '"reached": "S4"' in mine[0] and "dry_run" not in mine[0].replace('"mode": "dry_run"', "")
+
+
+# ---------------------------------------------------------------- 两类分开：九栏齐全而 K1 的其余规则没过，不算提炼不出
+
+
+def _inconsistent(dan, cid: str) -> None:
+    """trial-b-5 续跑里 C2 的真实形状：九栏齐全，机制里标了有守门性质的特征，冲突栏与拆分栏里却没有对应的内核项。
+    三次都这样（重写没改过来）。"""
+    good = copy.deepcopy(dan.e[f"cuiyi:{cid}:r1:main:1"])
+    good["output"]["masked"]["mechanism"][0]["features"] = ["write_outside_reducer"]
+    for i in range(1, cuiyi.ATTEMPTS + 1):
+        dan.e[f"cuiyi:{cid}:r1:main:{i}"] = copy.deepcopy(good)
+
+
+def test_complete_sections_that_fail_a_consistency_rule_still_enter_placement_and_are_flagged(tmp_path):
+    dan = Spy(cases.recording("delta", "code", ".dry"))
+    _inconsistent(dan, "C2")
+    out, host = _dry(tmp_path, dan)
+    (d,) = host.delivered()
+    assert out.status == "delivered" and d["outcome"] == "answered"
+    asked = [k for k, _ in dan.seen]
+    assert [k for k in asked if k.startswith("cuiyi:C2:")] == [f"cuiyi:C2:r1:main:{i}" for i in (1, 2, 3)]  # 照样重写
+    assert any(k.startswith("ruwei:C2:") for k in asked)  # 重写仍不过：九栏齐全，照常进归位
+    ess = _artifact(tmp_path, "essence:C2")
+    (k1,) = [c for c in ess["checks"] if c["id"] == "K1"]
+    assert not k1["ok"] and sections.gaps(ess) == []
+    assert "特征 write_outside_reducer 映到 T4，冲突栏里没有对应的体质冲突" in k1["detail"]
+    assert "特征 write_outside_reducer 有守门性质，拆分栏里没有 T4" in k1["detail"]
+    units = {u["id"]: u for u in _load(tmp_path, "run.json")["units"]}
+    assert units["ruwei:C2"]["state"] == "done" and "未过" in units["cuiyi:C2"]["summary"]
+    assert _load(tmp_path, "engine.json")["undistilled"] == {}
+    # 预评估表里有这一行，标明检验未过与原因；别的行是“过”
+    report = _artifact(tmp_path, "dry_run.json")
+    assert [it["candidate"] for it in report["items"]] == ["C1", "C2", "C3"] and "not_placed" not in report
+    assert "1 个检验未过但已做归位评估" in report["plain_summary"]
+    answer = (tmp_path / "analysis" / "answer.md").read_text(encoding="utf-8")
+    rows = {ln.split(" | ")[0].strip("| "): ln for ln in answer.splitlines() if ln.startswith("| C")}
+    assert "检验未过：K1（特征 write_outside_reducer 映到 T4" in rows["C2"] and "拆分栏里没有 T4" in rows["C2"]
+    assert rows["C1"].endswith("| 过 |") and rows["C3"].endswith("| 过 |")
+    # “提炼不出”“结构仍不对”只用于结构类：这里哪儿都不出现
+    said = answer + json.dumps(d["needs"], ensure_ascii=False) + report["plain_summary"]
+    assert "提炼不出" not in said and "结构仍不对" not in said and "无法入位" not in said
+    (need,) = [n for n in d["needs"] if n.startswith("C2 ")]
+    assert need.startswith("C2 检验未过（只标不拦）：K1（特征 write_outside_reducer")
+    assert all(c["ok"] for c in _artifact(tmp_path, "dry_run.v"))
+
+
+def test_the_two_kinds_side_by_side_are_counted_and_worded_separately(tmp_path):
+    """一次试算里两类都有（trial-b-5 续跑的样子）：C1 提炼结果是空的，C2 九栏齐全但一致性规则没过。"""
+    dan = Spy(cases.recording("delta", "code", ".dry"))
+    for i in range(1, cuiyi.ATTEMPTS + 1):  # 真实形状之一：masked 是空对象
+        dan.e[f"cuiyi:C1:r1:main:{i}"] = {**dan.e["cuiyi:C1:r1:main:1"], "output": {"masked": {}}}
+    _inconsistent(dan, "C2")
+    out, host = _dry(tmp_path, dan)
+    (d,) = host.delivered()
+    report = _artifact(tmp_path, "dry_run.json")
+    assert [it["candidate"] for it in report["items"]] == ["C2", "C3"]
+    (row,) = report["not_placed"]
+    assert row["candidate"] == "C1" and row["kind"] == "empty" and "缺" in row["why"] and "9 栏" in row["why"]
+    s = report["plain_summary"]
+    assert "自动取了优先级最高的 3 个做法" in s and "1 个检验未过但已做归位评估" in s
+    assert "1 个提炼不出、没有进入归位（C1）" in s
+    answer = (tmp_path / "analysis" / "answer.md").read_text(encoding="utf-8")
+    group = answer[answer.index("**提炼不出，没有进入归位**") :]
+    assert "重写之后结构仍不对" in group.splitlines()[0] and f"- C1：{row['why']}" in group and "- C2" not in group
+    assert d["needs"][0].startswith("C1 提炼不出，没有进入归位") and d["needs"][1].startswith("C2 检验未过（只标不拦）")
+    assert not any("C2" in n and "提炼不出" in n for n in d["needs"])
+    assert run.partition_problems(report) == [] and all(c["ok"] for c in _artifact(tmp_path, "dry_run.v"))
+    # 榜上：C2 评估过了，记“预评估过”；C1 只记走到提炼
+    rows = [json.dumps(r, ensure_ascii=False) for r in _artifact(tmp_path, "bang_updates.json")["bang_updates"]]
+    assert sum("提炼不出" in r for r in rows) == 1
+
+
+def test_a_checkpoint_from_the_old_rule_lets_the_complete_one_into_placement_on_resume(tmp_path):
+    """旧判据（K1 没过一律不进）留下的检查点：C2 九栏齐全，却记在 undistilled 里、归位单元是 failed。
+    按新判据续做：以产物为准，C2 进归位，旧记录清掉。"""
+    dan = Spy(cases.recording("delta", "code", ".dry"))
+    _inconsistent(dan, "C2")
+    eng = cases.engine("delta", "code", tmp_path, dan, ".dry")
+    eng.start(cases.intake("delta", "code", "dry_run"))
+    eng.x["undistilled"] = {"C2": "特征 write_outside_reducer 映到 T4，冲突栏里没有对应的体质冲突"}
+    eng._mark("ruwei:C2", "S5", "failed", summary="C2：无法入位，提炼不出")
+    eng.state["step"] = "S5"
+    del eng.state["artifacts"]["dry_run.json"]
+    dan.seen.clear()
+    d = eng.resume()
+    assert eng.x["undistilled"] == {} and eng._unit("ruwei:C2")["state"] == "done"
+    assert [it["candidate"] for it in eng.get("dry_run.json")["items"]] == ["C1", "C2", "C3"]
+    assert "提炼不出" not in d.answer and any(n.startswith("C2 检验未过") for n in d.needs)
+
+
+@pytest.mark.parametrize(
+    ("masked", "kind"),
+    [
+        ({}, "empty"),
+        ("换一种说法", "empty"),  # masked 不是对象：一栏都没收下
+        ({"statement": "只写了一句本质的话"}, "incomplete"),
+    ],
+)
+def test_the_kind_of_not_placed_follows_what_was_received(tmp_path, masked, kind):
+    dan = Spy(cases.recording("delta", "code", ".dry"))
+    for i in range(1, cuiyi.ATTEMPTS + 1):
+        dan.e[f"cuiyi:C3:r1:main:{i}"] = {**dan.e["cuiyi:C3:r1:main:1"], "output": {"masked": masked}}
+    _dry(tmp_path, dan)
+    report = _artifact(tmp_path, "dry_run.json")
+    assert [(r["candidate"], r["kind"]) for r in report["not_placed"]] == [("C3", kind)]
+    assert schema.errors(report, "dry-run") == []
+
+
+# ---------------------------------------------------------------- dry_run.json 的结构化栏：向后兼容与自洽
+
+
+def test_an_old_dry_run_without_the_new_field_is_still_valid_and_byte_identical(tmp_path):
+    """没有“没进归位”的候选时不写这一栏：产物与加这一栏之前相同；旧文件照旧过 Schema 与自洽校验。"""
+    dan = Spy(cases.recording("delta", "code", ".dry"))
+    _dry(tmp_path, dan)
+    report = _artifact(tmp_path, "dry_run.json")
+    assert "not_placed" not in report and schema.errors(report, "dry-run") == []
+    assert run.partition_problems(report) == []
+    ctx = checks.Context(names=[], corpus=[], observations={}, license={})
+    before = checks.v_dry_run(report, ctx)
+    assert run.with_partition(before, report) == before  # 没有问题时一条都不动
+    old = json.loads(
+        (cases.ROOT / "docs/design/fenjue/engine/examples/case-d.dry-run.expected.json").read_text("utf-8")
+    )
+    old = old.get("expected", old)
+    assert "not_placed" not in old and schema.errors(old, "dry-run") == [] and run.partition_problems(old) == []
+
+
+def test_every_auto_picked_candidate_appears_exactly_once():
+    def doc(items, out, picked=("C1", "C2", "C3")):
+        r = {"auto_picked": list(picked), "items": [{"candidate": c} for c in items]}
+        if out is not None:
+            r["not_placed"] = [{"candidate": c, "kind": "empty", "why": "缺 9 栏"} for c in out]
+        return r
+
+    assert run.partition_problems(doc(["C1", "C3"], ["C2"])) == []
+    assert run.partition_problems(doc(["C1", "C2", "C3"], None)) == []
+    (twice,) = run.partition_problems(doc(["C1", "C2", "C3"], ["C2"]))
+    assert "C2" in twice and "2 次" in twice
+    (lost,) = run.partition_problems(doc(["C1", "C3"], None))
+    assert "C2" in lost and "既不在" in lost
+    (stray,) = run.partition_problems(doc(["C1", "C2", "C3"], ["C9"]))
+    assert "C9" in stray and "不是自动取的候选" in stray
+    # 并进 V11：原有的问题留着，新问题接在后面，别的条目不动
+    vres = [{"id": "V2", "ok": True}, {"id": "V11", "ok": False, "detail": "C7 不在自动取的候选里"}]
+    got = run.with_partition(vres, doc(["C1", "C3"], None))
+    assert got[0] == {"id": "V2", "ok": True} and not got[1]["ok"]
+    assert got[1]["detail"].startswith("C7 不在自动取的候选里；") and "C2" in got[1]["detail"]
+    assert vres[1]["detail"] == "C7 不在自动取的候选里"  # 不改传进来的那份
+
+
+def test_the_schema_accepts_the_new_field_and_rejects_a_malformed_one(tmp_path):
+    dan = Spy(cases.recording("delta", "code", ".dry"))
+    _wrong(dan, "C2", cuiyi.ATTEMPTS)
+    _dry(tmp_path, dan)
+    report = _artifact(tmp_path, "dry_run.json")
+    assert schema.errors(report, "dry-run") == []
+    for bad in (
+        {"candidate": "C2", "kind": "别的", "why": "x"},
+        {"candidate": "C2", "kind": "empty"},
+        {"candidate": "二"},
+    ):
+        assert schema.errors({**report, "not_placed": [bad]}, "dry-run")
+    assert schema.errors({**report, "not_placed": [{**report["not_placed"][0], "extra": 1}]}, "dry-run")
 
 
 def test_a_cut_off_reply_is_not_reported_as_missing_sections(tmp_path):

@@ -40,6 +40,7 @@ from paoding_fenjue.engine.run import (
     report_dry_run,
     report_g1,
     report_g2,
+    unpassed,
 )
 from paoding_graph.contract import BadBody, GraphHttp, MountError
 
@@ -133,9 +134,13 @@ def _dry_view(r: dict[str, Any] | None, v: list[dict[str, Any]] | None) -> dict[
                 "likely_outcome": it["likely_outcome"],
                 "why": it.get("why", ""),
                 "conflicts": it.get("conflicts", []),
+                # 没过的硬检验连同原因（与人读报告表里“检验”一列同一个函数）；都过是空串
+                "unpassed": unpassed(it.get("checks", [])),
             }
             for it in r.get("items", [])
         ],
+        # 自动取了但没有进入归位的候选（提炼不出）；旧产物没有这一栏，给空列表
+        "not_placed": r.get("not_placed", []),
         "validators": v or [],
     }
 

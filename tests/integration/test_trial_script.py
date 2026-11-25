@@ -183,3 +183,20 @@ def test_the_report_reads_the_model_call_numbers_straight_off_the_workspace(tria
     assert "56 次；截断 0 次" in text and "上游超时 2 次" in text and "白等 600.4 秒" in text
     assert "最慢的一次调用：486.0 秒（ruwei:C1:place:2" in text and "13.9 token/秒" in text
     assert "reader/v1（上限 8000）：48 次，截断 0 次，输出 747–3033 token" in text
+
+
+def test_the_report_tells_the_two_kinds_of_unpassed_apart(trial):
+    """没进归位的（结构类）和检验未过但已入位的各有一行；旧产物没有 not_placed 一栏，照常读。"""
+    old = {"plain_summary": "三个做法", "auto_picked": ["C1"], "estimate": {"calls": 3}, "items": []}
+    assert len(trial.dry_lines(old)) == 2 and "三个做法" in trial.dry_lines(old)[0]
+    k1 = {"id": "K1", "ok": False, "detail": "第 1 步的特征不在冲突栏里"}
+    k6 = {"id": "K6", "ok": False, "advisory": True, "detail": "读数"}
+    kept = {"id": "K3", "ok": False, "override": True, "detail": "人坚持"}
+    new = old | {
+        "auto_picked": ["C1", "C2"],
+        "items": [{"candidate": "C2", "checks": [k1, k6, kept, {"id": "K2", "ok": True}]}],
+        "not_placed": [{"candidate": "C1", "kind": "empty", "why": "缺 statement、mechanism 等 9 栏"}],
+    }
+    text = "\n".join(trial.dry_lines(new))
+    assert "- 没有进入归位：C1（empty）：缺 statement" in text
+    assert "- 检验未过但已入位：C2：K1（第 1 步的特征不在冲突栏里）" in text and "K6" not in text and "K3" not in text

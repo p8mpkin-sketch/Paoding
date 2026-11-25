@@ -32,6 +32,20 @@
     }
    }
   },
+  "not_placed": {
+   "type": "array",
+   "description": "自动取了但没有进入位的候选（可选；没有就不写）。auto_picked 里的每个候选恰好出现在 items 或这里之一",
+   "items": {
+    "type": "object",
+    "required": ["candidate", "kind", "why"],
+    "additionalProperties": false,
+    "properties": {
+     "candidate": { "$ref": "common.schema.json#/$defs/candId" },
+     "kind": { "enum": ["empty", "incomplete"], "description": "empty：火意一栏都没有（拒答、截断、不是 JSON 或答成了别的形状）；incomplete：有内容，但缺必填栏或类型不对" },
+     "why": { "$ref": "common.schema.json#/$defs/shortText", "description": "缺什么，以及模型实际交回的顶层键" }
+    }
+   }
+  },
   "estimate": {
    "type": "object",
    "description": "正式走一遍的预估",
