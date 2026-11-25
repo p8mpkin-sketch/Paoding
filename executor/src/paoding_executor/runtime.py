@@ -28,6 +28,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,11 @@ GATE_IMAGE = "python:3.12-slim"  # 闸门只要一个带 Python 标准库的镜�
 GATE_SOURCE = Path(__file__).with_name("gate.py").read_text(encoding="utf-8")
 GATE_READY_S = 20.0
 OWNER = "paoding.owner"  # 属主：<主机名>:<pid>:<进程启动时刻>，孤儿清扫只清属主已不存活的
+CLEAN_S = 30.0  # 拆沙箱时每条容器命令最多等这么久
+CLEAN_FAST_S = 5.0  # 已经有一条超时（容器服务没在答）之后，剩下的只发不久等：超时的删除请求事后仍会被执行
+LIST_S = 10.0  # 清扫里的列取命令：容器服务无响应时不让看门狗一轮卡上几分钟
+DOOM_KEEP_S = 600.0  # 启动失败的沙箱名至少复查这么久：容器可能在清理跑完之后才出现
+RECLAIM_GRACE_S = 60.0  # 租约结束后过这么久才按标签回收：让会话自己的收尾先跑完
 
 
 def _start_time(pid: int) -> str | None:
@@ -121,6 +127,14 @@ def _docker(*args: str, check: bool = True, timeout: float | None = 120) -> subp
     return subprocess.run(["docker", *args], capture_output=True, check=check, timeout=timeout)
 
 
+def _try(*args: str, timeout: float) -> subprocess.CompletedProcess[Any] | None:
+    """清理与清扫用：不抛。超时或命令行本身起不来返回 None（“没问到”），其余返回结果（退出码自己看）。"""
+    try:
+        return _docker(*args, check=False, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
 def echo(data: bytes | Capture, limit: int = ECHO_LIMIT) -> tuple[str, bool]:
     """回显：不超过 limit 原样给出，超过只给头尾。data 是 Capture 时只从盘上读这两段。"""
     size = data.stored if isinstance(data, Capture) else len(data)
@@ -178,74 +192,99 @@ class DockerExecutor:
         self.owner = owner_id()
         self._hot = threading.Lock()
         self._live: dict[str, dict[str, Any]] = {}
+        # 待确认表：启动失败（或没拆干净）的沙箱名 → {lease, at}。settle 按名字加标签反复查、反复删，
+        # 查得到“确实没有”且离失败已过 DOOM_KEEP_S 才划掉。只在内存里：进程重启后的遗留归 sweep_orphans。
+        self._doomed: dict[str, dict[str, Any]] = {}
+        self._launching: set[str] = set()
+        self._book = threading.Lock()  # 护着 _doomed 与 _launching
+        self._rebuild = threading.Lock()  # 重建（同名再起）与复查互斥：复查不删正在重建的沙箱
+        self._clock = time.monotonic
 
     # ---------- 生命周期 ----------
 
     def launch(self, spec: ExecSpec, lease_id: str, mount_workspace: bool = True, sid: str | None = None) -> str:
         """新建沙箱：一张内部网络 + 执行容器 + 每台授权主机一个出站闸门。sid 只在 reset 重建时显式给出。
         任何一步失败都把已建的容器与网络拆掉，不留半成品。"""
-        sid = sid or f"pd-{spec.id}-{uuid.uuid4().hex[:8]}"
+        if sid is not None:  # 重建：名字是旧的，可能正在待确认表里——与复查互斥，起来了就从表里划掉
+            with self._rebuild:
+                return self._launch(spec, lease_id, mount_workspace, sid)
+        return self._launch(spec, lease_id, mount_workspace, f"pd-{spec.id}-{uuid.uuid4().hex[:8]}")
+
+    def _launch(self, spec: ExecSpec, lease_id: str, mount_workspace: bool, sid: str) -> str:
+        with self._book:
+            self._launching.add(sid)
+        try:
+            return self._launch_steps(spec, lease_id, mount_workspace, sid)
+        except BaseException:
+            # 善后做不完也不抛新的错（原来第一条查询超时就把整个清理打断了）；这个名字无论如何进待确认表：
+            # 容器可能在清理跑完之后才出现（建容器的请求客户端超时了，容器服务事后还是把它建了出来）。
+            _teardown(sid)
+            self._doom(sid, lease_id)
+            raise
+        finally:
+            with self._book:
+                self._launching.discard(sid)
+
+    def _launch_steps(self, spec: ExecSpec, lease_id: str, mount_workspace: bool, sid: str) -> str:
         net, up = f"{sid}-net", f"{sid}-up-net"
         labels = ["--label", f"{LABEL}={sid}", "--label", f"{OWNER}={self.owner}"]
         hosts = _by_host(spec)
-        try:
-            _docker("network", "create", "--internal", *labels, net)
-            if hosts:
-                _docker("network", "create", "--internal", *labels, up)
-            for host in hosts:
-                if _docker("inspect", "--type", "container", host, check=False).returncode != 0:
-                    raise ScopeError(f"M0 只支持本机题目容器作为出站目标：{host!r} 不是容器")
-                _docker("network", "connect", "--alias", host, up, host)  # 目标只接上游网络，沙箱够不着
-            lim = spec.limits
-            args = [
-                "run",
-                "-d",
-                "--name",
-                sid,
-                *labels,
-                "--label",
-                f"{LEASE}={lease_id}",
-                "--label",
-                f"{ROLE}=sandbox",
-                "--network",
-                net,
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges",
-                "--pids-limit",
-                str(lim.pids),
-                "--memory",
-                f"{lim.mem_mb}m",
-                "--cpus",
-                str(lim.cpu),
-                "--env",
-                "HOME=/tmp",
-                "-w",
-                "/workspace",
-            ]
-            if mount_workspace:
-                args += bind_args(spec.workspace, "/workspace")
-            else:
-                args += ["--tmpfs", "/workspace"]
-            # 墙钟上限：容器自己到点退出，不靠外面记得来杀（limits.wall_s，§3.6.2）
-            _docker(*args, spec.image, "sleep", str(int(lim.wall_s)))
-            gate_of = self._start_gates(sid, net, up, hosts, labels, lease_id, lim.wall_s)
-        except BaseException:
-            _teardown(sid)
-            raise
-        self._live[sid] = {
-            "spec": spec,
-            "net": net,
-            "up": up if hosts else None,
-            "targets": sorted(hosts),
-            "gate_of": gate_of,
-            "gates": [gate_of[h] for h in sorted(gate_of)],
-            "lease": lease_id,
-            "mounted": mount_workspace,
-            "labels": labels,
-            "deadline": time.monotonic() + lim.wall_s,
-        }
+        _docker("network", "create", "--internal", *labels, net)
+        if hosts:
+            _docker("network", "create", "--internal", *labels, up)
+        for host in hosts:
+            if _docker("inspect", "--type", "container", host, check=False).returncode != 0:
+                raise ScopeError(f"M0 只支持本机题目容器作为出站目标：{host!r} 不是容器")
+            _docker("network", "connect", "--alias", host, up, host)  # 目标只接上游网络，沙箱够不着
+        lim = spec.limits
+        args = [
+            "run",
+            "-d",
+            "--name",
+            sid,
+            *labels,
+            "--label",
+            f"{LEASE}={lease_id}",
+            "--label",
+            f"{ROLE}=sandbox",
+            "--network",
+            net,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            str(lim.pids),
+            "--memory",
+            f"{lim.mem_mb}m",
+            "--cpus",
+            str(lim.cpu),
+            "--env",
+            "HOME=/tmp",
+            "-w",
+            "/workspace",
+        ]
+        if mount_workspace:
+            args += bind_args(spec.workspace, "/workspace")
+        else:
+            args += ["--tmpfs", "/workspace"]
+        # 墙钟上限：容器自己到点退出，不靠外面记得来杀（limits.wall_s，§3.6.2）
+        _docker(*args, spec.image, "sleep", str(int(lim.wall_s)))
+        gate_of = self._start_gates(sid, net, up, hosts, labels, lease_id, lim.wall_s)
+        with self._book:
+            self._doomed.pop(sid, None)  # 重建成功：不再待确认
+            self._live[sid] = {
+                "spec": spec,
+                "net": net,
+                "up": up if hosts else None,
+                "targets": sorted(hosts),
+                "gate_of": gate_of,
+                "gates": [gate_of[h] for h in sorted(gate_of)],
+                "lease": lease_id,
+                "mounted": mount_workspace,
+                "labels": labels,
+                "deadline": time.monotonic() + lim.wall_s,
+            }
         return sid
 
     def reconcile(self, sid: str, spec: ExecSpec) -> dict[str, list[str]]:
@@ -368,24 +407,127 @@ class DockerExecutor:
         return self.launch(info["spec"], info["lease"], info["mounted"], sid=sid)
 
     def destroy(self, sid: str) -> None:
-        """幂等。按标签拆：执行容器、闸门、两张网络。本实例不认识的 sid（例如进程重启之后）同样拆得掉。"""
-        if self._live.pop(sid, None) or _owned(sid) is not None or _labelled_nets(sid):
-            _teardown(sid)
+        """幂等。按标签拆：执行容器、闸门、两张网络。本实例不认识的 sid（例如进程重启之后）同样拆得掉。
+        拆的过程中有命令没答（容器服务无响应）不抛：这个名字记进待确认表，settle 之后接着拆。"""
+        known = self._live.pop(sid, None)
+        if known or _owned(sid) is not None or _labelled_nets(sid):
+            if not _teardown(sid) and known:
+                self._doom(sid, known["lease"])
 
     def destroy_lease(self, lease_id: str) -> list[str]:
-        """销毁某个租约名下的全部沙箱（Worker 的执行容器与判官的洁净容器）。返回销毁的 sid。"""
+        """销毁**本实例**某个租约名下的全部沙箱（Worker 的执行容器与判官的洁净容器）。返回销毁的 sid。
+        按标签找时核对属主：租约编号在每个实例里从 1 顺序编，共用一个容器服务的两个实例一定有相同的编号。"""
         sids = [s for s, i in self._live.items() if i["lease"] == lease_id]
-        sids += [s for s in _list(f"label={LEASE}={lease_id}", f"label={ROLE}=sandbox") if s not in sids]
+        mine = _list(f"label={LEASE}={lease_id}", f"label={ROLE}=sandbox", f"label={OWNER}={self.owner}")
+        sids += [s for s in mine if s not in sids]
         for sid in sids:
             self.destroy(sid)
         return sids
 
-    def reap(self, active_leases: set[str] | frozenset[str]) -> list[str]:
-        """清理本实例名下、租约已不在途的沙箱（租约过期或被叫停后，哮天犬据 /status 的在途租约调用）。"""
-        gone = [sid for sid, i in list(self._live.items()) if i["lease"] not in active_leases]
-        for sid in gone:
-            self.destroy(sid)
-        return gone
+    # ---------- 回收：启动失败的复查（待确认表）与按租约标签兜底 ----------
+
+    def _doom(self, sid: str, lease_id: str) -> None:
+        with self._book:
+            self._doomed[sid] = {"lease": lease_id, "at": self._clock()}
+
+    def doomed(self) -> list[dict[str, Any]]:
+        """待确认表（只读）：启动失败或没拆干净、还在复查的沙箱名。"""
+        with self._book:
+            return [{"sid": s, "lease": r["lease"], "age_s": self._clock() - r["at"]} for s, r in self._doomed.items()]
+
+    def settle(self) -> list[str]:
+        """把待确认表过一遍：每个名字按“沙箱标签 = 这个名字、属主标签 = 本实例”查一遍、删一遍。返回这一轮删掉的。
+
+        划掉的条件两条都要：这一次查询成功且确认什么都没有；离失败已过 DOOM_KEEP_S。失败后第一次复查时可能
+        什么都没有、之后容器才出现，所以不能查到“没有”就划掉。在册的、正在启动的、正在重建的名字这一轮跳过。
+        容器服务没答就到此为止，下一轮再来（不为每个名字各等一遍超时）。"""
+        with self._book:
+            todo = [s for s in self._doomed if s not in self._live and s not in self._launching]
+        removed: list[str] = []
+        for sid in todo:
+            if not self._rebuild.acquire(blocking=False):
+                continue  # 有沙箱正在重建：这一轮不碰
+            try:
+                with self._book:
+                    if sid not in self._doomed or sid in self._live or sid in self._launching:
+                        continue
+                found = self._recheck(sid)
+            finally:
+                self._rebuild.release()
+            if found is None:
+                break
+            removed += found
+            with self._book:
+                rec = self._doomed.get(sid)
+                if rec is not None and not found and self._clock() - rec["at"] >= DOOM_KEEP_S:
+                    del self._doomed[sid]
+        return removed
+
+    def _recheck(self, sid: str) -> list[str] | None:
+        """一个待确认的名字名下还有什么（容器、网络），有就删。None：没问到（容器服务没答）。
+        只认两个标签都对得上的：沙箱标签是这个名字，属主标签是本实例。"""
+        mine = [f"label={LABEL}={sid}", f"label={OWNER}={self.owner}"]
+        filters = [x for f in mine for x in ("--filter", f)]
+        ps = _try("ps", "-a", *filters, "--format", "{{.Names}}", timeout=LIST_S)
+        if ps is None or ps.returncode != 0:
+            return None  # 没在答：第二条不必再等一遍
+        nets = _try("network", "ls", *filters, "--format", "{{.Name}}", timeout=LIST_S)
+        if nets is None or nets.returncode != 0:
+            return None
+        names = [n for n in ps.stdout.decode().split() if n]
+        for name in names:
+            _try("rm", "-f", "-v", name, timeout=CLEAN_S)
+        for net in [n for n in nets.stdout.decode().split() if n]:
+            _drop_net(net, CLEAN_S)
+            names.append(net)
+        return names
+
+    def reclaim(self, lease_ended: Callable[[str], float | None], grace_s: float = RECLAIM_GRACE_S) -> list[str]:
+        """清扫钩子用：先把待确认表过一遍（settle），再按租约标签兜底回收。返回这一轮拆掉的沙箱名与删掉的东西。
+
+        兜底回收不看在册表，只看容器服务里实际有什么：列出带本层标签的沙箱与闸门容器，下面四条同时满足才拆
+        （连同它的两张网络），缺一条就不碰——
+          (a) 属主标签与本实例的属主标识逐字相同（别的实例、评测进程、本实例重启前的进程起的都不碰）；
+          (b) 带租约标签，角色是沙箱或闸门（题目环境容器没有租约标签，不在范围内）；
+          (c) lease_ended(租约) 答得出数：这个租约在本实例的账上查得到，并且已经结束；
+          (d) 结束已超过 grace_s 秒。
+        lease_ended 由组装层给：返回租约结束至今的秒数；账上查不到或仍在途返回 None。执行层不读事件账。
+        不抛：列取用短超时，容器服务没答就返回已做的部分，下一轮再来。"""
+        out = self.settle()
+        fmt = "\t".join(["{{.Names}}", *(f'{{{{.Label "{k}"}}}}' for k in (LABEL, OWNER, LEASE, ROLE))])
+        mine = ("--filter", f"label={LABEL}", "--filter", f"label={OWNER}={self.owner}")
+        p = _try("ps", "-a", *mine, "--format", fmt, timeout=LIST_S)
+        if p is None or p.returncode != 0:
+            return out
+        leases: dict[str, set[str]] = {}
+        for line in p.stdout.decode().splitlines():
+            cells = (line.split("\t") + [""] * 5)[:5]
+            _name, sid, owner, lease, role = (c.strip() for c in cells)
+            if sid and owner == self.owner and role in ("sandbox", "gate"):
+                leases.setdefault(sid, set()).add(lease)  # 缺租约标签记成空串：这个沙箱整个不碰
+        ended: dict[str, bool] = {}
+        for sid, ls in sorted(leases.items()):
+            with self._book:
+                if sid in self._launching:
+                    continue
+            for lease in ls:
+                if lease not in ended:
+                    ended[lease] = bool(lease) and _past(lease_ended, lease, grace_s)
+            if not all(ended[lease] for lease in ls):
+                continue
+            if not self._rebuild.acquire(blocking=False):
+                continue  # 有沙箱正在重建：这一轮不碰
+            try:
+                with self._book:
+                    if sid in self._launching:
+                        continue
+                    known = self._live.pop(sid, None)
+                if not _teardown(sid):
+                    self._doom(sid, known["lease"] if known else sorted(ls)[0])
+            finally:
+                self._rebuild.release()
+            out.append(sid)
+        return out
 
     def sandboxes(self) -> list[dict[str, Any]]:
         """本实例名下的沙箱：sid、租约、是否仍在运行。只读，供状态页与清理决策用。"""
@@ -559,18 +701,57 @@ def _labelled_nets(sid: str) -> list[str]:
     return [n for n in p.stdout.decode().split() if n]
 
 
-def _teardown(sid: str) -> None:
-    """拆掉一个沙箱名下的全部东西：带它标签的容器（执行容器、闸门）与网络。目标容器只摘网，不删。"""
-    for name in {
-        sid,
-        *_list(f"label={LABEL}={sid}", f"label={ROLE}=sandbox"),
-        *_list(f"label={LABEL}={sid}", f"label={ROLE}=gate"),
-    }:
-        _docker("rm", "-f", "-v", name, check=False)
-    for net in _labelled_nets(sid):
-        for member in _net_members(net):
-            _docker("network", "disconnect", "-f", net, member, check=False)
-        _docker("network", "rm", net, check=False)
+def _past(lease_ended: Callable[[str], float | None], lease: str, grace_s: float) -> bool:
+    try:
+        age = lease_ended(lease)
+    except Exception:  # noqa: BLE001  查询函数是别人给的：它出错就当“不知道”，不碰
+        return False
+    return age is not None and age >= grace_s
+
+
+def _drop_net(net: str, timeout: float) -> bool:
+    """删一张网络：先把还接在上面的容器摘掉（目标容器只摘网，不删）。False：有命令没答。"""
+    p = _try("network", "inspect", "--format", "{{range .Containers}}{{.Name}} {{end}}", net, timeout=timeout)
+    ok = p is not None
+    for member in p.stdout.decode().split() if p is not None and p.returncode == 0 else []:
+        ok = _try("network", "disconnect", "-f", net, member, timeout=timeout) is not None and ok
+    return _try("network", "rm", net, timeout=timeout) is not None and ok
+
+
+def _teardown(sid: str) -> bool:
+    """拆掉一个沙箱名下的全部东西：带它标签的容器（执行容器、闸门）与网络。目标容器只摘网，不删。
+
+    不抛。每条命令各自接住超时，做完能做的，继续下一条；删除先按名字发，不依赖查询结果（容器服务无响应时，
+    超时的删除请求事后仍会被它执行，超时的查询只是白等）。返回 True：每条命令都答了；False：有没答的，
+    调用方把这个名字记进待确认表，之后再查再删。"""
+    wait = [CLEAN_S]
+    answered = True
+
+    def run(*args: str) -> subprocess.CompletedProcess[Any] | None:
+        nonlocal answered
+        p = _try(*args, timeout=wait[0])
+        if p is None:
+            answered = False
+            wait[0] = CLEAN_FAST_S  # 已经没在答了：剩下的只发不久等
+        return p
+
+    def listed(*args: str) -> list[str] | None:
+        p = run(*args)
+        return None if p is None else [n for n in p.stdout.decode().split() if n]
+
+    run("rm", "-f", "-v", sid)
+    for role in ("sandbox", "gate"):
+        ps = "ps", "-a", "--format", "{{.Names}}"
+        found = listed(*ps, "--filter", f"label={LABEL}={sid}", "--filter", f"label={ROLE}={role}")
+        for name in found or []:
+            if name != sid:
+                run("rm", "-f", "-v", name)
+    nets = listed("network", "ls", "--filter", f"label={LABEL}={sid}", "--format", "{{.Name}}")
+    for net in nets if nets is not None else [f"{sid}-net", f"{sid}-up-net"]:  # 没问到就按名字删
+        if not _drop_net(net, wait[0]):
+            answered = False
+            wait[0] = CLEAN_FAST_S
+    return answered
 
 
 def _running(name: str) -> bool:

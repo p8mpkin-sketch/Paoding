@@ -138,14 +138,15 @@ def test_reset_keeps_id_and_scope_but_drops_state(ex, tmp_path, target):
 # ---------- 按租约清理 ----------
 
 
-def test_destroy_lease_and_reap(ex, tmp_path):
+def test_destroy_lease_and_reclaim(ex, tmp_path):
     a = ex.launch(spec_for(tmp_path, sid="a"), "l_1")
     aj = ex.launch(spec_for(tmp_path, sid="aj"), "l_1", mount_workspace=False)
     b = ex.launch(spec_for(tmp_path, sid="b"), "l_2")
     c = ex.launch(spec_for(tmp_path, sid="c"), "l_3")
     assert sorted(ex.destroy_lease("l_1")) == sorted([a, aj])
     assert {a, aj}.isdisjoint(names()) and {b, c} <= names()
-    assert ex.reap({"l_3"}) == [b]  # l_2 已不在途：回收；l_3 在途：不动
+    ended = {"l_2": 999.0}  # l_2 已结束很久：回收；l_3 在途：不动
+    assert ex.reclaim(ended.get) == [b]
     assert b not in names() and c in names() and [s["sid"] for s in ex.sandboxes()] == [c]
     assert ex.destroy_lease("l_none") == []
 

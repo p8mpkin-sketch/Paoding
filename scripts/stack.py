@@ -149,6 +149,7 @@ class StackConfig:
     bases: dict = field(default_factory=lambda: {"basic": "python:3.12-slim"})
     poll_s: float = 0.5  # 司南与判官的轮询间隔
     dog_interval_s: float = 2.0
+    reclaim_grace_s: float = 60.0  # 租约结束后过这么久，才按租约标签回收它留下的沙箱（执行层 reclaim 的宽限）
     ttl_s: int = 600
     max_sessions: int = 3  # 每道题同时在途的会话上限（司南的线程池大小）；1 即串行
     renew_s: float = 60.0
@@ -214,7 +215,7 @@ class StackConfig:
             **({"bases": ex["bases"]} if "bases" in ex else {}),
             **{
                 k: raw[k]
-                for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s", "max_sessions")
+                for k in ("poll_s", "dog_interval_s", "reclaim_grace_s", "ttl_s", "renew_s", "stall_s", "max_sessions")
                 if k in raw
             },
         )
@@ -578,9 +579,42 @@ class Stack:
             self.graph,
             self.graph,
             control=self.runner,
-            sweep=sweep_orphans if self.executor is not None else None,
+            sweep=self._sweep if self.executor is not None else None,
         )
         self.url = ""
+        self._lease_end_ts: dict[str, int] = {}
+
+    def _lease_ended_s(self, lease_id: str) -> float | None:
+        """执行层按租约标签回收时问的那一句：这个租约在本实例的账上结束多久了（秒）。
+        账上查不到、仍在途、或查不到结束那条事件的时刻，都答 None（执行层就不碰）。"""
+        l = self.graph.state["leases"].get(lease_id)
+        if l is None or l["active"] or "ended_seq" not in l:
+            return None
+        if lease_id not in self._lease_end_ts:
+            seq = l["ended_seq"]
+            evs = self.graph.events(l["problem_id"], seq - 1, limit=1, upto=seq)
+            if not evs or evs[0]["seq"] != seq:
+                return None
+            self._lease_end_ts[lease_id] = evs[0]["ts"]
+        return (int(time.time() * 1000) - self._lease_end_ts[lease_id]) / 1000
+
+    def _sweep(self) -> list[str]:
+        """哮天犬的清扫钩子：原有的孤儿清扫（属主进程已死的），加上执行层的回收（启动失败的复查、按租约标签兜底）。
+        两段互不牵连：哪一段出错都不耽误另一段；原有那一段的环境故障照旧抛给巡查循环去记。"""
+        assert self.executor is not None
+        first: BaseException | None = None
+        names: list[str] = []
+        try:
+            names += sweep_orphans()
+        except (OSError, subprocess.SubprocessError) as e:
+            first = e
+        try:
+            names += self.executor.reclaim(self._lease_ended_s, self.cfg.reclaim_grace_s)
+        except Exception:  # noqa: BLE001  新回收的缺陷不能带倒巡查（过期回收、预算、原有清扫）
+            log("watchdog").exception("按租约标签回收出错，本轮跳过")
+        if first is not None:
+            raise first
+        return names
 
     def _evolution(self, q: dict, body: object) -> dict:
         """GET /v1/evolution：读端（paoding_fenjue.evolution）。题按开题时记下的功法分臂（FJ6），炼档读包外的 JSON。"""
