@@ -162,6 +162,29 @@ def test_a_cleanup_cut_short_by_an_unresponsive_daemon_is_finished_later(daemon,
     assert ex.settle() == [] and ex.doomed() == [] and daemon.left() == []
 
 
+def test_a_defect_in_the_cleanup_never_replaces_the_launch_error(daemon, ex, tmp_path, monkeypatch, caplog):
+    """拆除里出了超时之外的错（这里：列取的输出不是合法编码，解码失败）：外面拿到的仍是启动时那个异常，
+    名字照样进待确认表。调用方（适配层的原因清洗）靠原来那个异常判断失败类别。"""
+    daemon.plan(create_after_s=T * 1.6)
+    real = runtime._try
+
+    def garbled(*args, timeout):
+        p = real(*args, timeout=timeout)
+        if p is not None and args[0] == "ps":
+            p.stdout = b"\xff\xfe pd"
+        return p
+
+    monkeypatch.setattr(runtime, "_try", garbled)
+    with caplog.at_level("WARNING", logger="executor"):
+        sid = launch_fails(ex, tmp_path)  # 里面断言了：抛出的是 run 的超时，__context__ 为空
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert line == f"沙箱 {sid} 启动失败后的拆除出错（UnicodeDecodeError），原来的错照常抛出，名字记入待确认表"
+    monkeypatch.setattr(runtime, "_try", real)
+    time.sleep(T * 0.8)
+    assert daemon.containers() == {sid: "created"}  # 晚到的容器
+    assert sid in ex.settle() and daemon.left() == []  # 待确认表照常把它收掉
+
+
 def test_a_slow_but_successful_launch_is_not_doomed(daemon, ex, tmp_path):
     daemon.plan(create_after_s=T * 0.3)
     sid = ex.launch(spec(tmp_path), "7")

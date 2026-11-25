@@ -221,7 +221,14 @@ class DockerExecutor:
         except BaseException:
             # 善后做不完也不抛新的错（原来第一条查询超时就把整个清理打断了）；这个名字无论如何进待确认表：
             # 容器可能在清理跑完之后才出现（建容器的请求客户端超时了，容器服务事后还是把它建了出来）。
-            _teardown(sid)
+            # 拆除只保证超时与命令行起不来不抛；它里面别的错（比如输出解码失败）也不许盖掉原来的错——
+            # 调用方要靠原来那个异常判断失败类别。
+            try:
+                _teardown(sid)
+            except Exception as e:  # noqa: BLE001
+                LOG.warning(
+                    "沙箱 %s 启动失败后的拆除出错（%s），原来的错照常抛出，名字记入待确认表", sid, type(e).__name__
+                )
             self._doom(sid, lease_id)
             raise
         finally:
