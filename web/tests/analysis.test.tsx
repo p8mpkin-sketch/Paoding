@@ -279,14 +279,58 @@ describe("方案分析：页面（假后端回放引擎在验收夹具上真跑�
     expect($(container, '[data-an-dry-item="C1"] [data-an-dry-check]')!.getAttribute("data-an-dry-check")).toBe("ok");
     const c2 = $(container, '[data-an-dry-item="C2"] [data-an-dry-check]')!;
     expect(c2.getAttribute("data-an-dry-check")).toBe("bad");
-    expect(c2.textContent).toContain("未过");
-    expect(c2.textContent).toContain("write_outside_reducer");
+    expect(c2.textContent).toBe("未过");                      // 格子里只有徽标，原因在紧跟的说明行里
+    expect($(container, '[data-an-dry-detail="C2"]')!.textContent).toContain("write_outside_reducer");
     const out = $(container, "[data-an-dry-notplaced]")!;
     expect(out.textContent).toContain("没有提炼出来，未做映射评估（1 个）");
     expect($(out, '[data-an-dry-out="C3"]')!.textContent).toContain("没有内容");
     expect($(out, '[data-an-dry-out="C3"]')!.textContent).toContain("缺 statement、mechanism 2 栏");
     expect($(out, '[data-an-dry-out="C2"]')).toBeNull();
     expect($(container, '[data-an-done="dry_run"]')!.textContent).not.toMatch(INTERNAL);
+  });
+
+  it("检验未过且说明很长：说明一字不少地在紧跟的说明行里，格子里只有徽标；过的行没有说明行", async () => {
+    const r = rig();
+    const long = "K1（特征 write_outside_reducer 映到 T4，冲突栏里没有对应的冲突记录）；K8（核心机制第 2 步的原语“对照”在前提栏里找不到它依赖的输入，融合栏写的涌现能力与步骤对不上）；K3（代价栏里写的额外调用次数与实现线索里的不一致）";
+    const patched: typeof fetch = async (input, init) => {
+      const res = await r.fetch(input, init);
+      if (!decodeURIComponent(String(input)).endsWith(`/v1/analyses/${DRY}`)) return res;
+      const d = (await res.json()) as AnalysisDetail;
+      d.dry_run!.items = d.dry_run!.items.map((it) => (it.candidate === "C2" ? { ...it, unpassed: long } : it));
+      return new Response(JSON.stringify(d), { status: 200 });
+    };
+    const cfg = { ...r.cfg, fetch: patched };
+    const { container } = renderWith({ ...r, cfg, api: createApi(cfg) }, <Analysis run={DRY} tab="now" />);
+    await waitFor(() => expect($(container, '[data-an-dry-check="bad"]')).not.toBeNull());
+    // “检验”一格只有徽标
+    expect($(container, '[data-an-dry-item="C2"] [data-an-dry-check="bad"]')!.textContent).toBe("未过");
+    expect($(container, '[data-an-dry-item="C1"] [data-an-dry-check="ok"]')!.textContent).toBe("过");
+    // 说明行：紧跟在 C2 那一行后面，横跨七列，开头自己说明自己是什么，后面的原因一字不少
+    const detail = $(container, '[data-an-dry-detail="C2"]')!;
+    expect(detail.previousElementSibling!.getAttribute("data-an-dry-item")).toBe("C2");
+    expect(detail.children).toHaveLength(1);
+    expect(detail.children[0]!.getAttribute("colspan")).toBe("7");
+    expect(detail.textContent).toBe(`未过的检验${long}`);
+    // 没有截断、折叠、悬停提示代替正文的写法
+    for (const el of [detail, ...detail.querySelectorAll("*")]) {
+      expect(el.hasAttribute("hidden")).toBe(false);
+      expect(el.getAttribute("aria-hidden")).toBeNull();
+      expect(el.getAttribute("title")).toBeNull();
+      expect(el.tagName).not.toMatch(/^(DETAILS|SUMMARY|BUTTON)$/);
+      expect(String(el.getAttribute("class") ?? "")).not.toMatch(/\b(nw|clip|ellipsis|truncate|sr-only)\b/);
+    }
+    // 过的行没有说明行；做法行还是三行，七列表头不变
+    expect(container.querySelectorAll("[data-an-dry-detail]")).toHaveLength(1);
+    expect([...container.querySelectorAll("[data-an-dry-item]")].map((e) => e.getAttribute("data-an-dry-item"))).toEqual(["C1", "C2", "C3"]);
+    expect([...container.querySelectorAll("[data-an-dry] thead th")].map((th) => th.textContent)).toEqual(["做法", "模块槽", "替换", "内核", "难度", "可能的结局", "检验"]);
+  });
+
+  it("都过的时候没有任何说明行", async () => {
+    const r = rig();
+    const { container } = renderWith(r, <Analysis run={DRY} tab="now" />);
+    await waitFor(() => expect(container.querySelectorAll('[data-an-dry-check="ok"]')).toHaveLength(3));
+    expect(container.querySelectorAll("[data-an-dry-detail]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-an-dry] tbody tr")).toHaveLength(3);
   });
 
   it("候选方案：按状态筛选，点开看核心机制与状态史", async () => {

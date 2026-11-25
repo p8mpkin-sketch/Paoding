@@ -194,6 +194,10 @@ a.an-chip:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule-2); 
 .an-dtbl thead th { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); white-space: nowrap; }
 .an-dtbl tbody th { font-weight: 500; min-width: 180px; }
 .an-dtbl .nw { white-space: nowrap; }
+/* 未过的说明行：横跨七列，属于上面那一行（两行之间不画线、不留上边距），与下一行之间照常有线 */
+.an-dtbl tr.an-ddetail > td { border-top: 0; padding-top: 0; padding-bottom: 8px; }
+.an-dtbl tr.an-dhas > th, .an-dtbl tr.an-dhas > td { padding-bottom: 4px; }
+.an-ddetail b { font-weight: 500; color: var(--zhe); margin-right: 8px; }
 .an-notplaced { margin-top: 12px; padding: 10px 14px; border-radius: var(--r); background: var(--zhe-soft); box-shadow: inset 3px 0 0 var(--zhe); font-size: var(--fs-sm); }
 .an-notplaced h4 { margin: 0 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--zhe); }
 .an-notplaced p { margin: 0 0 6px; }

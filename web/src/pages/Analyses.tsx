@@ -735,15 +735,23 @@ function DryRunDone({ d }: { d: AnalysisDetail }) {
             <thead><tr><th scope="col">做法</th><th scope="col">模块槽</th><th scope="col">替换</th><th scope="col">内核</th><th scope="col">难度</th><th scope="col">可能的结局</th><th scope="col">检验</th></tr></thead>
             <tbody>
               {r.items.map((it) => (
-                <tr key={it.candidate} data-an-dry-item={it.candidate}>
-                  <th scope="row"><span className="k-mono t2">{it.candidate}</span> <P text={it.statement} /></th>
-                  <td className="nw">{SLOT_WORD[it.slot] ?? it.slot}</td>
-                  <td className="nw">{it.replaces ? moduleName(it.replaces) : "无"}</td>
-                  <td className="nw">{it.kernel_forecast.length ? it.kernel_forecast.join("、") : "不改"}</td>
-                  <td className="k-mono">{it.difficulty ?? "—"}</td>
-                  <td><b>{d.words.outcome[it.likely_outcome] ?? it.likely_outcome}</b><span className="t2"> · <P text={it.why} /></span></td>
-                  <td data-an-dry-check={it.unpassed ? "bad" : "ok"}>{it.unpassed ? <><St tone="bad">未过</St><span className="t2"> <P text={plain(it.unpassed)} /></span></> : <St tone="ok">过</St>}</td>
-                </tr>
+                <Fragment key={it.candidate}>
+                  <tr data-an-dry-item={it.candidate} className={it.unpassed ? "an-dhas" : undefined}>
+                    <th scope="row"><span className="k-mono t2">{it.candidate}</span> <P text={it.statement} /></th>
+                    <td className="nw">{SLOT_WORD[it.slot] ?? it.slot}</td>
+                    <td className="nw">{it.replaces ? moduleName(it.replaces) : "无"}</td>
+                    <td className="nw">{it.kernel_forecast.length ? it.kernel_forecast.join("、") : "不改"}</td>
+                    <td className="k-mono">{it.difficulty ?? "—"}</td>
+                    <td><b>{d.words.outcome[it.likely_outcome] ?? it.likely_outcome}</b><span className="t2"> · <P text={it.why} /></span></td>
+                    <td data-an-dry-check={it.unpassed ? "bad" : "ok"}>{it.unpassed ? <St tone="bad">未过</St> : <St tone="ok">过</St>}</td>
+                  </tr>
+                  {/* 未过的说明占整行：放在格子里会被挤成一字一行；紧跟在这个做法后面，开头自己说明自己是什么 */}
+                  {it.unpassed && (
+                    <tr className="an-ddetail" data-an-dry-detail={it.candidate}>
+                      <td colSpan={7}><b>未过的检验</b><span className="t2"><P text={plain(it.unpassed)} /></span></td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
