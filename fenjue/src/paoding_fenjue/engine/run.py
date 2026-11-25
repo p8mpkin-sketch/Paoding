@@ -15,13 +15,14 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..shapes import digest
-from . import budget, checks, cuiyi, data, decision, handoff, ruwei, schema, shihuo, survey, text
-from .dan import BudgetExhausted, Dan, new_nonce
+from . import budget, checks, cuiyi, data, decision, handoff, ruwei, schema, sections, shihuo, survey, text
+from .dan import BudgetExhausted, Dan, new_nonce, reading
 
 ENGINE_FIRE = "h1.tunshi@1"
 DRY_RUN_PICK = 3  # 试算按 P 自动取前 3（〔占位〕，09 §3）
@@ -423,16 +424,20 @@ class Engine:
             stored = self.get("candidates.proposal") if self.x.get("reused_from") else None
             for attempt in range(1, shihuo.ATTEMPTS + 1):
                 self._mark("candidates", "S3", "doing", attempts=attempt)
+                key = f"shihuo:patterns:{attempt}"
+                asked = stored is None
                 if stored is not None:  # 试算转正式：按存下的提议重做差距比对，不调丹
                     proposal, stored = stored, None
                 else:
-                    r = self.dan.call("main", f"shihuo:patterns:{attempt}", shihuo.propose_payload(inp, errors))
+                    r = self.dan.call("main", key, shihuo.propose_payload(inp, errors))
                     self._spend("S3", "heavy", r.tokens_in, r.tokens_out)
                     proposal = r.output if isinstance(r.output, dict) else {}
-                doc, errors = shihuo.build(inp, proposal)
-                if doc:
-                    vres = shihuo.validate(doc, ctx)
-                    errors += [f"{c['id']}：{c.get('detail', '')}" for c in vres if not c["ok"]]
+                # 这一段在解析模型刚交回的提议：这里出错才算到这次回答头上（存下的提议不是这次问来的，不算）
+                with reading(key) if asked else nullcontext():
+                    doc, errors = shihuo.build(inp, proposal)
+                    if doc:
+                        vres = shihuo.validate(doc, ctx)
+                        errors += [f"{c['id']}：{c.get('detail', '')}" for c in vres if not c["ok"]]
                 if not errors:
                     passed = True
                     break
@@ -635,14 +640,23 @@ class Engine:
             vres = checks.v_essence(res.essence, ctx, self.x["picked"])
             self.put(f"essence:{cid}.v", vres)
             sha = self.put(f"essence:{cid}", res.essence)
-            self._mark(
-                uid,
-                "S4",
-                "done",
-                output=sha,
-                summary=f"{cid}：{'过' if res.passed else '未过'}，取 {res.essence['drafts']['chosen']}",
-            )
+            # 提炼不出（试算：K1 没过；正式：九栏不齐）：单元照常收尾，原因记下，这个候选不进归位
+            undistilled: dict[str, str] = self.x.setdefault("undistilled", {})
+            undistilled.pop(cid, None)
+            if res.reason and (dry or sections.gaps(res.essence)):
+                undistilled[cid] = res.reason
+            said = "过" if res.passed else f"提炼不出（{res.reason[:120]}）" if cid in undistilled else "未过"
+            self._mark(uid, "S4", "done", output=sha, summary=f"{cid}：{said}，取 {res.essence['drafts']['chosen']}")
         return None
+
+    def _undistilled(self, cid: str) -> str:
+        """这个候选为什么进不了归位；空串即可以进。判据只看产物本身（接力、旧检查点都一样）：九栏不齐的哪种模式
+        都不进；试算没有人把关，K1（结构）没过的也不进。原因优先用提炼时记下的那句（带模型实际交回的顶层键）。"""
+        ess = self.get(f"essence:{cid}")
+        dry = self.state["mode"] == "dry_run"
+        if sections.gaps(ess) or (dry and not cuiyi.k1_ok(ess.get("checks", []))):
+            return str(self.x.get("undistilled", {}).get(cid) or cuiyi.k1_reason(ess) or "结构检验（K1）没过")
+        return ""
 
     def _deliver_g2(self) -> Delivery:
         self.state["step"] = "G2"
@@ -666,6 +680,8 @@ class Engine:
             if bad:
                 passed = False
                 needs.append(f"{cid} 未过：{', '.join(bad)}")
+            if sections.gaps(ess):
+                needs.append(f"{cid} 提炼不出（{self._undistilled(cid)}）：不能确认，请退回重做或放弃"[:300])
         needs.append("请逐个确认提炼出的核心做法，或逐栏修改、退回重做、放弃（第 2 次确认）")
         return Delivery("G2", "partial", report_g2(essences), arts, needs, passed=passed)
 
@@ -678,6 +694,9 @@ class Engine:
             | {b for b in dec.get("back", []) if b.startswith("C")}
         )
         problems += [f"没有候选 {c}" for c in sorted(named - set(picked))]
+        for cid in dec.get("confirm", []):  # 九栏不齐的归位读不动，人也没法逐栏补（只能改已有的文字栏）
+            if cid in picked and sections.gaps(self.get(f"essence:{cid}")):
+                problems.append(f"{cid} 提炼不出（{self._undistilled(cid)}），不能确认：请退回重做或放弃"[:300])
         ctx = self.context()
         edited: dict[str, dict[str, Any]] = {}
         for e in dec.get("edit", []):
@@ -714,6 +733,7 @@ class Engine:
         for cid in dec.get("drop", []):
             self._mark(f"cuiyi:{cid}", "S4", "void")
             self.x.setdefault("dropped", []).append(cid)
+            self.x.get("undistilled", {}).pop(cid, None)
         self.x["picked"] = [c for c in picked if c not in dec.get("drop", [])]
         if back:
             rounds = self.x.setdefault("rounds", {})
@@ -744,6 +764,18 @@ class Engine:
         deps: dict[str, list[str]] = self.x.setdefault("depends", {})
         problems: dict[str, list[str]] = self.x.setdefault("placement_problems", {})
         dry = self.state["mode"] == "dry_run"
+        # 边界：进归位的提炼结果九栏齐全（sections.gaps）。不齐的不进——归位、难度、交接都直接读这九栏。
+        skipped = {cid: why for cid in confirmed if (why := self._undistilled(cid))}
+        if skipped and not dry:
+            # 正式模式到不了这里（第 2 次确认时已经拦下）；旧检查点或手改过的状态才会。退回确认点，由人决定重做或放弃
+            self.x["confirmed"] = []
+            self.state["step"] = "G2"
+            self._save_state()
+            return self._redeliver("G2", [f"{c} 提炼不出（{w}），进不了归位"[:300] for c, w in skipped.items()])
+        for cid, why in skipped.items():
+            self.x.setdefault("undistilled", {})[cid] = why
+            self._mark(f"ruwei:{cid}", "S5", "failed", summary=f"{cid}：无法入位，提炼不出（{why[:120]}）")
+        confirmed = [c for c in confirmed if c not in skipped]
         for cid in confirmed:
             uid = f"ruwei:{cid}"
             dep = [self.state["artifacts"][f"essence:{cid}"]]
@@ -987,7 +1019,9 @@ class Engine:
         doc = self.get("candidates.json")
         ctx = self.context()
         items = []
-        for cid in self.x["picked"]:
+        skipped = {cid: why for cid in self.x["picked"] if (why := self._undistilled(cid))}
+        placed = [cid for cid in self.x["picked"] if cid not in skipped]
+        for cid in placed:
             ess = self.get(f"essence:{cid}")
             p = self.get(f"placement:{cid}")
             outcome, why = ruwei.likely_outcome(ess, p)
@@ -1008,7 +1042,7 @@ class Engine:
             )
         tiers = [self.get(f"snapshot:{sid}")["size_tier"] for sid in self._snaps]
         tier = max(tiers, key=lambda t: ["S", "M", "L", "XL"].index(t))
-        est = estimate(self.cfg.prior, tier, len(items))
+        est = estimate(self.cfg.prior, tier, len(self.x["picked"]))  # 正式走一遍是全部自动取的候选，含这次提炼不出的
         lic = doc["basis"]["snapshots"][0]["license"]
         report: dict[str, Any] = {
             "v": 1,
@@ -1018,12 +1052,14 @@ class Engine:
             "auto_picked": list(self.x["picked"]),
             "items": items,
             "estimate": est,
-            "plain_summary": dry_summary(items, est, lic),
+            "plain_summary": dry_summary(items, est, lic, skipped),
         }
         vres = checks.v_dry_run(report, ctx)
         sha = self.put("dry_run.json", report)
         self.put("dry_run.v", vres)
-        fates = {c: ("S5", "dry_run", "预评估过") for c in self.x["picked"]}
+        fates = {c: ("S5", "dry_run", "预评估过") for c in placed}
+        # 提炼不出的只记“这次走到提炼”，不给“预评估过”的状态：它没有被评估
+        fates.update({c: ("S4", "", f"提炼不出：{w}"[:200]) for c, w in skipped.items()})
         updates = handoff.bang_updates(
             self.cfg.bang,
             doc,
@@ -1031,7 +1067,7 @@ class Engine:
             mode="dry_run",
             date=self.cfg.date,
             fates=fates,
-            essences={c: self.get(f"essence:{c}") for c in self.x["picked"]},
+            essences={c: self.get(f"essence:{c}") for c in placed},
             artifacts=[sha],
         )
         # 产物登记只收 JSON 对象（kernel.product_errors）：更新列表放在 bang_updates 键下，与交接包同一个键名，
@@ -1046,8 +1082,10 @@ class Engine:
         bad = [c["id"] for c in vres if not c["ok"]]
         if bad:
             needs.insert(0, f"校验未过（只标不拦）：{', '.join(bad)}")
+        for cid, why in reversed(list(skipped.items())):
+            needs.insert(0, f"{cid} 提炼不出，没有进入归位：{why}"[:300])
         arts = {"dry_run.json": sha, "bang_updates.json": usha}
-        return Delivery(None, "answered", report_dry_run(report), arts, needs, passed=not bad)
+        return Delivery(None, "answered", report_dry_run(report, skipped), arts, needs, passed=not bad and not skipped)
 
     # ------------------------------------------------------------ 续做
 
@@ -1130,6 +1168,10 @@ def report_g2(essences: Sequence[Mapping[str, Any]]) -> str:
     for e in essences:
         m = e["masked"]
         bad = [c["id"] for c in e["checks"] if not c["ok"] and not c.get("advisory")]
+        if sections.gaps(e):  # 九栏不齐：没有可逐栏确认的内容，照实写缺什么，不去读缺的栏
+            lines += [f"## {e['candidate']}：提炼不出", "", e.get("plain_summary", ""), ""]
+            lines += [f"> **提炼不出**：{sections.describe(e)}。不能确认，请退回重做或放弃。", ""]
+            continue
         lines += [f"## {e['candidate']}：{m['statement']}", "", e.get("plain_summary", ""), ""]
         if bad:
             lines += [f"> **检验未过**：{', '.join(bad)}", ""]
@@ -1249,7 +1291,8 @@ def report_handoff(h: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def report_dry_run(r: Mapping[str, Any]) -> str:
+def report_dry_run(r: Mapping[str, Any], skipped: Mapping[str, str] | None = None) -> str:
+    """预评估的人读报告。`skipped`：提炼不出、没有进入归位的候选 → 原因（报告的 JSON 里没有它们的条目）。"""
     lines = [
         "# 预评估",
         "",
@@ -1264,6 +1307,9 @@ def report_dry_run(r: Mapping[str, Any]) -> str:
             f"| {it['candidate']} | {it['essence_draft']['statement']} | {it['slot']} | {it['replaces'] or '无'} | "
             f"{kern} | {it.get('difficulty', '—')} | {OUTCOME_ZH[it['likely_outcome']]}：{it['why']} |"
         )
+    if skipped:
+        lines += ["", "**提炼不出，没有进入归位**（重写之后结构仍不对，下面的表里没有它们）："]
+        lines += [f"- {cid}：{why}" for cid, why in skipped.items()]
     e = r["estimate"]
     tok = "；".join(
         f"{ {'light': '轻量', 'mid': '标准', 'heavy': '高性能'}[k] } 入 {v['in']:,} 出 {v['out']:,}"
@@ -1292,11 +1338,22 @@ def estimate(prior: budget.Prior, size_tier: str, n: int) -> dict[str, Any]:
     }
 
 
-def dry_summary(items: Sequence[Mapping[str, Any]], est: Mapping[str, Any], lic: Mapping[str, Any]) -> str:
+def dry_summary(
+    items: Sequence[Mapping[str, Any]],
+    est: Mapping[str, Any],
+    lic: Mapping[str, Any],
+    skipped: Mapping[str, str] | None = None,
+) -> str:
     good = sum(1 for it in items if it["likely_outcome"] == "promising_huolian")
     kern = sum(1 for it in items if it["kernel_forecast"])
-    head = f"预评估：自动取了优先级最高的 {len(items)} 个做法，{good} 个有望带来新能力"
-    head += "，内核都不用改。" if not kern else f"，{kern} 个可能要先做内核修订。"
+    n = len(items) + len(skipped or {})
+    head = f"预评估：自动取了优先级最高的 {n} 个做法，{good} 个有望带来新能力"
+    if skipped:
+        head += f"，{'、'.join(skipped)} 提炼不出、没有进入归位"
+    if items:
+        head += "，内核都不用改。" if not kern else f"，{kern} 个可能要先做内核修订。"
+    else:
+        head += "。"
     tail = f"正式走一遍预计约 {est['minutes']} 分钟机器时间，外加你三次确认。"
     if lic.get("reuse") == "idea_only":
         tail += f"来源是 {lic.get('spdx') or lic['status']}，只借思路。"

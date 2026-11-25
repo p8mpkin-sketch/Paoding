@@ -13,7 +13,7 @@ from typing import Any
 
 from ..shapes import digest
 from . import checks, data, formulas, schema, survey, text
-from .dan import Dan, estimate_tokens, new_nonce
+from .dan import Dan, estimate_tokens, new_nonce, reading
 
 MAX_OBS_PER_READ = 5
 ATTEMPTS = 3  # 首次 + 重来至多 2 次
@@ -109,10 +109,12 @@ def read(
     tin = tout = 0
     for attempt in range(1, ATTEMPTS + 1):
         n = nonce()
-        reply = dan.call("reader", f"read:{e.key()}:{slot}:{attempt}", _reader_payload(slot, raw, n, errors))
+        key = f"read:{e.key()}:{slot}:{attempt}"
+        reply = dan.call("reader", key, _reader_payload(slot, raw, n, errors))
         tin += reply.tokens_in or estimate_tokens(raw) + 1500
         tout += reply.tokens_out
-        records, errors = _parse_reader(reply.output, slot, snap, e, flags, n, attempt)
+        with reading(key):
+            records, errors = _parse_reader(reply.output, slot, snap, e, flags, n, attempt)
         if not errors:
             return ReadResult(records, tin, tout, False)
     return ReadResult([], tin, tout, True)
