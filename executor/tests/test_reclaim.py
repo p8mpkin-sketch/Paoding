@@ -294,3 +294,81 @@ def test_a_failing_lease_lookup_counts_as_unknown(daemon, ex):
         raise RuntimeError("账读不出来")
 
     assert ex.reclaim(boom) == [] and daemon.left() == before
+
+
+# ---------- 孤儿清扫的两条列取命令：短超时，不抛 ----------
+
+DEAD = "this-host:999999999:1"
+
+
+@pytest.fixture
+def dead_owner(monkeypatch):
+    """把 DEAD 这个属主判成“进程已死”（真实判断要 /proc，这里不依赖平台）。"""
+    monkeypatch.setattr(runtime, "owner_alive", lambda owner: False if owner == DEAD else None)
+
+
+def test_the_orphan_sweep_behaves_as_before_when_listings_answer(daemon, dead_owner, caplog):
+    daemon.sandbox("pd-old-33333333", DEAD)
+    daemon.sandbox("pd-live-44444444", "other-host:1:1")
+    with caplog.at_level("WARNING"):
+        assert sorted(sweep_orphans()) == ["pd-old-33333333", "pd-old-33333333-gate-0"]  # 返回的仍只是容器名
+    assert daemon.left() == [
+        "pd-live-44444444",
+        "pd-live-44444444-gate-0",
+        "pd-live-44444444-net",
+        "pd-live-44444444-up-net",
+    ]
+    assert caplog.records == []
+    calls = daemon.calls()  # 发出去的命令与改动前一样：列容器、删、列网络、逐张查成员再删
+    assert calls[0] == "ps -a --filter" and calls.count("ps -a --filter") == 1
+    assert sorted(calls[1:3]) == ["rm -f -v pd-old-33333333", "rm -f -v pd-old-33333333-gate-0"]
+    assert calls[3] == "network ls --filter"
+    assert sorted(calls[4:]) == sorted(
+        ["network inspect --format"] * 2 + ["network rm pd-old-33333333-net", "network rm pd-old-33333333-up-net"]
+    )
+
+
+def test_the_orphan_sweep_gives_up_quietly_when_the_container_listing_does_not_answer(daemon, dead_owner, caplog, ex):
+    """容器服务无响应：以前每一轮在这条列取上等满 120 秒再抛，巡查日志里一轮一条“tick 失败”。"""
+    daemon.sandbox("pd-old-33333333", DEAD)
+    before = daemon.left()
+    daemon.plan(stall_until=time.time() + 4)
+    t0 = time.monotonic()
+    with caplog.at_level("WARNING", logger="executor"):
+        assert sweep_orphans() == []  # 不抛，按“没清到”返回
+    assert time.monotonic() - t0 < SHORT[10.0] + 1  # 只等了一条列取的短超时
+    assert [r.getMessage() for r in caplog.records] == ["孤儿清扫：ps 没答（等了 10 秒），这一轮跳过，下一轮再来"]
+    assert daemon.calls() == ["ps -a --filter"]  # 第二条列取没有再去等
+    assert ex.reclaim(ended("7")) == []  # 新增回收照常跑（它自己也是短超时、不抛）
+    time.sleep(max(0.0, 4.2 - (time.monotonic() - t0)))
+    assert daemon.left() == before
+    assert len(sweep_orphans()) == 2 and daemon.left() == []  # 恢复之后的下一轮照常清掉
+
+
+def test_the_orphan_sweep_reports_what_it_did_when_only_the_network_listing_does_not_answer(
+    daemon, dead_owner, caplog, monkeypatch
+):
+    daemon.sandbox("pd-old-33333333", DEAD)
+    real = runtime._docker
+
+    def docker(*args, **kw):
+        if args[:2] == ("network", "ls"):
+            raise subprocess.TimeoutExpired(["docker", *args], kw["timeout"])
+        return real(*args, **kw)
+
+    monkeypatch.setattr(runtime, "_docker", docker)
+    with caplog.at_level("WARNING", logger="executor"):
+        assert len(sweep_orphans()) == 2  # 容器那一半已经删了：如实返回
+    assert daemon.left() == ["pd-old-33333333-net", "pd-old-33333333-up-net"]  # 网络留给下一轮
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert line == "孤儿清扫：network ls 没答（等了 10 秒），这一轮跳过，下一轮再来"
+    monkeypatch.setattr(runtime, "_docker", real)
+    assert sweep_orphans() == [] and daemon.left() == []
+
+
+def test_the_orphan_sweep_does_not_raise_when_the_command_line_is_missing(daemon, caplog, monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", str(tmp_path / "nowhere"))
+    with caplog.at_level("WARNING", logger="executor"):
+        assert sweep_orphans() == []
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert line == "孤儿清扫：ps 的命令行起不来，这一轮跳过，下一轮再来" and "/" not in line

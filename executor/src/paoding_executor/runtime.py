@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shlex
 import socket
@@ -48,6 +49,8 @@ GATE_IMAGE = "python:3.12-slim"  # 闸门只要一个带 Python 标准库的镜�
 GATE_SOURCE = Path(__file__).with_name("gate.py").read_text(encoding="utf-8")
 GATE_READY_S = 20.0
 OWNER = "paoding.owner"  # 属主：<主机名>:<pid>:<进程启动时刻>，孤儿清扫只清属主已不存活的
+LOG = logging.getLogger("executor")
+
 CLEAN_S = 30.0  # 拆沙箱时每条容器命令最多等这么久
 CLEAN_FAST_S = 5.0  # 已经有一条超时（容器服务没在答）之后，剩下的只发不久等：超时的删除请求事后仍会被执行
 LIST_S = 10.0  # 清扫里的列取命令：容器服务无响应时不让看门狗一轮卡上几分钟
@@ -904,10 +907,25 @@ class EnvManager:
         self.close()
 
 
+def _listing(*args: str) -> subprocess.CompletedProcess[Any] | None:
+    """孤儿清扫的列取命令：短超时，不抛。没答（超时，或命令行起不来）记一行警告、返回 None，这一轮到此为止。
+    警告里只写是哪条子命令、等了多久；错误原文不落盘（超时异常的文字里就是整条命令）。"""
+    sub = " ".join(a for a in args[:2] if not a.startswith("-"))
+    try:
+        return _docker(*args, check=False, timeout=LIST_S)
+    except subprocess.TimeoutExpired:
+        LOG.warning("孤儿清扫：%s 没答（等了 %d 秒），这一轮跳过，下一轮再来", sub, int(LIST_S))
+    except OSError:
+        LOG.warning("孤儿清扫：%s 的命令行起不来，这一轮跳过，下一轮再来", sub)
+    return None
+
+
 def sweep_orphans() -> list[str]:
     """哮天犬用：清理带本层标签、且属主进程已不存活的容器与网络。返回清掉的名字。
 
-    只清本机属主确定已死的：属主在别的主机、标签缺失或格式不明的一律不动（宁漏勿误杀活沙箱）。"""
+    只清本机属主确定已死的：属主在别的主机、标签缺失或格式不明的一律不动（宁漏勿误杀活沙箱）。
+    两条列取命令用短超时（LIST_S）：容器服务无响应时不抛，记一行警告，按“没清到”返回，下一轮再来——
+    不让巡查的每一轮都在这里卡上两分钟（过期回收与预算检查跟它在同一轮里）。"""
 
     def dead(listing: str) -> list[str]:
         out = []
@@ -917,21 +935,17 @@ def sweep_orphans() -> list[str]:
                 out.append(name)
         return out
 
-    ps = _docker(
-        "ps", "-a", "--filter", f"label={LABEL}", "--format", f'{{{{.Names}}}} {{{{.Label "{OWNER}"}}}}', check=False
-    )
+    ps = _listing("ps", "-a", "--filter", f"label={LABEL}", "--format", f'{{{{.Names}}}} {{{{.Label "{OWNER}"}}}}')
+    if ps is None:
+        return []
     names = dead(ps.stdout.decode())
     for n in names:
         _docker("rm", "-f", "-v", n, check=False)
-    nets = _docker(
-        "network",
-        "ls",
-        "--filter",
-        f"label={LABEL}",
-        "--format",
-        f'{{{{.Name}}}} {{{{.Label "{OWNER}"}}}}',
-        check=False,
+    nets = _listing(
+        "network", "ls", "--filter", f"label={LABEL}", "--format", f'{{{{.Name}}}} {{{{.Label "{OWNER}"}}}}'
     )
+    if nets is None:
+        return names  # 容器那一半已经做了：如实返回，网络下一轮再来
     for n in dead(nets.stdout.decode()):
         for member in _net_members(n):  # 目标容器还接在上面时网络删不掉
             _docker("network", "disconnect", "-f", n, member, check=False)
