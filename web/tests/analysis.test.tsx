@@ -7,6 +7,8 @@ import { Analyses, Analysis } from "../src/pages/Analyses";
 import { Candidates } from "../src/pages/Candidates";
 import { Inbox } from "../src/pages/Inbox";
 import { navOf } from "../src/shell/AppShell";
+import type { AnalysisDetail } from "../src/api/analysis-types";
+import { createApi } from "../src/api/client";
 import { renderWith, rig } from "./helpers";
 
 afterEach(cleanup);
@@ -252,6 +254,39 @@ describe("方案分析：页面（假后端回放引擎在验收夹具上真跑�
     await waitFor(() => expect($(p.container, "[data-an-process]")).not.toBeNull());
     expect(p.container.querySelector("[data-an-process] li.gate")).toBeNull();
     expect(p.container.textContent).not.toMatch(INTERNAL);
+  });
+
+  it("预评估表里每行有“检验”一列；检验未过但做了评估的标出原因，没有提炼出来的单列在表外，两类不混", async () => {
+    const r = rig();
+    const first = renderWith(r, <Analysis run={DRY} tab="now" />);
+    await waitFor(() => expect(first.container.querySelectorAll('[data-an-dry-check="ok"]')).toHaveLength(3));
+    expect($(first.container, "[data-an-dry-notplaced]")).toBeNull();   // 都进了映射：不出现这一块
+    cleanup();
+    // 引擎产物的形状：C2 九栏齐全但检验未过（仍在条目里），C3 没有提炼出来（不在条目里，在 not_placed）
+    const patched: typeof fetch = async (input, init) => {
+      const res = await r.fetch(input, init);
+      if (!decodeURIComponent(String(input)).endsWith(`/v1/analyses/${DRY}`)) return res;
+      const d = (await res.json()) as AnalysisDetail;
+      const dry = d.dry_run!;
+      dry.items = dry.items.filter((it) => it.candidate !== "C3").map((it) => (it.candidate === "C2" ? { ...it, unpassed: "K1（特征 write_outside_reducer 映到 T4，冲突栏里没有对应的体质冲突）" } : it));
+      dry.not_placed = [{ candidate: "C3", kind: "empty", why: "缺 statement、mechanism 2 栏（收到的顶层键：input、step）" }];
+      return new Response(JSON.stringify(d), { status: 200 });
+    };
+    const cfg = { ...r.cfg, fetch: patched };
+    const { container } = renderWith({ ...r, cfg, api: createApi(cfg) }, <Analysis run={DRY} tab="now" />);
+    await waitFor(() => expect($(container, "[data-an-dry-notplaced]")).not.toBeNull());
+    expect(container.querySelectorAll("[data-an-dry-item]")).toHaveLength(2);
+    expect($(container, '[data-an-dry-item="C1"] [data-an-dry-check]')!.getAttribute("data-an-dry-check")).toBe("ok");
+    const c2 = $(container, '[data-an-dry-item="C2"] [data-an-dry-check]')!;
+    expect(c2.getAttribute("data-an-dry-check")).toBe("bad");
+    expect(c2.textContent).toContain("未过");
+    expect(c2.textContent).toContain("write_outside_reducer");
+    const out = $(container, "[data-an-dry-notplaced]")!;
+    expect(out.textContent).toContain("没有提炼出来，未做映射评估（1 个）");
+    expect($(out, '[data-an-dry-out="C3"]')!.textContent).toContain("没有内容");
+    expect($(out, '[data-an-dry-out="C3"]')!.textContent).toContain("缺 statement、mechanism 2 栏");
+    expect($(out, '[data-an-dry-out="C2"]')).toBeNull();
+    expect($(container, '[data-an-done="dry_run"]')!.textContent).not.toMatch(INTERNAL);
   });
 
   it("候选方案：按状态筛选，点开看核心机制与状态史", async () => {

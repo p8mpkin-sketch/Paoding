@@ -110,19 +110,17 @@ class Result:
     essence: dict[str, Any]
     passed: bool
     tokens: dict[str, list[int]]
-    reason: str = ""  # K1（结构）没过时给人看的原因：缺哪几栏、收到的是什么；过了就是空
+    reason: str = ""  # 九栏不齐（缺必填栏、类型不对）时给人看的原因：缺什么、收到的是什么；齐全就是空
 
 
-def k1_ok(rows: Sequence[Mapping[str, Any]]) -> bool:
-    """K1（结构）过没过；人坚持过的（override）算过。"""
-    return all(c["ok"] or c.get("override") for c in rows if c["id"] == "K1")
+def gaps_reason(essence: Mapping[str, Any], received: str = "") -> str:
+    """九栏不齐时给人看的一句：缺什么，带上模型实际交回的顶层键；齐全就是空串。
 
-
-def k1_reason(essence: Mapping[str, Any], received: str = "") -> str:
-    """K1 没过时给人看的一句：缺栏的说缺什么，别的结构问题取 K1 的原话；带上模型实际交回的顶层键。"""
-    detail = sections.describe(essence) or next(
-        (str(c.get("detail", "")) for c in essence.get("checks", []) if c["id"] == "K1" and not c["ok"]), ""
-    )
+    只管结构这一类（`sections.gaps`）。K1 里别的规则没过（用词不在表内、栏目之间对不上）不算“提炼不出”：
+    九栏都在、下游读得动，照常往下走，由检验结果自己标“未过”。"""
+    detail = sections.describe(essence)
+    if not detail:
+        return ""
     return (detail[:300] + (f"（收到的顶层键：{received}）" if received else ""))[:400]
 
 
@@ -140,7 +138,9 @@ def distill(
     `dry`（试算，09 §3）：只要主稿一稿；K2–K5、K7 照跑，不过只标不重写；K1（结构）、K8（指令痕迹）与内部名词
     不过照样重写——结构不对的稿子下游读不动，不能“只标”。不调萃丹与盲审。
 
-    重写用完 K1 仍不过：照实交回，`Result.reason` 写明缺什么；要不要让它进归位由调用方按 `sections.gaps` 把关。"""
+    重写用完仍不过，分两类：九栏不齐（缺必填栏、类型不对）的 `Result.reason` 写明缺什么，调用方按 `sections.gaps`
+    不让它进归位；九栏齐全而 K1 的其余规则（用词、栏目之间的一致性）没过的，`reason` 为空，照常进归位，
+    检验结果里标着。"""
     obs = evidence(cand, observations)
     tokens: dict[str, list[int]] = {"heavy": [0, 0], "mid": [0, 0]}
     seen: dict[str, str] = {}  # 稿名 → 模型实际交回的顶层键（写原因用）
@@ -193,8 +193,7 @@ def distill(
             for k in ("v", "candidate", "masked", "provenance", "field_refs", "drafts", "checks", "plain_summary")
             if k in ess
         }
-        why = "" if k1_ok(ess["checks"]) else k1_reason(ess, seen.get("main", ""))
-        return Result(ess, checks.hard_ok(ess["checks"]), tokens, why)
+        return Result(ess, checks.hard_ok(ess["checks"]), tokens, gaps_reason(ess, seen.get("main", "")))
     extras = []
     for name in DRAFTS[1:]:
         d, _, _ = ask("extra", f"{base}:{name}", name, [])
@@ -238,8 +237,7 @@ def distill(
         for k in ("v", "candidate", "masked", "provenance", "field_refs", "drafts", "checks", "plain_summary")
         if k in ess
     }
-    why = "" if k1_ok(ess["checks"]) else k1_reason(ess, seen.get(chosen.name, ""))
-    return Result(ess, checks.hard_ok(ess["checks"]), tokens, why)
+    return Result(ess, checks.hard_ok(ess["checks"]), tokens, gaps_reason(ess, seen.get(chosen.name, "")))
 
 
 # ---------------------------------------------------------------- 闸点 2 的逐栏修改

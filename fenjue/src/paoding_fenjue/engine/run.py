@@ -640,23 +640,23 @@ class Engine:
             vres = checks.v_essence(res.essence, ctx, self.x["picked"])
             self.put(f"essence:{cid}.v", vres)
             sha = self.put(f"essence:{cid}", res.essence)
-            # 提炼不出（试算：K1 没过；正式：九栏不齐）：单元照常收尾，原因记下，这个候选不进归位
+            # 提炼不出（九栏不齐，两种模式一样）：单元照常收尾，原因记下，这个候选不进归位
             undistilled: dict[str, str] = self.x.setdefault("undistilled", {})
             undistilled.pop(cid, None)
-            if res.reason and (dry or sections.gaps(res.essence)):
+            if res.reason:
                 undistilled[cid] = res.reason
             said = "过" if res.passed else f"提炼不出（{res.reason[:120]}）" if cid in undistilled else "未过"
             self._mark(uid, "S4", "done", output=sha, summary=f"{cid}：{said}，取 {res.essence['drafts']['chosen']}")
         return None
 
     def _undistilled(self, cid: str) -> str:
-        """这个候选为什么进不了归位；空串即可以进。判据只看产物本身（接力、旧检查点都一样）：九栏不齐的哪种模式
-        都不进；试算没有人把关，K1（结构）没过的也不进。原因优先用提炼时记下的那句（带模型实际交回的顶层键）。"""
+        """这个候选为什么进不了归位；空串即可以进。判据只有一条，只看产物本身（接力、旧检查点都一样）：九栏不齐
+        （`sections.gaps`：缺必填栏、类型不对）。K1 的其余规则没过不在此列——九栏都在，下游读得动。
+        原因优先用提炼时记下的那句（带模型实际交回的顶层键）。"""
         ess = self.get(f"essence:{cid}")
-        dry = self.state["mode"] == "dry_run"
-        if sections.gaps(ess) or (dry and not cuiyi.k1_ok(ess.get("checks", []))):
-            return str(self.x.get("undistilled", {}).get(cid) or cuiyi.k1_reason(ess) or "结构检验（K1）没过")
-        return ""
+        if not sections.gaps(ess):
+            return ""
+        return str(self.x.get("undistilled", {}).get(cid) or cuiyi.gaps_reason(ess))
 
     def _deliver_g2(self) -> Delivery:
         self.state["step"] = "G2"
@@ -772,8 +772,8 @@ class Engine:
             self.state["step"] = "G2"
             self._save_state()
             return self._redeliver("G2", [f"{c} 提炼不出（{w}），进不了归位"[:300] for c, w in skipped.items()])
+        self.x["undistilled"] = dict(skipped)  # 以产物为准重记：旧检查点里按旧判据记下的（九栏其实齐全的）不留
         for cid, why in skipped.items():
-            self.x.setdefault("undistilled", {})[cid] = why
             self._mark(f"ruwei:{cid}", "S5", "failed", summary=f"{cid}：无法入位，提炼不出（{why[:120]}）")
         confirmed = [c for c in confirmed if c not in skipped]
         for cid in confirmed:
@@ -1054,7 +1054,17 @@ class Engine:
             "estimate": est,
             "plain_summary": dry_summary(items, est, lic, skipped),
         }
-        vres = checks.v_dry_run(report, ctx)
+        if skipped:  # 可选栏：没有进入归位的候选。没有就不写，产物与加这一栏之前逐字节相同
+            report["not_placed"] = [
+                {
+                    "candidate": cid,
+                    # empty：一栏都没有（拒答、截断、不是 JSON，或答成了别的形状）；incomplete：有内容，但缺栏或类型不对
+                    "kind": "incomplete" if self.get(f"essence:{cid}").get("masked") else "empty",
+                    "why": why[:300],
+                }
+                for cid, why in skipped.items()
+            ]
+        vres = with_partition(checks.v_dry_run(report, ctx), report)
         sha = self.put("dry_run.json", report)
         self.put("dry_run.v", vres)
         fates = {c: ("S5", "dry_run", "预评估过") for c in placed}
@@ -1082,10 +1092,17 @@ class Engine:
         bad = [c["id"] for c in vres if not c["ok"]]
         if bad:
             needs.insert(0, f"校验未过（只标不拦）：{', '.join(bad)}")
+        # 检验未过但已入位的：只标不拦，原因带上（提炼不出的在下面单列，两类不混）
+        flagged = [
+            f"{it['candidate']} 检验未过（只标不拦）：{unpassed(it['checks'])}"[:300]
+            for it in items
+            if unpassed(it["checks"])
+        ]
+        needs[0:0] = flagged
         for cid, why in reversed(list(skipped.items())):
             needs.insert(0, f"{cid} 提炼不出，没有进入归位：{why}"[:300])
         arts = {"dry_run.json": sha, "bang_updates.json": usha}
-        return Delivery(None, "answered", report_dry_run(report, skipped), arts, needs, passed=not bad and not skipped)
+        return Delivery(None, "answered", report_dry_run(report), arts, needs, passed=not bad and not skipped)
 
     # ------------------------------------------------------------ 续做
 
@@ -1291,25 +1308,61 @@ def report_handoff(h: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def report_dry_run(r: Mapping[str, Any], skipped: Mapping[str, str] | None = None) -> str:
-    """预评估的人读报告。`skipped`：提炼不出、没有进入归位的候选 → 原因（报告的 JSON 里没有它们的条目）。"""
+def unpassed(rows: Sequence[Mapping[str, Any]]) -> str:
+    """一个候选没过的硬检验，连同原因，一句话；都过就是空串。K6 是读数，不算；人坚持过的不算。"""
+    bad = [c for c in rows if not c["ok"] and not c.get("advisory") and not c.get("override")]
+    return "；".join(f"{c['id']}（{c['detail']}）" if c.get("detail") else str(c["id"]) for c in bad)
+
+
+def partition_problems(r: Mapping[str, Any]) -> list[str]:
+    """预评估产物的自洽：自动取的每个候选恰好出现一次——要么在 `items`（进了归位），要么在 `not_placed`（没进）。"""
+    placed = [it["candidate"] for it in r.get("items", [])]
+    out = [row["candidate"] for row in r.get("not_placed", [])]
+    picked = list(r.get("auto_picked", []))
+    seen = placed + out
+    problems = [
+        f"{c} 在预评估里出现了 {seen.count(c)} 次（应恰好 1 次）" for c in sorted(set(seen)) if seen.count(c) > 1
+    ]
+    problems += [f"{c} 是自动取的候选，却既不在评估条目里也不在“没有进入归位”里" for c in picked if c not in seen]
+    problems += [f"{c} 在“没有进入归位”里，却不是自动取的候选" for c in sorted(set(out)) if c not in picked]
+    return problems
+
+
+def with_partition(vres: Sequence[Mapping[str, Any]], r: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """把自洽性的问题并进 V11（“条目都在自动取的候选里”的那一条，同一类）。校验器本身不动：这条规则跟着
+    `not_placed` 这一栏来，栏是引擎写的，规则也由引擎守。"""
+    problems = partition_problems(r)
+    out = [dict(c) for c in vres]
+    if not problems:
+        return out
+    for c in out:
+        if c["id"] == "V11":
+            had = [str(c["detail"])] if c.get("detail") else []
+            c.update(checks.result("V11", [*had, *problems]))
+    return out
+
+
+def report_dry_run(r: Mapping[str, Any]) -> str:
+    """预评估的人读报告。没有进入归位的候选在 `not_placed` 里，表里没有它们；检验未过但进了归位的在表里标着。"""
     lines = [
         "# 预评估",
         "",
         r["plain_summary"],
         "",
-        "| 编号 | 核心机制 | 模块槽 | 替换 | 内核 | 难度 | 可能的结局 |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| 编号 | 核心机制 | 模块槽 | 替换 | 内核 | 难度 | 可能的结局 | 检验 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for it in r["items"]:
         kern = "、".join(it["kernel_forecast"]) or "不改"
+        bad = unpassed(it["checks"]).replace("|", "｜")
         lines.append(
             f"| {it['candidate']} | {it['essence_draft']['statement']} | {it['slot']} | {it['replaces'] or '无'} | "
-            f"{kern} | {it.get('difficulty', '—')} | {OUTCOME_ZH[it['likely_outcome']]}：{it['why']} |"
+            f"{kern} | {it.get('difficulty', '—')} | {OUTCOME_ZH[it['likely_outcome']]}：{it['why']} | "
+            f"{'检验未过：' + bad if bad else '过'} |"
         )
-    if skipped:
-        lines += ["", "**提炼不出，没有进入归位**（重写之后结构仍不对，下面的表里没有它们）："]
-        lines += [f"- {cid}：{why}" for cid, why in skipped.items()]
+    if r.get("not_placed"):
+        lines += ["", "**提炼不出，没有进入归位**（重写之后结构仍不对，上面的表里没有它们）："]
+        lines += [f"- {row['candidate']}：{row['why']}" for row in r["not_placed"]]
     e = r["estimate"]
     tok = "；".join(
         f"{ {'light': '轻量', 'mid': '标准', 'heavy': '高性能'}[k] } 入 {v['in']:,} 出 {v['out']:,}"
@@ -1346,10 +1399,13 @@ def dry_summary(
 ) -> str:
     good = sum(1 for it in items if it["likely_outcome"] == "promising_huolian")
     kern = sum(1 for it in items if it["kernel_forecast"])
+    flagged = sum(1 for it in items if unpassed(it["checks"]))
     n = len(items) + len(skipped or {})
     head = f"预评估：自动取了优先级最高的 {n} 个做法，{good} 个有望带来新能力"
+    if flagged:  # 三样分开数：检验未过的照常评估了，提炼不出的没有评估
+        head += f"，{flagged} 个检验未过但已做归位评估"
     if skipped:
-        head += f"，{'、'.join(skipped)} 提炼不出、没有进入归位"
+        head += f"，{len(skipped)} 个提炼不出、没有进入归位（{'、'.join(skipped)}）"
     if items:
         head += "，内核都不用改。" if not kern else f"，{kern} 个可能要先做内核修订。"
     else:

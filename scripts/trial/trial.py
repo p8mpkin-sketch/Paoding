@@ -230,6 +230,22 @@ def model_call_lines(ws: Path) -> list[str]:
     return out
 
 
+def dry_lines(d: dict) -> list[str]:
+    """预评估产物里要直接读到的几行：结论、自动选中与估算、没进归位的候选、检验未过但已入位的候选。"""
+    lines = [
+        f"- 试算结论：{d.get('plain_summary')}",
+        f"- 自动选中：{d.get('auto_picked')}；估算：{json.dumps(d.get('estimate'), ensure_ascii=False)}",
+    ]
+    for row in d.get("not_placed") or []:  # 提炼不出、没有进入归位的候选（旧产物没有这一栏）
+        lines.append(f"- 没有进入归位：{row.get('candidate')}（{row.get('kind')}）：{row.get('why')}")
+    for it in d.get("items") or []:
+        bad = [c for c in it.get("checks") or [] if not c.get("ok") and not c.get("advisory") and not c.get("override")]
+        if bad:
+            said = "；".join(f"{c.get('id')}（{c.get('detail', '')}）" for c in bad)
+            lines.append(f"- 检验未过但已入位：{it.get('candidate')}：{said}"[:400])
+    return lines
+
+
 def report(a: argparse.Namespace) -> int:
     home = Path(a.home).expanduser()
     rec_path = Path("trial-record.json")
@@ -268,10 +284,7 @@ def report(a: argparse.Namespace) -> int:
             dr = (run.get("artifacts") or {}).get("dry_run.json")
             if dr and (ws / "artifacts" / f"{dr}.json").exists():
                 d = json.loads((ws / "artifacts" / f"{dr}.json").read_text(encoding="utf-8"))
-                lines.append(f"- 试算结论：{d.get('plain_summary')}")
-                lines.append(
-                    f"- 自动选中：{d.get('auto_picked')}；估算：{json.dumps(d.get('estimate'), ensure_ascii=False)}"
-                )
+                lines += dry_lines(d)
             snap = ws / "artifacts"
             lics = set()
             for f in snap.glob("*.json"):

@@ -248,6 +248,8 @@ def test_dry_run_has_one_report_and_no_gates(later):
         (i["candidate"], i["likely_outcome"]) for i in r["items"]
     ]
     assert d["dry_run"]["validators"] == eng.get("dry_run.v")
+    # 三个都进了映射评估且检验都过：没有“未做映射评估”的候选，各行也不带未过的检验
+    assert d["dry_run"]["not_placed"] == [] and [i["unpassed"] for i in d["dry_run"]["items"]] == ["", "", ""]
     # 预评估中间没有交付：只列最后那一份，不把没交过的候选清单、核心机制说成交付
     [rep] = d["reports"]
     assert rep["kind"] == "dry_run" and rep["gate"] is None and rep["text"].startswith("# 预评估")
