@@ -38,6 +38,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -308,6 +309,23 @@ def docker_available() -> bool:
 
 
 # ---------- 组装 ----------
+
+
+def collect_logged(sinan: Sinan, L: logging.Logger, pid: str, timeout: float | None) -> list[dict[str, Any]]:
+    """收回跑完的会话，每条记一行“会话结束”。调度循环里收回记录只走这一个口子：收了就记，不会有收走却没记的。"""
+    done: list[dict[str, Any]] = sinan.collect(timeout)
+    for r in done:
+        L.info(
+            "%s %s 会话结束：租约 %s，%s，release=%s%s",
+            pid,
+            r["did"]["kind"],
+            r["lease"],
+            r["status"],
+            r["outcome"],
+            f"（{r['detail']}）" if r.get("detail") else "",
+            extra=ctx(problem_id=pid, lease_id=r["lease"]),
+        )
+    return done
 
 
 class Stack:
@@ -919,17 +937,7 @@ class Stack:
         L.info("%s 开始调度（并发上限 %d）", pid, self.cfg.max_sessions, extra=ctx(problem_id=pid))
         try:
             while not self.stop_event.is_set():
-                for r in sinan.collect(0):
-                    L.info(
-                        "%s %s 会话结束：租约 %s，%s，release=%s%s",
-                        pid,
-                        r["did"]["kind"],
-                        r["lease"],
-                        r["status"],
-                        r["outcome"],
-                        f"（{r['detail']}）" if r.get("detail") else "",
-                        extra=ctx(problem_id=pid, lease_id=r["lease"]),
-                    )
+                if collect_logged(sinan, L, pid, 0):
                     last = None
                 choice = sinan.pick(pid)
                 if choice.get("stop") == "closed":
@@ -960,7 +968,9 @@ class Stack:
                     L.info("%s %s", pid, note, extra=ctx(problem_id=pid))
                     last = note
                 if sinan.in_flight():
-                    sinan.collect(self.cfg.poll_s)  # 有会话跑完就立刻醒
+                    # 有会话跑完就立刻醒。会话几乎总是在这一段等待里结束：收回的记录在这里逐条记，不能丢
+                    if collect_logged(sinan, L, pid, self.cfg.poll_s):
+                        last = None
                 else:
                     self.stop_event.wait(self.cfg.poll_s)
         finally:
@@ -977,16 +987,7 @@ class Stack:
                     self.runner.kill(f["lease"], "problem_closed")
             deadline = time.monotonic() + 30
             while sinan.in_flight() and time.monotonic() < deadline:
-                for r in sinan.collect(self.cfg.poll_s):
-                    L.info(
-                        "%s %s 会话结束：租约 %s，%s，release=%s",
-                        pid,
-                        r["did"]["kind"],
-                        r["lease"],
-                        r["status"],
-                        r["outcome"],
-                        extra=ctx(problem_id=pid, lease_id=r["lease"]),
-                    )
+                collect_logged(sinan, L, pid, self.cfg.poll_s)
             sinan.close()
 
     # ---------- 哮天犬 ----------

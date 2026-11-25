@@ -356,3 +356,28 @@ def test_a_driver_session_whose_sandbox_cannot_start_still_delivers(trig, site):
     needs = " ".join(d["needs"])
     assert d["outcome"] == "blocked" and "执行容器起不来" in needs and M0 in needs and "随题上传" in needs
     assert rig.requests() == [] and site.seen == [] and ex.destroyed == []  # 没起来的容器不用销毁
+
+
+class DownLaunch(LocalExec):
+    """起执行容器时容器服务无响应：launch 抛客户端超时（不是“授权编不了”）。"""
+
+    def launch(self, spec, *a, **kw):
+        import subprocess
+
+        raise subprocess.TimeoutExpired(["docker", "run", "-d", "--name", "pd-x", "-v", "/Users/x/ws:/workspace"], 120)
+
+
+def test_a_driver_session_whose_sandbox_hits_an_environment_fault_is_released_as_failed(trig, site):  # noqa: F811
+    """环境故障与“授权编不了”不同：容器服务出了故障，不是这道题用不着沙箱。驱动程序的会话也按失败释放
+    （授权编不了时它照常跑、照实交付，见上一条），原因留下，不带命令与路径。"""
+    rig = trig(cases.recording("alpha", "code"))
+    ex = rig.executor = rig.runner.executor = DownLaunch(rig.graph, rig.blobs, rig.cfg.root)
+    rig.open(intake=repo(f"{site.url}/alpha.tar.gz"))
+    lid = rig.lease("p1")
+    rec = rig.runner.run("p1", lid, statement=rig.statement, sandbox_id=None)
+    why = "执行容器起不来：建容器并启动超时（等了 120 秒）"
+    assert rec.status == "failed(error)" and rec.release["ok"] and rec.release["why"] == why
+    lease = rig.graph.state["leases"][lid]
+    assert not lease["active"] and lease["outcome"] == "failed"
+    assert why in rig.stderr(lid) and "/Users" not in rig.stderr(lid)
+    assert rig.deliveries() == [] and lid not in rig.runner.live and site.seen == [] and ex.destroyed == []
