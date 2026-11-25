@@ -504,6 +504,19 @@ def test_launch_fault_reason_never_carries_the_command_or_a_path():
             ),
             "建容器并启动失败（退出码 1，连不上容器服务）",
         ),
+        (  # 真系统上镜像不存在时的写法：报错以“: not found”收尾
+            subprocess.CalledProcessError(
+                125,
+                ["docker", "run", "-d", "--name", "pd-x"],
+                stderr=b"Unable to find image 'no-such:1' locally\ndocker: Error response from daemon: "
+                b'failed to resolve reference "docker.io/library/no-such:1": not found\n',
+            ),
+            "建容器并启动失败（退出码 125，镜像不存在或拉不到）",
+        ),
+        (  # 只在行尾认：句子中间出现这几个字的不算
+            subprocess.CalledProcessError(127, ["docker", "run"], stderr=b"sh: not found in PATH, giving up"),
+            "建容器并启动失败（退出码 127）",
+        ),
         (FileNotFoundError(f"挂载源不存在：{HOST_PATH}"), "磁盘或文件错误（FileNotFoundError）"),
         (FileNotFoundError(errno.ENOENT, "No such file or directory", "docker"), "文件或命令不存在（ENOENT）"),
         (PermissionError(errno.EACCES, "Permission denied", HOST_PATH), "没有权限（EACCES）"),
