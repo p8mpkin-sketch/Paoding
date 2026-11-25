@@ -289,6 +289,35 @@ describe("方案分析：页面（假后端回放引擎在验收夹具上真跑�
     expect($(container, '[data-an-done="dry_run"]')!.textContent).not.toMatch(INTERNAL);
   });
 
+  it("检验未过且说明很长：这一格里的文字完整，另起一行，没有截断或隐藏的写法", async () => {
+    const r = rig();
+    const long = "K1（特征 write_outside_reducer 映到 T4，冲突栏里没有对应的冲突记录）；K8（核心机制第 2 步的原语“对照”在前提栏里找不到它依赖的输入，融合栏写的涌现能力与步骤对不上）；K3（代价栏里写的额外调用次数与实现线索里的不一致）";
+    const patched: typeof fetch = async (input, init) => {
+      const res = await r.fetch(input, init);
+      if (!decodeURIComponent(String(input)).endsWith(`/v1/analyses/${DRY}`)) return res;
+      const d = (await res.json()) as AnalysisDetail;
+      d.dry_run!.items = d.dry_run!.items.map((it) => (it.candidate === "C2" ? { ...it, unpassed: long } : it));
+      return new Response(JSON.stringify(d), { status: 200 });
+    };
+    const cfg = { ...r.cfg, fetch: patched };
+    const { container } = renderWith({ ...r, cfg, api: createApi(cfg) }, <Analysis run={DRY} tab="now" />);
+    await waitFor(() => expect($(container, '[data-an-dry-check="bad"]')).not.toBeNull());
+    const cell = $(container, '[data-an-dry-item="C2"] [data-an-dry-check="bad"]')!;
+    const why = $(cell, ".an-dchk-why")!;
+    expect(why.textContent).toBe(long);                       // 一字不少
+    expect(cell.textContent).toBe(`未过${long}`);
+    expect(why.getAttribute("title")).toBeNull();             // 不是“截断了再放进悬停提示”
+    for (const el of [cell, why, ...why.querySelectorAll("*")]) {
+      expect(el.hasAttribute("hidden")).toBe(false);
+      expect(el.getAttribute("aria-hidden")).toBeNull();
+      expect(el.className).not.toMatch(/\b(nw|clip|ellipsis|truncate|sr-only)\b/);
+    }
+    // 过的那两行没有说明块，所以不会把表撑宽；七列与原有标记不变
+    expect(container.querySelectorAll(".an-dchk-why")).toHaveLength(1);
+    expect($(container, '[data-an-dry-item="C1"] [data-an-dry-check="ok"]')!.textContent).toBe("过");
+    expect([...container.querySelectorAll("[data-an-dry] thead th")].map((th) => th.textContent)).toEqual(["做法", "模块槽", "替换", "内核", "难度", "可能的结局", "检验"]);
+  });
+
   it("候选方案：按状态筛选，点开看核心机制与状态史", async () => {
     const r = rig();
     const { container } = renderWith(r, <Candidates id="Y-001" />);

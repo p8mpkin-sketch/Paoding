@@ -742,7 +742,7 @@ function DryRunDone({ d }: { d: AnalysisDetail }) {
                   <td className="nw">{it.kernel_forecast.length ? it.kernel_forecast.join("、") : "不改"}</td>
                   <td className="k-mono">{it.difficulty ?? "—"}</td>
                   <td><b>{d.words.outcome[it.likely_outcome] ?? it.likely_outcome}</b><span className="t2"> · <P text={it.why} /></span></td>
-                  <td data-an-dry-check={it.unpassed ? "bad" : "ok"}>{it.unpassed ? <><St tone="bad">未过</St><span className="t2"> <P text={plain(it.unpassed)} /></span></> : <St tone="ok">过</St>}</td>
+                  <td data-an-dry-check={it.unpassed ? "bad" : "ok"}>{it.unpassed ? <><St tone="bad">未过</St><span className="t2 an-dchk-why"><P text={plain(it.unpassed)} /></span></> : <St tone="ok">过</St>}</td>
                 </tr>
               ))}
             </tbody>
