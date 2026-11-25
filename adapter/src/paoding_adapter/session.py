@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -39,6 +40,53 @@ from .proxy import EndpointProxy
 from .tools import KnowledgePort, Session, ToolHost, solve_ceiling, tool_order
 
 LOG = logging.getLogger("adapter")
+
+# 容器命令行的子命令 → 给人看的“哪一步”。原因里只写这个，不写整条命令（里面有工作区在本机的路径）。
+_STEP = {
+    ("network", "create"): "建网络",
+    ("network", "connect"): "接网络",
+    ("network", "rm"): "删网络",
+    ("run",): "建容器并启动",
+    ("inspect",): "查询容器",
+    ("ps",): "列容器",
+    ("rm",): "删容器",
+    ("exec",): "在容器里执行",
+    ("logs",): "读闸门记录",
+}
+# 容器命令失败时的错误类别：只从它的报错里认几种，原文不落盘（里面可能有路径）
+_KINDS = (
+    (("no such image", "pull access denied", "manifest unknown", "not found: manifest"), "镜像不存在或拉不到"),
+    (("cannot connect to the docker daemon", "is the docker daemon running", "connection refused"), "连不上容器服务"),
+    (("no space left",), "磁盘满了"),
+    (("permission denied",), "没有权限"),
+    (("already in use", "already exists"), "名字已被占用"),
+)
+
+
+def _step(cmd: Any) -> str:
+    args = [str(a) for a in cmd[1:3]] if isinstance(cmd, list | tuple) else []
+    return _STEP.get(tuple(args[:2])) or _STEP.get(tuple(args[:1])) or "容器命令"
+
+
+def launch_fault(e: BaseException) -> str:
+    """起执行容器失败的原因，洗过再给人看：只有哪一步、等了多久、错误类别。
+
+    不带整条容器命令，不带任何本机路径，也不带异常的原文（超时异常的文字里就是整条命令）。"""
+    if isinstance(e, subprocess.TimeoutExpired):
+        return f"{_step(e.cmd)}超时（等了 {int(e.timeout)} 秒）"
+    if isinstance(e, subprocess.CalledProcessError):
+        said = e.stderr.decode("utf-8", "replace") if isinstance(e.stderr, bytes) else str(e.stderr or "")
+        kind = next((zh for keys, zh in _KINDS if any(k in said.lower() for k in keys)), "")
+        return f"{_step(e.cmd)}失败（退出码 {e.returncode}{'，' + kind if kind else ''}）"
+    if isinstance(e, OSError):
+        code = errno.errorcode.get(e.errno or 0, "")
+        zh = {"ENOSPC": "磁盘满了", "ENOENT": "文件或命令不存在", "EACCES": "没有权限", "EROFS": "只读文件系统"}.get(
+            code
+        )
+        return f"{zh or '磁盘或文件错误'}（{code or type(e).__name__}）"
+    return f"未归类的错误（{type(e).__name__}）"
+
+
 CLI_STDERR = "cli.stderr.log"  # 会话目录里：CLI 的 stderr（两轮追加写）。CLI 出错时只在这里留话
 
 
@@ -215,6 +263,15 @@ class SessionRunner:
                     finally:
                         self.issuer.revoke(token)
                 no_box = str(e)  # 驱动程序的会话：沙箱只给宿主工具抓材料用，没有也照常跑，抓取时如实说明
+            except Exception as e:  # noqa: BLE001  环境故障（容器命令超时或失败、磁盘错误……）：不是“授权编不了”
+                # 这一步在会话的兜底、在途登记之前：不接住的话异常穿出 run()，租约没人释放、悬到过期，也没有原因。
+                # 模型会话与驱动程序的会话一样按失败释放（容器服务出了故障，不是这道题不需要沙箱）。
+                why = f"执行容器起不来：{launch_fault(e)}"
+                LOG.warning("会话 %s 的%s", lease_id, why)
+                try:
+                    return self._fail(rec, token, pid, lease_id, why)
+                finally:
+                    self.issuer.revoke(token)
         s = Session(pid, lease_id, role, token, ws, tools, sandbox_id if boxed else None)
         s.no_box = no_box
         an = tunshi.Analysis(shape["ref"], self.cfg.analysis or (lambda _pid: {})) if driver else None
