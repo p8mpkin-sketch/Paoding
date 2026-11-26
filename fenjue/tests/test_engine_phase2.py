@@ -584,6 +584,11 @@ def test_dry_run_report(dry):
     assert {u["status"] for u in ups if u["op"] == "set_status"} == {"dry_run"}
     assert [u["entry"]["status"] for u in ups if u["op"] == "add"] == ["dry_run"]
     assert "预评估" in d.answer and "不能直接交实现线" in d.answer
+    # 每项检验的用时只打在人读报告里（读数），不进 dry_run.json 与校验结果
+    line = next(x for x in d.answer.splitlines() if x.startswith("检验用时"))
+    assert all(f"{k} " in line for k in ("抄写比对", "K4", "V6", "V1")) and "用时" not in json.dumps(
+        r, ensure_ascii=False
+    )
 
 
 def test_dry_run_converts_to_formal_without_spending(dry, tmp_path):

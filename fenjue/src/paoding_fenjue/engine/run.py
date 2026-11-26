@@ -118,6 +118,7 @@ class Engine:
         ql = ql if isinstance(ql, dict) else {}
         self._elapsed_base = float(ql.get("elapsed_s", 0.0))
         self._t0 = self.cfg.clock()
+        self._check_s0 = dict(checks.timings)  # 试算报告的“检验用时”从这里起算（只是读数）
         self._own_ix: tuple[survey.Snapshot, Any] | None = None
 
     # ------------------------------------------------------------ 工作区
@@ -1232,7 +1233,12 @@ class Engine:
             needs.insert(0, f"{cid} 提炼不出，没有进入归位：{why}"[:300])
         arts = {"dry_run.json": sha, "bang_updates.json": usha}
         return Delivery(
-            None, "answered", self._lead(report_dry_run(report), doc), arts, needs, passed=not bad and not skipped
+            None,
+            "answered",
+            self._lead("\n".join([report_dry_run(report), *checks.timing_lines(self._check_s0)]), doc),
+            arts,
+            needs,
+            passed=not bad and not skipped,
         )
 
     # ------------------------------------------------------------ 续做
