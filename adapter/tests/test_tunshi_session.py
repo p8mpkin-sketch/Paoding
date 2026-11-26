@@ -54,7 +54,7 @@ def test_an_analysis_runs_from_opening_to_handoff_across_four_sessions(trig):  #
     lid, rec = rig.session()
     assert rec.status == "released" and rec.release["outcome"] == "done" and rec.exit_codes == [0], rig.stderr(lid)
     lease = g.state["leases"][lid]
-    assert lease["form"] == "h1.tunshi@1"  # 形态由图服务按分析实例的功法抄进租约（F3）
+    assert lease["form"] == "h1.tunshi@2"  # 形态由图服务按分析实例的功法抄进租约（F3）
     assert rig.executor.calls == []  # 上传的材料不用抓取：沙箱里一条命令也没跑
     d1 = rig.deliveries()[-1]
     assert d1["outcome"] == "partial" and "第 1 次确认" in d1["needs"][-1]

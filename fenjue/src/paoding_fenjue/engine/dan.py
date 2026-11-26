@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -40,6 +41,8 @@ class Reply:
     tokens_in: int = 0
     tokens_out: int = 0
     stop: str = ""  # 模型的停止原因（max_tokens = 输出到上限被截断）；回放与备忘里没有就是空
+    # 这次回答取自调用备忘，没有真的再问模型（数调用次数时与真做成的分开；不参与相等比较）
+    cached: bool = field(default=False, compare=False)
 
 
 class Dan(Protocol):
@@ -154,6 +157,7 @@ class Memo:
 
     def __post_init__(self) -> None:
         self._seen: dict[tuple[str, str], dict[str, Any]] = {}
+        self._lock = threading.Lock()  # 并发的调用各自问模型，记备忘时一次只写一行
         if self.path.exists():
             for line in self.path.read_text(encoding="utf-8").splitlines():
                 try:
@@ -167,7 +171,9 @@ class Memo:
         e = self._seen.get((key, sha))
         if e is not None and e.get("role") == role:
             self.hits += 1
-            return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)), str(e.get("stop", "")))
+            return Reply(
+                e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)), str(e.get("stop", "")), True
+            )
         r = self.inner.call(role, key, payload)
         row = {
             "key": key,
@@ -178,9 +184,10 @@ class Memo:
             "tokens_out": r.tokens_out,
             **({"stop": r.stop} if r.stop else {}),
         }
-        self._seen[(key, sha)] = row
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        with self._lock:
+            self._seen[(key, sha)] = row
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
         return r
 
     def forget(self, prefixes: tuple[str, ...]) -> int:

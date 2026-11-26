@@ -1,0 +1,296 @@
+{
+ "dossier": "002",
+ "name": "question-led-reading",
+ "title": "方案分析引擎第 2 版：按题目读仓库作答（自指）",
+ "status": "design_approved",
+ "identified": "2026-11-25",
+ "generated": true,
+ "shihuo": {
+  "source": "一个通用编码智能体在同一道题上的五次只读运行（行为序列与报告结构，docs/design/fenjue/materials/agent-baseline/）。只借做法，不调用它，不依赖它用的模型。",
+  "phenomenon": "它先读题面点名的模块，整文件读，读完一批再顺着定义、用法、测试追下一批，中途回头读我们自己的对应实现；交付直接回答题面的问题，每个结论指到文件与行，拿不准的单列，出稿后回头核对。",
+  "gap": "第 1 版按类别的词面线索取片段读，题面不参与选读哪里；同一道题五次运行里，题面点名的“上下文压缩”因已登记在案每次都被放进不提名，“会话持久化”一次没读到，交付里没有对题面两问的回答，也没有带行号的出处。",
+  "is_fire": "是：一种可迁移的做法（按问题领读、追读、凭细事实作答、回头核对），与具体仓库和具体模型无关。"
+ },
+ "cuiyi": {
+  "yi": "题面里点名的问题决定读哪里：把问题换成对方仓库里真实存在的名字，先整文件读命中的核心模块，读完一批再按“定义、用法、测试”排下一批；阅读交回带行区间的细事实，回答只许引用细事实，文件与行由程序推出；出稿后由另一个隔离的调用对着原文逐条核对，标注取核对结果。",
+  "premise": "题面里有问句（怎么、如何、怎样）；材料是代码或文档形态；阅读的模型能在一次调用里读约三百行并交回结构化的事实。",
+  "cost": "同一道题的调用数与 token 上升（上限按五次运行中位数的 1.5 倍：85 次、约 59 万 token）；多了七份提示词与三个引擎模块要维护；并发调用对端点限流更敏感（并发数做成配置项，缺省 4）。",
+  "overlap": "通用勘察（按类别取片段）仍在：题面没有点名时照旧只走它；点名时缩成每个类别至多一段，用来保住题面之外的候选。识别候选、提炼、归位三步的隔离规则与检验不变。",
+  "conflict": "“观察不带对方名字”的隔离规则与“回答要说得出名字和数值”相冲。解法：细事实与观察分成两套，细事实只给答题与核对两步看，留在工作区，不登记成产物；观察照旧不带名字，照旧走原有检验。",
+  "hypothesis": "按题读之后：同一道题多次运行都能答出题面的每一问并给出集成建议；带行号的引用零越界且多数落在题面点名的模块；点名主题不再因已登记被剔除；未核对的结论不超过两成；用量在上限之内。",
+  "split": "不放宽任何一条现有检验：观察的形状、候选清单的十二条检验、提炼与归位的检验都原样执行。新增的检查只加不减（细事实的行区间必须落在读过的范围内、不许照抄原文、回答不许自己写行号、挑的名字必须逐字在对方仓库里）。",
+  "masked": "成立：这套读法不依赖出处是谁，换任何一个按问题读代码的人或工具都是这个次序。"
+ },
+ "fire": {
+  "id": "h1.tunshi",
+  "ver": 2,
+  "slot": "H1",
+  "seats": [
+   "solve"
+  ],
+  "ports": [
+   "M1:deliver",
+   "M1:register_artifact",
+   "M1:request_scope",
+   "M2",
+   "M3",
+   "M4"
+  ],
+  "params": {
+   "forms": {
+    "solve": {
+     "tools": [
+      "intake",
+      "fetch",
+      "check",
+      "deliver"
+     ],
+     "prompt": {
+      "files": [
+       "tunshi.md"
+      ],
+      "insert_after": "- deliver："
+     },
+     "kb_cite": "grounds",
+     "focus": [
+      "relay"
+     ],
+     "restate": "按固定流程把外部系统读成结构化的分析产物，走到下一个确认点就用 deliver 交付；停在确认点时把追问当作决定。",
+     "relay": true,
+     "ends_on": "deliver",
+     "driver": "tunshi",
+     "sandbox": true,
+     "fixed_tools": true,
+     "max_turns": 4000,
+     "pills": {
+      "reader/v1": "tunshi-reader.md",
+      "shihuo/v1": "tunshi-shihuo.md",
+      "cuiyi/main/v1": "tunshi-cuiyi.md",
+      "cuiyi/extra/v1": "tunshi-cuiyi.md",
+      "cuiyi/blind/v1": "tunshi-blind.md",
+      "ruwei/place/v1": "tunshi-place.md",
+      "ruwei/design/v1": "tunshi-design.md",
+      "shihuo/v2": "tunshi-shihuo-2.md",
+      "wenti/terms/v1": "tunshi-wenti.md",
+      "wenti/pick/v1": "tunshi-wenti-pick.md",
+      "reader/q/v1": "tunshi-reader-q.md",
+      "dati/v1": "tunshi-dati.md",
+      "dati/fix/v1": "tunshi-dati-fix.md",
+      "heyan/v1": "tunshi-heyan.md",
+      "heyan/depth/v1": "tunshi-heyan-depth.md"
+     }
+    }
+   }
+  },
+  "assets": [
+   {
+    "name": "adapter/prompts/tunshi.md",
+    "sha256": "4cbed10724ff5ecf2d12da873be991e29fcdbc7bc495238c1dc4f6ff740df3cc"
+   },
+   {
+    "name": "adapter/prompts/tunshi-blind.md",
+    "sha256": "a75f2f63ab627803351fdeb742639aa71bb13fc9fa20c92753b3aa11d5a5eba0"
+   },
+   {
+    "name": "adapter/prompts/tunshi-cuiyi.md",
+    "sha256": "244db9d1c0586dc07897032de5008cce4b809851e4bcfe3f0a0813739bfc8319"
+   },
+   {
+    "name": "adapter/prompts/tunshi-design.md",
+    "sha256": "cfc34fa87a763dd4cdec4de5c25875ee111da528c090766df12446318dd55678"
+   },
+   {
+    "name": "adapter/prompts/tunshi-place.md",
+    "sha256": "68280f06086be90ee62e12b26f94327e8f9e24825601a80af4dfd5c00fab97b0"
+   },
+   {
+    "name": "adapter/prompts/tunshi-reader.md",
+    "sha256": "abdce68040d3abab3e8ffca35eaab35be415ec286ecccf2835888b777b58a17d"
+   },
+   {
+    "name": "adapter/prompts/tunshi-shihuo.md",
+    "sha256": "2973a5108dc726957acbf14e184f7755ffa5ac9bee4d9665bed0130ecb7b3f9d"
+   },
+   {
+    "name": "adapter/prompts/tunshi-shihuo-2.md",
+    "sha256": "e6dab29669c01c5a175e09afaa30fbf79ec3fb43d882ae2bd9f34410c15f6821"
+   },
+   {
+    "name": "adapter/prompts/tunshi-wenti.md",
+    "sha256": "843d697eaea5147aafff594c100ff3ef035c2c0c53e0fbc528187457e8b88046"
+   },
+   {
+    "name": "adapter/prompts/tunshi-wenti-pick.md",
+    "sha256": "dd659e1f1826ae39ac47ff267f8a7945ac932f2ff6a1fac6d4bd92228b1a154c"
+   },
+   {
+    "name": "adapter/prompts/tunshi-reader-q.md",
+    "sha256": "d3e8224f06e5c8d893f9628255ad129d745cf89a18151e87510e312187e5db25"
+   },
+   {
+    "name": "adapter/prompts/tunshi-dati.md",
+    "sha256": "5d51dda5e9cd65a1df382ea73e3bd7b01c0f400668f70e79f12c5b2ca5549645"
+   },
+   {
+    "name": "adapter/prompts/tunshi-dati-fix.md",
+    "sha256": "6b58fd4c2918122c4c6d7e30687cca33e88ed44b60c9108b446829bd1c86f1f0"
+   },
+   {
+    "name": "adapter/prompts/tunshi-heyan.md",
+    "sha256": "c1a4094ebf5f11f03501de0614ffbd21526f8175d27377e143d73c79f8a1dff2"
+   },
+   {
+    "name": "adapter/prompts/tunshi-heyan-depth.md",
+    "sha256": "d8e76f543ef5ca09006631ecf67a580921992f78dbf3f8ed79bf283046e7dd13"
+   }
+  ],
+  "organ": {
+   "class": "感知官",
+   "enable_when": "分析实例（功法取 gongfa.engine.json）里的开放道任务",
+   "control_arm": "人工走六步（lianhua.py 逐步填炼档）",
+   "retire_signal": "连续 10 次分析的候选在第 1 次确认时全部未被选中，或交接包导入后被退回重做的比例高于人工炼档"
+  },
+  "lineage": {
+   "dossier": "002",
+   "from": [
+    "h1.tunshi"
+   ]
+  },
+  "switch": "fires.H1"
+ },
+ "replaces": "h1.tunshi",
+ "kernel_lines_changed": 0,
+ "preregistered": "本档第三节（002，入位时登记）；基线取 cz 2026-11-25 给的同题五次运行读数",
+ "arms": {
+  "B": "h1.tunshi@1：只走通用勘察（按类别的词面线索取片段读）。入功法后是分析实例 H1 的常设留出，留出份额的题用它跑。",
+  "F": "h1.tunshi@2：题面点名了问题就按题读、凭细事实作答、回头核对；题面没有点名时与 B 的调用逐字节相同。"
+ },
+ "readings": [
+  {
+   "dim": "题面点名的每一问都有核对过的结论",
+   "kind": "新生",
+   "dir": "up",
+   "gate": "同题三遍，三遍都是",
+   "B": "0/5（五次运行都没有回答）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_labels_come_from_verification_not_from_the_draft"
+  },
+  {
+   "dim": "未核对的结论占留下结论的比例",
+   "kind": "新生",
+   "dir": "down",
+   "gate": "≤ 20%",
+   "test": "fenjue/tests/test_engine_question_led.py::test_time_and_call_lines_stop_the_work_and_say_what_was_left"
+  },
+  {
+   "dim": "带行号的引用越界数",
+   "kind": "新生",
+   "dir": "down",
+   "gate": 0,
+   "B": "不适用（第 1 版不出行号）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_the_answer_cites_file_and_lines_derived_from_facts"
+  },
+  {
+   "dim": "每问值得追的名字里，定义被读到的比例",
+   "kind": "新生",
+   "dir": "up",
+   "gate": "只报告，不作门槛（cz 2026-11-26）；低于一半时报告写明哪些定义没读到",
+   "B": "第一问 0/3（2026-11-26 冒烟：三个名字都列为值得追，一个定义都没读到）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_big_files_do_not_eat_the_reads_and_followed_definitions_come_first；ql.json 的 read.chase"
+  },
+  {
+   "dim": "每问答到哪一层（独立审读：做法本身 / 一部分 / 只到周边）",
+   "kind": "新生",
+   "dir": "up",
+   "gate": "题面点名的每一问都是“答到了做法本身”（cz 2026-11-26：审读为主；引到定义的结论少于 2 条时降为一部分；取更严的）",
+   "B": "第一问只到周边（2026-11-26 冒烟，cz 人工判）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_depth_tells_mechanism_from_periphery；fenjue/tests/test_engine_question_led.py::test_the_depth_rule_takes_the_stricter_of_judgement_and_evidence；ql.json 的 pass.answered_mechanism"
+  },
+  {
+   "dim": "题面点名的主题被剔除的次数",
+   "kind": "新生",
+   "dir": "down",
+   "gate": 0,
+   "B": "5/5（每次都放进不提名）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_a_dropped_named_topic_is_sent_back_and_reported_if_it_stays_dropped"
+  },
+  {
+   "dim": "核对通过率（另抽 10 条人工读）",
+   "kind": "新生",
+   "dir": "up",
+   "gate": "照实记录，人工抽查无错判",
+   "test": "ql.json 的 stats.verified_pass_share"
+  },
+  {
+   "dim": "验收召回（四个合成夹具 13 次识别，原录音回放）",
+   "kind": "共有",
+   "dir": "up",
+   "B": "13/13",
+   "F": "13/13（录音未重录）",
+   "test": "fenjue/tests/test_engine_acceptance.py::test_recall_by_form"
+  },
+  {
+   "dim": "诱饵误报",
+   "kind": "共有",
+   "dir": "down",
+   "test": "fenjue/tests/test_engine_acceptance.py"
+  },
+  {
+   "dim": "注入服从数",
+   "kind": "本火",
+   "dir": "down",
+   "gate": 0,
+   "test": "fenjue/tests/test_engine_acceptance.py::test_canary_in_a_draft_is_caught_and_rewritten"
+  },
+  {
+   "dim": "凭据泄漏数",
+   "kind": "本火",
+   "dir": "down",
+   "gate": 0,
+   "test": "fenjue/tests/test_engine_acceptance.py"
+  },
+  {
+   "dim": "每次运行的模型调用数",
+   "kind": "共有",
+   "dir": "down",
+   "gate": "≤ 85（五次中位数 57 的 1.5 倍）",
+   "B": "55/57/56/64/58",
+   "test": "ql.json 的 calls（只数真做成的；失败重试的 calls_failed、取自记录的 calls_replayed 单列）"
+  },
+  {
+   "dim": "每次运行的 token（入 + 出）",
+   "kind": "共有",
+   "dir": "down",
+   "gate": "≤ 589,773（五次中位数 393,182 的 1.5 倍）",
+   "B": "295,581/454,789/337,384/457,733/393,182",
+   "test": "ql.json 的 tokens"
+  },
+  {
+   "dim": "机器时间",
+   "kind": "共有",
+   "dir": "down",
+   "gate": "不作过线，目标 30 分钟内，照实记录",
+   "B": "模型时间串行 25.5 与 28.1 分钟",
+   "test": "ql.json 的 elapsed_s"
+  }
+ ],
+ "yanti": null,
+ "outcome_proposed": null,
+ "jie_proposed": null,
+ "metrics": {
+  "cycle_days": null,
+  "kernel_lines": 0,
+  "slots": [
+   "H1"
+  ],
+  "trial_cost_usd_milli": null,
+  "reverts": 0
+ },
+ "design_verdict": {
+  "by": "cz",
+  "date": "2026-11-25",
+  "note": "设计稿（docs/design/fenjue/14-question-led.md）批准并带修订：细事实要细到可逐条核对、标注以核对结果为准、用时不作过线而未核对有上限、报告写明走哪条路。自指：这是引擎对自己的升级，裁决只由 cz 做；过线读数由 cz 合并后在真系统上跑，本档停在“设计已裁”，读数出来之前不写结局"
+ },
+ "verdict": null,
+ "reverts": [],
+ "self_ref": true
+}

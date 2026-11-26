@@ -494,6 +494,11 @@ class Session:
             locks=list(b.get("locks") or []),
             artifact_id=self.artifact_id,
             artifact_final=self.final_of,
+            statement=str(b.get("statement") or "") or None,
+            question_led=_form_ver(b.get("form")) >= 2 and bool(b.get("question_led", True)),
+            question_led_off="form" if _form_ver(b.get("form")) < 2 else "switch",
+            own_urls=tuple(str(u) for u in ([b["own_repo"]] if b.get("own_repo") else [])),
+            parallel=max(1, min(8, int(b.get("parallel") or 1))),
         )
         self._eng = Engine(self.root, Feedback(self.dan, lambda: self.attempts), mats, cfg)
         return self._eng
@@ -657,6 +662,7 @@ class Session:
         分析结论本身是设计提议，不是可由留档证明的事实，所以不写成主张；它们各带出处（观察 → 片段的 sha256）。"""
         run = self._load("run.json") or {}
         out = []
+        # 快照按外部来源的次序编号（s1、s2…）；我们自己那份对照材料不在其中，它不是被分析的来源
         for i, s in enumerate(self._sources(), 1):
             sha = run.get("artifacts", {}).get(f"snapshot:s{i}")
             snap = self._load(f"artifacts/{sha}.json") if sha else None
@@ -677,6 +683,13 @@ class Session:
         x = self._load("engine.json") or {}
         keep = set(x.get("sources", []))
         return [s for s in intake.get("sources", []) if s["no"] in keep]
+
+
+def _form_ver(ref: Any) -> int:
+    """会话形态的版本号（`h1.tunshi@2` → 2）。按题读的提示词从第 2 版才有：锁在第 1 版上的在途题照旧走通用勘察。
+    简报里没有形态（直接驱动引擎的测试与脚本）按当前版本算。"""
+    _, _, ver = str(ref or "").partition("@")
+    return int(ver) if ver.isdigit() else 2
 
 
 STILL = ("G1", "G2", "G3", "done", "failed", "paused_budget", "halted")  # 停着等人的步

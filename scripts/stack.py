@@ -251,7 +251,10 @@ def analysis_config(raw: object) -> dict:
     by：缺省立项单里的“谁要的”；pains：记录在案的痛点 [{dim, anchor}]（打分用）；canaries：产物里出现即判不过的串；
     access_wait_s：取材时等人批访问申请的时限（秒，到了就交付“受阻”请人去批）；
     model_idle_s：一次模型调用的流上多久没有任何字节就放弃重试（秒，10–540；必须短于端点代理等上游的 600 秒，
-    这样真正起作用的总是这一条）；model_call_s：一次模型调用的总时限（秒，60–7200，不小于 model_idle_s）。
+    这样真正起作用的总是这一条）；model_call_s：一次模型调用的总时限（秒，60–7200，不小于 model_idle_s）；
+    parallel：题面点名了问题、按题读时同时发出的模型调用数（1–8，缺省 4；通用勘察的路径始终顺序执行）；
+    question_led：题面点名了问题时按题读（缺省开）；关掉则一律走通用勘察，出问题时不用改代码就能退回去。
+    own_repo：我们自己仓库的地址（可空）。立项单里出处是它的来源当作“我们的实现”对照读，不当外部系统分析。
     外部方案榜与在途记录占着的模块槽取自仓库（docs/design/fenjue/），各档位的模型取自设置层的模型档案。"""
     out = {
         "enabled": False,
@@ -261,6 +264,9 @@ def analysis_config(raw: object) -> dict:
         "access_wait_s": 600,
         "model_idle_s": 300,
         "model_call_s": 2400,
+        "parallel": 4,
+        "own_repo": "",
+        "question_led": True,
     }
     if raw is None:
         return out
@@ -282,6 +288,14 @@ def analysis_config(raw: object) -> dict:
         raise ValueError("analysis.model_idle_s 取 10 到 540 秒（要短于端点代理等上游的 600 秒）")
     if isinstance(total, bool) or not isinstance(total, (int, float)) or not max(60, idle) <= total <= 7200:
         raise ValueError("analysis.model_call_s 取 60 到 7200 秒，且不小于 model_idle_s")
+    if not isinstance(out["question_led"], bool):
+        raise ValueError("analysis.question_led 取 true/false")
+    par = out["parallel"]
+    if isinstance(par, bool) or not isinstance(par, int) or not 1 <= par <= 8:
+        raise ValueError("analysis.parallel 取 1 到 8 的整数")
+    own = out["own_repo"]
+    if not isinstance(own, str) or (own and not own.startswith(("https://", "http://"))):
+        raise ValueError("analysis.own_repo 取 http(s) 仓库地址，或留空")
     return out
 
 
@@ -662,6 +676,9 @@ class Stack:
             "access_poll_s": 5,
             "model_idle_s": a["model_idle_s"],
             "model_call_s": a["model_call_s"],
+            "parallel": a["parallel"],
+            "own_repo": a["own_repo"],
+            "question_led": a["question_led"],
         }
 
     def _analysis_models(self) -> tuple[dict, dict]:

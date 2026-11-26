@@ -3,7 +3,7 @@
  "fires": {
   "H1": [
    "h1.triad@1",
-   "h1.tunshi@1",
+   "h1.tunshi@2",
    "h1.recall@1",
    "h1.review@1"
   ],
@@ -37,6 +37,9 @@
  "holdout": {
   "H6": [
    "h6.activity@1"
+  ],
+  "H1": [
+   "h1.tunshi@1"
   ]
  },
  "holdout_permille": 100,

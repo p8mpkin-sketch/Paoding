@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -21,10 +22,10 @@ from pathlib import Path
 from typing import Any
 
 from ..shapes import digest
-from . import budget, checks, cuiyi, data, decision, handoff, ruwei, schema, sections, shihuo, survey, text
+from . import budget, checks, cuiyi, data, decision, handoff, qled, ruwei, schema, sections, shihuo, survey, text
 from .dan import BudgetExhausted, Dan, new_nonce, reading
 
-ENGINE_FIRE = "h1.tunshi@1"
+ENGINE_FIRE = "h1.tunshi@2"
 DRY_RUN_PICK = 3  # 试算按 P 自动取前 3（〔占位〕，09 §3）
 READ_TIERS = ("light", "mid", "heavy")
 
@@ -75,6 +76,14 @@ class Config:
     artifact_id: Callable[[str, str], str] = local_artifact_id
     # 登记时产物被重产过：(名, 原 sha256) → (实际登记的 sha256, 说明行)；不重产就是 (原 sha256, None)
     artifact_final: Callable[[str, str], tuple[str, str | None]] | None = None
+    # ---- 按题读（14-question-led.md）。缺省值下，题面没有点名的题与以前逐字节相同
+    statement: str | None = None  # 题目原话的全文（不给就取立项单里那一栏）
+    question_led: bool = True  # 题面点名了问题就按题读；关掉则一律走通用勘察
+    question_led_off: str = "switch"  # 关着的原因（报告第一行照实写）：switch 开关关着 | form 这道题用的是上一版流程
+    own_urls: tuple[str, ...] = ()  # 我们自己仓库的地址：立项单里出处是它的来源当作“我们的实现”对照读，不当外部系统
+    parallel: int = 1  # 按题读各步的并发调用数（通用勘察的路径始终顺序执行）
+    limits: qled.Limits = field(default_factory=qled.Limits)
+    clock: Callable[[], float] = time.monotonic
 
 
 @dataclass
@@ -102,6 +111,14 @@ class Engine:
         self.x: dict[str, Any] = self._load("engine.json") or {}  # 引擎自己的簿记（run.json 的 Schema 之外的）
         self._snaps: dict[str, survey.Snapshot] = {}
         self._surveys: dict[str, survey.Survey] = {}
+        # 按题读的三条线要的读数：这次运行调了几次模型（真做成的、失败的、取自上次记录的分开数）、用了多久（跨会话累计）
+        self._meter = qled.Meter(dan, self.ws / "ql-calls.json", lambda: bool(qled.questions(self)))
+        self.dan = self._meter
+        ql = self.x.get("ql")
+        ql = ql if isinstance(ql, dict) else {}
+        self._elapsed_base = float(ql.get("elapsed_s", 0.0))
+        self._t0 = self.cfg.clock()
+        self._own_ix: tuple[survey.Snapshot, Any] | None = None
 
     # ------------------------------------------------------------ 工作区
 
@@ -113,6 +130,7 @@ class Engine:
         errs = schema.errors(self.state, "run")
         if errs:
             raise EngineError(f"run.json 不合 Schema：{errs[:3]}")
+        qled.tick(self)  # 按题读的两个读数（调用次数、用时）跟着每个检查点落盘：被打断也不少记
         # 先写旁边的临时文件再改名：会话随时可能被终止（硬顶、停机），检查点不能停在写了一半的样子
         for name, doc in (("engine.json", self.x), ("run.json", self.state)):
             tmp = self.ws / f".{name}.tmp"
@@ -253,6 +271,13 @@ class Engine:
                 self._save_state()
                 why = "；".join(f"来源 {r['no']}：{r['why']}" for r in refused)
                 return Delivery(None, "partial", f"立项没有成：{why}。没有发出任何请求。", {}, [why], passed=False)
+            # 出处是我们自己仓库的来源不当外部系统分析，留作“我们的实现”对照读（除非它是唯一的来源）
+            own = [
+                s["no"] for s in keep if _norm_url(str(s.get("url", ""))) in {_norm_url(u) for u in self.cfg.own_urls}
+            ]
+            if len(own) < len(keep):
+                self.x["own_sources"] = own
+                keep = [s for s in keep if s["no"] not in own]
             self.x["sources"] = [s["no"] for s in keep]
             if reuse is not None:
                 self._reuse(reuse)
@@ -263,7 +288,7 @@ class Engine:
         old = json.loads((prev / "run.json").read_text(encoding="utf-8"))
         if old.get("mode") != "dry_run":
             raise EngineError("只能复用试算的运行")
-        keep = ("snapshot:", "survey:", "read:")
+        keep = ("snapshot:", "survey:", "read:", "ql:plan", "ql:own", "ql:batch:", "ql:read")
         for u in old["units"]:
             if u["id"].startswith(keep) and u["state"] == "done":
                 self.state["units"].append(dict(u))
@@ -272,8 +297,14 @@ class Engine:
                 src = prev / "artifacts" / f"{sha}.json"
                 (self.ws / "artifacts" / f"{sha}.json").write_bytes(src.read_bytes())
                 self.state["artifacts"][name] = sha
-        if (prev / "obs.jsonl").exists():
-            (self.ws / "obs.jsonl").write_bytes((prev / "obs.jsonl").read_bytes())
+        for name in ("obs.jsonl", "facts.jsonl"):
+            if (prev / name).exists():
+                (self.ws / name).write_bytes((prev / name).read_bytes())
+        prev_x = (
+            json.loads((prev / "engine.json").read_text(encoding="utf-8")) if (prev / "engine.json").exists() else {}
+        )
+        if isinstance(prev_x.get("ql"), dict):  # 走哪条路、子问也跟着复用：读过的不重读
+            self.x["ql"] = {k: v for k, v in prev_x["ql"].items() if k in ("questions", "note", "own")}
         self.x["reused_from"] = old["run"]
 
     @property
@@ -370,7 +401,32 @@ class Engine:
         focus = list(self.intake.get("focus", []))
         coverage: list[dict[str, Any]] = []
         used = 0
-        for sp in shihuo.plan(snaps):
+        plans = shihuo.plan(snaps)
+        pre: dict[str, shihuo.SlotRead] = {}
+        one_each: set[str] | None = None  # 按题读时：通用勘察这一轮哪些类别各读一段
+        if qled.decide(self):
+            # 按题读：先读题面点名的那部分代码，读完一批再排下一批；通用勘察缩成每个类别至多一段，放在后面
+            self._save_state()
+            cut = qled.read_phase(self)
+            if cut is not None:
+                return cut
+            read_budget = min(read_budget, self.cfg.limits.category_reads)
+            seen = qled.read_paths(self)
+            for sp in plans:
+                sp.excerpts = [(sn, e) for sn, e in sp.excerpts if (e.path, sp.slot) not in seen]
+            # 每个类别至多读一段；类别比留给这一轮的次数多时，线索分高的先得
+            live = [sp for sp in plans if sp.excerpts and not (focus and sp.slot not in focus)]
+            live.sort(key=lambda sp: (-sp.max_score, sp.slot))
+            one_each = {sp.slot for sp in live[:read_budget]}
+            todo = [sp for sp in plans if sp.slot in one_each and not self._done(f"read:{sp.slot}")]
+            if self._stage_left("S3") > 0 and self.cfg.parallel > 1:
+
+                def one(sp: shihuo.SlotPlan) -> Callable[[], shihuo.SlotRead]:
+                    return lambda: shihuo.read_slot(self.dan, sp, 1, read_budget, nonce=self.cfg.nonce)
+
+                got = qled.par([one(sp) for sp in todo], self.cfg.parallel)
+                pre = {r.slot: r for r in got}
+        for sp in plans:
             uid = f"read:{sp.slot}"
             if self._done(uid):
                 row = self.get(uid)
@@ -380,10 +436,10 @@ class Engine:
             if self._stage_left("S3") <= 0:
                 return self._budget_cut("S3", uid)
             self._mark(uid, "S3", "doing")
-            res = shihuo.read_slot(
+            res = pre.get(sp.slot) or shihuo.read_slot(
                 self.dan,
                 sp,
-                read_budget - used,
+                (read_budget - used) if one_each is None else int(sp.slot in one_each),
                 read_budget,
                 focused_out=bool(focus) and sp.slot not in focus,
                 nonce=self.cfg.nonce,
@@ -414,10 +470,12 @@ class Engine:
             mode=self.state["mode"],
             max_candidates=int(self.intake.get("max_candidates", 5)),
             focus=focus,
+            asked=qled.asked(self) if qled.questions(self) else [],
         )
         if not self._done("candidates"):
             ctx = self.context()
             errors: list[str] = []
+            missing: list[dict[str, Any]] = []
             doc: dict[str, Any] = {}
             proposal: Mapping[str, Any] = {}
             passed = False
@@ -438,21 +496,54 @@ class Engine:
                     if doc:
                         vres = shihuo.validate(doc, ctx)
                         errors += [f"{c['id']}：{c.get('detail', '')}" for c in vres if not c["ok"]]
-                if not errors:
+                        missing = shihuo.uncovered(doc, inp.asked)
+                if not errors and not missing:
                     passed = True
                     break
+                if not errors and attempt == shihuo.ATTEMPTS:
+                    passed = True  # 检验都过了，只是点名的主题仍没成候选：不算检验未过，下面单独写给人
+                    break
+                errors += [
+                    f"题面点名的 {m['id']}（{m['text']}）有 {len(m['observations'])} 条观察，却没有对应的模式："
+                    "已登记在案不是不提名的理由，照常归纳成模式并写出各维的差距"
+                    for m in missing
+                ]
             if not doc:
                 raise EngineError(f"主丹三次都没给出能建清单的提议：{errors[:3]}")
             self.put("candidates.json", doc)
             self.put("candidates.proposal", dict(proposal))
             self.put(
                 "candidates.needs",
-                shihuo.needs(doc, inp, proposal) + ([] if passed else [f"未过：{e}" for e in errors]),
+                [
+                    f"题面点名的 {m['id']}（{m['text']}）没有成为候选，见报告的“回答”一节"
+                    for m in shihuo.uncovered(doc, inp.asked)
+                ]
+                + shihuo.needs(doc, inp, proposal)
+                + ([] if passed else [f"未过：{e}" for e in errors]),
             )
             self._mark("candidates", "S3", "done", output=self.state["artifacts"]["candidates.json"])
+        return self._after_candidates()
+
+    def _after_candidates(self) -> Delivery:
+        """候选清单建好之后：按题读的题先写回答、回头核对；然后照旧——预评估一口气走完，正式模式交第 1 次确认。"""
+        if qled.questions(self):
+            cut = qled.answer_phase(self)
+            if cut is not None:
+                return cut
         if self.state["mode"] == "dry_run":
             return self._dry_run()
         return self._deliver_g1()
+
+    def _lead(self, body: str, doc: Mapping[str, Any] | None = None) -> str:
+        """报告的开头：第一行写明走的是哪条路；按题读的题接着是“回答”一节，然后才是原有的报告。"""
+        qled.export(self)
+        head = qled.route_line(self)
+        ans = qled.section(self)
+        if not ans:
+            return f"{head}\n\n{body}"
+        notes = qled.registered_notes(doc) if doc is not None else []
+        extra = "\n\n" + "\n".join(notes) if notes else ""
+        return f"{head}\n\n{ans}\n\n---\n\n{body.rstrip()}{extra}\n"
 
     def _budget_cut(self, step: str, uid: str) -> Delivery:
         self._mark(uid, step, "budget_cut")
@@ -533,7 +624,9 @@ class Engine:
             self.state["gates"].append({"gate": "G1", "deliver_seq": self._next_seq()})
         self._save_state()
         arts = {"candidates.json": self.state["artifacts"]["candidates.json"]}
-        return Delivery("G1", "partial", report_g1(doc), arts, needs, passed=checks.hard_ok(doc["checks"]))
+        return Delivery(
+            "G1", "partial", self._lead(report_g1(doc), doc), arts, needs, passed=checks.hard_ok(doc["checks"])
+        )
 
     def _next_seq(self) -> int:
         self.x["seq"] = int(self.x.get("seq", 0)) + 1
@@ -586,12 +679,13 @@ class Engine:
                 if u["step"] == "S3":
                     u["state"] = "void"
             self.state["artifacts"] = {
-                k: v for k, v in self.state["artifacts"].items() if not k.startswith(("read:", "candidates"))
+                k: v for k, v in self.state["artifacts"].items() if not k.startswith(("read:", "candidates", "ql:"))
             }
+            (self.ws / "facts.jsonl").unlink(missing_ok=True)
             self.state["gates"][-1]["decision"] = dec
             forget = getattr(self.dan, "forget", None)
             if forget is not None:  # 重做是要重新读、重新取样：调用备忘里这一步的旧回答不能再用
-                forget(("read:", "shihuo:"))
+                forget(("read:", "shihuo:", "qread:", "wenti:", "dati:", "heyan:"))
             self._save_state()
             return self._resume()
         if problems or not picked:
@@ -626,6 +720,17 @@ class Engine:
         obs = self.observations()
         ctx = self.context()
         rounds: dict[str, int] = self.x.setdefault("rounds", {})
+        pre: dict[str, cuiyi.Result] = {}
+        if qled.questions(self) and self.cfg.parallel > 1 and self._stage_left("S4") > 0:
+            # 按题读的题：各候选的提炼互不相干，并发做（结果仍按原来的次序逐个收）
+            todo = [c for c in self.x["picked"] if not self._done(f"cuiyi:{c}")]
+            by_id = {c["id"]: c for c in doc["candidates"]}
+
+            def one(c: str) -> Callable[[], cuiyi.Result]:
+                return lambda: cuiyi.distill(self.dan, by_id[c], obs, ctx, rnd=int(rounds.get(c, 1)), dry=dry)
+
+            got = qled.par([one(c) for c in todo], self.cfg.parallel)
+            pre = dict(zip(todo, got, strict=True))
         for cid in self.x["picked"]:
             uid = f"cuiyi:{cid}"
             if self._done(uid):
@@ -634,7 +739,7 @@ class Engine:
                 return self._budget_cut("S4", uid)
             cand = next(c for c in doc["candidates"] if c["id"] == cid)
             self._mark(uid, "S4", "doing", depends_on=[self.state["artifacts"]["candidates.json"]])
-            res = cuiyi.distill(self.dan, cand, obs, ctx, rnd=int(rounds.get(cid, 1)), dry=dry)
+            res = pre.get(cid) or cuiyi.distill(self.dan, cand, obs, ctx, rnd=int(rounds.get(cid, 1)), dry=dry)
             for tier, (tin, tout) in res.tokens.items():
                 self._spend("S4", tier, tin, tout)
             vres = checks.v_essence(res.essence, ctx, self.x["picked"])
@@ -776,6 +881,26 @@ class Engine:
         for cid, why in skipped.items():
             self._mark(f"ruwei:{cid}", "S5", "failed", summary=f"{cid}：无法入位，提炼不出（{why[:120]}）")
         confirmed = [c for c in confirmed if c not in skipped]
+        pre: dict[str, ruwei.Result] = {}
+        if qled.questions(self) and self.cfg.parallel > 1 and self._stage_left("S5") > 0:
+            todo = [
+                c
+                for c in confirmed
+                if not (
+                    self._done(f"ruwei:{c}")
+                    and (self._unit(f"ruwei:{c}") or {}).get("depends_on") == [self.state["artifacts"][f"essence:{c}"]]
+                )
+            ]
+            by_id = {c["id"]: c for c in doc["candidates"]}
+
+            def one(c: str) -> Callable[[], ruwei.Result]:
+                ess = self.get(f"essence:{c}")
+                return lambda: ruwei.place(
+                    self.dan, by_id[c], ess, rnd=int(rounds.get(c, 1)), full=not dry, locks=self.cfg.locks
+                )
+
+            got = qled.par([one(c) for c in todo], self.cfg.parallel)
+            pre = dict(zip(todo, got, strict=True))
         for cid in confirmed:
             uid = f"ruwei:{cid}"
             dep = [self.state["artifacts"][f"essence:{cid}"]]
@@ -787,7 +912,9 @@ class Engine:
             cand = next(c for c in doc["candidates"] if c["id"] == cid)
             ess = self.get(f"essence:{cid}")
             self._mark(uid, "S5", "doing", depends_on=dep)
-            res = ruwei.place(self.dan, cand, ess, rnd=int(rounds.get(cid, 1)), full=not dry, locks=self.cfg.locks)
+            res = pre.get(cid) or ruwei.place(
+                self.dan, cand, ess, rnd=int(rounds.get(cid, 1)), full=not dry, locks=self.cfg.locks
+            )
             for tier, (tin, tout) in res.tokens.items():
                 if tin or tout:
                     self._spend("S5", tier, tin, tout)
@@ -1004,6 +1131,8 @@ class Engine:
         doc = self.get("candidates.json")
         if "picked" not in self.x:
             self.x["picked"] = [c["id"] for c in doc["candidates"][:DRY_RUN_PICK]]
+            if qled.questions(self):  # 题面点名的主题先取，再按优先级补满
+                self.x["picked"] = qled.pick(doc, qled.asked(self), DRY_RUN_PICK)
             self.state["step"] = "S4"
             self._save_state()
         if self.state["step"] in ("S3", "S4"):
@@ -1102,7 +1231,9 @@ class Engine:
         for cid, why in reversed(list(skipped.items())):
             needs.insert(0, f"{cid} 提炼不出，没有进入归位：{why}"[:300])
         arts = {"dry_run.json": sha, "bang_updates.json": usha}
-        return Delivery(None, "answered", report_dry_run(report), arts, needs, passed=not bad and not skipped)
+        return Delivery(
+            None, "answered", self._lead(report_dry_run(report), doc), arts, needs, passed=not bad and not skipped
+        )
 
     # ------------------------------------------------------------ 续做
 
@@ -1123,6 +1254,8 @@ class Engine:
         self._snapshot()
         if not self._done("candidates"):
             return self._shihuo()
+        if qled.questions(self) and not self._done("ql:answer"):  # 清单建好了，回答还没写完或没核完
+            return self._after_candidates()
         if self.state["mode"] == "dry_run":
             return self._dry_run()
         if step in ("G1", "S3"):  # S3：清单已建好、还没来得及交付就被打断
@@ -1143,6 +1276,12 @@ class Engine:
         """追问里带的追加预算（`budget_add_usd_milli`）。"""
         self.x["budget_usd_milli"] = int(self.x["budget_usd_milli"]) + usd_milli
         self._save_state()
+
+
+def _norm_url(u: str) -> str:
+    """仓库地址的比较形：去掉协议、结尾的斜杠与 .git，小写。空串不与任何地址相等。"""
+    v = u.strip().lower().removeprefix("https://").removeprefix("http://").rstrip("/").removesuffix(".git")
+    return v or "\0"
 
 
 # ---------------------------------------------------------------- 人读报告（用常规技术词）

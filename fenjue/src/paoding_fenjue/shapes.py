@@ -98,6 +98,8 @@ def engine_variant(
 ) -> dict[str, Any]:
     """由一套功法推出分析实例用的那一套（13 §2）：H1 上绑定 solve 席位的那团火换成 h1.tunshi，H3 加上
     h3.tunshi-tools；其余原样。`base` 记它是从哪一版推出来的。纯函数：主功法变了，重推一遍并存档即可。
+    引擎的形态升过版（出身里写着顶替的是它自己的上一版）时，上一版进 H1 的常设留出（09 §10）：分析实例里
+    留出份额的题用上一版跑，两边读数对照。
     fire_of、refs：炼化命令行在自己的清单目录上推（它读文件，不读已安装的包）；缺省读包内的清单。"""
     fire_of = fire_of or fire_at
     form, tools = refs or (ref(ENGINE_FORM), ref(ENGINE_TOOLS))
@@ -110,7 +112,13 @@ def engine_variant(
         fires["H3"] = [*fires["H3"], tools]
     used = sorted({r for rs in [*body["fires"].values(), *(body.get("holdout") or {}).values()] for r in rs})
     base = digest({"gongfa": body, "fires": {r: fire_digest(dict(fire_of(r))) for r in used}})
-    return {**body, "fires": fires, "variant": "engine", "base": base}
+    out = {**body, "fires": fires, "variant": "engine", "base": base}
+    fid, _, ver = form.partition("@")
+    if ver.isdigit() and int(ver) > 1 and fid in fire_of(form)["lineage"]["from"]:
+        hold = {slot: list(rs) for slot, rs in (body.get("holdout") or {}).items()}
+        hold["H1"] = [*hold.get("H1", []), f"{fid}@{int(ver) - 1}"]
+        out["holdout"] = hold
+    return out
 
 
 def engine_gongfa_path() -> Path:

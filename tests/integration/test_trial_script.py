@@ -200,3 +200,46 @@ def test_the_report_tells_the_two_kinds_of_unpassed_apart(trial):
     text = "\n".join(trial.dry_lines(new))
     assert "- 没有进入归位：C1（empty）：缺 statement" in text
     assert "- 检验未过但已入位：C2：K1（第 1 步的特征不在冲突栏里）" in text and "K6" not in text and "K3" not in text
+
+
+def test_the_report_says_which_route_a_run_took(trial, tmp_path):
+    """试算报告写明走的是哪条路；按题读时把过线要看的几样逐行打出来（14-question-led.md §7、§9）。"""
+    assert "没有记录" in trial.route_lines(tmp_path)[0]
+    line = "> 读法：题面没有点名具体的问题，走通用勘察。"
+    (tmp_path / "ql.json").write_text(json.dumps({"route": "general", "route_line": line}), encoding="utf-8")
+    assert trial.route_lines(tmp_path) == ["- 读法：题面没有点名具体的问题，走通用勘察。"]
+    doc = {
+        "route": "question_led",
+        "route_line": "> 读法：题面点名了 2 问，按题读。Q1 甲；Q2 乙",
+        "questions": [{"id": "Q1", "text": "甲"}, {"id": "Q2", "text": "乙"}, {"id": "Q3", "text": "丙"}],
+        "own": None,
+        "read": {"theirs": {"parts": 20, "files": 9, "lines": 4100}, "ours": {"parts": 0}, "facts": 180,
+                 "truncated": 1, "most_parts_one_file": 3, "by_question": {"Q1": 11, "Q2": 9},
+                 "chase": {"Q1": {"followed": {"defined": 4, "read": 3}, "picked": {"defined": 2, "read": 2}},
+                           "Q2": {"followed": {"defined": 0, "read": 0}, "picked": {}}}},
+        "stats": {
+            "items": 20, "supported": 15, "partial": 2, "unsupported": 1, "unverified": 2, "unverified_share": 0.1053,
+            "verified_pass_share": 0.8333, "citations": 40, "citations_theirs": 36, "citations_on_defs": 12,
+            "defs_share": 0.3333, "answered": {"Q1": 8, "Q2": 9}, "on_defs": {"Q1": 0, "Q2": 4},
+            "depth": {"Q1": {"level": "peripheral", "missing": "摘要怎么生成没有讲到"},
+                      "Q2": {"level": "mechanism", "missing": ""},
+                      "Q3": {"level": "partial", "judged": "mechanism", "missing": "引到实现上定义的结论不够"}},
+        },
+        "pass": {"all_answered": True, "answered_mechanism": False, "has_recommendation": True,
+                 "unverified_within_20pct": True},
+        "pick_failed": {"ours": "两次都被输出上限截断"},
+        "calls": 61, "calls_failed": 13, "calls_replayed": 4, "tokens": 512000, "elapsed_s": 1500,
+        "limits": {"call_cap": 85, "token_cap": 590000},
+    }  # fmt: skip
+    (tmp_path / "ql.json").write_text(json.dumps(doc), encoding="utf-8")
+    out = "\n".join(trial.route_lines(tmp_path))
+    assert "题面点名了 2 问，按题读" in out and "只对照能力清单" in out and "输出被截断 1 次" in out
+    assert (
+        "未核对 2（占留下的 11%）" in out and "核对通过率 83%" in out and "落在要追的名字的定义上 12 处（33%）" in out
+    )
+    assert "Q1 答到哪一层：只答到周边（缺的：摘要怎么生成没有讲到）" in out and "值得追的名字定义读到 3/4" in out
+    assert "Q2 答到哪一层：答到了做法本身；" in out and "每一问都答到了做法本身 否" in out
+    assert "Q3 答到哪一层：只答到一部分做法（缺的：引到实现上定义的结论不够）（审读原判「答到了做法本身」" in out
+    assert "我们自己的实现：挑词没有成功（两次都被输出上限截断），只按检索词排" in out
+    assert "真做成的调用 61 次（上限 85），失败后重试的 13 次、取自上次记录的 4 次" in out
+    assert "未核对不超过两成 是" in out and "用时 25.0 分钟" in out

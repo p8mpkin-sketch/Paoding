@@ -497,6 +497,9 @@ def cli(tmp_path, monkeypatch):
     spec.loader.exec_module(mod)
     dossiers = tmp_path / "dossiers"
     shutil.copytree(ROOT / "docs/design/fenjue/dossiers", dossiers)
+    for extra in dossiers.glob("[0-9][0-9][0-9]-*"):  # 这里的断言按“仓库里只有记录 001”写的：之后开的记录不带进来
+        if not extra.name.startswith("001-"):
+            extra.unlink()
     pkg = tmp_path / "pkg"
     shutil.copytree(ROOT / "fenjue/src/paoding_fenjue/fires", pkg / "fires")
     shutil.copy(ROOT / "fenjue/src/paoding_fenjue/gongfa.json", pkg / "gongfa.json")

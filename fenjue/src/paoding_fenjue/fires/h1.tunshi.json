@@ -1,6 +1,6 @@
 {
  "id": "h1.tunshi",
- "ver": 1,
+ "ver": 2,
  "slot": "H1",
  "seats": [
   "solve"
@@ -46,7 +46,15 @@
      "cuiyi/extra/v1": "tunshi-cuiyi.md",
      "cuiyi/blind/v1": "tunshi-blind.md",
      "ruwei/place/v1": "tunshi-place.md",
-     "ruwei/design/v1": "tunshi-design.md"
+     "ruwei/design/v1": "tunshi-design.md",
+     "shihuo/v2": "tunshi-shihuo-2.md",
+     "wenti/terms/v1": "tunshi-wenti.md",
+     "wenti/pick/v1": "tunshi-wenti-pick.md",
+     "reader/q/v1": "tunshi-reader-q.md",
+     "dati/v1": "tunshi-dati.md",
+     "dati/fix/v1": "tunshi-dati-fix.md",
+     "heyan/v1": "tunshi-heyan.md",
+     "heyan/depth/v1": "tunshi-heyan-depth.md"
     }
    }
   }
@@ -79,6 +87,38 @@
   {
    "name": "adapter/prompts/tunshi-shihuo.md",
    "sha256": "2973a5108dc726957acbf14e184f7755ffa5ac9bee4d9665bed0130ecb7b3f9d"
+  },
+  {
+   "name": "adapter/prompts/tunshi-shihuo-2.md",
+   "sha256": "e6dab29669c01c5a175e09afaa30fbf79ec3fb43d882ae2bd9f34410c15f6821"
+  },
+  {
+   "name": "adapter/prompts/tunshi-wenti.md",
+   "sha256": "843d697eaea5147aafff594c100ff3ef035c2c0c53e0fbc528187457e8b88046"
+  },
+  {
+   "name": "adapter/prompts/tunshi-wenti-pick.md",
+   "sha256": "dd659e1f1826ae39ac47ff267f8a7945ac932f2ff6a1fac6d4bd92228b1a154c"
+  },
+  {
+   "name": "adapter/prompts/tunshi-reader-q.md",
+   "sha256": "d3e8224f06e5c8d893f9628255ad129d745cf89a18151e87510e312187e5db25"
+  },
+  {
+   "name": "adapter/prompts/tunshi-dati.md",
+   "sha256": "5d51dda5e9cd65a1df382ea73e3bd7b01c0f400668f70e79f12c5b2ca5549645"
+  },
+  {
+   "name": "adapter/prompts/tunshi-dati-fix.md",
+   "sha256": "6b58fd4c2918122c4c6d7e30687cca33e88ed44b60c9108b446829bd1c86f1f0"
+  },
+  {
+   "name": "adapter/prompts/tunshi-heyan.md",
+   "sha256": "c1a4094ebf5f11f03501de0614ffbd21526f8175d27377e143d73c79f8a1dff2"
+  },
+  {
+   "name": "adapter/prompts/tunshi-heyan-depth.md",
+   "sha256": "d8e76f543ef5ca09006631ecf67a580921992f78dbf3f8ed79bf283046e7dd13"
   }
  ],
  "organ": {
@@ -88,7 +128,10 @@
   "retire_signal": "连续 10 次分析的候选在第 1 次确认时全部未被选中，或交接包导入后被退回重做的比例高于人工炼档"
  },
  "lineage": {
-  "from": []
+  "dossier": "002",
+  "from": [
+   "h1.tunshi"
+  ]
  },
  "switch": "fires.H1"
 }
