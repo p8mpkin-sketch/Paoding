@@ -8,8 +8,11 @@ K 检验只对遮蔽视图做；K6 是读数（advisory），其余是硬门（E
 
 from __future__ import annotations
 
+import functools
 import re
-from collections.abc import Iterable, Mapping, Sequence
+import threading
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,11 +35,87 @@ class Context:
     grams: set[tuple[str, ...]] = field(default_factory=set)
 
     def __post_init__(self) -> None:
-        for seq in self.corpus:
-            self.grams |= text.ngrams(seq)
+        # 一遍运行里各步各建一次 Context，语料每次都一样：上一次的 8 元组表照用（只留最近一份），不重算一遍。
+        # 表的内容只由语料决定，所以与重算的逐项相同；表建好之后没有地方再改它。
+        t0 = time.perf_counter()
+        last = _grams_cache.get("last")
+        if self.grams:  # 调用方自带了表：照旧并进语料的 8 元组，不进缓存
+            for seq in self.corpus:
+                self.grams |= text.ngrams(seq)
+        elif last is not None and last[0] == self.corpus:
+            self.grams = last[1]
+        else:
+            for seq in self.corpus:
+                self.grams |= text.ngrams(seq)
+            _grams_cache["last"] = (self.corpus, self.grams)
+        _add("语料 8 元组表", time.perf_counter() - t0)
+
+
+_grams_cache: dict[str, tuple[list[list[str]], set[tuple[str, ...]]]] = {}
+
+
+# 每项检验的用时（秒，本进程累计，按编号）：只是读数，不进任何产物与结论。一组检验从进组起计、到出组
+# 止，其间每条结果交出来时（result / _ticked）记下它与上一条之间的用时，那就是算这一条的时间；组外调 result
+# 不计。抄写比对本身另记一行（各处调用合计，含交接包的 V6）。
+_lock = threading.Lock()
+_lap = threading.local()
+timings: dict[str, float] = {}
+COPY = "抄写比对"
+
+
+def _add(cid: str, dt: float) -> None:
+    with _lock:
+        timings[cid] = timings.get(cid, 0.0) + dt
+
+
+def _tick(cid: str) -> None:
+    t0 = getattr(_lap, "t", None)
+    if t0 is None:
+        return
+    now = time.perf_counter()
+    _add(cid, now - t0)
+    _lap.t = now
+
+
+def _timed[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """一组检验（k_checks、v_*）的计时：进组起计，出组停表。"""
+
+    @functools.wraps(fn)
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
+        _lap.t = time.perf_counter()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _lap.t = None
+
+    return run
+
+
+def _ticked(r: dict[str, Any]) -> dict[str, Any]:
+    _tick(r["id"])
+    return r
+
+
+def timing_lines(since: Mapping[str, float]) -> list[str]:
+    """试算报告末尾的“检验用时”一节：`since` 之后各项累计的秒数（同一编号在各闸点的几次相加）。"""
+    with _lock:
+        now = dict(timings)
+    rows = [(k, v - since.get(k, 0.0)) for k, v in now.items()]
+    rows = [(k, v) for k, v in rows if v > 0]
+    if not rows:
+        return []
+    order = {
+        k: i
+        for i, k in enumerate(
+            [COPY, "语料 8 元组表", *(f"K{i}" for i in range(1, 9)), *(f"V{i}" for i in range(1, 13))]
+        )
+    }
+    rows.sort(key=lambda kv: (order.get(kv[0], len(order)), kv[0]))
+    return ["", "检验用时（本次会话累计，秒）：" + "；".join(f"{k} {v:.2f}" for k, v in rows)]
 
 
 def result(cid: str, problems: Sequence[str], *, advisory: bool = False, ok: bool | None = None) -> dict[str, Any]:
+    _tick(cid)
     r: dict[str, Any] = {"id": cid, "ok": (not problems) if ok is None else ok}
     if advisory:
         r["advisory"] = True
@@ -45,21 +124,47 @@ def result(cid: str, problems: Sequence[str], *, advisory: bool = False, ok: boo
     return r
 
 
+def _could_share_run(toks: list[str], grams: set[tuple[str, ...]], n: int = 8) -> bool:
+    """必要条件：与语料有 ≥ LCS_MAX 词元的公共片段，则这句话里有连续 LCS_MAX - n + 1 个 n 元组都在语料的
+    n 元组集合里。`grams` 含语料全部 n 元组（Context 构造时放进去），所以这里说“不可能”就一定没有。"""
+    need = LCS_MAX - n + 1
+    if len(toks) < LCS_MAX:
+        return False
+    if need < 1:
+        return True
+    streak = 0
+    for i in range(len(toks) - n + 1):
+        streak = streak + 1 if tuple(toks[i : i + n]) in grams else 0
+        if streak >= need:
+            return True
+    return False
+
+
 def _copy_problems(strings: Iterable[str], ctx: Context) -> list[str]:
+    # 结论与说明文字和逐句逐段做 longest_common_run 时一字不差：片段长度只在 ≥ LCS_MAX 时进说明，
+    # text.long_common_runs 在这个范围内给的是同一个数。先用已有的 n 元组集合筛掉不可能够长的句子，
+    # 剩下的句子一起把语料读一遍（text.long_common_runs 的说明）。
+    t0 = time.perf_counter()
+    strings = list(strings)
+    toks_all = [text.tokens(s) for s in strings]
+    maybe = [j for j, toks in enumerate(toks_all) if ctx.corpus and _could_share_run(toks, ctx.grams)]
+    runs = [0] * len(strings)
+    for j, run in zip(maybe, text.long_common_runs([toks_all[j] for j in maybe], ctx.corpus, LCS_MAX), strict=True):
+        runs[j] = run
     out = []
-    for s in strings:
-        toks = text.tokens(s)
-        run = max((text.longest_common_run(toks, seq) for seq in ctx.corpus), default=0)
+    for s, toks, run in zip(strings, toks_all, runs, strict=True):
         if run >= LCS_MAX:
             out.append(f"与原文有 {run} 词元的公共片段：{s[:40]}")
         elif text.ngram_overlap(toks, ctx.grams) >= NGRAM_MAX:
             out.append(f"8 元组与原文重合过多：{s[:40]}")
+    _add(COPY, time.perf_counter() - t0)
     return out
 
 
 # ---------------------------------------------------------------- K1–K8
 
 
+@_timed
 def k_checks(essence: Mapping[str, Any], ctx: Context, blind_guess: str | None) -> list[dict[str, Any]]:
     m = essence.get("masked", {})
     strings = text.free_text(m)
@@ -69,7 +174,7 @@ def k_checks(essence: Mapping[str, Any], ctx: Context, blind_guess: str | None) 
         result("K3", [h for s in strings for h in text.code_structure_hits(s)]),
         result("K4", _copy_problems(strings, ctx)),
         result("K5", _k5(essence)),
-        _k6(blind_guess, ctx),
+        _ticked(_k6(blind_guess, ctx)),
         result("K7", _k7(m)),
         result("K8", _k8(strings)),
     ]
@@ -170,6 +275,7 @@ def hard_ok(checks: Iterable[Mapping[str, Any]]) -> bool:
 NOT_HERE = "本步不适用（入位与交接之后才有）"
 
 
+@_timed
 def v_candidates(doc: Mapping[str, Any], ctx: Context) -> list[dict[str, Any]]:
     """候选火清单的校验（闸点 1 交付之前）。"""
     cands = doc.get("candidates", [])
@@ -189,12 +295,14 @@ def v_candidates(doc: Mapping[str, Any], ctx: Context) -> list[dict[str, Any]]:
     ]
 
 
+@_timed
 def v_essence(doc: Mapping[str, Any], ctx: Context, picked: Sequence[str]) -> list[dict[str, Any]]:
     """火意的校验（闸点 2 交付之前）。"""
     masked_strings = text.free_text(doc.get("masked", {}))
     v5 = _plain(displayed(doc, "essence")) + [h for s in masked_strings for h in text.code_structure_hits(s)]
     v5 += [f"外部专名 {h}" for s in masked_strings for h in text.name_hits(s, ctx.names)]
     v5 += [h for s in masked_strings for h in text.instruction_hits(s)]
+    _tick("V5")
     return [
         result("V1", schema.errors(doc, "essence")),
         result("V2", _dupes([p["id"] for p in doc.get("masked", {}).get("premises", [])])),
@@ -443,12 +551,14 @@ def _v3_placement(p: Mapping[str, Any]) -> list[str]:
     return out
 
 
+@_timed
 def v_placement(
     p: Mapping[str, Any], essence: Mapping[str, Any], ctx: Context, confirmed: Sequence[str]
 ) -> list[dict[str, Any]]:
     """入位方案的校验（闸点 3 交付之前，导入时再跑一遍）。"""
     d, _ = formulas.difficulty(p.get("difficulty", {}).get("parts", {}))
     v4 = [] if d == p.get("difficulty", {}).get("value") else [f"难度重算为 {d}"]
+    _tick("V4")
     dims = [r["dim"] for r in p.get("readings", [])]
     return [
         result("V1", schema.errors(p, "placement")),
@@ -466,6 +576,7 @@ def v_placement(
     ]
 
 
+@_timed
 def v_dry_run(doc: Mapping[str, Any], ctx: Context) -> list[dict[str, Any]]:
     """试算报告：全部校验照跑，只标不拦（09 §3）。"""
     picked = set(doc.get("auto_picked", []))

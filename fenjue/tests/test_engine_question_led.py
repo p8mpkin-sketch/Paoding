@@ -244,8 +244,8 @@ def test_sequential_and_concurrent_runs_give_the_same_result(dry, tmp_path):
     _, d4, dan4 = dry
     _, d1, dan1 = run(tmp_path, QScript({"Q1.2": "partial", "Q1.3": "unsupported"}), parallel=1)
 
-    def stable(a: str) -> str:  # 产物对照表里有登记号，不比
-        return a.split("## 产物对照")[0]
+    def stable(a: str) -> str:  # 产物对照表里有登记号、“检验用时”是这次的秒数，不比
+        return "\n".join(x for x in a.split("## 产物对照")[0].splitlines() if not x.startswith("检验用时"))
 
     assert stable(d1.answer) == stable(d4.answer) and sorted(dan1.calls) == sorted(dan4.calls)
 
@@ -391,8 +391,9 @@ def test_an_interrupted_run_resumes_without_asking_again(tmp_path):
     assert len(script.calls) == len(set(script.calls))  # 每个调用只真的问过一次
     assert sorted(script.calls) == sorted(whole.calls)  # 断了五次，问的还是不断时的那些
 
-    def body(a: str) -> str:  # 调用那一行如实不同：接着做的这次有取自上次记录的
-        return "\n".join(ln for ln in a.split("## 产物对照")[0].splitlines() if not ln.startswith("- 调用："))
+    def body(a: str) -> str:  # 调用那一行如实不同：接着做的这次有取自上次记录的；“检验用时”是这次的秒数
+        lines = a.split("## 产物对照")[0].splitlines()
+        return "\n".join(ln for ln in lines if not ln.startswith(("- 调用：", "检验用时")))
 
     assert body(d.answer) == body(clean.answer)
     ql = json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))
