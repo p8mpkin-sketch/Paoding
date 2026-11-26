@@ -53,7 +53,8 @@
      "reader/q/v1": "tunshi-reader-q.md",
      "dati/v1": "tunshi-dati.md",
      "dati/fix/v1": "tunshi-dati-fix.md",
-     "heyan/v1": "tunshi-heyan.md"
+     "heyan/v1": "tunshi-heyan.md",
+     "heyan/depth/v1": "tunshi-heyan-depth.md"
     }
    }
   }
@@ -97,11 +98,11 @@
   },
   {
    "name": "adapter/prompts/tunshi-wenti-pick.md",
-   "sha256": "270a862de42a1df5722f4c144addaac1f5517b190b813e253c44e0b6e479aa5e"
+   "sha256": "dd659e1f1826ae39ac47ff267f8a7945ac932f2ff6a1fac6d4bd92228b1a154c"
   },
   {
    "name": "adapter/prompts/tunshi-reader-q.md",
-   "sha256": "d890fe51d9ca7b0ee15fcdf92d697db895cfef5b3ce718b10ad165101bc747d2"
+   "sha256": "d3e8224f06e5c8d893f9628255ad129d745cf89a18151e87510e312187e5db25"
   },
   {
    "name": "adapter/prompts/tunshi-dati.md",
@@ -114,6 +115,10 @@
   {
    "name": "adapter/prompts/tunshi-heyan.md",
    "sha256": "c1a4094ebf5f11f03501de0614ffbd21526f8175d27377e143d73c79f8a1dff2"
+  },
+  {
+   "name": "adapter/prompts/tunshi-heyan-depth.md",
+   "sha256": "d8e76f543ef5ca09006631ecf67a580921992f78dbf3f8ed79bf283046e7dd13"
   }
  ],
  "organ": {

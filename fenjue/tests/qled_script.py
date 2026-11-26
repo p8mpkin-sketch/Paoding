@@ -49,7 +49,9 @@ OWN_FACT = ("Q1", "mechanism", "我们自己的压缩在事件条数过线时触
 class QScript:
     """`verdicts`：条目编号 → 第一轮核对的判定（缺省 supported）；改写后的第二轮一律 supported。
     `skip_asked`：识别候选的前几次不提名压缩这个主题（模拟模型把已登记的主题剔掉）。
-    `truncate_first`：这些文件的第一次阅读被输出上限截断。`cite_unknown`：答题稿的建议引用一个不存在的事实编号。"""
+    `truncate_first`：这些文件的第一次阅读被输出上限截断。`cite_unknown`：答题稿的建议引用一个不存在的事实编号。
+    `depth`：子问 → 审读判的层次（缺省 mechanism）。`q1_dir`：挑词时为 Q1 挑的目录（含这个字样的）。
+    `follow`：路径 → 读这个文件时交回的值得追的名字（覆盖缺省）。"""
 
     def __init__(
         self,
@@ -58,10 +60,15 @@ class QScript:
         skip_asked: int = 0,
         truncate_first: tuple[str, ...] = (),
         cite_unknown: bool = False,
+        depth: Mapping[str, str] | None = None,
+        q1_dir: str = "\0",
+        follow: Mapping[str, list[dict[str, str]]] | None = None,
     ) -> None:
         self.base = Script("delta", "code")
         self.verdicts = dict(verdicts or {})
         self.skip_asked, self.truncate_first, self.cite_unknown = skip_asked, truncate_first, cite_unknown
+        self.depth, self.q1_dir = dict(depth or {}), q1_dir
+        self.follow = dict(follow or {})
         self.calls: list[str] = []
         self.payloads: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
@@ -76,8 +83,10 @@ class QScript:
         if t == "wenti/pick/v1":
             names = _section(payload["excerpt"], "名字")
             files = _section(payload["excerpt"], "文件")
+            dirs = [d.split(" | ", 1)[0] for d in _section(payload["excerpt"], "目录")]
+            q1 = [n for n in names if "fold" in n.lower()] or [n for n in names if "count" in n.lower()]
             picks = [
-                {"q": "Q1", "names": [n for n in names if "fold" in n.lower()], "files": _has(files, "folding")},
+                {"q": "Q1", "names": q1, "files": _has(files, "folding"), "dirs": _has(dirs, self.q1_dir)},
                 {"q": "Q2", "names": [n for n in names if "stage" in n.lower()], "files": _has(files, "stages")},
             ]
             return Reply({"picks": picks}, 900, 200)
@@ -99,6 +108,15 @@ class QScript:
                 v = "supported" if second else self.verdicts.get(it["n"], "supported")
                 rows.append({"n": it["n"], "verdict": v, "note": "" if v == "supported" else "原文没有说到后半句"})
             return Reply({"verdicts": rows}, 3_000, 300)
+        if t == "heyan/depth/v1":
+            rows = [
+                {"q": q["id"], "level": self.depth.get(q["id"], "mechanism"), "missing": ""}
+                for q in payload["questions"]
+            ]
+            for r in rows:
+                if r["level"] != "mechanism":
+                    r["missing"] = "动手做的那段逻辑没有讲到"
+            return Reply({"depth": rows}, 1_500, 200)
         if t == "dati/fix/v1":
             fixed = [{"n": it["n"], "text": it["text"] + "（已按原文收窄）"} for it in payload["items"]]
             return Reply({"fixed": fixed}, 2_000, 300)
@@ -120,7 +138,8 @@ class QScript:
         obs = [
             {**o, "lines": [a, b], "q": qid} for o in READER[("delta", "code")].get((path, payload.get("slot", "")), [])
         ]
-        follow = ["fold_turns"] if path.endswith("handover.py") else []
+        follow: list[Any] = [{"name": "fold_turns", "q": "Q1"}] if path.endswith("handover.py") else []
+        follow = self.follow.get(path, follow)
         return Reply(
             {"facts": facts, "observations": obs, "follow": follow}, 4_000 + (b - a) * 12, 200 + 90 * len(facts)
         )

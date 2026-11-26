@@ -496,6 +496,7 @@ class Session:
             artifact_final=self.final_of,
             statement=str(b.get("statement") or "") or None,
             question_led=_form_ver(b.get("form")) >= 2 and bool(b.get("question_led", True)),
+            question_led_off="form" if _form_ver(b.get("form")) < 2 else "switch",
             own_urls=tuple(str(u) for u in ([b["own_repo"]] if b.get("own_repo") else [])),
             parallel=max(1, min(8, int(b.get("parallel") or 1))),
         )

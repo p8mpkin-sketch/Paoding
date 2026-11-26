@@ -6,10 +6,12 @@
 - `engine.json` 的 `ql` 键：子问、走哪条路；
 - `artifacts/` 里以 `ql:` 起名的几份 JSON（检查点：计划、每一批读了什么、答题稿、核对结果、读数）；
 - `facts.jsonl`：只追加的细事实库（答题与核对用；带对方的名字，不给候选、提炼、归位那几步看）；
-- `ql.json`：给人和 `trial.py report` 读的汇总（走哪条路、核对读数、读了多少、花了多少）。
+- `ql.json`：给人和 `trial.py report` 读的汇总（走哪条路、核对读数、读了多少、花了多少）；
+- `ql-calls.json`：模型调用的三个数——真做成的、失败的、取自上次记录没有再发的（每次调用后落盘，被打断也不少记）。
 
 三条硬线都在这里守（缺省值取自 2026-11-25 的基线，可由配置改）：模型调用次数、token、时间。任何一条到了就停止扩读，
 排了队没读的照实进「没读到」；来不及核对的结论标「未核对」。不追加、不借别的步骤的份额。
+调用次数那条线只数真做成的调用：失败后重试的、取自上次记录的都单列，不让线提前到。
 """
 
 from __future__ import annotations
@@ -18,9 +20,10 @@ import json
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import data, dati, shihuo, survey, wenti
+from . import data, dati, shihuo, survey, text, wenti
 from .dan import BudgetExhausted, Dan, Reply
 
 if TYPE_CHECKING:
@@ -40,24 +43,51 @@ class Limits:
     reads_theirs: int = 20  # 对方仓库至多读这么多部分
     reads_own: int = 4  # 我们自己的实现至多读这么多部分
     category_reads: int = 8  # 通用勘察那一轮留的阅读次数（每个类别至多一段）
+    parts_per_file: int = 3  # 同一个文件至多先读这么多部分；别的都排完了才回头接着读它
     batch: int = 8  # 一批至多读这么多部分
-    core_per_question: int = 3  # 每个子问取几个文件作第一批
-    reserve_calls: int = 26  # 留给后面各步（候选、提炼、归位、答题、核对）的调用次数
+    core_per_question: int = 3  # 每个子问排在最前的几个文件（找对应的测试时用）
+    reserve_calls: int = 28  # 阅读时留给后面各步（候选、答题、核对、审读、提炼、归位）的调用次数
+    tail_calls: int = 14  # 回头核对时留给它后面的提炼与归位的调用次数（已含在上一行里）
     read_stop_s: float = 480.0  # 时间线：过了这个点不再开新的一批阅读
     verify_stop_s: float = 1200.0  # 时间线：过了这个点不再开新的一轮核对，剩下的标「未核对」
 
 
 class Meter:
-    """数这次运行调了多少次模型（取备忘的也算：它在流程里就是一次调用）。并发时几个线程一起数，所以带锁。"""
+    """数这次运行的模型调用，分三样：真做成的（`made`）、失败的（`failed`：端点调不通、超时等，多半会被重试）、
+    取自上次记录没有再发的（`replayed`：会话被打断后接着做，问过的调用直接取调用备忘）。调用次数那条线只看 `made`。
+    被预算挡下的不算一次调用（根本没发出去）。并发时几个线程一起数，所以带锁；按题读的题每次调用后把三个数落盘。"""
 
-    def __init__(self, inner: Dan) -> None:
-        self.inner, self.made = inner, 0
+    def __init__(self, inner: Dan, path: Path | None = None, active: Callable[[], bool] = lambda: False) -> None:
+        self.inner, self.path, self.active = inner, path, active
+        self.made = self.failed = self.replayed = 0
         self._lock = threading.Lock()
+        if path is not None and path.exists():
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+                self.made, self.failed = int(doc.get("made", 0)), int(doc.get("failed", 0))
+                self.replayed = int(doc.get("replayed", 0))
+            except (ValueError, TypeError, AttributeError):
+                pass  # 写到一半被打断：从零数起，线只会晚到这一个会话的次数
+
+    def _bump(self, kind: str) -> None:
+        with self._lock:
+            setattr(self, kind, getattr(self, kind) + 1)
+            if self.path is not None and self.active():
+                tmp = self.path.with_name("." + self.path.name + ".tmp")
+                doc = {"made": self.made, "failed": self.failed, "replayed": self.replayed}
+                tmp.write_text(json.dumps(doc) + "\n", encoding="utf-8")
+                tmp.replace(self.path)
 
     def call(self, role: str, key: str, payload: Mapping[str, Any]) -> Reply:
-        with self._lock:
-            self.made += 1
-        return self.inner.call(role, key, payload)
+        try:
+            r = self.inner.call(role, key, payload)
+        except BudgetExhausted:
+            raise
+        except Exception:
+            self._bump("failed")
+            raise
+        self._bump("replayed" if r.cached else "made")
+        return r
 
     def __getattr__(self, name: str) -> Any:  # forget 等别的方法照旧找里面那一个
         return getattr(self.inner, name)
@@ -101,15 +131,19 @@ def par[T](jobs: Sequence[Callable[[], T]], width: int) -> list[T]:
 
 
 def decide(eng: Engine) -> list[dict[str, str]]:
-    """这道题走哪条路，立项时定一次、记进簿记：题面点名了子问、且有一份代码或文档形态的外部材料 → 按题读。"""
+    """这道题走哪条路，立项时定一次、记进簿记：题面点名了子问、且有一份代码或文档形态的外部材料 → 按题读。
+    点名了却不按题读的（开关关着、这道题用的是上一版流程、材料不是代码），把点名的子问与原因一起记下，报告第一行照实写。"""
     q = eng.x.get("ql")
     if isinstance(q, dict):
         return list(q.get("questions", []))
-    qs = wenti.questions(str(eng.cfg.statement or eng.intake.get("statement") or "")) if eng.cfg.question_led else []
-    note = ""
-    if qs and not any(s.form in CODE_FORMS for s in eng._snaps.values()):
-        qs, note = [], "题面点名了问题，但材料不是代码或文档，没有可按题读的文件"
-    eng.x["ql"] = {"questions": qs, **({"note": note} if note else {})}
+    found = wenti.questions(str(eng.cfg.statement or eng.intake.get("statement") or ""))
+    off = ""
+    if found and not eng.cfg.question_led:
+        off = eng.cfg.question_led_off if eng.cfg.question_led_off in dati.OFF_ZH else "switch"
+    elif found and not any(s.form in CODE_FORMS for s in eng._snaps.values()):
+        off = "material"
+    qs = [] if off else found
+    eng.x["ql"] = {"questions": qs, **({"asked": found, "off": off} if off else {})}
     return qs
 
 
@@ -120,8 +154,7 @@ def questions(eng: Engine) -> list[dict[str, str]]:
 
 def route_line(eng: Engine) -> str:
     q = eng.x.get("ql") or {}
-    line = dati.route_line(q.get("questions", []))
-    return line + (f"（{q['note']}）" if q.get("note") else "")
+    return dati.route_line(q.get("questions", []), q.get("asked", []), str(q.get("off", "")))
 
 
 def _main_snapshot(eng: Engine) -> str:
@@ -133,12 +166,11 @@ def _elapsed(eng: Engine) -> float:
 
 
 def tick(eng: Engine) -> None:
-    """把调用次数与用时记进簿记（只在按题读的题上记；通用勘察的题簿记不多一个字）。
-    接着做时从调用备忘里取回的调用也计一次：偏保守，线只会早到，不会晚到。"""
+    """把用时与调用次数记进簿记（只在按题读的题上记；通用勘察的题簿记不多一个字）。"""
     q = eng.x.get("ql")
     if isinstance(q, dict) and q.get("questions"):
         q["elapsed_s"] = round(_elapsed(eng), 1)
-        q["calls"] = int(eng._calls_base + eng._meter.made)
+        q["calls"] = calls_made(eng)
 
 
 def _tick(eng: Engine) -> None:
@@ -150,7 +182,8 @@ def tokens_spent(eng: Engine) -> int:
 
 
 def calls_made(eng: Engine) -> int:
-    return int(eng._calls_base + eng._meter.made)
+    """真做成的模型调用次数（跨会话累计）。失败的、取自上次记录的不在里面。"""
+    return int(eng._meter.made)
 
 
 # ---------------------------------------------------------------- 细事实库
@@ -182,6 +215,32 @@ def _append_facts(eng: Engine, rows: Sequence[Mapping[str, Any]]) -> int:
 # ---------------------------------------------------------------- ① 题面解析
 
 
+def _pick_and_rank(
+    eng: Engine,
+    qs: list[dict[str, str]],
+    ix: wenti.Index,
+    terms: Mapping[str, tuple[list[str], list[str]]],
+    tag: str = "",
+) -> tuple[dict[str, dict[str, list[str]]], dict[str, list[tuple[float, str]]], dict[str, list[str]]]:
+    """一份仓库的「挑词 + 排文件」：给挑词那一步看检索词命中的名字与文件，加一份不靠检索词的目录概览；
+    再按挑中的名字、文件、目录给每个子问排文件。交回 (挑中的, 各子问的文件排序, 各子问的检索用词)。"""
+    all_terms = [t for q in qs for part in terms.get(q["id"], ([], [])) for t in part]
+    vocab: dict[str, Any] = {**wenti.vocabulary(ix, list(dict.fromkeys(all_terms))), "dirs": wenti.overview(ix)}
+    picks: dict[str, dict[str, list[str]]] = {}
+    if vocab["names"] or vocab["files"] or vocab["dirs"]:
+        picks, tin, tout = dati.ask_pick(eng.dan, qs, vocab, eng.cfg.nonce, tag)
+        eng._spend("S3", "light", tin, tout)
+    ranked: dict[str, list[tuple[float, str]]] = {}
+    words: dict[str, list[str]] = {}
+    for q in qs:
+        zh, en = terms.get(q["id"], ([], []))
+        pk = picks.get(q["id"], {})
+        names = pk.get("names", [])
+        ranked[q["id"]] = wenti.rank(ix, [*zh, *en], names, pk.get("files", []), pk.get("dirs", []))
+        words[q["id"]] = list(dict.fromkeys([*zh, *en, *(text.fold(n) for n in names if n.isascii())]))
+    return picks, ranked, words
+
+
 def _plan(eng: Engine, qs: list[dict[str, str]], ix: wenti.Index) -> dict[str, Any]:
     lim = eng.cfg.limits
     terms, tin, tout = dati.ask_terms(eng.dan, qs)
@@ -205,18 +264,10 @@ def _plan(eng: Engine, qs: list[dict[str, str]], ix: wenti.Index) -> dict[str, A
             if any(again.get(qid, ([], []))):
                 terms[qid] = again[qid]
         zero = [q["id"] for q in qs if not hit_files(q["id"])]
-    all_terms = [t for q in qs for part in terms.get(q["id"], ([], [])) for t in part]
-    vocab = wenti.vocabulary(ix, list(dict.fromkeys(all_terms)))
-    picks: dict[str, dict[str, list[str]]] = {}
-    if vocab["names"] or vocab["files"]:
-        picks, tin, tout = dati.ask_pick(eng.dan, qs, vocab, eng.cfg.nonce)
-        eng._spend("S3", "light", tin, tout)
+    picks, ranked, words = _pick_and_rank(eng, qs, ix, terms)
+    zero = [q["id"] for q in qs if not ranked[q["id"]]]  # 检索词没命中、概览里也没挑出东西的子问
     base: dict[str, float] = {}
-    ranked: dict[str, list[tuple[float, str]]] = {}
     for q in qs:
-        zh, en = terms.get(q["id"], ([], []))
-        pk = picks.get(q["id"], {"names": [], "files": []})
-        ranked[q["id"]] = wenti.rank(ix, [*zh, *en], pk["names"], pk["files"])
         for s, p in ranked[q["id"]]:
             base[p] = max(base.get(p, 0.0), s)
     core: list[str] = []
@@ -225,17 +276,17 @@ def _plan(eng: Engine, qs: list[dict[str, str]], ix: wenti.Index) -> dict[str, A
             rows = ranked[q["id"]]
             if i < len(rows) and rows[i][1] not in core:
                 core.append(rows[i][1])
-    named = sorted({p for q in qs for _, p in ranked[q["id"]][:12]})
     sigs = data.signatures()
     top = sorted(base, key=lambda p: (-base[p], p))[:300]
     return {
-        "v": 1,
+        "v": 2,
         "snapshot": ix.snap.sid,
         "terms": {q["id"]: {"zh": terms.get(q["id"], ([], []))[0], "en": terms.get(q["id"], ([], []))[1]} for q in qs},
         "picks": picks,
         "core": core,
         "base": {p: base[p] for p in top},
-        "named": named,
+        "rank": {q["id"]: {p: sc for sc, p in ranked[q["id"]][:150]} for q in qs},
+        "words": words,
         "zero": zero,
         "slots": {
             q["id"]: wenti.question_slot(
@@ -265,26 +316,64 @@ def _own(eng: Engine) -> tuple[survey.Snapshot, wenti.Index] | None:
     return None
 
 
-def _own_parts(own_ix: wenti.Index, plan: Mapping[str, Any], n: int) -> list[wenti.Part]:
-    """我们自己的实现里读哪几部分：用同一组检索词排文件，每个文件取命中最多的那一部分。"""
-    terms = [t for row in plan["terms"].values() for t in [*row["zh"], *row["en"]]]
-    out: list[wenti.Part] = []
-    for _, path in wenti.rank(own_ix, terms, [], [])[: n * 2]:
-        ps = wenti.parts(own_ix.snap.sid, path, own_ix.snap.texts[path])
-        lines = own_ix.folded[path].splitlines()
+def _new_frontier(
+    ix: wenti.Index,
+    qs: Sequence[Mapping[str, str]],
+    picks: Mapping[str, Mapping[str, Sequence[str]]],
+    base: Mapping[str, float],
+    rank: Mapping[str, Mapping[str, float]],
+    words: Mapping[str, Sequence[str]],
+    core: Sequence[str],
+    file_cap: int,
+) -> wenti.Frontier:
+    fr = wenti.Frontier(
+        ix,
+        dict(base),
+        list(core),
+        qbase={q["id"]: dict(rank.get(q["id"], {})) for q in qs},
+        words={q["id"]: list(words.get(q["id"], [])) for q in qs},
+        file_cap=file_cap,
+    )
+    for q in qs:
+        fr.pick(picks.get(q["id"], {}).get("names", []), q["id"])
+    return fr
 
-        def hits(p: wenti.Part, lines: list[str] = lines) -> int:
-            body = "\n".join(lines[p.a - 1 : p.b])
-            return sum(body.count(t) for t in terms)
 
-        out.append(max(ps, key=lambda p: (hits(p), -p.a)))
-        if len(out) >= n:
-            break
-    return out
+def _own_parts(eng: Engine, own_ix: wenti.Index, qs: list[dict[str, str]], plan: Mapping[str, Any]) -> list[wenti.Part]:
+    """我们自己的实现里读哪几部分。和读对方一样先挑再排：给挑词那一步看我们仓库里检索词命中的名字、文件与目录概览，
+    挑中的名字的定义最先，各子问轮流取，每个文件只取一部分。（只按检索词的命中数排，读到的会是计量、转发一类
+    字面上沾边的文件，而不是做这件事的那几个。）排好的清单存成检查点，接着做时不再问。"""
+    if not eng._done("ql:own"):
+        eng._mark("ql:own", "S3", "doing")
+        terms = {qid: (list(row["zh"]), list(row["en"])) for qid, row in plan["terms"].items()}
+        picks, ranked, words = _pick_and_rank(eng, qs, own_ix, terms, tag="own")
+        base: dict[str, float] = {}
+        for q in qs:
+            for sc, p in ranked[q["id"]]:
+                base[p] = max(base.get(p, 0.0), sc)
+        rank = {q["id"]: {p: sc for sc, p in ranked[q["id"]][:150]} for q in qs}
+        fr = _new_frontier(own_ix, qs, picks, base, rank, words, [], 1)
+        rows = [
+            {"path": p.path, "lines": [p.a, p.b], "why": why, "q": q} for p, why, q in fr.next(eng.cfg.limits.reads_own)
+        ]
+        _tick(eng)
+        sha = eng.put("ql:own", {"v": 1, "picks": picks, "parts": rows})
+        eng._mark("ql:own", "S3", "done", output=sha, summary=f"我们自己的实现：排了 {len(rows)} 部分")
+    sid = own_ix.snap.sid
+    return [wenti.Part(sid, r["path"], r["lines"][0], r["lines"][1]) for r in eng.get("ql:own")["parts"]]
 
 
 def _frontier(eng: Engine, ix: wenti.Index, plan: Mapping[str, Any]) -> tuple[wenti.Frontier, list[dict[str, Any]]]:
-    fr = wenti.Frontier(ix, dict(plan["base"]), list(plan["core"]))
+    fr = _new_frontier(
+        ix,
+        questions(eng),
+        plan["picks"],
+        plan["base"],
+        plan["rank"],
+        plan["words"],
+        plan["core"],
+        eng.cfg.limits.parts_per_file,
+    )
     done: list[dict[str, Any]] = []
     i = 0
     while eng._done(f"ql:batch:{i}"):
@@ -292,7 +381,8 @@ def _frontier(eng: Engine, ix: wenti.Index, plan: Mapping[str, Any]) -> tuple[we
         done.append(b)
         for r in b["parts"]:
             if r["side"] == "theirs":
-                fr.note(wenti.Part(r["snapshot"], r["path"], r["lines"][0], r["lines"][1]), r["follow"])
+                part = wenti.Part(r["snapshot"], r["path"], r["lines"][0], r["lines"][1])
+                fr.note(part, r["follow_q"], r["q"])
         i += 1
     return fr, done
 
@@ -347,9 +437,9 @@ def read_phase(eng: Engine) -> Delivery | None:
         if stop:
             break
         n = min(lim.batch, room_tok, room_calls)
-        batch: list[tuple[wenti.Part, str, str]] = []
+        batch: list[tuple[wenti.Part, str, str, str]] = []
         if want_own and own is not None:
-            batch = [(p, "对照我们自己的实现", "ours") for p in _own_parts(own[1], plan, min(n, lim.reads_own))]
+            batch = [(p, "对照我们自己的实现", "ours", "") for p in _own_parts(eng, own[1], qs, plan)[:n]]
         if not batch:
             left = lim.reads_theirs - theirs_n
             if left <= 0:
@@ -357,16 +447,12 @@ def read_phase(eng: Engine) -> Delivery | None:
             elif dry:
                 stop = "连续两批没有新的事实"
             else:
-                picked = fr.first(min(n, left)) if not done else fr.next(min(n, left))
-                if not picked and not done:
-                    picked = fr.next(min(n, left))
-                batch = [(p, why, "theirs") for p, why in picked]
+                batch = [(p, why, "theirs", q) for p, why, q in fr.next(min(n, left))]
                 if not batch:
                     stop = "没有可追的了"
         if not batch:
             if own is not None and not own_done and stop:  # 对方读完了还没回头读自家：补上这一批再停
-                own_parts = _own_parts(own[1], plan, min(max(n, 1), lim.reads_own))
-                batch = [(p, "对照我们自己的实现", "ours") for p in own_parts]
+                batch = [(p, "对照我们自己的实现", "ours", "") for p in _own_parts(eng, own[1], qs, plan)[: max(n, 1)]]
                 stop = "" if batch else stop
             if not batch:
                 break
@@ -376,7 +462,7 @@ def read_phase(eng: Engine) -> Delivery | None:
 
         slots = [
             "" if side == "ours" else wenti.slot_of(eng._surveys[sid], p, [qslot[q["id"]] for q in qs])
-            for p, _, side in batch
+            for p, _, side, _ in batch
         ]
 
         def job(p: wenti.Part, side: str, slot: str) -> Callable[[], dati.PartRead]:
@@ -385,18 +471,21 @@ def read_phase(eng: Engine) -> Delivery | None:
                 return lambda: dati.read_part(eng.dan, own[1], p, qs, None, side="ours", nonce=eng.cfg.nonce)
             return lambda: dati.read_part(eng.dan, ix, p, qs, slot, nonce=eng.cfg.nonce)
 
-        results = par([job(p, side, slot) for (p, _, side), slot in zip(batch, slots, strict=True)], eng.cfg.parallel)
+        results = par(
+            [job(p, side, slot) for (p, _, side, _), slot in zip(batch, slots, strict=True)], eng.cfg.parallel
+        )
         rows: list[dict[str, Any]] = []
-        for (p, why, side), slot, r in zip(batch, slots, results, strict=True):
+        for (p, why, side, q), slot, r in zip(batch, slots, results, strict=True):
             _append_facts(eng, r.facts)
             eng._append_obs(r.observations)
             eng._spend("S3", "light", r.tokens_in, r.tokens_out)
             if side == "theirs":
-                fr.note(p, r.follow)
+                fr.note(p, r.follow_q, q)
             rows.append(
                 {
                     "side": side,
                     "slot": slot,
+                    "q": q,
                     "snapshot": p.sid,
                     "path": p.path,
                     "lines": [p.a, p.b],
@@ -404,6 +493,7 @@ def read_phase(eng: Engine) -> Delivery | None:
                     "facts": [f["id"] for f in r.facts],
                     "observations": dict(sorted(r.obs_q.items())),
                     "follow": r.follow,
+                    "follow_q": dict(sorted(r.follow_q.items())),
                     "failed": r.failed,
                     "dropped": r.dropped,
                     "truncated": r.truncated,
@@ -418,10 +508,19 @@ def read_phase(eng: Engine) -> Delivery | None:
         eng._mark(uid, "S3", "done", output=sha, summary=f"第 {i + 1} 批：读 {len(rows)} 部分，{nf} 条细事实")
         done.append(body)
     parts = [r for b in done for r in b["parts"]]
+    per_file: dict[str, int] = {}
+    for r in parts:
+        if r["side"] == "theirs":
+            per_file[r["path"]] = per_file.get(r["path"], 0) + 1
     summary = {
-        "v": 1,
+        "v": 2,
         "stop": stop or "没有可追的了",
         "batches": len(done),
+        # 每个子问要追的名字里，定义读到了几个（读完之后数的；名字在读之前、读的途中定下，读没读到是事实）
+        "chase": fr.chase_report(),
+        "by_question": {q["id"]: sum(1 for r in parts if r["side"] == "theirs" and r["q"] == q["id"]) for q in qs},
+        "most_parts_one_file": max(per_file.values(), default=0),
+        "parts_per_file": lim.parts_per_file,
         "theirs": {
             "parts": sum(1 for r in parts if r["side"] == "theirs"),
             "files": len({r["path"] for r in parts if r["side"] == "theirs"}),
@@ -538,6 +637,9 @@ def answer_phase(eng: Engine) -> Delivery | None:
     items = [{**it, "verdict": "unverified", "note": ""} for it in dati.items_of(draft)]
     snaps = _snaps(eng)
     stops: list[str] = []
+    # 核对的调用线：整条线减去留给后面提炼与归位的次数，再减去核对之后那一次审读。核对不许把后面的次数用掉。
+    verify_cap = lim.call_cap - lim.tail_calls - 1
+    kept_back = f"调用次数接近上限（给后面的提炼与归位留了 {lim.tail_calls} 次）"
 
     def run_round(todo: list[dict[str, Any]], tag: str) -> None:
         batches = [todo[i : i + dati.VERIFY_BATCH] for i in range(0, len(todo), dati.VERIFY_BATCH)]
@@ -546,9 +648,9 @@ def answer_phase(eng: Engine) -> Delivery | None:
             if _elapsed(eng) >= lim.verify_stop_s:
                 stops.append("到了核对的时间线")
                 return
-            room = lim.call_cap - calls_made(eng)
+            room = verify_cap - calls_made(eng)
             if room <= 0:
-                stops.append("调用次数到了上限")
+                stops.append(kept_back)
                 return
             if eng._stage_left("S5") <= 0:
                 stops.append("归位这一步的预算份额用完")
@@ -567,7 +669,7 @@ def answer_phase(eng: Engine) -> Delivery | None:
 
     run_round(items, "r1")
     partial = [it for it in items if it["verdict"] == "partial"]
-    if partial and not stops and calls_made(eng) < lim.call_cap and eng._stage_left("S5") > 0:
+    if partial and not stops and calls_made(eng) < verify_cap and eng._stage_left("S5") > 0:
         fixed, tin, tout = dati.fix(eng.dan, partial, fx)
         eng._spend("S5", "heavy", tin, tout)
         redo = []
@@ -577,16 +679,34 @@ def answer_phase(eng: Engine) -> Delivery | None:
                 it["verdict"], it["was"] = "unverified", it["note"]  # 改写过的文字还没核过：先按未核对算
                 redo.append(it)
         run_round(redo, "r2")
+    # 每个子问答到哪一层：交给一个隔离的调用判（它只看问题、留下的结论、拿不准的、没读到定义的名字）
+    sid = _main_snapshot(eng)
+    fr, _ = _frontier(eng, wenti.Index.build(eng._snaps[sid], eng._surveys[sid]), eng.get("ql:plan"))
+    report = fr.chase_report()
+    chase = {q["id"]: sorted(n for n, v in fr.chase.items() if q["id"] in v and fr.where(n)) for q in qs}
+    sites = {n: [list(x) for x in fr.ix.sites(n)] for ns in chase.values() for n in ns}
+    unread = {
+        qid: list(dict.fromkeys([*row["followed"]["unread"], *row["picked"]["unread"]])) for qid, row in report.items()
+    }
+    depth: dict[str, dict[str, str]] = {}
+    if calls_made(eng) >= lim.call_cap - lim.tail_calls:
+        stops.append(kept_back)
+    elif eng._stage_left("S5") <= 0:
+        stops.append("归位这一步的预算份额用完")
+    else:
+        depth, tin, tout = dati.judge_depth(eng.dan, qs, items, draft.get("unsure", []), unread, eng.cfg.nonce)
+        eng._spend("S5", "mid", tin, tout)
     _tick(eng)
     ans = {
-        "v": 1,
+        "v": 2,
         "items": items,
         "not_recommended": draft.get("not_recommended", []),
         "unsure": draft.get("unsure", []),
         "problems": problems,
         "stops": sorted(set(stops)),
     }
-    st = dati.stats(ans, fx, (eng.get("ql:plan") or {}).get("named", []))
+    st = dati.stats(ans, fx, chase, sites, depth)
+    st["chase"] = report
     eng.put("ql:stats", st)
     sha = eng.put("ql:answer", ans)
     eng._mark(
@@ -617,10 +737,19 @@ def _unread(eng: Engine) -> dict[str, Any]:
     notes += [f"核对提前停下：{s}" for s in ans.get("stops", [])]
     theirs, ours = rd.get("theirs", {}), rd.get("ours", {})
     line = (
-        f"对方仓库 {theirs.get('files', 0)} 个文件、{theirs.get('parts', 0)} 部分、{theirs.get('lines', 0)} 行；"
+        f"对方仓库 {theirs.get('files', 0)} 个文件、{theirs.get('parts', 0)} 部分、{theirs.get('lines', 0)} 行"
+        f"（同一个文件最多 {rd.get('most_parts_one_file', 0)} 部分）；"
         f"我们自己的实现 {ours.get('parts', 0)} 部分；细事实 {rd.get('facts', 0)} 条；停止原因：{rd.get('stop', '')}。"
     )
-    return {"notes": notes, "queued": rd.get("queued", []), "read_line": line}
+    return {"notes": notes, "queued": rd.get("queued", []), "read_line": line, "calls_line": calls_line(eng)}
+
+
+def calls_line(eng: Engine) -> str:
+    m, lim = eng._meter, eng.cfg.limits
+    return (
+        f"真做成的模型调用 {m.made} 次（上限 {lim.call_cap}，只数这一样）；"
+        f"失败后重试的 {m.failed} 次，取自上次记录、没有再发的 {m.replayed} 次，这两样不计入上限。"
+    )
 
 
 def section(eng: Engine) -> str:
@@ -644,11 +773,13 @@ def export(eng: Engine) -> None:
     """`ql.json`：走哪条路与各项读数的汇总，随工作区导出。过线标准的几样直接读它。"""
     q = eng.x.get("ql") or {}
     doc: dict[str, Any] = {
-        "v": 1,
+        "v": 2,
         "route": "question_led" if q.get("questions") else "general",
         "route_line": route_line(eng),
         "questions": q.get("questions", []),
     }
+    if q.get("off"):  # 题面点名了、却没有按题读：点名的子问与原因
+        doc.update({"asked": q.get("asked", []), "off": q["off"]})
     if q.get("questions"):
         _tick(eng)
         st = eng.get("ql:stats") or {}
@@ -657,14 +788,27 @@ def export(eng: Engine) -> None:
                 "own": q.get("own"),
                 "read": {k: v for k, v in (eng.get("ql:read") or {}).items() if k != "queued"},
                 "stats": st,
+                # 调用次数分三样记：线只看真做成的；失败后重试的、取自上次记录没有再发的单列
                 "calls": calls_made(eng),
+                "calls_failed": int(eng._meter.failed),
+                "calls_replayed": int(eng._meter.replayed),
                 "tokens": tokens_spent(eng),
                 "elapsed_s": q.get("elapsed_s"),
-                "limits": {"token_cap": eng.cfg.limits.token_cap, "call_cap": eng.cfg.limits.call_cap},
-                # 过线看三样里引擎自己数得出的两样：每个子问都有留下的结论、未核对的不超过两成
+                "limits": {
+                    "token_cap": eng.cfg.limits.token_cap,
+                    "call_cap": eng.cfg.limits.call_cap,
+                    "tail_calls": eng.cfg.limits.tail_calls,
+                    "parts_per_file": eng.cfg.limits.parts_per_file,
+                },
+                # 引擎自己数得出的几样。all_answered 只数条数；answered_mechanism 看独立审读判的层次：
+                # 每个子问都判为「答到了做法本身」才算（只答到入口、接口、计量这些周边的不算）。
                 "pass": {
                     "all_answered": bool(st)
                     and all(st.get("answered", {}).get(x["id"], 0) > 0 for x in q["questions"]),
+                    "answered_mechanism": bool(st)
+                    and all(
+                        (st.get("depth", {}).get(x["id"]) or {}).get("level") == "mechanism" for x in q["questions"]
+                    ),
                     "has_recommendation": int(st.get("recommendations", 0)) > 0,
                     "unverified_within_20pct": float(st.get("unverified_share", 1.0)) <= 0.2,
                 },

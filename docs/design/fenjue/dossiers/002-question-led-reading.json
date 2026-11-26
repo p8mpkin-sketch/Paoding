@@ -76,7 +76,8 @@
       "reader/q/v1": "tunshi-reader-q.md",
       "dati/v1": "tunshi-dati.md",
       "dati/fix/v1": "tunshi-dati-fix.md",
-      "heyan/v1": "tunshi-heyan.md"
+      "heyan/v1": "tunshi-heyan.md",
+      "heyan/depth/v1": "tunshi-heyan-depth.md"
      }
     }
    }
@@ -120,11 +121,11 @@
    },
    {
     "name": "adapter/prompts/tunshi-wenti-pick.md",
-    "sha256": "270a862de42a1df5722f4c144addaac1f5517b190b813e253c44e0b6e479aa5e"
+    "sha256": "dd659e1f1826ae39ac47ff267f8a7945ac932f2ff6a1fac6d4bd92228b1a154c"
    },
    {
     "name": "adapter/prompts/tunshi-reader-q.md",
-    "sha256": "d890fe51d9ca7b0ee15fcdf92d697db895cfef5b3ce718b10ad165101bc747d2"
+    "sha256": "d3e8224f06e5c8d893f9628255ad129d745cf89a18151e87510e312187e5db25"
    },
    {
     "name": "adapter/prompts/tunshi-dati.md",
@@ -137,6 +138,10 @@
    {
     "name": "adapter/prompts/tunshi-heyan.md",
     "sha256": "c1a4094ebf5f11f03501de0614ffbd21526f8175d27377e143d73c79f8a1dff2"
+   },
+   {
+    "name": "adapter/prompts/tunshi-heyan-depth.md",
+    "sha256": "d8e76f543ef5ca09006631ecf67a580921992f78dbf3f8ed79bf283046e7dd13"
    }
   ],
   "organ": {
@@ -185,11 +190,20 @@
    "test": "fenjue/tests/test_engine_question_led.py::test_the_answer_cites_file_and_lines_derived_from_facts"
   },
   {
-   "dim": "引用落在题面点名文件上的比例",
+   "dim": "每问值得追的名字里，定义被读到的比例",
    "kind": "新生",
    "dir": "up",
-   "gate": "> 50%",
-   "test": "fenjue/tests/test_engine_question_led.py::test_labels_come_from_verification_not_from_the_draft"
+   "gate": "由 cz 定（2026-11-26 审读：先照实记录）",
+   "B": "第一问 0/3（2026-11-26 冒烟：三个名字都列为值得追，一个定义都没读到）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_big_files_do_not_eat_the_reads_and_followed_definitions_come_first；ql.json 的 read.chase"
+  },
+  {
+   "dim": "每问答到哪一层（独立审读：做法本身 / 一部分 / 只到周边）",
+   "kind": "新生",
+   "dir": "up",
+   "gate": "由 cz 定（2026-11-26 审读）",
+   "B": "第一问只到周边（2026-11-26 冒烟，cz 人工判）",
+   "test": "fenjue/tests/test_engine_question_led.py::test_depth_tells_mechanism_from_periphery；ql.json 的 stats.depth 与 pass.answered_mechanism"
   },
   {
    "dim": "题面点名的主题被剔除的次数",
@@ -240,7 +254,7 @@
    "dir": "down",
    "gate": "≤ 85（五次中位数 57 的 1.5 倍）",
    "B": "55/57/56/64/58",
-   "test": "ql.json 的 calls；model_stats.json"
+   "test": "ql.json 的 calls（只数真做成的；失败重试的 calls_failed、取自记录的 calls_replayed 单列）"
   },
   {
    "dim": "每次运行的 token（入 + 出）",

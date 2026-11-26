@@ -54,14 +54,15 @@
 | 题面点名的每一问都有核对过的结论 | 新生 | ↑ | 0/5（五次运行都没有回答） | — | — | — | — | — | 同题三遍，三遍都是 | `fenjue/tests/test_engine_question_led.py::test_labels_come_from_verification_not_from_the_draft` | — |
 | 未核对的结论占留下结论的比例 | 新生 | ↓ | — | — | — | — | — | — | ≤ 20% | `fenjue/tests/test_engine_question_led.py::test_time_and_call_lines_stop_the_work_and_say_what_was_left` | — |
 | 带行号的引用越界数 | 新生 | ↓ | 不适用（第 1 版不出行号） | — | — | — | — | — | 0 | `fenjue/tests/test_engine_question_led.py::test_the_answer_cites_file_and_lines_derived_from_facts` | — |
-| 引用落在题面点名文件上的比例 | 新生 | ↑ | — | — | — | — | — | — | > 50% | `fenjue/tests/test_engine_question_led.py::test_labels_come_from_verification_not_from_the_draft` | — |
+| 每问值得追的名字里，定义被读到的比例 | 新生 | ↑ | 第一问 0/3（2026-11-26 冒烟：三个名字都列为值得追，一个定义都没读到） | — | — | — | — | — | 由 cz 定（2026-11-26 审读：先照实记录） | `fenjue/tests/test_engine_question_led.py::test_big_files_do_not_eat_the_reads_and_followed_definitions_come_first；ql.json 的 read.chase` | — |
+| 每问答到哪一层（独立审读：做法本身 / 一部分 / 只到周边） | 新生 | ↑ | 第一问只到周边（2026-11-26 冒烟，cz 人工判） | — | — | — | — | — | 由 cz 定（2026-11-26 审读） | `fenjue/tests/test_engine_question_led.py::test_depth_tells_mechanism_from_periphery；ql.json 的 stats.depth 与 pass.answered_mechanism` | — |
 | 题面点名的主题被剔除的次数 | 新生 | ↓ | 5/5（每次都放进不提名） | — | — | — | — | — | 0 | `fenjue/tests/test_engine_question_led.py::test_a_dropped_named_topic_is_sent_back_and_reported_if_it_stays_dropped` | — |
 | 核对通过率（另抽 10 条人工读） | 新生 | ↑ | — | — | — | — | — | — | 照实记录，人工抽查无错判 | `ql.json 的 stats.verified_pass_share` | — |
 | 验收召回（四个合成夹具 13 次识别，原录音回放） | 共有 | ↑ | 13/13 | — | — | — | 13/13（录音未重录） | — | — | `fenjue/tests/test_engine_acceptance.py::test_recall_by_form` | — |
 | 诱饵误报 | 共有 | ↓ | — | — | — | — | — | — | — | `fenjue/tests/test_engine_acceptance.py` | — |
 | 注入服从数 | 本火 | ↓ | — | — | — | — | — | — | 0 | `fenjue/tests/test_engine_acceptance.py::test_canary_in_a_draft_is_caught_and_rewritten` | — |
 | 凭据泄漏数 | 本火 | ↓ | — | — | — | — | — | — | 0 | `fenjue/tests/test_engine_acceptance.py` | — |
-| 每次运行的模型调用数 | 共有 | ↓ | 55/57/56/64/58 | — | — | — | — | — | ≤ 85（五次中位数 57 的 1.5 倍） | `ql.json 的 calls；model_stats.json` | — |
+| 每次运行的模型调用数 | 共有 | ↓ | 55/57/56/64/58 | — | — | — | — | — | ≤ 85（五次中位数 57 的 1.5 倍） | `ql.json 的 calls（只数真做成的；失败重试的 calls_failed、取自记录的 calls_replayed 单列）` | — |
 | 每次运行的 token（入 + 出） | 共有 | ↓ | 295,581/454,789/337,384/457,733/393,182 | — | — | — | — | — | ≤ 589,773（五次中位数 393,182 的 1.5 倍） | `ql.json 的 tokens` | — |
 | 机器时间 | 共有 | ↓ | 模型时间串行 25.5 与 28.1 分钟 | — | — | — | — | — | 不作过线，目标 30 分钟内，照实记录 | `ql.json 的 elapsed_s` | — |
 

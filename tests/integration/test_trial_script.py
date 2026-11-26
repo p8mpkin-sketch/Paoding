@@ -211,19 +211,31 @@ def test_the_report_says_which_route_a_run_took(trial, tmp_path):
     doc = {
         "route": "question_led",
         "route_line": "> 读法：题面点名了 2 问，按题读。Q1 甲；Q2 乙",
+        "questions": [{"id": "Q1", "text": "甲"}, {"id": "Q2", "text": "乙"}],
         "own": None,
         "read": {"theirs": {"parts": 20, "files": 9, "lines": 4100}, "ours": {"parts": 0}, "facts": 180,
-                 "truncated": 1},
+                 "truncated": 1, "most_parts_one_file": 3, "by_question": {"Q1": 11, "Q2": 9},
+                 "chase": {"Q1": {"followed": {"defined": 4, "read": 3}, "picked": {"defined": 2, "read": 2}},
+                           "Q2": {"followed": {"defined": 0, "read": 0}, "picked": {}}}},
         "stats": {
             "items": 20, "supported": 15, "partial": 2, "unsupported": 1, "unverified": 2, "unverified_share": 0.1053,
-            "verified_pass_share": 0.8333, "citations": 40, "citations_theirs": 36, "citations_on_named": 30,
-            "named_share": 0.8333,
+            "verified_pass_share": 0.8333, "citations": 40, "citations_theirs": 36, "citations_on_defs": 12,
+            "defs_share": 0.3333, "answered": {"Q1": 8, "Q2": 9}, "on_defs": {"Q1": 0, "Q2": 4},
+            "depth": {"Q1": {"level": "peripheral", "missing": "摘要怎么生成没有讲到"},
+                      "Q2": {"level": "mechanism", "missing": ""}},
         },
-        "pass": {"all_answered": True, "has_recommendation": True, "unverified_within_20pct": True},
-        "calls": 61, "tokens": 512000, "elapsed_s": 1500, "limits": {"call_cap": 85, "token_cap": 590000},
+        "pass": {"all_answered": True, "answered_mechanism": False, "has_recommendation": True,
+                 "unverified_within_20pct": True},
+        "calls": 61, "calls_failed": 13, "calls_replayed": 4, "tokens": 512000, "elapsed_s": 1500,
+        "limits": {"call_cap": 85, "token_cap": 590000},
     }  # fmt: skip
     (tmp_path / "ql.json").write_text(json.dumps(doc), encoding="utf-8")
     out = "\n".join(trial.route_lines(tmp_path))
     assert "题面点名了 2 问，按题读" in out and "只对照能力清单" in out and "输出被截断 1 次" in out
-    assert "未核对 2（占留下的 11%）" in out and "核对通过率 83%" in out and "落在题面点名的文件上 30 处（83%）" in out
-    assert "未核对不超过两成 是" in out and "调用 61 次（上限 85）" in out and "用时 25.0 分钟" in out
+    assert (
+        "未核对 2（占留下的 11%）" in out and "核对通过率 83%" in out and "落在要追的名字的定义上 12 处（33%）" in out
+    )
+    assert "Q1 答到哪一层：只答到周边（缺的：摘要怎么生成没有讲到）" in out and "值得追的名字定义读到 3/4" in out
+    assert "Q2 答到哪一层：答到了做法本身；" in out and "每一问都答到了做法本身 否" in out
+    assert "真做成的调用 61 次（上限 85），失败后重试的 13 次、取自上次记录的 4 次" in out
+    assert "未核对不超过两成 是" in out and "用时 25.0 分钟" in out

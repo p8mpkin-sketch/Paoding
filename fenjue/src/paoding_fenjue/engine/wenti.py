@@ -4,9 +4,11 @@
 读一段原文。这里全是纯函数：同一份快照、同一组词，排出来的阅读顺序逐字节相同。
 
 - `questions`：题面里有没有点名。有「怎么、如何、怎样」引出的问句才算点名；没有就返回空列表，流程走原路径。
-- `search`、`vocabulary`、`rank`：检索词在路径、符号、标题、正文里的命中 → 每个子问的文件排序。
+- `search`、`vocabulary`、`overview`、`rank`：检索词在路径、符号、标题、正文里的命中，加一份不靠检索词的目录概览
+  （对方仓库自己的叫法不在检索词里时，挑词那一步靠它找到实现所在的目录）→ 每个子问的文件排序。
 - `parts`：把一个文件切成整段可读的部分（不超过 PART_LINES 行；过长的在顶层定义处下刀）。
-- `Frontier`：读完一批之后排下一批——追的标识符的定义、用到它们的地方、对应的测试、核心文件剩下的部分。
+- `Frontier`：排每一批读什么。次序是定死的：要追的名字的定义最先；其余按这一部分自己的命中排；各子问轮流取；
+  一个文件读到上限就让位给别的文件。它也数得出「要追的名字里，定义读到了几个」。
 """
 
 from __future__ import annotations
@@ -89,6 +91,9 @@ class Index:
     folded: dict[str, str] = field(default_factory=dict)
     idents: dict[str, set[str]] = field(default_factory=dict)
     lines: dict[str, int] = field(default_factory=dict)
+    _defs_in: dict[str, list[str]] | None = None
+    _refs: dict[str, int] | None = None
+    _sites: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
 
     @classmethod
     def build(cls, snap: survey.Snapshot, sv: survey.Survey) -> Index:
@@ -112,6 +117,40 @@ class Index:
 
     def defines(self, path: str) -> set[str]:
         return set(self.sv.symbols.get(path, []))
+
+    def refs(self) -> dict[str, int]:
+        """每个标识符在几个文件里出现过（概览里按它挑各目录最常被用到的名字）。"""
+        if self._refs is None:
+            out: dict[str, int] = {}
+            for p in self.files:
+                for n in self.idents[p]:
+                    out[n] = out.get(n, 0) + 1
+            self._refs = out
+        return self._refs
+
+    def sites(self, name: str) -> list[tuple[str, int]]:
+        """这个名字定义在哪：[(文件, 行)]，只看非测试文件，每个文件取第一处。找不到定义的那一行就不算。"""
+        if name in self._sites:
+            return self._sites[name]
+        if self._defs_in is None:
+            inv: dict[str, list[str]] = {}
+            for p in self.files:
+                if not self.is_test(p):
+                    for sym in self.defines(p):
+                        inv.setdefault(sym, []).append(p)
+            self._defs_in = inv
+        pat = re.compile(
+            rf"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:def|class|function|const|let|var|type|interface|enum)\s+"
+            rf"{re.escape(name)}\b|^{re.escape(name)}\s*[:=]"
+        )
+        out: list[tuple[str, int]] = []
+        for p in sorted(self._defs_in.get(name, [])):
+            for i, ln in enumerate(self.snap.texts[p].splitlines(), 1):
+                if pat.match(ln):
+                    out.append((p, i))
+                    break
+        self._sites[name] = out
+        return out
 
 
 def _count(hay: str, needle: str) -> int:
@@ -152,17 +191,56 @@ def vocabulary(ix: Index, terms: Sequence[str], limit: int = 240) -> dict[str, l
     return {"names": top, "files": ranked[:60]}
 
 
-def rank(ix: Index, terms: Sequence[str], names: Sequence[str], picked_files: Sequence[str]) -> list[tuple[float, str]]:
-    """一个子问的文件排序：挑中的文件最前；其余按挑中的名字是否在这里定义、路径与正文的命中算分；
+def dir_of(path: str) -> str:
+    return path.rsplit("/", 1)[0] + "/" if "/" in path else "./"
+
+
+def overview(ix: Index, max_dirs: int = 300, per_dir: int = 6) -> list[dict[str, Any]]:
+    """对方仓库的目录概览，**不靠检索词**：每个有源码的目录一行——几个文件、多少行、这里定义的名字里最常被别处用到的几个。
+    盲出的检索词里没有对方仓库自己的叫法时，名字表里挑不到实现；挑词那一步看这份概览，按目录把它找出来。
+    测试、示例、构建产物一类的目录不列。目录太多时留代码行数最多的 max_dirs 个。"""
+    refs = ix.refs()
+    by: dict[str, dict[str, Any]] = {}
+    for p in ix.files:
+        if ix.is_test(p) or ix.is_doc(p) or survey._noise(p):
+            continue
+        row = by.setdefault(dir_of(p), {"files": 0, "lines": 0, "syms": set()})
+        row["files"] += 1
+        row["lines"] += ix.lines[p]
+        row["syms"] |= {s for s in ix.defines(p) if len(s) >= 4 and not s.startswith("_")}
+    keep = sorted(by, key=lambda d: (-by[d]["lines"], d))[:max_dirs]
+    out: list[dict[str, Any]] = []
+    for d in sorted(keep):
+        syms = sorted(by[d]["syms"], key=lambda s: (-refs.get(s, 0), not s[:1].isupper(), s))[:per_dir]
+        out.append({"dir": d, "files": by[d]["files"], "lines": by[d]["lines"], "names": syms})
+    return out
+
+
+def rank(
+    ix: Index,
+    terms: Sequence[str],
+    names: Sequence[str],
+    picked_files: Sequence[str],
+    picked_dirs: Sequence[str] = (),
+) -> list[tuple[float, str]]:
+    """一个子问的文件排序：挑中的文件最前，挑中的目录里的文件其次；其余按挑中的名字是否在这里定义、路径与正文的
+    命中算分。正文的命中按文件长度折算（折成每 PART_LINES 行多少次）：大文件不因为行数多就排到前面。
     测试、示例一类往后放（它们在追读时当规格读）。"""
     fold_names = [text.fold(n) for n in names if n.isascii()]
     words = list(dict.fromkeys([*terms, *fold_names]))
     hits = search(ix, words)
+    dirs = tuple(picked_dirs)
+    pool = set(hits) | {p for p in picked_files if p in ix.folded}
+    if dirs:
+        pool |= {p for p in ix.files if dir_of(p) in dirs}
+    want = set(names)
     out: list[tuple[float, str]] = []
-    for p, row in hits.items():
-        defined = sum(1 for s in ix.defines(p) if s in names)
-        s = 6.0 * (p in picked_files) + 3.0 * min(defined, 3) + 2.0 * min(row["path"], 3)
-        s += min(3.0, math.log1p(row["text"])) + 1.0 * min(row["symbol"], 3)
+    for p in pool:
+        row = hits.get(p, {"path": 0, "symbol": 0, "text": 0})
+        defined = len(ix.defines(p) & want)
+        s = 6.0 * (p in picked_files) + 4.0 * (dir_of(p) in dirs) + 3.0 * min(defined, 3) + 2.0 * min(row["path"], 3)
+        dense = row["text"] * min(1.0, PART_LINES / max(1, ix.lines[p]))
+        s += min(3.0, math.log1p(dense)) + 1.0 * min(row["symbol"], 3)
         if ix.is_test(p) or survey._noise(p):
             s -= 3.0
         if ix.is_doc(p):
@@ -268,88 +346,221 @@ def follow_ok(name: Any, shown: str) -> bool:
 
 # ---------------------------------------------------------------- 排下一批
 
+AMBIGUOUS = 3  # 一个名字定义在多于这么多个文件里，就不当「追得到的定义」（多半是通用的方法名）
+PICK_VOTE, FOLLOW_VOTE = 1, 2  # 读过原文之后说值得追的，比只看名字表挑的更靠前
+
 
 @dataclass
 class Frontier:
-    """读到哪了、接下来读什么。全部状态都能从检查点重建：读过的部分、追的标识符、核心文件。"""
+    """读到哪了、接下来读什么。全部状态都能从检查点重建：读过的部分、要追的名字（谁为哪个子问提的）。
+
+    一批怎么排（确定的，同样的状态排出同样的一批）：
+
+    1. 每个子问各有一队。队里**要追的名字的定义**（还没读到的）排最前；其余按这一部分自己的分排——文件的题面分、
+       这一部分正文里的命中、用到要追的名字。同一个文件每多读一部分，它剩下的部分就降一档。
+    2. 各子问轮流从自己的队里取，读得少的子问先取：题面点名的每一问都轮得到。
+    3. 一个文件读满 `file_cap` 部分就让位：只有别的都排完了，才回头接着读它，而且每批只多读一部分。
+       大文件不会先把额度用完。
+    """
 
     ix: Index
     base: dict[str, float]  # 文件 → 题面检索的分（各子问取最高）
-    core: list[str]  # 第一批的文件：整文件读完
+    core: list[str]  # 各子问排在最前的几个文件（找对应的测试时用）
+    qbase: dict[str, dict[str, float]] = field(default_factory=dict)  # 子问 → 文件 → 分
+    words: dict[str, list[str]] = field(default_factory=dict)  # 子问 → 折叠后的检索词与挑中的名字
+    file_cap: int = 3
     read: set[str] = field(default_factory=set)  # 读过的部分的 key
-    follow: dict[str, int] = field(default_factory=dict)  # 标识符 → 被几个部分提名
+    chase: dict[str, dict[str, int]] = field(default_factory=dict)  # 要追的名字 → 子问 → 票数
+    picked: set[str] = field(default_factory=set)  # 挑词那一步挑的名字
+    followed: set[str] = field(default_factory=set)  # 读原文时说值得追的名字
     tests_read: int = 0
+    per_file: dict[str, int] = field(default_factory=dict)
+    per_q: dict[str, int] = field(default_factory=dict)
+    _pc: dict[str, list[Part]] = field(default_factory=dict)
+    _wc: dict[str, list[Part]] = field(default_factory=dict)
+    _lc: dict[str, tuple[dict[str, int], set[str]]] = field(default_factory=dict)
+
+    @property
+    def qids(self) -> list[str]:
+        return list(self.words) or sorted(self.qbase) or ["Q1"]
 
     def _parts(self, path: str) -> list[Part]:
-        return parts(self.ix.snap.sid, path, self.ix.snap.texts[path])
+        if path not in self._pc:
+            self._pc[path] = parts(self.ix.snap.sid, path, self.ix.snap.texts[path])
+        return self._pc[path]
 
-    def first(self, n: int) -> list[tuple[Part, str]]:
-        out: list[tuple[Part, str]] = []
-        for p in self.core:
-            for part in self._parts(p):
-                if part.key() not in self.read and len(out) < n:
-                    out.append((part, "题面命中"))
-        return out
+    def pick(self, names: Iterable[str], q: str) -> None:
+        for nm in names:
+            self.picked.add(nm)
+            row = self.chase.setdefault(nm, {})
+            row[q] = row.get(q, 0) + PICK_VOTE
 
-    def note(self, part: Part, names: Iterable[str]) -> None:
+    def note(self, part: Part, follow: Mapping[str, str], q: str = "") -> None:
+        """读完了一部分：`follow` 是它说值得追的名字 → 为哪个子问追；`q` 是这一部分算在哪个子问名下。"""
         self.read.add(part.key())
+        self.per_file[part.path] = self.per_file.get(part.path, 0) + 1
+        if q:
+            self.per_q[q] = self.per_q.get(q, 0) + 1
         if self.ix.is_test(part.path):
             self.tests_read += 1
-        for nm in names:
-            self.follow[nm] = self.follow.get(nm, 0) + 1
+        for nm, qid in follow.items():
+            self.followed.add(nm)
+            row = self.chase.setdefault(nm, {})
+            row[qid] = row.get(qid, 0) + FOLLOW_VOTE
 
-    def score(self, part: Part) -> tuple[float, str]:
-        """一个没读过的部分值不值得读、为什么。"""
-        ix = self.ix
-        path = part.path
+    def where(self, name: str) -> list[Part]:
+        """这个名字的定义落在哪几个部分里。仓库里没有定义、或定义散在太多文件里的，交回空。"""
+        if name not in self._wc:
+            sites = self.ix.sites(name)
+            out: list[Part] = []
+            if sites and len(sites) <= AMBIGUOUS:
+                for path, line in sites:
+                    out += [p for p in self._parts(path) if p.a <= line <= p.b][:1]
+            self._wc[name] = out
+        return self._wc[name]
+
+    def def_read(self, name: str) -> bool:
+        return any(p.key() in self.read for p in self.where(name))
+
+    def _local(self, part: Part) -> tuple[dict[str, int], set[str]]:
+        k = part.key()
+        if k not in self._lc:
+            raw = self.ix.snap.texts[part.path].splitlines()[part.a - 1 : part.b]
+            body = text.fold("\n".join(raw))
+            hits = {q: sum(_count(body, w) for w in ws) for q, ws in self.words.items()}
+            self._lc[k] = (hits, set(_IDENT.findall("\n".join(raw))))
+        return self._lc[k]
+
+    def _score(self, part: Part) -> tuple[str, float, str]:
+        """一个不含待追定义的部分：算在哪个子问名下、值不值得读、为什么。"""
+        ix, path = self.ix, part.path
+        hits, here = self._local(part)
+        uses = [n for n in self.chase if n in here]
+        votes: dict[str, float] = {}
+        for q in self.qids:
+            v = self.qbase.get(q, {}).get(path, 0.0) + min(3.0, math.log1p(hits.get(q, 0)))
+            votes[q] = v + sum(1.0 for n in uses if q in self.chase[n])
+        q = max(self.qids, key=lambda x: votes[x])
         s = 0.5 * self.base.get(path, 0.0)
-        why = "题面命中" if s > 0 else ""
-        if path in self.core:
-            return s + 5.0, "核心文件的后续部分"
-        body = "\n".join(ix.snap.texts[path].splitlines()[part.a - 1 : part.b])
-        here = set(_IDENT.findall(body))
-        defs = [
-            n
-            for n in self.follow
-            if n in ix.defines(path)
-            and re.search(rf"(?:def|class|function)\s+{re.escape(n)}\b|^{re.escape(n)}\s*=", body, re.M)
-        ]
-        uses = [n for n in self.follow if n in here and n not in defs]
         if ix.is_test(path):
             stems = {c.rsplit("/", 1)[-1].rsplit(".", 1)[0] for c in self.core}
             rel = len(uses) + sum(1 for st in stems if st and st in path)
-            if rel:
-                bonus = 3.0 if self.tests_read < 2 else 0.5
-                return s + bonus + min(3, rel), "对应的测试"
-            return 0.0, ""
-        if defs:
-            s += 4.0 + min(2, len(defs) - 1)
-            why = "追到的定义"
+            if not rel:
+                return q, 0.0, ""
+            return q, s + (3.0 if self.tests_read < 2 else 0.5) + min(3, rel), "对应的测试"
+        why = "题面命中" if s > 0 else ""
+        # 这一部分自己的命中，加上它在本文件各部分里的相对密度：大文件里先读命中最密的那几段，不从第一行顺着读
+        top = max((self._local(p)[0].get(q, 0) for p in self._parts(path)), default=0)
+        s += min(3.0, math.log1p(hits.get(q, 0))) + (4.0 * hits.get(q, 0) / top if top else 0.0)
         if uses:
             s += min(3.0, 1.0 * len(uses))
-            why = why or "用到追读的名字"
+            why = why or "用到要追的名字"
+        seen = self.per_file.get(path, 0)
+        if seen:
+            s -= 1.5 * seen
+            why = "同一个文件的后续部分"
         if ix.is_doc(path):
             s -= 1.0
-        return s, why
+        return q, s, why
 
-    def next(self, n: int, floor: float = 1.5) -> list[tuple[Part, str]]:
-        """下一批：所有没读过的部分里分最高的 n 个（低于 floor 的不读）。平分按路径与行号定序。"""
-        scored: list[tuple[float, str, int, Part, str]] = []
+    def _queue(self, floor: float) -> list[tuple[str, int, float, Part, str]]:
+        """所有还值得读的部分：(子问, 档, 分, 部分, 为什么)。档 0 是待追的定义，档 1 是其余。"""
+        open_defs: dict[str, tuple[Part, list[str]]] = {}
+        for name in sorted(self.chase):
+            ps = self.where(name)
+            if ps and not any(p.key() in self.read for p in ps):
+                for p in ps:
+                    open_defs.setdefault(p.key(), (p, []))[1].append(name)
+        out: list[tuple[str, int, float, Part, str]] = []
+        for key in sorted(open_defs):
+            part, names = open_defs[key]
+            votes: dict[str, int] = {}
+            for n in names:
+                for q, c in self.chase[n].items():
+                    votes[q] = votes.get(q, 0) + c
+            q = max(sorted(votes), key=lambda x: votes[x])
+            s = 6.0 + 2.0 * min(3, sum(votes.values()) - 1) + 0.5 * self.base.get(part.path, 0.0)
+            why = "追到的定义" if any(n in self.followed for n in names) else "挑中的名字的定义"
+            out.append((q, 0, s, part, why))
+        chased = set(self.chase)
         for path in self.ix.files:
-            if self.base.get(path, 0.0) <= 0 and not (self.ix.idents[path] & set(self.follow)):
+            if self.base.get(path, 0.0) <= 0 and not (self.ix.idents[path] & chased):
                 continue
             for part in self._parts(path):
-                if part.key() in self.read:
+                if part.key() in self.read or part.key() in open_defs:
                     continue
-                s, why = self.score(part)
+                q, s, why = self._score(part)
                 if s >= floor:
-                    scored.append((-round(s, 4), path, part.a, part, why))
-        scored.sort(key=lambda t: t[:3])
-        return [(t[3], t[4]) for t in scored[:n]]
+                    out.append((q, 1, s, part, why))
+        return out
+
+    def next(self, n: int, floor: float = 1.5) -> list[tuple[Part, str, str]]:
+        """下一批：[(部分, 为什么, 算在哪个子问名下)]。平分按路径与行号定序。"""
+
+        def order(t: tuple[str, int, float, Part, str]) -> tuple[int, float, str, int]:
+            return (t[1], -round(t[2], 4), t[3].path, t[3].a)
+
+        by: dict[str, list[tuple[str, int, float, Part, str]]] = {q: [] for q in self.qids}
+        for c in self._queue(floor):
+            by.setdefault(c[0], []).append(c)
+        for q in by:
+            by[q].sort(key=order)
+        turn = sorted(by, key=lambda q: (self.per_q.get(q, 0), q))
+        at = dict.fromkeys(by, 0)
+        taken: dict[str, int] = {}
+        out: list[tuple[str, int, float, Part, str]] = []
+        held: list[tuple[str, int, float, Part, str]] = []
+        moved = True
+        while len(out) < n and moved:
+            moved = False
+            for q in turn:
+                if len(out) >= n:
+                    break
+                while at[q] < len(by[q]):
+                    c = by[q][at[q]]
+                    at[q] += 1
+                    path = c[3].path
+                    if self.per_file.get(path, 0) + taken.get(path, 0) >= self.file_cap:
+                        held.append(c)  # 这个文件读满了：先让别的
+                        continue
+                    out.append(c)
+                    taken[path] = taken.get(path, 0) + 1
+                    moved = True
+                    break
+        # 别的都排完了，读满了的文件才接着读，而且每批每个文件只多读一部分：大文件一批批慢慢读，不一口气吃掉额度
+        for c in sorted(held, key=order):
+            if len(out) < n and c[3].path not in taken:
+                out.append(c)
+                taken[c[3].path] = 1
+        return [(c[3], c[4], c[0]) for c in out]
 
     def left(self, n: int = 15) -> list[dict[str, Any]]:
-        """排了队但没读的（交付里的「没读到」）：分最高的前 n 个。"""
-        return [{"path": p.path, "lines": [p.a, p.b], "why": why} for p, why in self.next(n)]
+        """排了队但没读的（交付里的「没读到」）：下一批本来会读的前 n 个。"""
+        return [{"path": p.path, "lines": [p.a, p.b], "why": why, "q": q} for p, why, q in self.next(n)]
+
+    def chase_report(self) -> dict[str, dict[str, Any]]:
+        """每个子问要追的名字里，定义读到了几个。分两栏：读原文时说值得追的（`followed`）、挑词那一步挑的（`picked`）。
+        分母只数仓库里找得到定义的名字（外部库里的、散在太多文件里的不算）；读没读到看那一部分是否真的读过。"""
+
+        def row(names: list[str]) -> dict[str, Any]:
+            defined = [n for n in names if self.where(n)]
+            got = [n for n in defined if self.def_read(n)]
+            return {
+                "names": len(names),
+                "defined": len(defined),
+                "read": len(got),
+                "share": round(len(got) / len(defined), 4) if defined else None,
+                "unread": [n for n in defined if n not in got][:12],
+            }
+
+        out: dict[str, dict[str, Any]] = {}
+        for q in self.qids:
+            mine = sorted(n for n, v in self.chase.items() if q in v)
+            out[q] = {
+                "followed": row([n for n in mine if n in self.followed]),
+                "picked": row([n for n in mine if n in self.picked]),
+            }
+        return out
 
 
 def slot_of(sv: survey.Survey, part: Part, prefer: Sequence[str]) -> str:

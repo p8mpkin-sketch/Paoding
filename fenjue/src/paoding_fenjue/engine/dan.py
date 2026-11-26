@@ -41,6 +41,8 @@ class Reply:
     tokens_in: int = 0
     tokens_out: int = 0
     stop: str = ""  # 模型的停止原因（max_tokens = 输出到上限被截断）；回放与备忘里没有就是空
+    # 这次回答取自调用备忘，没有真的再问模型（数调用次数时与真做成的分开；不参与相等比较）
+    cached: bool = field(default=False, compare=False)
 
 
 class Dan(Protocol):
@@ -169,7 +171,9 @@ class Memo:
         e = self._seen.get((key, sha))
         if e is not None and e.get("role") == role:
             self.hits += 1
-            return Reply(e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)), str(e.get("stop", "")))
+            return Reply(
+                e["output"], int(e.get("tokens_in", 0)), int(e.get("tokens_out", 0)), str(e.get("stop", "")), True
+            )
         r = self.inner.call(role, key, payload)
         row = {
             "key": key,

@@ -45,6 +45,7 @@ MAX_TOKENS = {
     "dati/v1": 32_000,
     "dati/fix/v1": 16_000,
     "heyan/v1": 12_000,
+    "heyan/depth/v1": 8_000,
 }
 # 活动面板与日志里给人看的步骤名（常规技术词，不用内部名词）
 ROLE_ZH = {"reader": "片段阅读", "main": "主分析", "extra": "并行草稿", "blind": "独立复核", "placer": "归位分析"}

@@ -79,6 +79,7 @@ class Config:
     # ---- 按题读（14-question-led.md）。缺省值下，题面没有点名的题与以前逐字节相同
     statement: str | None = None  # 题目原话的全文（不给就取立项单里那一栏）
     question_led: bool = True  # 题面点名了问题就按题读；关掉则一律走通用勘察
+    question_led_off: str = "switch"  # 关着的原因（报告第一行照实写）：switch 开关关着 | form 这道题用的是上一版流程
     own_urls: tuple[str, ...] = ()  # 我们自己仓库的地址：立项单里出处是它的来源当作“我们的实现”对照读，不当外部系统
     parallel: int = 1  # 按题读各步的并发调用数（通用勘察的路径始终顺序执行）
     limits: qled.Limits = field(default_factory=qled.Limits)
@@ -110,12 +111,12 @@ class Engine:
         self.x: dict[str, Any] = self._load("engine.json") or {}  # 引擎自己的簿记（run.json 的 Schema 之外的）
         self._snaps: dict[str, survey.Snapshot] = {}
         self._surveys: dict[str, survey.Survey] = {}
-        # 按题读的三条线要的读数：这次运行调了几次模型、用了多久（跨会话累计，记在簿记的 ql 里）
-        self._meter = qled.Meter(dan)
+        # 按题读的三条线要的读数：这次运行调了几次模型（真做成的、失败的、取自上次记录的分开数）、用了多久（跨会话累计）
+        self._meter = qled.Meter(dan, self.ws / "ql-calls.json", lambda: bool(qled.questions(self)))
         self.dan = self._meter
         ql = self.x.get("ql")
         ql = ql if isinstance(ql, dict) else {}
-        self._calls_base, self._elapsed_base = int(ql.get("calls", 0)), float(ql.get("elapsed_s", 0.0))
+        self._elapsed_base = float(ql.get("elapsed_s", 0.0))
         self._t0 = self.cfg.clock()
         self._own_ix: tuple[survey.Snapshot, Any] | None = None
 
@@ -287,7 +288,7 @@ class Engine:
         old = json.loads((prev / "run.json").read_text(encoding="utf-8"))
         if old.get("mode") != "dry_run":
             raise EngineError("只能复用试算的运行")
-        keep = ("snapshot:", "survey:", "read:", "ql:plan", "ql:batch:", "ql:read")
+        keep = ("snapshot:", "survey:", "read:", "ql:plan", "ql:own", "ql:batch:", "ql:read")
         for u in old["units"]:
             if u["id"].startswith(keep) and u["state"] == "done":
                 self.state["units"].append(dict(u))

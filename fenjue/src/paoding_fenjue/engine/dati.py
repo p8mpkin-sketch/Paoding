@@ -8,6 +8,8 @@
 - `draft`：只凭细事实写回答——每条结论引用细事实的编号。文件与行由引擎从编号推出，模型不写。
 - `verify`、`fix`：把结论与它引用的原文交给另一个隔离的调用判「支持、部分、不支持」；部分支持的改写一次再核。
   结论最后的标注以核对结果为准。
+- `judge_depth`：核对之后再交给一个隔离的调用判每个子问「答到了做法本身、只答到一部分、只答到周边」。
+  条数多不等于答到了：这一栏与「引用落在要追的名字的定义体内几处」一起，分得出答到机制与只答到周边。
 
 细事实与观察是两套东西：观察照旧不带任何对方的名字，供后面的候选、提炼、归位用（那几步的隔离规则不变）；
 细事实允许带对方的名字与数值，只给答题与核对这两步看，留在工作区的簿记里，不登记成产物。
@@ -80,22 +82,47 @@ def ask_terms(
     return out, tin, tout
 
 
+MAX_PICK_NAMES, MAX_PICK_FILES, MAX_PICK_DIRS = 12, 6, 3
+
+
+def pick_listing(vocab: Mapping[str, Any]) -> str:
+    """给挑词那一步看的表：按检索词命中的名字与文件，加一份不靠检索词的目录概览（目录 | 文件数 | 这里定义的名字）。"""
+    rows = [f"{d['dir']} | {d['files']} | {' '.join(d['names'])}" for d in vocab.get("dirs", [])]
+    return (
+        "## 名字\n"
+        + "\n".join(vocab["names"])
+        + "\n\n## 文件\n"
+        + "\n".join(vocab["files"])
+        + "\n\n## 目录\n"
+        + "\n".join(rows)
+    )
+
+
 def ask_pick(
-    dan: Dan, qs: Sequence[Mapping[str, str]], vocab: Mapping[str, Sequence[str]], nonce: Callable[[], str] = new_nonce
+    dan: Dan,
+    qs: Sequence[Mapping[str, str]],
+    vocab: Mapping[str, Any],
+    nonce: Callable[[], str] = new_nonce,
+    tag: str = "",
 ) -> tuple[dict[str, dict[str, list[str]]], int, int]:
-    """从对方仓库里真实存在的名字里挑词：名字表是外部数据（定界包裹），挑中的必须逐字在表里，否则不收。"""
-    names, files = list(vocab["names"]), list(vocab["files"])
-    listing = "## 名字\n" + "\n".join(names) + "\n\n## 文件\n" + "\n".join(files)
+    """从仓库里真实存在的名字、文件、目录里挑：表是外部数据（定界包裹），挑中的必须逐字在表里，否则不收。
+    `tag` 区分是哪一份仓库的表（对方的不带，我们自己的带 own）：两次调用的键不同。"""
+    dirs = [str(d["dir"]) for d in vocab.get("dirs", [])]
+    names = list(dict.fromkeys([*vocab["names"], *(n for d in vocab.get("dirs", []) for n in d["names"])]))
+    files = list(vocab["files"])
+    listing = pick_listing(vocab)
     errors: list[str] = []
     tin = tout = 0
     out: dict[str, dict[str, list[str]]] = {}
     for attempt in range(1, DRAFT_ATTEMPTS + 1):
-        key = f"wenti:pick:{attempt}"
+        key = f"wenti:pick:{tag + ':' if tag else ''}{attempt}"
         payload: dict[str, Any] = {
             "template": "wenti/pick/v1",
+            "side": "ours" if tag else "theirs",
             "questions": list(qs),
-            "max_names": 20,
-            "max_files": 6,
+            "max_names": MAX_PICK_NAMES,
+            "max_files": MAX_PICK_FILES,
+            "max_dirs": MAX_PICK_DIRS,
             "excerpt": listing,
             "nonce": nonce(),
         }
@@ -111,17 +138,20 @@ def ask_pick(
                     continue
                 got_n = [n for n in row.get("names") or [] if isinstance(n, str)]
                 got_f = [f for f in row.get("files") or [] if isinstance(f, str)]
+                got_d = [d for d in row.get("dirs") or [] if isinstance(d, str)]
                 bad += sum(1 for n in got_n if n not in names) + sum(1 for f in got_f if f not in files)
+                bad += sum(1 for d in got_d if d not in dirs)
                 out[str(row["q"])] = {
-                    "names": [n for n in dict.fromkeys(got_n) if n in names][:20],
-                    "files": [f for f in dict.fromkeys(got_f) if f in files][:6],
+                    "names": [n for n in dict.fromkeys(got_n) if n in names][:MAX_PICK_NAMES],
+                    "files": [f for f in dict.fromkeys(got_f) if f in files][:MAX_PICK_FILES],
+                    "dirs": [d for d in dict.fromkeys(got_d) if d in dirs][:MAX_PICK_DIRS],
                 }
         if out and not bad:
             break
         errors = (
-            ["输出应为 {picks: [{q, names, files}]}"]
+            ["输出应为 {picks: [{q, names, files, dirs}]}"]
             if not out
-            else [f"有 {bad} 个词或文件不在给出的表里：只能逐字从表里挑"]
+            else [f"有 {bad} 个名字、文件或目录不在给出的表里：只能逐字从表里挑"]
         )
     return out, tin, tout
 
@@ -136,6 +166,7 @@ class PartRead:
     observations: list[dict[str, Any]] = field(default_factory=list)
     obs_q: dict[str, str] = field(default_factory=dict)  # 观察 id → 它回答的子问
     follow: list[str] = field(default_factory=list)
+    follow_q: dict[str, str] = field(default_factory=dict)  # 值得追的名字 → 为哪个子问追
     tokens_in: int = 0
     tokens_out: int = 0
     failed: bool = False
@@ -161,10 +192,11 @@ def _parse_part(
     nonce: str,
     attempt: int,
     shown: str,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str], list[str], list[str]]:
-    """交回 (细事实, 观察, 观察→子问, 追的标识符, 错误)。形状不对整份重来；个别条目不合规矩的单条丢掉并记一条错误。"""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str], dict[str, str], list[str]]:
+    """交回 (细事实, 观察, 观察→子问, 值得追的名字→子问, 错误)。
+    形状不对整份重来；个别条目不合规矩的单条丢掉并记一条错误。"""
     if not isinstance(out, dict) or not isinstance(out.get("facts"), list):
-        return [], [], {}, [], ["输出应为 {facts: [...], observations: [...], follow: [...]}"]
+        return [], [], {}, {}, ["输出应为 {facts: [...], observations: [...], follow: [...]}"]
     errs: list[str] = []
     facts: list[dict[str, Any]] = []
     body_tokens = text.tokens(wenti.raw_range(snap, part.path, part.a, part.b))
@@ -238,9 +270,17 @@ def _parse_part(
         observations += recs
         for r in recs:
             obs_q[r["id"]] = str(item.get("q")) if item.get("q") in qids else qids[0]
+    # 值得追的名字：{name, q}（只给名字的也收，算在这次阅读里事实最多的那个子问名下）
+    tally = {q: sum(1 for f in facts if f["q"] == q) for q in qids}
+    main_q = max(qids, key=lambda q: tally[q])
+    follow: dict[str, str] = {}
     raw_follow = out.get("follow")
-    follow = [n for n in (raw_follow if isinstance(raw_follow, list) else []) if wenti.follow_ok(n, shown)]
-    return facts, observations, obs_q, list(dict.fromkeys(follow))[:MAX_FOLLOW], errs
+    for item in raw_follow if isinstance(raw_follow, list) else []:
+        name = item.get("name") if isinstance(item, dict) else item
+        fq = item.get("q") if isinstance(item, dict) else None
+        if isinstance(name, str) and wenti.follow_ok(name, shown) and name not in follow and len(follow) < MAX_FOLLOW:
+            follow[name] = str(fq) if fq in qids else main_q
+    return facts, observations, obs_q, follow, errs
 
 
 def read_part(
@@ -307,7 +347,8 @@ def read_part(
         if shape_bad or (many and attempt < ATTEMPTS):
             continue  # 形状不对，或不合规矩的条目太多：带着错误重读
         # 个别条目没过：不为它们整份重读，收下合格的，丢掉的条数记下
-        res.facts, res.observations, res.obs_q, res.follow = facts, obs, obs_q, follow
+        res.facts, res.observations, res.obs_q = facts, obs, obs_q
+        res.follow, res.follow_q = list(follow), dict(follow)
         res.dropped = len(errors)
         return res
     res.failed = True
@@ -540,6 +581,67 @@ def fix(
     return out, r.tokens_in, r.tokens_out
 
 
+# ---------------------------------------------------------------- 答到哪一层
+
+DEPTHS = ("mechanism", "partial", "peripheral")
+DEPTH_ZH = {
+    "mechanism": "答到了做法本身",
+    "partial": "只答到一部分做法",
+    "peripheral": "只答到周边",
+    "none": "没有核对过的结论",
+    "unjudged": "没有来得及判",
+}
+
+
+def judge_depth(
+    dan: Dan,
+    qs: Sequence[Mapping[str, str]],
+    items: Sequence[Mapping[str, Any]],
+    unsure: Sequence[Mapping[str, Any]],
+    unread: Mapping[str, Sequence[str]],
+    nonce: Callable[[], str] = new_nonce,
+) -> tuple[dict[str, dict[str, str]], int, int]:
+    """每个子问答到哪一层。判的人只看到问题、核对后留下的结论、答题时自己说拿不准的、以及要追而没读到定义的名字；
+    看不到原文，也不知道条数算不算够。结论是从外部仓库读出来的话，照外部数据包裹。
+    交回 {子问: {level, missing}}；没有留下结论的子问不问（由调用方记 none）。"""
+    ask = []
+    blocks = []
+    for q in qs:
+        pts = [it["text"] for it in items if it.get("q") == q["id"] and it["verdict"] in ("supported", "partial")]
+        if pts:
+            ask.append({"id": q["id"], "text": q["text"]})
+            names = "、".join(unread.get(q["id"], [])) or "无"
+            blocks.append(
+                f"### {q['id']} 留下的结论\n"
+                + "\n".join(f"{i}. {t}" for i, t in enumerate(pts, 1))
+                + f"\n\n### {q['id']} 要追而没有读到定义的名字\n{names}"
+            )
+    if not ask:
+        return {}, 0, 0
+    body = "\n\n".join(blocks) + "\n\n### 写回答的人自己说拿不准的\n"
+    body += "\n".join(f"- {u['text']}" for u in unsure) or "无"
+    errors: list[str] = []
+    tin = tout = 0
+    out: dict[str, dict[str, str]] = {}
+    for attempt in range(1, DRAFT_ATTEMPTS + 1):
+        key = f"heyan:depth:{attempt}"
+        payload: dict[str, Any] = {"template": "heyan/depth/v1", "questions": ask, "excerpt": body, "nonce": nonce()}
+        if errors:
+            payload["errors"] = errors
+        r = dan.call("blind", key, payload)
+        tin, tout = tin + (r.tokens_in or estimate_tokens(body) + 800), tout + r.tokens_out
+        with reading(key):
+            rows = r.output.get("depth") if isinstance(r.output, dict) else None
+            out = {}
+            for row in rows if isinstance(rows, list) else []:
+                if isinstance(row, dict) and row.get("level") in DEPTHS and any(row.get("q") == a["id"] for a in ask):
+                    out[str(row["q"])] = {"level": row["level"], "missing": str(row.get("missing") or "")[:300]}
+        if len(out) == len(ask):
+            break
+        errors = [f"每个问题都要给 level（{'、'.join(DEPTHS)} 之一）；这次缺 {len(ask) - len(out)} 个"]
+    return out, tin, tout
+
+
 # ---------------------------------------------------------------- 报告
 
 # 结论后面的标注取回头核对的结果，不取答题时模型自己的说法：原文支持 → 确认；只支持一部分（改写一次后再核仍是）→ 推断；
@@ -559,23 +661,68 @@ def cite(f: Mapping[str, Any]) -> str:
     return f"`{side}{where}`" + (f"（{f['symbol']}）" if f.get("symbol") else "")
 
 
-def route_line(qs: Sequence[Mapping[str, str]]) -> str:
-    """报告的第一行：这道题走的是哪条路。"""
-    if not qs:
-        return "> 读法：题面没有点名具体的问题，走通用勘察。"
-    said = "；".join(f"{q['id']} {q['text']}" for q in qs)
-    return f"> 读法：题面点名了 {len(qs)} 问，按题读。{said}"
+OFF_ZH = {
+    "switch": "按题读的开关关着",
+    "form": "这道题用的是上一版分析流程（分在留出对照的份额里，或开题时就锁在上一版）",
+    "material": "给的材料不是代码或文档，没有可按题读的文件",
+}
 
 
-def stats(ans: Mapping[str, Any], facts: Mapping[str, Mapping[str, Any]], named: Sequence[str]) -> dict[str, Any]:
-    """核对与引用的读数：都由引擎数出来，过线标准直接读它。"""
+def route_line(qs: Sequence[Mapping[str, str]], asked: Sequence[Mapping[str, str]] = (), off: str = "") -> str:
+    """报告的第一行：这道题走的是哪条路。`asked` 是题面里点名的子问；点名了却没有按题读时，`off` 说为什么，照实写。"""
+    if qs:
+        said = "；".join(f"{q['id']} {q['text']}" for q in qs)
+        return f"> 读法：题面点名了 {len(qs)} 问，按题读。{said}"
+    if asked:
+        said = "；".join(f"{q['id']} {q['text']}" for q in asked)
+        why = OFF_ZH.get(off, OFF_ZH["switch"])
+        return f"> 读法：题面点名了 {len(asked)} 问，但{why}，这次走通用勘察，没有逐问作答。{said}"
+    return "> 读法：题面没有点名具体的问题，走通用勘察。"
+
+
+def on_definition(f: Mapping[str, Any], names: Sequence[str], sites: Mapping[str, Sequence[Sequence[Any]]]) -> bool:
+    """这条细事实是不是落在要追的名字的定义上：它所在的定义就是其中一个名字，或它的行区间盖住了某个名字定义的那一行。"""
+    if set(str(f.get("symbol") or "").split(".")) & set(names):
+        return True
+    a, b = f["lines"]
+    return any(p == f["path"] and a <= int(ln) <= b for n in names for p, ln in sites.get(n, []))
+
+
+def stats(
+    ans: Mapping[str, Any],
+    facts: Mapping[str, Mapping[str, Any]],
+    chase: Mapping[str, Sequence[str]],
+    sites: Mapping[str, Sequence[Sequence[Any]]],
+    depth: Mapping[str, Mapping[str, str]],
+) -> dict[str, Any]:
+    """核对与引用的读数：都由引擎数出来，过线标准直接读它。
+
+    `chase`：每个子问要追的名字（挑词时挑的、读原文时说值得追的）；`sites`：这些名字定义在哪。
+    「引用落在要追的名字的定义上」不是循环的：名字在写回答之前就定了，回答可以一处都不引到它们的定义
+    （只读到入口、接口、计量时就是这样）。`depth`：独立审读判的每个子问答到哪一层。"""
     items = list(ans.get("items", []))
     by = {v: sum(1 for it in items if it["verdict"] == v) for v in LABEL_ZH}
     kept = [it for it in items if it["verdict"] != "unsupported"]
     cites = [facts[f] for it in kept for f in [*it.get("facts", []), *it.get("ours", [])] if f in facts]
     theirs = [c for c in cites if c["side"] == "theirs"]
-    on_named = sum(1 for c in theirs if c["path"] in set(named))
-    qids = sorted({it["q"] for it in items if it.get("q")})
+    every = sorted({n for ns in chase.values() for n in ns})
+    on_defs = sum(1 for c in theirs if on_definition(c, every, sites))
+    qids = sorted({*chase, *(it["q"] for it in items if it.get("q"))})
+    solid = [it for it in items if it["verdict"] in ("supported", "partial")]
+
+    def hits(q: str) -> int:
+        names = list(chase.get(q, []))
+        return sum(
+            1
+            for it in solid
+            if it.get("q") == q
+            and any(
+                f in facts and facts[f]["side"] == "theirs" and on_definition(facts[f], names, sites)
+                for f in it["facts"]
+            )
+        )
+
+    answered = {q: sum(1 for it in solid if it.get("q") == q) for q in qids}
     return {
         "items": len(items),
         "kept": len(kept),
@@ -585,10 +732,12 @@ def stats(ans: Mapping[str, Any], facts: Mapping[str, Mapping[str, Any]], named:
         "verified_pass_share": round(by["supported"] / max(1, len(items) - by["unverified"]), 4),
         "citations": len(cites),
         "citations_theirs": len(theirs),
-        "citations_on_named": on_named,
-        "named_share": round(on_named / len(theirs), 4) if theirs else 0.0,
-        "answered": {
-            q: sum(1 for it in items if it.get("q") == q and it["verdict"] in ("supported", "partial")) for q in qids
+        "citations_on_defs": on_defs,
+        "defs_share": round(on_defs / len(theirs), 4) if theirs else 0.0,
+        "answered": answered,
+        "on_defs": {q: hits(q) for q in qids},
+        "depth": {
+            q: dict(depth.get(q) or {"level": "unjudged" if answered[q] else "none", "missing": ""}) for q in qids
         },
         "recommendations": sum(1 for it in items if it["kind"] == "rec" and it["verdict"] in ("supported", "partial")),
     }
@@ -658,8 +807,22 @@ def render(
         f"（改写过 {st['rewritten']}），不支持 {st['unsupported']}（已移到「拿不准」），"
         f"未核对 {st['unverified']}（占留下的 {st['unverified_share']:.0%}）。",
         f"- 引用 {st['citations']} 处，其中对方仓库 {st['citations_theirs']} 处、"
-        f"指向题面命中文件的 {st['citations_on_named']} 处（{st['named_share']:.0%}）。"
+        f"落在要追的名字的定义上 {st['citations_on_defs']} 处（{st['defs_share']:.0%}）。"
         "行号由系统从阅读记录推出，不由模型书写。",
-        f"- 阅读：{unread.get('read_line', '')}",
     ]
+    chase = st.get("chase") or {}
+    for q in qs:
+        d = st["depth"].get(q["id"], {"level": "none", "missing": ""})
+        fo = (chase.get(q["id"]) or {}).get("followed") or {}
+        miss = f"（缺的：{d['missing']}）" if d.get("missing") and d["level"] != "mechanism" else ""
+        gap = f"，没读到定义的：{'、'.join(f'`{n}`' for n in fo['unread'])}" if fo.get("unread") else ""
+        lines.append(
+            f"- {q['id']} 答到哪一层：{DEPTH_ZH[d['level']]}{miss}（由独立的一次审读判定）。"
+            f"核对过的结论 {st['answered'].get(q['id'], 0)} 条，其中引到实现定义的 {st['on_defs'].get(q['id'], 0)} 条；"
+            f"读的时候说值得追的名字里，仓库里有定义的 {fo.get('defined', 0)} 个，"
+            f"定义读到了 {fo.get('read', 0)} 个{gap}。"
+        )
+    lines.append(f"- 阅读：{unread.get('read_line', '')}")
+    if unread.get("calls_line"):
+        lines.append(f"- 调用：{unread['calls_line']}")
     return "\n".join(lines)

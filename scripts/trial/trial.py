@@ -265,19 +265,43 @@ def route_lines(ws: Path) -> list[str]:
     )
     out.append(
         f"- 带行号的引用 {st.get('citations', 0)} 处，其中指向对方仓库 {st.get('citations_theirs', 0)} 处、"
-        f"落在题面点名的文件上 {st.get('citations_on_named', 0)} 处"
-        f"（{round(100 * float(st.get('named_share', 0)))}%）；行号由程序从读过的行区间推出，"
+        f"落在要追的名字的定义上 {st.get('citations_on_defs', 0)} 处"
+        f"（{round(100 * float(st.get('defs_share', 0)))}%）；行号由程序从读过的行区间推出，"
         f"读的时候行区间对不上原文而丢掉的事实 {read.get('dropped', 0)} 条"
     )
-    out.append(
-        f"- 过线三样里程序数得出的：每一问都有核对过的结论 {_yn(ok.get('all_answered'))}；"
-        f"有集成建议 {_yn(ok.get('has_recommendation'))}；未核对不超过两成 {_yn(ok.get('unverified_within_20pct'))}"
-    )
+    zh = {"mechanism": "答到了做法本身", "partial": "只答到一部分做法", "peripheral": "只答到周边"}
+    zh |= {"none": "没有核对过的结论", "unjudged": "没有来得及判"}
+    chase = read.get("chase") or {}
+    for qq in q.get("questions") or []:
+        qid = qq.get("id")
+        dp = (st.get("depth") or {}).get(qid) or {}
+        fo = (chase.get(qid) or {}).get("followed") or {}
+        pk = (chase.get(qid) or {}).get("picked") or {}
+
+        def share(r: dict[str, object]) -> str:
+            return f"{r.get('read', 0)}/{r.get('defined', 0)}" if r.get("defined") else "无"
+
+        miss = f"（缺的：{dp['missing']}）" if dp.get("missing") else ""
+        out.append(
+            f"- {qid} 答到哪一层：{zh.get(str(dp.get('level')), '没有记录')}{miss}；"
+            f"核对过的结论 {(st.get('answered') or {}).get(qid, 0)} 条，"
+            f"引到实现定义的 {(st.get('on_defs') or {}).get(qid, 0)} 条；"
+            f"值得追的名字定义读到 {share(fo)}，挑中的名字定义读到 {share(pk)}；"
+            f"读了 {(read.get('by_question') or {}).get(qid, 0)} 部分"
+        )
     lim = q.get("limits") or {}
     out.append(
-        f"- 用量（照实记录，不作过线）：调用 {q.get('calls')} 次（上限 {lim.get('call_cap')}），"
-        f"token {q.get('tokens')}（上限 {lim.get('token_cap')}），"
-        f"用时 {round(float(q.get('elapsed_s') or 0) / 60, 1)} 分钟"
+        f"- 用量（照实记录，不作过线）：真做成的调用 {q.get('calls', 0)} 次（上限 {lim.get('call_cap')}），"
+        f"失败后重试的 {q.get('calls_failed', 0)} 次、取自上次记录的 {q.get('calls_replayed', 0)} 次"
+        "（这两样不计入上限）；"
+        f"token {q.get('tokens')}（上限 {lim.get('token_cap')}）；"
+        f"用时 {round(float(q.get('elapsed_s') or 0) / 60, 1)} 分钟；"
+        f"同一个文件最多读了 {read.get('most_parts_one_file', 0)} 部分"
+    )
+    out.append(
+        f"- 过线里程序数得出的：每一问都有核对过的结论 {_yn(ok.get('all_answered'))}；"
+        f"每一问都答到了做法本身 {_yn(ok.get('answered_mechanism'))}；"
+        f"有集成建议 {_yn(ok.get('has_recommendation'))}；未核对不超过两成 {_yn(ok.get('unverified_within_20pct'))}"
     )
     return out
 

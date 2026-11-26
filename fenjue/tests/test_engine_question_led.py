@@ -99,7 +99,15 @@ def test_question_led_can_be_switched_off(tmp_path):
     )
     eng = Engine(tmp_path, dan, {"a_1": DELTA}, conf)
     d = eng.start(cases.intake("delta", "code", "dry_run"))
-    assert "走通用勘察" in d.answer.splitlines()[0]
+    head = d.answer.splitlines()[0]
+    # 题面其实点名了：第一行照实写点名了几问、为什么没有按题读
+    assert "题面点名了 2 问，但按题读的开关关着，这次走通用勘察" in head and "Q1 " in head
+    assert "没有点名" not in head
+    assert json.loads((tmp_path / "ql.json").read_text(encoding="utf-8"))["off"] == "switch"
+    # 留出份额或开题时锁在上一版的：第一行写的是这个原因
+    asked = wenti.questions(STATEMENT)
+    assert "上一版分析流程" in dati.route_line([], asked, "form") and "开关" not in dati.route_line([], asked, "form")
+    assert dati.route_line([]) == "> 读法：题面没有点名具体的问题，走通用勘察。"
     assert kernel._form_ver("h1.tunshi@1") == 1 and kernel._form_ver("h1.tunshi@2") == 2 and kernel._form_ver(None) == 2
 
 
@@ -151,7 +159,7 @@ def test_pick_only_accepts_names_that_exist_in_the_repository(dry):
     out, _, _ = dati.ask_pick(
         Liar(), [{"id": "Q1", "text": "x"}], {"names": ["fold_turns"], "files": ["a.py"]}, lambda: "n"
     )
-    assert out == {"Q1": {"names": ["fold_turns"], "files": []}}
+    assert out == {"Q1": {"names": ["fold_turns"], "files": [], "dirs": []}}
 
 
 def test_the_answer_cites_file_and_lines_derived_from_facts(dry):
@@ -186,7 +194,8 @@ def test_labels_come_from_verification_not_from_the_draft(dry):
     assert "fold_turns 在估算值不超过" not in body and "fold_turns 在估算值不超过" in unsure.split("## 没读到的")[0]
     st = eng.get("ql:stats")
     assert (st["items"], st["supported"], st["unsupported"], st["unverified"], st["rewritten"]) == (9, 8, 1, 0, 1)
-    assert st["named_share"] == 1.0 and st["answered"] == {"Q1": 5, "Q2": 2} and st["recommendations"] == 1
+    assert st["answered"] == {"Q1": 5, "Q2": 2} and st["recommendations"] == 1
+    assert "named_share" not in st and st["depth"]["Q1"]["level"] == "mechanism"
     # 核对的人只看到结论与它引用的那几行原文（定界包裹），看不到答题稿别的部分
     p = dan.payloads["heyan:r1:0:1"]
     assert set(p) == {"template", "items", "excerpt", "nonce"} and "[mossgate/folding.py 1-6]" in p["excerpt"]
@@ -213,8 +222,14 @@ def test_products_and_ledger_stay_within_the_existing_schemas(dry):
         assert schema.errors(o, "observation") == []
     assert d.passed and set(d.artifacts) == {"dry_run.json", "bang_updates.json"}  # 回答不登记成新的产物
     ql = json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))
-    assert ql["route"] == "question_led" and ql["calls"] == 27 and ql["calls"] <= ql["limits"]["call_cap"]
-    assert ql["pass"] == {"all_answered": True, "has_recommendation": True, "unverified_within_20pct": True}
+    assert ql["route"] == "question_led" and ql["calls"] == 29 and ql["calls"] <= ql["limits"]["call_cap"]
+    assert ql["pass"] == {
+        "all_answered": True,
+        "answered_mechanism": True,
+        "has_recommendation": True,
+        "unverified_within_20pct": True,
+    }
+    assert ql["calls_failed"] == 0 and ql["calls_replayed"] == 0
     assert ql["tokens"] == sum(a + b for a, b in eng.state["spent"]["tokens"].values())
 
 
@@ -368,8 +383,15 @@ def test_an_interrupted_run_resumes_without_asking_again(tmp_path):
     _, clean, whole = run(tmp_path / "clean", parallel=1)
     assert len(script.calls) == len(set(script.calls))  # 每个调用只真的问过一次
     assert sorted(script.calls) == sorted(whole.calls)  # 断了五次，问的还是不断时的那些
-    assert d.answer.split("## 产物对照")[0] == clean.answer.split("## 产物对照")[0]
-    assert json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))["calls"] >= len(whole.calls)
+
+    def body(a: str) -> str:  # 调用那一行如实不同：接着做的这次有取自上次记录的
+        return "\n".join(ln for ln in a.split("## 产物对照")[0].splitlines() if not ln.startswith("- 调用："))
+
+    assert body(d.answer) == body(clean.answer)
+    ql = json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))
+    # 线只数真做成的：断了五次也正好是不断时那么多次；取自上次记录的单列
+    assert ql["calls"] == len(whole.calls) and ql["calls_replayed"] > 0 and ql["calls_failed"] == 0
+    assert f"取自上次记录、没有再发的 {ql['calls_replayed']} 次" in d.answer
 
 
 def test_our_own_repository_is_read_for_comparison_not_analysed(tmp_path):
@@ -484,3 +506,205 @@ def test_the_previous_engine_version_is_the_standing_holdout():
     assert v.form("solve", held)["ref"] == "h1.tunshi@1" and v.form("solve", main)["ref"] == "h1.tunshi@2"
     assert kernel._form_ver(v.form("solve", held)["ref"]) == 1
     assert "reader/q/v1" not in v.form("solve", held)["pills"] and "reader/q/v1" in v.form("solve", main)["pills"]
+
+
+# ---------------------------------------------------------------- 读哪里（审读 2026-11-26）
+
+
+def _sprawl(root: Path) -> None:
+    """仿照真跑时的样子：两个大文件满是检索词（压缩、摘要的字样），真正做压缩的目录用的是仓库自己的叫法，
+    一个检索词都不含。大文件里只有一处调用了做压缩的那个类。"""
+    blocks = []
+    for i in range(100):
+        dense = 50 <= i < 60  # 命中集中在中段（真跑时也是：大文件里讲压缩请求的那一段）
+        note = "    # request compress and summary of the history\n" * (4 if dense else 1)
+        call = "    RollingCondenser(keep=4).condense(self.events)\n    CondensationRequest()\n" if i == 55 else ""
+        blocks.append(f"def handle_{i}(self):\n{note}{call}" + "".join(f"    x{j} = {j}\n" for j in range(24)))
+    (root / "app" / "conversation").mkdir(parents=True)
+    (root / "app" / "conversation" / "local_conversation.py").write_text("\n".join(blocks))
+    router = [f"def route_{i}(req):\n    # summary compress\n" + "    pass\n" * 26 for i in range(40)]
+    (root / "app" / "conversation" / "router.py").write_text("\n".join(router))
+    (root / "app" / "context" / "condenser").mkdir(parents=True)
+    (root / "app" / "context" / "condenser" / "base.py").write_text(
+        "class CondenserBase:\n    def condense(self, events):\n        raise NotImplementedError\n"
+    )
+    (root / "app" / "context" / "condenser" / "rolling.py").write_text(
+        "from .base import CondenserBase\n\n\nclass RollingCondenser(CondenserBase):\n"
+        "    def __init__(self, keep=4):\n        self.keep = keep\n\n"
+        "    def condense(self, events):\n        head, tail = events[: -self.keep], events[-self.keep :]\n"
+        "        return [self.forget(head), *tail]\n"
+    )
+    (root / "app" / "events.py").write_text("class CondensationRequest:\n    pass\n")
+    (root / "README.md").write_text("# app\n\nThe app keeps long histories short.\n")
+
+
+CHASE = ("RollingCondenser", "CondensationRequest", "CondenserBase")
+
+
+def _simulate(root: Path, pick_dirs: bool, reads: int = 20, batch: int = 8):
+    """确定性的部分原样跑：概览 + 挑词 + 排序 + 一批批排读；模型的三处由脚本扮演（挑词、读原文时说值得追的名字）。"""
+    snap = survey.load_snapshot("s1", "code", root)
+    ix = wenti.Index.build(snap, survey.probe(snap))
+    qs = [{"id": "Q1", "text": "上下文快满时怎么压缩"}]
+    terms = ["compress", "summar"]  # 盲出的词：没有对方自己的叫法（condens）
+    vocab = {**wenti.vocabulary(ix, terms), "dirs": wenti.overview(ix)}
+    listing = dati.pick_listing(vocab)
+
+    class Pick:
+        def call(self, role, key, payload):
+            dirs = [ln.split(" | ")[0] for ln in listing.split("## 目录\n")[1].splitlines()]
+            row = {"q": "Q1", "names": [], "files": [f for f in vocab["files"] if "conversation" in f][:2]}
+            if pick_dirs:
+                row["dirs"] = [d for d in dirs if "condenser" in d]
+            return Reply({"picks": [row]}, 1, 1)
+
+    picks, _, _ = dati.ask_pick(Pick(), qs, vocab, lambda: "n")
+    pk = picks["Q1"]
+    ranked = wenti.rank(ix, terms, pk["names"], pk["files"], pk.get("dirs", []))
+    base = {p: s for s, p in ranked}
+    fr = qled._new_frontier(ix, qs, picks, base, {"Q1": base}, {"Q1": terms}, [p for _, p in ranked[:3]], 3)
+    order: list[wenti.Part] = []
+    batches: list[list[wenti.Part]] = []
+    while len(order) < reads:
+        got = fr.next(min(batch, reads - len(order)))
+        if not got:
+            break
+        batches.append([p for p, _, _ in got])
+        for part, _, q in got:
+            shown = wenti.numbered(snap, part)
+            mine = ix.defines(part.path)
+            follow = {n: "Q1" for n in CHASE if wenti.follow_ok(n, shown) and n not in mine}
+            fr.note(part, follow, q)
+            order.append(part)
+    fr.batches = batches  # type: ignore[attr-defined]
+    return ix, fr, order, listing
+
+
+def test_the_implementation_is_read_even_when_blind_terms_miss_its_own_vocabulary(tmp_path):
+    _sprawl(tmp_path)
+    ix, fr, order, listing = _simulate(tmp_path, pick_dirs=True)
+    # 挑词那一步看得到不靠检索词的目录概览：做压缩的目录与它定义的名字都在里面
+    assert "app/context/condenser/ | 2 |" in listing and "RollingCondenser" in listing
+    first = [p.path for p in order[:8]]
+    assert "app/context/condenser/rolling.py" in first and "app/context/condenser/base.py" in first
+
+
+def test_big_files_do_not_eat_the_reads_and_followed_definitions_come_first(tmp_path):
+    _sprawl(tmp_path)
+    ix, fr, order, _ = _simulate(tmp_path, pick_dirs=False)  # 挑词也没挑中那个目录：只能靠追读
+    big = "app/conversation/local_conversation.py"
+    assert len(wenti.parts("s1", big, ix.snap.texts[big])) >= 8
+    b1, b2 = fr.batches[0], fr.batches[1]
+    # 第一批里同一个文件至多 3 部分；大文件里先读命中最密、调用了做压缩的那个类的那一段，不从第一行顺着读
+    assert sum(1 for p in b1 if p.path == big) <= 3
+    assert b1[0].path == big and "RollingCondenser" in wenti.raw_range(ix.snap, big, b1[0].a, b1[0].b)
+    # 读到调用处之后，下一批最先读的是要追的名字的定义，排在大文件的后续部分前面
+    assert [p.path for p in b2[:2]] == ["app/context/condenser/rolling.py", "app/events.py"]
+    assert "app/context/condenser/base.py" in [p.path for p in order]  # 基类是读了子类之后才追到的
+    # 之后每一批，一个读满了的文件至多多读一部分：额度用完之前，大文件没有被一口气读完
+    assert all(sum(1 for p in b if p.path == big) <= 1 for b in fr.batches[1:])
+    assert sum(1 for p in order if p.path == big) < len(wenti.parts("s1", big, ix.snap.texts[big]))
+    rep = fr.chase_report()["Q1"]["followed"]
+    assert rep == {"names": 3, "defined": 3, "read": 3, "share": 1.0, "unread": []}
+
+
+def test_chase_reading_is_not_circular(tmp_path):
+    """「要追的名字里定义读到了几个」：名字在读之前、读的途中定下；读得不够时如实是 0，不随读到什么变成 100%。"""
+    _sprawl(tmp_path)
+    _, fr, order, _ = _simulate(tmp_path, pick_dirs=False, reads=6, batch=6)
+    rep = fr.chase_report()["Q1"]["followed"]
+    assert rep["defined"] >= 1 and rep["read"] == 0 and rep["share"] == 0.0 and "RollingCondenser" in rep["unread"]
+
+
+def test_depth_tells_mechanism_from_periphery(tmp_path):
+    eng, d, dan = run(tmp_path / "p", QScript(depth={"Q1": "peripheral"}))
+    st = eng.get("ql:stats")
+    assert st["depth"]["Q1"]["level"] == "peripheral" and st["answered"]["Q1"] > 0
+    ql = json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))
+    assert ql["pass"]["all_answered"] is True and ql["pass"]["answered_mechanism"] is False
+    assert "Q1 答到哪一层：只答到周边（缺的：动手做的那段逻辑没有讲到）" in d.answer
+    p = dan.payloads["heyan:depth:1"]
+    # 审读的人看不到原文与条数之外的东西：问题、留下的结论（定界包裹）、没读到定义的名字
+    assert set(p) == {"template", "questions", "excerpt", "nonce"} and "留下的结论" in p["excerpt"]
+
+
+def test_verification_leaves_calls_for_the_steps_after_it(tmp_path):
+    lim = qled.Limits(call_cap=85, tail_calls=70)
+    eng, d, dan = run(tmp_path / "v", limits=lim, parallel=1)
+    assert not any(k.startswith("heyan:") for k in dan.calls)  # 核对没有开：再开就吃掉后面的次数
+    assert any(k.startswith("cuiyi:") for k in dan.calls) and any(k.startswith("ruwei:") for k in dan.calls)
+    assert "核对提前停下：调用次数接近上限（给后面的提炼与归位留了 70 次）" in d.answer
+    assert eng.get("ql:stats")["unverified"] == eng.get("ql:stats")["items"]
+
+
+def test_failed_attempts_are_counted_apart_from_calls_that_were_made(tmp_path):
+    class Flaky:
+        def __init__(self):
+            self.seen: set[str] = set()
+
+        def call(self, role, key, payload):
+            if key not in self.seen:
+                self.seen.add(key)
+                raise RuntimeError("连接被重置")
+            return Reply({"ok": key}, 1, 1)
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    meter = qled.Meter(Memo(Flaky(), ws / "calls.jsonl"), ws / "ql-calls.json", lambda: True)
+    for k in ("a", "b", "c"):
+        for _ in range(12):  # 网络故障时同一个调用重试很多次
+            try:
+                meter.call("reader", k, {})
+                break
+            except RuntimeError:
+                continue
+    meter.call("reader", "a", {})  # 取自调用备忘
+    assert (meter.made, meter.failed, meter.replayed) == (3, 3, 1)
+    again = qled.Meter(Memo(Flaky(), ws / "calls.jsonl"), ws / "ql-calls.json", lambda: True)
+    assert (again.made, again.failed, again.replayed) == (3, 3, 1)  # 跨会话累计
+    with pytest.raises(BudgetExhausted):
+
+        class Stop:
+            def call(self, role, key, payload):
+                raise BudgetExhausted("task")
+
+        qled.Meter(Stop()).call("reader", "x", {})
+
+
+def test_our_side_is_picked_like_theirs_not_by_raw_term_counts(tmp_path):
+    ours = tmp_path / "ours"
+    (ours / "pkg" / "relay").mkdir(parents=True)
+    (ours / "pkg" / "relay" / "baton.py").write_text(
+        "class Baton:\n    def pass_on(self, note):\n        return note\n"
+    )
+    (ours / "pkg" / "meter.py").write_text("# fold fold summary summary context context\n" * 30)
+    (ours / "LICENSE").write_text("Apache License\nVersion 2.0\n")
+    sources = [
+        {"no": 1, "form": "code", "via": "upload", "artifact": "a_1"},
+        {"no": 2, "form": "code", "via": "upload", "artifact": "a_2", "url": "https://example.test/us/ours"},
+    ]
+
+    class Ours(QScript):
+        def call(self, role, key, payload):
+            if key.startswith("wenti:pick:own:"):
+                with self._lock:
+                    self.calls.append(key)
+                    self.payloads[key] = dict(payload)
+                return Reply({"picks": [{"q": "Q1", "names": ["Baton"], "files": [], "dirs": ["pkg/relay/"]}]}, 1, 1)
+            return super().call(role, key, payload)
+
+    eng, d, dan = run(
+        tmp_path / "ws",
+        Ours(),
+        mats={"a_1": DELTA, "a_2": ours},
+        sources=sources,
+        own_urls=("https://example.test/us/ours",),
+    )
+    assert (
+        dan.payloads["wenti:pick:own:1"]["side"] == "ours"
+        and "pkg/relay/ |" in dan.payloads["wenti:pick:own:1"]["excerpt"]
+    )
+    own_reads = [k for k in dan.calls if k.startswith("qread:s91:")]
+    plan = eng.get("ql:own")["parts"]
+    assert plan[0]["path"] == "pkg/relay/baton.py" and plan[0]["why"] == "挑中的名字的定义"  # 挑中的先读，不是计量文件
+    assert "qread:s91:pkg/relay/baton.py:1-3:1" in own_reads
