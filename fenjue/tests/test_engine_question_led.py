@@ -156,10 +156,10 @@ def test_pick_only_accepts_names_that_exist_in_the_repository(dry):
         def call(self, role, key, payload):
             return Reply({"picks": [{"q": "Q1", "names": ["no_such_name", "fold_turns"], "files": ["nope.py"]}]}, 1, 1)
 
-    out, _, _ = dati.ask_pick(
+    out, _, _, why = dati.ask_pick(
         Liar(), [{"id": "Q1", "text": "x"}], {"names": ["fold_turns"], "files": ["a.py"]}, lambda: "n"
     )
-    assert out == {"Q1": {"names": ["fold_turns"], "files": [], "dirs": []}}
+    assert out == {"Q1": {"names": ["fold_turns"], "files": [], "dirs": []}} and why == ""
 
 
 def test_the_answer_cites_file_and_lines_derived_from_facts(dry):
@@ -223,9 +223,16 @@ def test_products_and_ledger_stay_within_the_existing_schemas(dry):
     assert d.passed and set(d.artifacts) == {"dry_run.json", "bang_updates.json"}  # 回答不登记成新的产物
     ql = json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))
     assert ql["route"] == "question_led" and ql["calls"] == 29 and ql["calls"] <= ql["limits"]["call_cap"]
+    # Q2 审读判了「做法本身」，但没有引到要追的名字定义体内的结论（0 条，不到 2 条）：按 cz 的判法降一档
+    assert ql["stats"]["depth"]["Q1"]["level"] == "mechanism"
+    assert ql["stats"]["depth"]["Q2"] == {
+        "level": "partial",
+        "judged": "mechanism",
+        "missing": "引到实现上定义的结论不够（0 条，至少要 2 条）",
+    }
     assert ql["pass"] == {
         "all_answered": True,
-        "answered_mechanism": True,
+        "answered_mechanism": False,
         "has_recommendation": True,
         "unverified_within_20pct": True,
     }
@@ -558,7 +565,7 @@ def _simulate(root: Path, pick_dirs: bool, reads: int = 20, batch: int = 8):
                 row["dirs"] = [d for d in dirs if "condenser" in d]
             return Reply({"picks": [row]}, 1, 1)
 
-    picks, _, _ = dati.ask_pick(Pick(), qs, vocab, lambda: "n")
+    picks, _, _, _ = dati.ask_pick(Pick(), qs, vocab, lambda: "n")
     pk = picks["Q1"]
     ranked = wenti.rank(ix, terms, pk["names"], pk["files"], pk.get("dirs", []))
     base = {p: s for s, p in ranked}
@@ -622,7 +629,7 @@ def test_depth_tells_mechanism_from_periphery(tmp_path):
     assert st["depth"]["Q1"]["level"] == "peripheral" and st["answered"]["Q1"] > 0
     ql = json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))
     assert ql["pass"]["all_answered"] is True and ql["pass"]["answered_mechanism"] is False
-    assert "Q1 答到哪一层：只答到周边（缺的：动手做的那段逻辑没有讲到）" in d.answer
+    assert "- Q1：答到哪一层：只答到周边；核对过的结论" in d.answer and "缺的：动手做的那段逻辑没有讲到" in d.answer
     p = dan.payloads["heyan:depth:1"]
     # 审读的人看不到原文与条数之外的东西：问题、留下的结论（定界包裹）、没读到定义的名字
     assert set(p) == {"template", "questions", "excerpt", "nonce"} and "留下的结论" in p["excerpt"]
@@ -708,3 +715,82 @@ def test_our_side_is_picked_like_theirs_not_by_raw_term_counts(tmp_path):
     plan = eng.get("ql:own")["parts"]
     assert plan[0]["path"] == "pkg/relay/baton.py" and plan[0]["why"] == "挑中的名字的定义"  # 挑中的先读，不是计量文件
     assert "qread:s91:pkg/relay/baton.py:1-3:1" in own_reads
+
+
+def test_the_depth_rule_takes_the_stricter_of_judgement_and_evidence():
+    """cz 2026-11-26 定的判法：审读为主；判了「做法本身」而引到定义的结论少于 2 条，降为「只答到一部分」。"""
+    mech = {"level": "mechanism", "missing": ""}
+    assert dati.settle(mech, 5, 2) == {"level": "mechanism", "missing": "", "judged": "mechanism"}
+    low = dati.settle(mech, 5, 1)
+    assert low["level"] == "partial" and low["judged"] == "mechanism" and dati.SHORT_ON_DEFS in low["missing"]
+    # 审读本来就判得更严的，旁证再多也不升档
+    assert dati.settle({"level": "peripheral", "missing": "x"}, 9, 9)["level"] == "peripheral"
+    assert dati.settle(None, 3, 0)["level"] == "unjudged" and dati.settle(None, 0, 0)["level"] == "none"
+
+
+def test_a_truncated_pick_is_retried_with_a_brevity_note_and_failure_is_reported(tmp_path):
+    class Cut(QScript):
+        def __init__(self, cut: int, junk: bool = False):
+            super().__init__()
+            self.cut, self.junk = cut, junk
+
+        def call(self, role, key, payload):
+            if payload.get("template") == "wenti/pick/v1" and not key.startswith("wenti:pick:own"):
+                n = int(key.rsplit(":", 1)[1])
+                with self._lock:
+                    self.calls.append(key)
+                    self.payloads[key] = dict(payload)
+                if n <= self.cut:
+                    return Reply(None, 7_800, 24_000, "max_tokens")
+                if self.junk:
+                    return Reply({"picks": [{"q": "Q1", "names": ["no_such"], "files": ["nope.py"]}]}, 1, 1)
+            return super().call(role, key, payload)
+
+    # 第一次被截断，重来时带「思考从简」的说明，第二次挑成
+    eng, d, dan = run(tmp_path / "a", Cut(1))
+    assert "思考从简" in dan.payloads["wenti:pick:2"]["errors"][0]
+    assert "pick_failed" not in eng.get("ql:plan") and "挑词没有成功" not in d.answer
+    # 两次都被截断：照实写明，不悄悄退回
+    eng, d, _ = run(tmp_path / "b", Cut(2))
+    assert eng.get("ql:plan")["pick_failed"] == "truncated"
+    unread = d.answer.split("## 没读到的")[1]
+    assert "对方仓库：挑词没有成功（两次都被输出上限截断），只按检索词排" in unread
+    assert json.loads((eng.ws / "ql.json").read_text(encoding="utf-8"))["pick_failed"] == {"theirs": "truncated"}
+    # 挑出的都不在表里
+    eng, d, _ = run(tmp_path / "c", Cut(0, junk=True))
+    assert eng.get("ql:plan")["pick_failed"] == "invalid" and "挑出的名字、文件、目录都不在给出的表里" in d.answer
+
+
+def test_our_side_reads_the_code_that_does_it_not_only_the_class_header(tmp_path):
+    """我们这边挑中的类定义在文件开头，做接力的那段在后面的私有方法里：两段都要读到。"""
+    ours = tmp_path / "ours"
+    (ours / "pkg").mkdir(parents=True)
+    head = "class Session:\n    def __init__(self):\n        self.turns = []\n\n"
+    filler = "".join(f"    def step_{i}(self):\n" + "        pass\n" * 20 + "\n" for i in range(20))
+    relay = "    def _hand_over(self):\n        # fold the context into a summary for the next session\n"
+    relay += "        summary = self.turns[-6:]\n        return summary\n"
+    (ours / "pkg" / "session.py").write_text(head + filler + relay)
+    (ours / "LICENSE").write_text("Apache License\nVersion 2.0\n")
+    sources = [
+        {"no": 1, "form": "code", "via": "upload", "artifact": "a_1"},
+        {"no": 2, "form": "code", "via": "upload", "artifact": "a_2", "url": "https://example.test/us/ours"},
+    ]
+
+    class Ours(QScript):
+        def call(self, role, key, payload):
+            if key.startswith("wenti:pick:own:"):
+                return Reply({"picks": [{"q": "Q1", "names": ["Session"], "files": [], "dirs": []}]}, 1, 1)
+            return super().call(role, key, payload)
+
+    eng, d, dan = run(
+        tmp_path / "ws",
+        Ours(),
+        mats={"a_1": DELTA, "a_2": ours},
+        sources=sources,
+        own_urls=("https://example.test/us/ours",),
+    )
+    body = (ours / "pkg" / "session.py").read_text()
+    relay_line = body.splitlines().index("    def _hand_over(self):") + 1
+    parts = eng.get("ql:own")["parts"]
+    assert any(p["path"] == "pkg/session.py" and p["lines"][0] == 1 for p in parts)  # 类定义那一段
+    assert any(p["path"] == "pkg/session.py" and p["lines"][0] <= relay_line <= p["lines"][1] for p in parts)

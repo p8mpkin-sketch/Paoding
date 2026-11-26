@@ -282,6 +282,8 @@ def route_lines(ws: Path) -> list[str]:
             return f"{r.get('read', 0)}/{r.get('defined', 0)}" if r.get("defined") else "无"
 
         miss = f"（缺的：{dp['missing']}）" if dp.get("missing") else ""
+        if dp.get("judged") and dp["judged"] != dp.get("level"):
+            miss += f"（审读原判「{zh.get(str(dp['judged']), dp['judged'])}」，引到定义的结论不够，降一档）"
         out.append(
             f"- {qid} 答到哪一层：{zh.get(str(dp.get('level')), '没有记录')}{miss}；"
             f"核对过的结论 {(st.get('answered') or {}).get(qid, 0)} 条，"
@@ -289,6 +291,9 @@ def route_lines(ws: Path) -> list[str]:
             f"值得追的名字定义读到 {share(fo)}，挑中的名字定义读到 {share(pk)}；"
             f"读了 {(read.get('by_question') or {}).get(qid, 0)} 部分"
         )
+    for side, why in (q.get("pick_failed") or {}).items():
+        who = "对方仓库" if side == "theirs" else "我们自己的实现"
+        out.append(f"- {who}：挑词没有成功（{why}），只按检索词排")
     lim = q.get("limits") or {}
     out.append(
         f"- 用量（照实记录，不作过线）：真做成的调用 {q.get('calls', 0)} 次（上限 {lim.get('call_cap')}），"

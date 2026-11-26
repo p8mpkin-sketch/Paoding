@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from .run import Delivery, Engine
 
 CODE_FORMS = ("code", "docs")
+OWN_PARTS_PER_FILE = 2
 OWN_SID_BASE = 90  # 我们自己那份材料的快照编号从 s91 起，与对方的 s1、s2… 分开
 
 
@@ -221,14 +222,15 @@ def _pick_and_rank(
     ix: wenti.Index,
     terms: Mapping[str, tuple[list[str], list[str]]],
     tag: str = "",
-) -> tuple[dict[str, dict[str, list[str]]], dict[str, list[tuple[float, str]]], dict[str, list[str]]]:
+) -> tuple[dict[str, dict[str, list[str]]], dict[str, list[tuple[float, str]]], dict[str, list[str]], str]:
     """一份仓库的「挑词 + 排文件」：给挑词那一步看检索词命中的名字与文件，加一份不靠检索词的目录概览；
-    再按挑中的名字、文件、目录给每个子问排文件。交回 (挑中的, 各子问的文件排序, 各子问的检索用词)。"""
+    再按挑中的名字、文件、目录给每个子问排文件。交回 (挑中的, 各子问的文件排序, 各子问的检索用词, 挑词没挑成的原因)。"""
     all_terms = [t for q in qs for part in terms.get(q["id"], ([], [])) for t in part]
     vocab: dict[str, Any] = {**wenti.vocabulary(ix, list(dict.fromkeys(all_terms))), "dirs": wenti.overview(ix)}
     picks: dict[str, dict[str, list[str]]] = {}
+    failed = ""
     if vocab["names"] or vocab["files"] or vocab["dirs"]:
-        picks, tin, tout = dati.ask_pick(eng.dan, qs, vocab, eng.cfg.nonce, tag)
+        picks, tin, tout, failed = dati.ask_pick(eng.dan, qs, vocab, eng.cfg.nonce, tag)
         eng._spend("S3", "light", tin, tout)
     ranked: dict[str, list[tuple[float, str]]] = {}
     words: dict[str, list[str]] = {}
@@ -238,7 +240,14 @@ def _pick_and_rank(
         names = pk.get("names", [])
         ranked[q["id"]] = wenti.rank(ix, [*zh, *en], names, pk.get("files", []), pk.get("dirs", []))
         words[q["id"]] = list(dict.fromkeys([*zh, *en, *(text.fold(n) for n in names if n.isascii())]))
-    return picks, ranked, words
+    return picks, ranked, words, failed
+
+
+PICK_FAILED = {
+    "truncated": "两次都被输出上限截断",
+    "invalid": "挑出的名字、文件、目录都不在给出的表里",
+    "shape": "输出不合要求的形状",
+}
 
 
 def _plan(eng: Engine, qs: list[dict[str, str]], ix: wenti.Index) -> dict[str, Any]:
@@ -264,7 +273,7 @@ def _plan(eng: Engine, qs: list[dict[str, str]], ix: wenti.Index) -> dict[str, A
             if any(again.get(qid, ([], []))):
                 terms[qid] = again[qid]
         zero = [q["id"] for q in qs if not hit_files(q["id"])]
-    picks, ranked, words = _pick_and_rank(eng, qs, ix, terms)
+    picks, ranked, words, pick_failed = _pick_and_rank(eng, qs, ix, terms)
     zero = [q["id"] for q in qs if not ranked[q["id"]]]  # 检索词没命中、概览里也没挑出东西的子问
     base: dict[str, float] = {}
     for q in qs:
@@ -288,6 +297,7 @@ def _plan(eng: Engine, qs: list[dict[str, str]], ix: wenti.Index) -> dict[str, A
         "rank": {q["id"]: {p: sc for sc, p in ranked[q["id"]][:150]} for q in qs},
         "words": words,
         "zero": zero,
+        **({"pick_failed": pick_failed} if pick_failed else {}),
         "slots": {
             q["id"]: wenti.question_slot(
                 q["text"], [*terms.get(q["id"], ([], []))[0], *terms.get(q["id"], ([], []))[1]], sigs
@@ -341,23 +351,25 @@ def _new_frontier(
 
 def _own_parts(eng: Engine, own_ix: wenti.Index, qs: list[dict[str, str]], plan: Mapping[str, Any]) -> list[wenti.Part]:
     """我们自己的实现里读哪几部分。和读对方一样先挑再排：给挑词那一步看我们仓库里检索词命中的名字、文件与目录概览，
-    挑中的名字的定义最先，各子问轮流取，每个文件只取一部分。（只按检索词的命中数排，读到的会是计量、转发一类
+    挑中的名字的定义最先，各子问轮流取，每个文件至多两部分（定义所在那一段，加命中最密的那一段）。（只按检索词的命中数排，读到的会是计量、转发一类
     字面上沾边的文件，而不是做这件事的那几个。）排好的清单存成检查点，接着做时不再问。"""
     if not eng._done("ql:own"):
         eng._mark("ql:own", "S3", "doing")
         terms = {qid: (list(row["zh"]), list(row["en"])) for qid, row in plan["terms"].items()}
-        picks, ranked, words = _pick_and_rank(eng, qs, own_ix, terms, tag="own")
+        picks, ranked, words, pick_failed = _pick_and_rank(eng, qs, own_ix, terms, tag="own")
         base: dict[str, float] = {}
         for q in qs:
             for sc, p in ranked[q["id"]]:
                 base[p] = max(base.get(p, 0.0), sc)
         rank = {q["id"]: {p: sc for sc, p in ranked[q["id"]][:150]} for q in qs}
-        fr = _new_frontier(own_ix, qs, picks, base, rank, words, [], 1)
+        # 每个文件至多两部分：挑中的类定义在文件开头时，做这件事的那段（常在私有方法里）是同一文件里命中最密的另一段
+        fr = _new_frontier(own_ix, qs, picks, base, rank, words, [], OWN_PARTS_PER_FILE)
         rows = [
             {"path": p.path, "lines": [p.a, p.b], "why": why, "q": q} for p, why, q in fr.next(eng.cfg.limits.reads_own)
         ]
         _tick(eng)
-        sha = eng.put("ql:own", {"v": 1, "picks": picks, "parts": rows})
+        body = {"v": 1, "picks": picks, "parts": rows, **({"pick_failed": pick_failed} if pick_failed else {})}
+        sha = eng.put("ql:own", body)
         eng._mark("ql:own", "S3", "done", output=sha, summary=f"我们自己的实现：排了 {len(rows)} 部分")
     sid = own_ix.snap.sid
     return [wenti.Part(sid, r["path"], r["lines"][0], r["lines"][1]) for r in eng.get("ql:own")["parts"]]
@@ -728,6 +740,23 @@ def _unread(eng: Engine) -> dict[str, Any]:
         f"{qid}（{qs.get(qid, '')}）：检索词在对方仓库一个文件都没命中，这一问没有读到东西"
         for qid in plan.get("zero", [])
     ]
+    if plan.get("pick_failed"):
+        notes.append(
+            f"对方仓库：挑词没有成功（{PICK_FAILED.get(plan['pick_failed'], plan['pick_failed'])}），只按检索词排"
+        )
+    own_plan = eng.get("ql:own") or {}
+    if own_plan.get("pick_failed"):
+        why = PICK_FAILED.get(own_plan["pick_failed"], own_plan["pick_failed"])
+        notes.append(f"我们自己的实现：挑词没有成功（{why}），只按检索词排")
+    st = eng.get("ql:stats") or {}
+    for qid, row in (st.get("chase") or {}).items():
+        fo = row.get("followed") or {}
+        if fo.get("defined") and fo.get("read", 0) * 2 < fo["defined"]:
+            names = "、".join(f"`{n}`" for n in fo.get("unread", []))
+            notes.append(
+                f"{qid}（{qs.get(qid, '')}）：读原文时说值得追的名字里，定义只读到 {fo['read']}/{fo['defined']}，"
+                f"没读到的：{names}"
+            )
     if not eng.x["ql"].get("own"):
         notes.append("没有读我们自己的实现（这道题没有带我们仓库的归档），「我们现在怎么做」只对照了能力清单")
     notes += [f"`{w}` 读了但没有读成（输出几次都不合形状）" for w in rd.get("failed", [])]
@@ -786,6 +815,14 @@ def export(eng: Engine) -> None:
         doc.update(
             {
                 "own": q.get("own"),
+                "pick_failed": {
+                    k: v
+                    for k, v in (
+                        ("theirs", (eng.get("ql:plan") or {}).get("pick_failed")),
+                        ("ours", (eng.get("ql:own") or {}).get("pick_failed")),
+                    )
+                    if v
+                },
                 "read": {k: v for k, v in (eng.get("ql:read") or {}).items() if k != "queued"},
                 "stats": st,
                 # 调用次数分三样记：线只看真做成的；失败后重试的、取自上次记录没有再发的单列
@@ -800,8 +837,8 @@ def export(eng: Engine) -> None:
                     "tail_calls": eng.cfg.limits.tail_calls,
                     "parts_per_file": eng.cfg.limits.parts_per_file,
                 },
-                # 引擎自己数得出的几样。all_answered 只数条数；answered_mechanism 看独立审读判的层次：
-                # 每个子问都判为「答到了做法本身」才算（只答到入口、接口、计量这些周边的不算）。
+                # 引擎自己数得出的几样。all_answered 只数条数；answered_mechanism 按 cz 2026-11-26 定的判法：
+                # 每问最后的层次（审读为主，引到定义的结论少于 2 条时降一档）都是「答到了做法本身」才算真。
                 "pass": {
                     "all_answered": bool(st)
                     and all(st.get("answered", {}).get(x["id"], 0) > 0 for x in q["questions"]),

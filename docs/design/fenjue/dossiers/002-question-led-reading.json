@@ -193,7 +193,7 @@
    "dim": "每问值得追的名字里，定义被读到的比例",
    "kind": "新生",
    "dir": "up",
-   "gate": "由 cz 定（2026-11-26 审读：先照实记录）",
+   "gate": "只报告，不作门槛（cz 2026-11-26）；低于一半时报告写明哪些定义没读到",
    "B": "第一问 0/3（2026-11-26 冒烟：三个名字都列为值得追，一个定义都没读到）",
    "test": "fenjue/tests/test_engine_question_led.py::test_big_files_do_not_eat_the_reads_and_followed_definitions_come_first；ql.json 的 read.chase"
   },
@@ -201,9 +201,9 @@
    "dim": "每问答到哪一层（独立审读：做法本身 / 一部分 / 只到周边）",
    "kind": "新生",
    "dir": "up",
-   "gate": "由 cz 定（2026-11-26 审读）",
+   "gate": "题面点名的每一问都是“答到了做法本身”（cz 2026-11-26：审读为主；引到定义的结论少于 2 条时降为一部分；取更严的）",
    "B": "第一问只到周边（2026-11-26 冒烟，cz 人工判）",
-   "test": "fenjue/tests/test_engine_question_led.py::test_depth_tells_mechanism_from_periphery；ql.json 的 stats.depth 与 pass.answered_mechanism"
+   "test": "fenjue/tests/test_engine_question_led.py::test_depth_tells_mechanism_from_periphery；fenjue/tests/test_engine_question_led.py::test_the_depth_rule_takes_the_stricter_of_judgement_and_evidence；ql.json 的 pass.answered_mechanism"
   },
   {
    "dim": "题面点名的主题被剔除的次数",

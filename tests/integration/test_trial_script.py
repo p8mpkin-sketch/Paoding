@@ -211,7 +211,7 @@ def test_the_report_says_which_route_a_run_took(trial, tmp_path):
     doc = {
         "route": "question_led",
         "route_line": "> 读法：题面点名了 2 问，按题读。Q1 甲；Q2 乙",
-        "questions": [{"id": "Q1", "text": "甲"}, {"id": "Q2", "text": "乙"}],
+        "questions": [{"id": "Q1", "text": "甲"}, {"id": "Q2", "text": "乙"}, {"id": "Q3", "text": "丙"}],
         "own": None,
         "read": {"theirs": {"parts": 20, "files": 9, "lines": 4100}, "ours": {"parts": 0}, "facts": 180,
                  "truncated": 1, "most_parts_one_file": 3, "by_question": {"Q1": 11, "Q2": 9},
@@ -222,10 +222,12 @@ def test_the_report_says_which_route_a_run_took(trial, tmp_path):
             "verified_pass_share": 0.8333, "citations": 40, "citations_theirs": 36, "citations_on_defs": 12,
             "defs_share": 0.3333, "answered": {"Q1": 8, "Q2": 9}, "on_defs": {"Q1": 0, "Q2": 4},
             "depth": {"Q1": {"level": "peripheral", "missing": "摘要怎么生成没有讲到"},
-                      "Q2": {"level": "mechanism", "missing": ""}},
+                      "Q2": {"level": "mechanism", "missing": ""},
+                      "Q3": {"level": "partial", "judged": "mechanism", "missing": "引到实现上定义的结论不够"}},
         },
         "pass": {"all_answered": True, "answered_mechanism": False, "has_recommendation": True,
                  "unverified_within_20pct": True},
+        "pick_failed": {"ours": "两次都被输出上限截断"},
         "calls": 61, "calls_failed": 13, "calls_replayed": 4, "tokens": 512000, "elapsed_s": 1500,
         "limits": {"call_cap": 85, "token_cap": 590000},
     }  # fmt: skip
@@ -237,5 +239,7 @@ def test_the_report_says_which_route_a_run_took(trial, tmp_path):
     )
     assert "Q1 答到哪一层：只答到周边（缺的：摘要怎么生成没有讲到）" in out and "值得追的名字定义读到 3/4" in out
     assert "Q2 答到哪一层：答到了做法本身；" in out and "每一问都答到了做法本身 否" in out
+    assert "Q3 答到哪一层：只答到一部分做法（缺的：引到实现上定义的结论不够）（审读原判「答到了做法本身」" in out
+    assert "我们自己的实现：挑词没有成功（两次都被输出上限截断），只按检索词排" in out
     assert "真做成的调用 61 次（上限 85），失败后重试的 13 次、取自上次记录的 4 次" in out
     assert "未核对不超过两成 是" in out and "用时 25.0 分钟" in out

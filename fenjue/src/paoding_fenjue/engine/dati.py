@@ -104,16 +104,25 @@ def ask_pick(
     vocab: Mapping[str, Any],
     nonce: Callable[[], str] = new_nonce,
     tag: str = "",
-) -> tuple[dict[str, dict[str, list[str]]], int, int]:
+) -> tuple[dict[str, dict[str, list[str]]], int, int, str]:
     """从仓库里真实存在的名字、文件、目录里挑：表是外部数据（定界包裹），挑中的必须逐字在表里，否则不收。
-    `tag` 区分是哪一份仓库的表（对方的不带，我们自己的带 own）：两次调用的键不同。"""
+    `tag` 区分是哪一份仓库的表（对方的不带，我们自己的带 own）：两次调用的键不同。
+
+    交回 (挑中的, token 入, token 出, 没挑成的原因)。几次尝试里收下合格条目最多的那一次。一个合格的条目都没有时
+    原因不为空（truncated：每次都被输出上限截断；invalid：挑的都不在表里；shape：输出不合形状），调用方照实写进
+    报告，不悄悄退回只按检索词排。"""
     dirs = [str(d["dir"]) for d in vocab.get("dirs", [])]
     names = list(dict.fromkeys([*vocab["names"], *(n for d in vocab.get("dirs", []) for n in d["names"])]))
     files = list(vocab["files"])
     listing = pick_listing(vocab)
     errors: list[str] = []
     tin = tout = 0
-    out: dict[str, dict[str, list[str]]] = {}
+    best: dict[str, dict[str, list[str]]] = {}
+    why = ""
+
+    def size(o: Mapping[str, Mapping[str, list[str]]]) -> int:
+        return sum(len(v) for row in o.values() for v in row.values())
+
     for attempt in range(1, DRAFT_ATTEMPTS + 1):
         key = f"wenti:pick:{tag + ':' if tag else ''}{attempt}"
         payload: dict[str, Any] = {
@@ -130,9 +139,14 @@ def ask_pick(
             payload["errors"] = errors
         r = dan.call("reader", key, payload)
         tin, tout = tin + (r.tokens_in or estimate_tokens(listing) + 800), tout + r.tokens_out
+        if r.output is None and r.stop == "max_tokens":
+            why = "truncated"
+            errors = ["上一次被输出上限截断，JSON 不完整：思考从简，直接给结果，只输出要求的 JSON"]
+            continue
         with reading(key):
             rows = r.output.get("picks") if isinstance(r.output, dict) else None
-            out, bad = {}, 0
+            out: dict[str, dict[str, list[str]]] = {}
+            bad = 0
             for row in rows if isinstance(rows, list) else []:
                 if not isinstance(row, dict) or row.get("q") not in {q["id"] for q in qs}:
                     continue
@@ -146,14 +160,17 @@ def ask_pick(
                     "files": [f for f in dict.fromkeys(got_f) if f in files][:MAX_PICK_FILES],
                     "dirs": [d for d in dict.fromkeys(got_d) if d in dirs][:MAX_PICK_DIRS],
                 }
+        if size(out) > size(best):
+            best = out
         if out and not bad:
             break
+        why = "shape" if not out and not bad else "invalid"
         errors = (
             ["输出应为 {picks: [{q, names, files, dirs}]}"]
-            if not out
+            if not out and not bad
             else [f"有 {bad} 个名字、文件或目录不在给出的表里：只能逐字从表里挑"]
         )
-    return out, tin, tout
+    return best, tin, tout, ("" if size(best) else why or "shape")
 
 
 # ---------------------------------------------------------------- 阅读一部分
@@ -688,6 +705,23 @@ def on_definition(f: Mapping[str, Any], names: Sequence[str], sites: Mapping[str
     return any(p == f["path"] and a <= int(ln) <= b for n in names for p, ln in sites.get(n, []))
 
 
+MIN_ON_DEFS = 2  # cz 2026-11-26：判「答到了做法本身」时，引到要追的名字定义体内的核对过的结论至少这么多条
+SHORT_ON_DEFS = "引到实现上定义的结论不够"
+
+
+def settle(judged: Mapping[str, str] | None, answered: int, on_defs: int) -> dict[str, str]:
+    """每问最后的层次（cz 2026-11-26 定的判法）：主判是独立审读的层次；旁证「引到定义的结论」少于 MIN_ON_DEFS 条时，
+    审读判的「做法本身」降为「只答到一部分」，缺的写明原因。不一致时取更严的。`judged` 留着审读原判，便于对照。"""
+    if not judged:
+        return {"level": "unjudged" if answered else "none", "missing": "", "judged": ""}
+    level, missing = str(judged["level"]), str(judged.get("missing") or "")
+    out = {"level": level, "missing": missing, "judged": level}
+    if level == "mechanism" and on_defs < MIN_ON_DEFS:
+        out["level"] = "partial"
+        out["missing"] = f"{SHORT_ON_DEFS}（{on_defs} 条，至少要 {MIN_ON_DEFS} 条）"
+    return out
+
+
 def stats(
     ans: Mapping[str, Any],
     facts: Mapping[str, Mapping[str, Any]],
@@ -723,6 +757,8 @@ def stats(
         )
 
     answered = {q: sum(1 for it in solid if it.get("q") == q) for q in qids}
+    on_defs_q = {q: hits(q) for q in qids}
+    levels = {q: settle(depth.get(q), answered[q], on_defs_q[q]) for q in qids}
     return {
         "items": len(items),
         "kept": len(kept),
@@ -735,10 +771,8 @@ def stats(
         "citations_on_defs": on_defs,
         "defs_share": round(on_defs / len(theirs), 4) if theirs else 0.0,
         "answered": answered,
-        "on_defs": {q: hits(q) for q in qids},
-        "depth": {
-            q: dict(depth.get(q) or {"level": "unjudged" if answered[q] else "none", "missing": ""}) for q in qids
-        },
+        "on_defs": on_defs_q,
+        "depth": levels,
         "recommendations": sum(1 for it in items if it["kind"] == "rec" and it["verdict"] in ("supported", "partial")),
     }
 
@@ -811,16 +845,22 @@ def render(
         "行号由系统从阅读记录推出，不由模型书写。",
     ]
     chase = st.get("chase") or {}
+    lines.append("- 答到哪一层：以独立审读的判定为主；引到要追的名字定义体内的结论不够时降一档；取更严的。")
     for q in qs:
         d = st["depth"].get(q["id"], {"level": "none", "missing": ""})
         fo = (chase.get(q["id"]) or {}).get("followed") or {}
-        miss = f"（缺的：{d['missing']}）" if d.get("missing") and d["level"] != "mechanism" else ""
-        gap = f"，没读到定义的：{'、'.join(f'`{n}`' for n in fo['unread'])}" if fo.get("unread") else ""
+        miss = f"；缺的：{d['missing']}" if d.get("missing") and d["level"] != "mechanism" else ""
+        was = (
+            f"（审读判的是「{DEPTH_ZH[d['judged']]}」，按旁证降级）"
+            if d.get("judged") and d["judged"] != d["level"]
+            else ""
+        )
+        share = f"{fo.get('read', 0)}/{fo['defined']}" if fo.get("defined") else "无（没有在仓库里找得到定义的名字）"
         lines.append(
-            f"- {q['id']} 答到哪一层：{DEPTH_ZH[d['level']]}{miss}（由独立的一次审读判定）。"
-            f"核对过的结论 {st['answered'].get(q['id'], 0)} 条，其中引到实现定义的 {st['on_defs'].get(q['id'], 0)} 条；"
-            f"读的时候说值得追的名字里，仓库里有定义的 {fo.get('defined', 0)} 个，"
-            f"定义读到了 {fo.get('read', 0)} 个{gap}。"
+            f"- {q['id']}：答到哪一层：{DEPTH_ZH[d['level']]}{was}；"
+            f"核对过的结论 {st['answered'].get(q['id'], 0)} 条，引到要追的名字定义体内的 "
+            f"{st['on_defs'].get(q['id'], 0)} 条（至少 {MIN_ON_DEFS} 条才算答到做法本身）；"
+            f"读原文时说值得追的名字，定义读到 {share}{miss}。"
         )
     lines.append(f"- 阅读：{unread.get('read_line', '')}")
     if unread.get("calls_line"):
