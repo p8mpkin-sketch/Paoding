@@ -26,7 +26,7 @@ from typing import Any, Protocol
 
 from .. import shapes
 from . import budget, data, materials, schema, survey
-from .dan import Dan, Memo, Reply, Unavailable
+from .dan import Dan, Memo, Reply, ReplyDefect, Unavailable
 from .run import Config, Delivery, Engine, EngineError
 
 ANALYSIS = "analysis"  # 工作区里引擎的目录：run.json、engine.json、obs.jsonl、artifacts/、calls.jsonl
@@ -199,7 +199,8 @@ def reproduce_product(name: str, obj: Any, info: Mapping[str, Any]) -> dict[str,
 
 class Feedback:
     """带着上几次尝试的失败原因调模型：台账里记着哪个单元没做成，那个单元的调用多带一栏 `prior_failures`。
-    输入变了，调用备忘（Memo）就不会拿上一次的回答原样充数——这正是 trial-b-2 五次原样重来的缺口。"""
+    输入变了，调用备忘（Memo）就不会拿上一次的回答原样充数——这正是 trial-b-2 五次原样重来的缺口。
+    只有带 `note` 的行才带：程序出错而错不在解析这个单元回答的代码里时，台账不留给模型看的话（`Session._defect`）。"""
 
     def __init__(self, inner: Dan, rows: Callable[[], list[dict[str, Any]]]) -> None:
         self.inner, self.rows = inner, rows
@@ -359,12 +360,15 @@ class Session:
         run = self._load("run.json") or {}
         return next((u["id"] for u in run.get("units", []) if u.get("state") == "doing"), None)
 
-    def _give_up(self, kind: str, why: str, *, unit: str | None = None, note: str | None = None) -> Delivery | Outcome:
+    def _give_up(
+        self, kind: str, why: str, *, unit: str | None = None, note: str | None = None, hopeless: bool = False
+    ) -> Delivery | Outcome:
         """这个会话没法往下做。还有接力次数：记台账、留检查点，下一个会话带着原因接着做；
-        次数用完了：交一份 blocked，写明共试了几次、各败在哪里——不无声地停。"""
+        次数用完了：交一份 blocked，写明共试了几次、各败在哪里——不无声地停。
+        `hopeless`：再接力也是原样重演（同一处同样的程序错误已经出过），有次数也不再试，当场交 blocked。"""
         self._note_attempt(kind, unit=unit, reason=why, note=note)
-        if int(self.brief.get("relays_left", 0)) > 0:
-            return Outcome("relay", f"{why}；检查点留着，下一个会话带着原因接着做")
+        if not hopeless and int(self.brief.get("relays_left", 0)) > 0:
+            return Outcome("relay", f"{why}；检查点留着，下一个会话{'带着原因' if note else ''}接着做")
         rows = self.attempts
         lines = [
             f"第 {r['attempt']} 次：{ATTEMPT_KIND_ZH.get(str(r['kind']), r['kind'])}"
@@ -372,7 +376,8 @@ class Session:
             for r in rows
         ]
         tries = len({r["attempt"] for r in rows})
-        head = f"共尝试 {tries} 次，次数用完仍没做成：{why}；检查点留着，修好之后追问一句“继续”即可接着做"
+        how = "同一处出了同样的程序错误，再试也是原样重演，不再接着试" if hopeless else "次数用完仍没做成"
+        head = f"共尝试 {tries} 次，{how}：{why}；检查点留着，修好之后追问一句“继续”即可接着做"
         needs = _clip([head, *lines])
         return Delivery(None, "blocked", head + "\n\n" + "\n".join(f"- {x}" for x in lines), {}, needs, passed=False)
 
@@ -489,6 +494,11 @@ class Session:
             locks=list(b.get("locks") or []),
             artifact_id=self.artifact_id,
             artifact_final=self.final_of,
+            statement=str(b.get("statement") or "") or None,
+            question_led=_form_ver(b.get("form")) >= 2 and bool(b.get("question_led", True)),
+            question_led_off="form" if _form_ver(b.get("form")) < 2 else "switch",
+            own_urls=tuple(str(u) for u in ([b["own_repo"]] if b.get("own_repo") else [])),
+            parallel=max(1, min(8, int(b.get("parallel") or 1))),
         )
         self._eng = Engine(self.root, Feedback(self.dan, lambda: self.attempts), mats, cfg)
         return self._eng
@@ -515,16 +525,7 @@ class Session:
             d = g
         except Exception as e:  # noqa: BLE001  引擎自己的缺陷：不能让会话崩掉（崩了就是原样重跑、最后无声地停）
             self._log_defect()
-            unit = self._doing_unit()
-            where = unit or (self._load("run.json") or {}).get("step") or "启动"
-            what = f"{type(e).__name__}: {e}"
-            g = self._give_up(
-                "defect",
-                f"{where} 处理时程序出错：{what}",
-                unit=unit,
-                note=f"上一次会话在 {unit or '这一步'} 处理你的输出时程序报错（{what[:200]}）。"
-                "多半是输出的形状不对：检查应是对象的字段有没有写成字符串、应是列表的有没有写成单个值，按输出形状重写。",
-            )
+            g = self._defect(e)
             if isinstance(g, Outcome):
                 return g
             d = g
@@ -548,6 +549,32 @@ class Session:
                     passed=False,
                 )
             )
+
+    def _defect(self, e: Exception) -> Delivery | Outcome:
+        """程序出错之后怎么办，先分清错出在哪里（dan.reading 圈出的是“解析这一步模型回答”的代码）：
+
+        - 出在解析这一步回答的代码里（`ReplyDefect`）：多半是回答的形状出乎意料。台账里给这个单元记一句给模型看的话，
+          下一个会话带着它重问——输入变了，备忘不会拿旧回答充数；
+        - 出在别处（读上一步的产物、算难度、写报告……）：与这一步的回答无关。不给模型留话、不重问（备忘照常命中，
+          不多花一次调用），也不把责任记在这个单元的回答上。接力一次以防偶发；同一处同样的错第二次出现就不再试。"""
+        unit = self._doing_unit()
+        where = unit or (self._load("run.json") or {}).get("step") or "启动"
+        if isinstance(e, ReplyDefect):
+            what = str(e)
+            return self._give_up(
+                "defect",
+                f"{where} 处理模型的回答（{e.key}）时程序出错：{what}",
+                unit=unit,
+                note=f"上一次会话在 {unit or '这一步'} 处理你的输出时程序报错（{what[:200]}）。"
+                "多半是输出的形状不对：检查应是对象的字段有没有写成字符串、应是列表的有没有写成单个值，按输出形状重写。",
+            )
+        what = f"{type(e).__name__}: {e}"
+        why = (
+            f"{where} 处理时程序出错：{what[:240]}"
+            "（出错的地方不在解析这一步模型回答的代码里：是程序自己的缺陷，或上一步的产物有问题；没有让模型重写）"
+        )
+        again = any(r["kind"] == "defect" and r.get("unit") == unit and r["reason"] == why[:400] for r in self.attempts)
+        return self._give_up("defect", why, unit=unit, hopeless=again)
 
     def _money_left(self) -> bool:
         """题的预算是否还够再开一个会话（至少剩一成，且不少于 0.2 美元）。求解会话的预留通常就是题里剩下的全部，
@@ -635,6 +662,7 @@ class Session:
         分析结论本身是设计提议，不是可由留档证明的事实，所以不写成主张；它们各带出处（观察 → 片段的 sha256）。"""
         run = self._load("run.json") or {}
         out = []
+        # 快照按外部来源的次序编号（s1、s2…）；我们自己那份对照材料不在其中，它不是被分析的来源
         for i, s in enumerate(self._sources(), 1):
             sha = run.get("artifacts", {}).get(f"snapshot:s{i}")
             snap = self._load(f"artifacts/{sha}.json") if sha else None
@@ -655,6 +683,13 @@ class Session:
         x = self._load("engine.json") or {}
         keep = set(x.get("sources", []))
         return [s for s in intake.get("sources", []) if s["no"] in keep]
+
+
+def _form_ver(ref: Any) -> int:
+    """会话形态的版本号（`h1.tunshi@2` → 2）。按题读的提示词从第 2 版才有：锁在第 1 版上的在途题照旧走通用勘察。
+    简报里没有形态（直接驱动引擎的测试与脚本）按当前版本算。"""
+    _, _, ver = str(ref or "").partition("@")
+    return int(ver) if ver.isdigit() else 2
 
 
 STILL = ("G1", "G2", "G3", "done", "failed", "paused_budget", "halted")  # 停着等人的步

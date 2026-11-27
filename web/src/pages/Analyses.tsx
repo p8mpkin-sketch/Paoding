@@ -716,10 +716,14 @@ function HandoffDone({ d }: { d: AnalysisDetail }) {
   );
 }
 
+const NOT_PLACED_WORD: Record<string, string> = { empty: "没有内容", incomplete: "缺栏目" };
+
 /** 预评估走完：每个做法一行的结论与正式走一遍的预估。只读；转正式在后续一期。 */
 function DryRunDone({ d }: { d: AnalysisDetail }) {
   const r = d.dry_run!;
   const e = r.estimate;
+  const notPlaced = r.not_placed ?? [];
+  const candTitle = (id: string) => d.candidates_doc?.candidates.find((c) => c.id === id)?.title ?? "";
   return (
     <div className="an-g2" data-an-done="dry_run">
       <section className="an-card">
@@ -728,21 +732,45 @@ function DryRunDone({ d }: { d: AnalysisDetail }) {
         <div className="an-tblwrap">
           <table className="an-dtbl" data-an-dry>
             <caption>每个做法的预评估</caption>
-            <thead><tr><th scope="col">做法</th><th scope="col">模块槽</th><th scope="col">替换</th><th scope="col">内核</th><th scope="col">难度</th><th scope="col">可能的结局</th></tr></thead>
+            <thead><tr><th scope="col">做法</th><th scope="col">模块槽</th><th scope="col">替换</th><th scope="col">内核</th><th scope="col">难度</th><th scope="col">可能的结局</th><th scope="col">检验</th></tr></thead>
             <tbody>
               {r.items.map((it) => (
-                <tr key={it.candidate} data-an-dry-item={it.candidate}>
-                  <th scope="row"><span className="k-mono t2">{it.candidate}</span> <P text={it.statement} /></th>
-                  <td className="nw">{SLOT_WORD[it.slot] ?? it.slot}</td>
-                  <td className="nw">{it.replaces ? moduleName(it.replaces) : "无"}</td>
-                  <td className="nw">{it.kernel_forecast.length ? it.kernel_forecast.join("、") : "不改"}</td>
-                  <td className="k-mono">{it.difficulty ?? "—"}</td>
-                  <td><b>{d.words.outcome[it.likely_outcome] ?? it.likely_outcome}</b><span className="t2"> · <P text={it.why} /></span></td>
-                </tr>
+                <Fragment key={it.candidate}>
+                  <tr data-an-dry-item={it.candidate} className={it.unpassed ? "an-dhas" : undefined}>
+                    <th scope="row"><span className="k-mono t2">{it.candidate}</span> <P text={it.statement} /></th>
+                    <td className="nw">{SLOT_WORD[it.slot] ?? it.slot}</td>
+                    <td className="nw">{it.replaces ? moduleName(it.replaces) : "无"}</td>
+                    <td className="nw">{it.kernel_forecast.length ? it.kernel_forecast.join("、") : "不改"}</td>
+                    <td className="k-mono">{it.difficulty ?? "—"}</td>
+                    <td><b>{d.words.outcome[it.likely_outcome] ?? it.likely_outcome}</b><span className="t2"> · <P text={it.why} /></span></td>
+                    <td data-an-dry-check={it.unpassed ? "bad" : "ok"}>{it.unpassed ? <St tone="bad">未过</St> : <St tone="ok">过</St>}</td>
+                  </tr>
+                  {/* 未过的说明占整行：放在格子里会被挤成一字一行；紧跟在这个做法后面，开头自己说明自己是什么 */}
+                  {it.unpassed && (
+                    <tr className="an-ddetail" data-an-dry-detail={it.candidate}>
+                      <td colSpan={7}><b>未过的检验</b><span className="t2"><P text={plain(it.unpassed)} /></span></td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
+        {notPlaced.length > 0 && (
+          <div className="an-notplaced" data-an-dry-notplaced>
+            <h4>没有提炼出来，未做映射评估（{notPlaced.length} 个）</h4>
+            <p className="t2">重写之后结构仍不对，上面的表里没有它们。</p>
+            <ul>
+              {notPlaced.map((n) => (
+                <li key={n.candidate} data-an-dry-out={n.candidate}>
+                  <span className="k-mono t2">{n.candidate}</span> {candTitle(n.candidate)}
+                  <St tone="bad">{NOT_PLACED_WORD[n.kind] ?? "结构不对"}</St>
+                  <span className="t2"> <P text={plain(n.why)} /></span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {e && <p className="t2">正式走一遍的预估：{Object.entries(e.tokens).map(([k, v]) => `${TIER_WORD[k] ?? k} 入 ${v.in.toLocaleString("en-US")} 出 ${v.out.toLocaleString("en-US")}`).join("；")}；约 {e.minutes} 分钟机器时间{e.budget_usd_milli ? `，预算 ${usd(e.budget_usd_milli)}` : ""}〔占位估算〕。</p>}
         <Checks rows={r.validators} />
       </section>

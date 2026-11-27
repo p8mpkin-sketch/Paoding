@@ -38,6 +38,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -149,6 +150,7 @@ class StackConfig:
     bases: dict = field(default_factory=lambda: {"basic": "python:3.12-slim"})
     poll_s: float = 0.5  # 司南与判官的轮询间隔
     dog_interval_s: float = 2.0
+    reclaim_grace_s: float = 60.0  # 租约结束后过这么久，才按租约标签回收它留下的沙箱（执行层 reclaim 的宽限）
     ttl_s: int = 600
     max_sessions: int = 3  # 每道题同时在途的会话上限（司南的线程池大小）；1 即串行
     renew_s: float = 60.0
@@ -214,7 +216,7 @@ class StackConfig:
             **({"bases": ex["bases"]} if "bases" in ex else {}),
             **{
                 k: raw[k]
-                for k in ("poll_s", "dog_interval_s", "ttl_s", "renew_s", "stall_s", "max_sessions")
+                for k in ("poll_s", "dog_interval_s", "reclaim_grace_s", "ttl_s", "renew_s", "stall_s", "max_sessions")
                 if k in raw
             },
         )
@@ -247,9 +249,25 @@ def analysis_config(raw: object) -> dict:
 
     enabled：开成方案分析实例——开题抄分析实例的功法，solve 席位的会话跑固定流程的驱动程序；
     by：缺省立项单里的“谁要的”；pains：记录在案的痛点 [{dim, anchor}]（打分用）；canaries：产物里出现即判不过的串；
-    access_wait_s：取材时等人批访问申请的时限（秒，到了就交付“受阻”请人去批）。
+    access_wait_s：取材时等人批访问申请的时限（秒，到了就交付“受阻”请人去批）；
+    model_idle_s：一次模型调用的流上多久没有任何字节就放弃重试（秒，10–540；必须短于端点代理等上游的 600 秒，
+    这样真正起作用的总是这一条）；model_call_s：一次模型调用的总时限（秒，60–7200，不小于 model_idle_s）；
+    parallel：题面点名了问题、按题读时同时发出的模型调用数（1–8，缺省 4；通用勘察的路径始终顺序执行）；
+    question_led：题面点名了问题时按题读（缺省开）；关掉则一律走通用勘察，出问题时不用改代码就能退回去。
+    own_repo：我们自己仓库的地址（可空）。立项单里出处是它的来源当作“我们的实现”对照读，不当外部系统分析。
     外部方案榜与在途记录占着的模块槽取自仓库（docs/design/fenjue/），各档位的模型取自设置层的模型档案。"""
-    out = {"enabled": False, "by": "cz", "pains": [], "canaries": [], "access_wait_s": 600}
+    out = {
+        "enabled": False,
+        "by": "cz",
+        "pains": [],
+        "canaries": [],
+        "access_wait_s": 600,
+        "model_idle_s": 300,
+        "model_call_s": 2400,
+        "parallel": 4,
+        "own_repo": "",
+        "question_led": True,
+    }
     if raw is None:
         return out
     if not isinstance(raw, dict) or set(raw) - set(out):
@@ -265,6 +283,19 @@ def analysis_config(raw: object) -> dict:
     w = out["access_wait_s"]
     if isinstance(w, bool) or not isinstance(w, (int, float)) or not 0 <= w <= 3600:
         raise ValueError("analysis.access_wait_s 取 0 到 3600 秒")
+    idle, total = out["model_idle_s"], out["model_call_s"]
+    if isinstance(idle, bool) or not isinstance(idle, (int, float)) or not 10 <= idle <= 540:
+        raise ValueError("analysis.model_idle_s 取 10 到 540 秒（要短于端点代理等上游的 600 秒）")
+    if isinstance(total, bool) or not isinstance(total, (int, float)) or not max(60, idle) <= total <= 7200:
+        raise ValueError("analysis.model_call_s 取 60 到 7200 秒，且不小于 model_idle_s")
+    if not isinstance(out["question_led"], bool):
+        raise ValueError("analysis.question_led 取 true/false")
+    par = out["parallel"]
+    if isinstance(par, bool) or not isinstance(par, int) or not 1 <= par <= 8:
+        raise ValueError("analysis.parallel 取 1 到 8 的整数")
+    own = out["own_repo"]
+    if not isinstance(own, str) or (own and not own.startswith(("https://", "http://"))):
+        raise ValueError("analysis.own_repo 取 http(s) 仓库地址，或留空")
     return out
 
 
@@ -293,6 +324,23 @@ def docker_available() -> bool:
 
 
 # ---------- 组装 ----------
+
+
+def collect_logged(sinan: Sinan, L: logging.Logger, pid: str, timeout: float | None) -> list[dict[str, Any]]:
+    """收回跑完的会话，每条记一行“会话结束”。调度循环里收回记录只走这一个口子：收了就记，不会有收走却没记的。"""
+    done: list[dict[str, Any]] = sinan.collect(timeout)
+    for r in done:
+        L.info(
+            "%s %s 会话结束：租约 %s，%s，release=%s%s",
+            pid,
+            r["did"]["kind"],
+            r["lease"],
+            r["status"],
+            r["outcome"],
+            f"（{r['detail']}）" if r.get("detail") else "",
+            extra=ctx(problem_id=pid, lease_id=r["lease"]),
+        )
+    return done
 
 
 class Stack:
@@ -563,9 +611,42 @@ class Stack:
             self.graph,
             self.graph,
             control=self.runner,
-            sweep=sweep_orphans if self.executor is not None else None,
+            sweep=self._sweep if self.executor is not None else None,
         )
         self.url = ""
+        self._lease_end_ts: dict[str, int] = {}
+
+    def _lease_ended_s(self, lease_id: str) -> float | None:
+        """执行层按租约标签回收时问的那一句：这个租约在本实例的账上结束多久了（秒）。
+        账上查不到、仍在途、或查不到结束那条事件的时刻，都答 None（执行层就不碰）。"""
+        l = self.graph.state["leases"].get(lease_id)
+        if l is None or l["active"] or "ended_seq" not in l:
+            return None
+        if lease_id not in self._lease_end_ts:
+            seq = l["ended_seq"]
+            evs = self.graph.events(l["problem_id"], seq - 1, limit=1, upto=seq)
+            if not evs or evs[0]["seq"] != seq:
+                return None
+            self._lease_end_ts[lease_id] = evs[0]["ts"]
+        return (int(time.time() * 1000) - self._lease_end_ts[lease_id]) / 1000
+
+    def _sweep(self) -> list[str]:
+        """哮天犬的清扫钩子：原有的孤儿清扫（属主进程已死的），加上执行层的回收（启动失败的复查、按租约标签兜底）。
+        两段互不牵连：哪一段出错都不耽误另一段；原有那一段的环境故障照旧抛给巡查循环去记。"""
+        assert self.executor is not None
+        first: BaseException | None = None
+        names: list[str] = []
+        try:
+            names += sweep_orphans()
+        except (OSError, subprocess.SubprocessError) as e:
+            first = e
+        try:
+            names += self.executor.reclaim(self._lease_ended_s, self.cfg.reclaim_grace_s)
+        except Exception:  # noqa: BLE001  新回收的缺陷不能带倒巡查（过期回收、预算、原有清扫）
+            log("watchdog").exception("按租约标签回收出错，本轮跳过")
+        if first is not None:
+            raise first
+        return names
 
     def _evolution(self, q: dict, body: object) -> dict:
         """GET /v1/evolution：读端（paoding_fenjue.evolution）。题按开题时记下的功法分臂（FJ6），炼档读包外的 JSON。"""
@@ -593,6 +674,11 @@ class Stack:
             "prices": prices,
             "access_wait_s": a["access_wait_s"],
             "access_poll_s": 5,
+            "model_idle_s": a["model_idle_s"],
+            "model_call_s": a["model_call_s"],
+            "parallel": a["parallel"],
+            "own_repo": a["own_repo"],
+            "question_led": a["question_led"],
         }
 
     def _analysis_models(self) -> tuple[dict, dict]:
@@ -902,17 +988,7 @@ class Stack:
         L.info("%s 开始调度（并发上限 %d）", pid, self.cfg.max_sessions, extra=ctx(problem_id=pid))
         try:
             while not self.stop_event.is_set():
-                for r in sinan.collect(0):
-                    L.info(
-                        "%s %s 会话结束：租约 %s，%s，release=%s%s",
-                        pid,
-                        r["did"]["kind"],
-                        r["lease"],
-                        r["status"],
-                        r["outcome"],
-                        f"（{r['detail']}）" if r.get("detail") else "",
-                        extra=ctx(problem_id=pid, lease_id=r["lease"]),
-                    )
+                if collect_logged(sinan, L, pid, 0):
                     last = None
                 choice = sinan.pick(pid)
                 if choice.get("stop") == "closed":
@@ -943,7 +1019,9 @@ class Stack:
                     L.info("%s %s", pid, note, extra=ctx(problem_id=pid))
                     last = note
                 if sinan.in_flight():
-                    sinan.collect(self.cfg.poll_s)  # 有会话跑完就立刻醒
+                    # 有会话跑完就立刻醒。会话几乎总是在这一段等待里结束：收回的记录在这里逐条记，不能丢
+                    if collect_logged(sinan, L, pid, self.cfg.poll_s):
+                        last = None
                 else:
                     self.stop_event.wait(self.cfg.poll_s)
         finally:
@@ -960,16 +1038,7 @@ class Stack:
                     self.runner.kill(f["lease"], "problem_closed")
             deadline = time.monotonic() + 30
             while sinan.in_flight() and time.monotonic() < deadline:
-                for r in sinan.collect(self.cfg.poll_s):
-                    L.info(
-                        "%s %s 会话结束：租约 %s，%s，release=%s",
-                        pid,
-                        r["did"]["kind"],
-                        r["lease"],
-                        r["status"],
-                        r["outcome"],
-                        extra=ctx(problem_id=pid, lease_id=r["lease"]),
-                    )
+                collect_logged(sinan, L, pid, self.cfg.poll_s)
             sinan.close()
 
     # ---------- 哮天犬 ----------

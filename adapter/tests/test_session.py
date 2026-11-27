@@ -5,6 +5,11 @@
 真 CLI 的同一组断言留到密钥到位（D4 真机）。
 """
 
+import errno
+import json
+import logging
+import subprocess
+
 import pytest
 from adapter_rig import graph, lease_bootstrap, rig, upstream  # noqa: F401  fixture
 
@@ -422,6 +427,104 @@ def test_sandbox_that_cannot_start_releases_the_lease_as_failed(rig, monkeypatch
     assert not lease["active"] and lease["outcome"] == "failed"
     assert rig.upstream.seen == [] and rig.endpoint._hosts == {} and rig.executor.destroyed == []
     assert why in (rig.cfg.root / lid / "cli.stderr.log").read_text(encoding="utf-8")
+
+
+HOST_PATH = "/Users/someone/paoding-home/sessions/l_1/workspace"  # 假的本机路径：出现在原因里就是泄漏
+DOCKER_RUN = ["docker", "run", "-d", "--name", "pd-x-1a2b3c4d", "-v", f"{HOST_PATH}:/workspace", "img", "sleep", "600"]
+
+
+def _timeout(*a, **kw):
+    raise subprocess.TimeoutExpired(DOCKER_RUN, 120)
+
+
+def _cmd_failed(*a, **kw):
+    stderr = f"docker: Error response from daemon: No such image: img. mount source {HOST_PATH}".encode()
+    raise subprocess.CalledProcessError(125, DOCKER_RUN, stderr=stderr)
+
+
+def _disk(*a, **kw):
+    raise OSError(errno.ENOSPC, "No space left on device", f"{HOST_PATH}/spool")
+
+
+FAULTS = {
+    "timeout": (_timeout, "建容器并启动超时（等了 120 秒）"),
+    "command": (_cmd_failed, "建容器并启动失败（退出码 125，镜像不存在或拉不到）"),
+    "disk": (_disk, "磁盘满了（ENOSPC）"),
+}
+
+
+@pytest.mark.parametrize("fault", sorted(FAULTS))
+def test_environment_fault_at_launch_releases_the_lease_as_failed_with_a_clean_reason(rig, monkeypatch, caplog, fault):
+    """起执行容器时的环境故障（容器命令超时、命令失败、磁盘错误）：以前异常穿出 run()，租约悬到过期、没有原因
+    （cz 2026-11-26 真系统：一个会话在整个租约期里没有任何事件，日志里没有一行）。现在走已有的失败出口。"""
+    raise_it, said = FAULTS[fault]
+    rig.executor.launch = raise_it
+    monkeypatch.setattr(rig.runner, "_spec", lambda *a: object())
+    issued: list[str] = []
+    real_issue = rig.runner.issuer.issue
+    monkeypatch.setattr(rig.runner.issuer, "issue", lambda actor: issued.append(real_issue(actor)) or issued[-1])
+    lid = lease_bootstrap(rig.graph)
+    rig.script([sub(final={"outcome": "nothing"})])
+    with caplog.at_level(logging.WARNING, logger="adapter"):
+        rec = rig.runner.run("p1", lid, statement=rig.statement)  # 不抛出：返回一条失败记录
+    why = f"执行容器起不来：{said}"
+    assert rec.status == "failed(error)" and rec.release["ok"] and rec.release["why"] == why
+    lease = lease_of(rig, lid)
+    assert not lease["active"] and lease["outcome"] == "failed"  # 当场按失败释放，不悬到过期
+    # 原因留在会话目录与日志里，都洗过：没有整条命令、没有本机路径、没有异常原文
+    on_disk = (rig.cfg.root / lid / "cli.stderr.log").read_text(encoding="utf-8")
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert why in on_disk and why in logged and [r.levelname for r in caplog.records] == ["WARNING"]
+    for text in (on_disk, logged, json.dumps(rec.release, ensure_ascii=False)):
+        assert "/Users" not in text and "workspace" not in text and "docker" not in text and "pd-x-" not in text
+    assert not any(r.exc_info for r in caplog.records)  # 不带调用栈：栈里有异常原文
+    # 令牌已吊销：再拿它提交会被拒
+    (token,) = issued
+    out = rig.graph.submit(token, "p1", "late", [{"op": "release", "body": {"lease": lid, "outcome": "done"}}])
+    assert not out["ok"] and out["results"][0]["detail"] == "未知令牌"
+    # 会话不在在途表，没起 CLI，工具端点没挂，没有容器要销毁
+    assert lid not in rig.runner.live
+    assert rig.upstream.seen == [] and rig.endpoint._hosts == {} and rig.executor.destroyed == []
+
+
+def test_launch_fault_reason_never_carries_the_command_or_a_path():
+    from paoding_adapter.session import launch_fault
+
+    cases = [
+        (
+            subprocess.TimeoutExpired(["docker", "network", "create", "--internal", "pd-x-net"], 120),
+            "建网络超时（等了 120 秒）",
+        ),
+        (subprocess.TimeoutExpired(["docker", "ps", "-a", "--filter", "label=x"], 120), "列容器超时（等了 120 秒）"),
+        (subprocess.TimeoutExpired("docker something", 5), "容器命令超时（等了 5 秒）"),
+        (subprocess.CalledProcessError(1, ["docker", "run", "-v", HOST_PATH]), "建容器并启动失败（退出码 1）"),
+        (
+            subprocess.CalledProcessError(
+                1, ["docker", "run"], stderr=b"Cannot connect to the Docker daemon at unix:///x"
+            ),
+            "建容器并启动失败（退出码 1，连不上容器服务）",
+        ),
+        (  # 真系统上镜像不存在时的写法：报错以“: not found”收尾
+            subprocess.CalledProcessError(
+                125,
+                ["docker", "run", "-d", "--name", "pd-x"],
+                stderr=b"Unable to find image 'no-such:1' locally\ndocker: Error response from daemon: "
+                b'failed to resolve reference "docker.io/library/no-such:1": not found\n',
+            ),
+            "建容器并启动失败（退出码 125，镜像不存在或拉不到）",
+        ),
+        (  # 只在行尾认：句子中间出现这几个字的不算
+            subprocess.CalledProcessError(127, ["docker", "run"], stderr=b"sh: not found in PATH, giving up"),
+            "建容器并启动失败（退出码 127）",
+        ),
+        (FileNotFoundError(f"挂载源不存在：{HOST_PATH}"), "磁盘或文件错误（FileNotFoundError）"),
+        (FileNotFoundError(errno.ENOENT, "No such file or directory", "docker"), "文件或命令不存在（ENOENT）"),
+        (PermissionError(errno.EACCES, "Permission denied", HOST_PATH), "没有权限（EACCES）"),
+        (RuntimeError(f"boom at {HOST_PATH}"), "未归类的错误（RuntimeError）"),
+    ]
+    for err, want in cases:
+        assert launch_fault(err) == want
+        assert "/" not in launch_fault(err)
 
 
 def test_a_defect_mid_session_kills_the_cli_and_releases_the_lease(rig, monkeypatch):

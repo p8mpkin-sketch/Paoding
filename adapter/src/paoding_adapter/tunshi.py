@@ -249,7 +249,13 @@ def intake(h: ToolHost, a: Obj) -> dict[str, Any]:
         "prices": {k: list(v) for k, v in (prof.get("prices") or {}).items()},
         "access_wait_s": float(prof.get("access_wait_s", 600)),
         "access_poll_s": float(prof.get("access_poll_s", 5)),
+        "parallel": int(prof.get("parallel", 1)),  # 按题读时的并发调用数；宿主没配就顺序执行
+        "own_repo": str(prof.get("own_repo") or ""),
+        "question_led": bool(prof.get("question_led", True)),
     }
+    for k in ("model_idle_s", "model_call_s"):  # 模型调用的两条时限（13 §3.2）；没配就用驱动程序的缺省
+        if prof.get(k) is not None:
+            out[k] = float(prof[k])
     if doc is not None:
         out["intake"] = doc
     else:

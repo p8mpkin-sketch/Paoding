@@ -76,6 +76,7 @@
 | [10-schemas.md](./10-schemas.md) | v0.2：全部数据形状的字段级说明；机器可读定义在 [engine/schemas/](./engine/schemas/) | Schema 定义 |
 | [11-acceptance.md](./11-acceptance.md) | v0.2：三个验收用例（阶段证据确认、带锚压缩、证据自动关联）的夹具与逐字段预期，反例与金丝雀，过线标准；预期数据在 [engine/examples/](./engine/examples/) | 验收用例 |
 | [12-handoff.md](./12-handoff.md) | v0.2：引擎与 `lianhua.py`、实现线的交接：`lianhua.py import`、萃意八栏渲染、火组、许可证参考规则、结局回写、实现线的 PR 切分 E1–E7 | 与 lianhua.py 的交接协议 |
+| [14-question-led.md](./14-question-led.md) | 引擎第 2 版：题面点名了问题就按题读仓库、凭带行区间的细事实作答、回头核对；各条线、留出与开关；记录 002 | 按题读的流程、细事实、标注规则、过线读数 |
 
 ## 4. 本阶段不做的
 

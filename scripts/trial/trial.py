@@ -176,6 +176,12 @@ def open_cases(a: argparse.Namespace) -> int:
                 src = ["--upload", str(f), "--upload-origin", f"{c['repo']}@{sha}"]
             else:  # 让分析会话在沙箱里抓（要执行层能连 codeload.github.com:443）
                 src = ["--repo", f"{c['repo']}@{sha}"]
+            own_archive, own_origin = getattr(a, "own_archive", ""), getattr(a, "own_origin", "")
+            if own_archive:  # 我们自己仓库的归档作对照材料：出处要与配置里的 analysis.own_repo 是同一个地址
+                if not own_origin or "@" not in own_origin:
+                    raise SystemExit("--own-archive 要配 --own-origin <仓库地址>@<提交>：对照的是哪个提交要记进立项单")
+                src += ["--upload", str(Path(own_archive).expanduser()), "--upload-origin", own_origin]
+                row["own"] = {"origin": own_origin}
             short = re.sub(r"^https://github\.com/", "", c["repo"]).rstrip("/")
             r = subprocess.run(
                 [
@@ -198,6 +204,131 @@ def open_cases(a: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------- report
+
+
+def model_call_lines(ws: Path) -> list[str]:
+    """模型调用的读数：驱动程序每次调用后重算的汇总（`model_stats.json`，13-kernel.md §3.2）。
+    每次重跑要量的三个数——截断次数、上游超时次数、最慢一次调用的用时——直接从这里读。"""
+    f = ws / "model_stats.json"
+    if not f.exists():
+        return ["- 模型调用：没有流水（会话还没有调过模型，或这道题是流式改造之前跑的）"]
+    try:
+        st = json.loads(f.read_text(encoding="utf-8"))
+    except ValueError:
+        return ["- 模型调用：model_stats.json 读不出来"]
+    out = [
+        f"- 模型调用：{st.get('calls')} 次；截断 {st.get('truncated')} 次；拒答 {st.get('refused')} 次；"
+        f"上游超时 {st.get('upstream_timeouts')} 次；失败后重试 {st.get('retries')} 次"
+        f"（白等 {st.get('wasted_s')} 秒）；没做成 {st.get('gave_up')} 次"
+    ]
+    slow = st.get("slowest")
+    if isinstance(slow, dict):
+        out.append(
+            f"- 最慢的一次调用：{slow.get('elapsed_s')} 秒（{slow.get('key')}，{slow.get('template')}，"
+            f"输出 {slow.get('tokens_out')} token，"
+            f"{slow.get('tokens_per_s')} token/秒，首字节 {slow.get('first_byte_s')} 秒，{slow.get('outcome')}）"
+        )
+    for name, t in sorted((st.get("by_template") or {}).items()):
+        out.append(
+            f"  - {name}（上限 {t.get('max_tokens')}）：{t.get('calls')} 次，截断 {t.get('truncated')} 次，"
+            f"输出 {t.get('out_min')}–{t.get('out_max')} token"
+        )
+    return out
+
+
+def route_lines(ws: Path) -> list[str]:
+    """这道题走的是哪条路，以及按题读时过线要看的几样（`ql.json`，14-question-led.md §9）。"""
+    f = ws / "ql.json"
+    if not f.exists():
+        return ["- 读法：没有记录（这道题是按题读上线之前跑的，或还没有交付过）"]
+    try:
+        q = json.loads(f.read_text(encoding="utf-8"))
+    except ValueError:
+        return ["- 读法：ql.json 读不出来"]
+    out = ["- " + str(q.get("route_line", "")).lstrip("> ").strip()]
+    if q.get("route") != "question_led":
+        return out
+    st, ok, read = q.get("stats") or {}, q.get("pass") or {}, q.get("read") or {}
+    own = q.get("own")
+    theirs, ours = read.get("theirs") or {}, read.get("ours") or {}
+    out.append(
+        f"- 按题读：读了对方 {theirs.get('parts', 0)} 部分（{theirs.get('files', 0)} 个文件、"
+        f"{theirs.get('lines', 0)} 行）、我们自己的 {ours.get('parts', 0)} 部分；细事实 {read.get('facts', 0)} 条；"
+        f"输出被截断 {read.get('truncated', 0)} 次；"
+        + (f"对照材料取自提交 {own.get('ref') or '（未记）'}" if own else "没有我们自己仓库的归档，只对照能力清单")
+    )
+    out.append(
+        f"- 结论 {st.get('items', 0)} 条：核对通过 {st.get('supported', 0)}，改写后通过 {st.get('partial', 0)}，"
+        f"不支持 {st.get('unsupported', 0)}，未核对 {st.get('unverified', 0)}"
+        f"（占留下的 {round(100 * float(st.get('unverified_share', 0)))}%）；核对通过率 "
+        f"{round(100 * float(st.get('verified_pass_share', 0)))}%"
+    )
+    out.append(
+        f"- 带行号的引用 {st.get('citations', 0)} 处，其中指向对方仓库 {st.get('citations_theirs', 0)} 处、"
+        f"落在要追的名字的定义上 {st.get('citations_on_defs', 0)} 处"
+        f"（{round(100 * float(st.get('defs_share', 0)))}%）；行号由程序从读过的行区间推出，"
+        f"读的时候行区间对不上原文而丢掉的事实 {read.get('dropped', 0)} 条"
+    )
+    zh = {"mechanism": "答到了做法本身", "partial": "只答到一部分做法", "peripheral": "只答到周边"}
+    zh |= {"none": "没有核对过的结论", "unjudged": "没有来得及判"}
+    chase = read.get("chase") or {}
+    for qq in q.get("questions") or []:
+        qid = qq.get("id")
+        dp = (st.get("depth") or {}).get(qid) or {}
+        fo = (chase.get(qid) or {}).get("followed") or {}
+        pk = (chase.get(qid) or {}).get("picked") or {}
+
+        def share(r: dict[str, object]) -> str:
+            return f"{r.get('read', 0)}/{r.get('defined', 0)}" if r.get("defined") else "无"
+
+        miss = f"（缺的：{dp['missing']}）" if dp.get("missing") else ""
+        if dp.get("judged") and dp["judged"] != dp.get("level"):
+            miss += f"（审读原判「{zh.get(str(dp['judged']), dp['judged'])}」，引到定义的结论不够，降一档）"
+        out.append(
+            f"- {qid} 答到哪一层：{zh.get(str(dp.get('level')), '没有记录')}{miss}；"
+            f"核对过的结论 {(st.get('answered') or {}).get(qid, 0)} 条，"
+            f"引到实现定义的 {(st.get('on_defs') or {}).get(qid, 0)} 条；"
+            f"值得追的名字定义读到 {share(fo)}，挑中的名字定义读到 {share(pk)}；"
+            f"读了 {(read.get('by_question') or {}).get(qid, 0)} 部分"
+        )
+    for side, why in (q.get("pick_failed") or {}).items():
+        who = "对方仓库" if side == "theirs" else "我们自己的实现"
+        out.append(f"- {who}：挑词没有成功（{why}），只按检索词排")
+    lim = q.get("limits") or {}
+    out.append(
+        f"- 用量（照实记录，不作过线）：真做成的调用 {q.get('calls', 0)} 次（上限 {lim.get('call_cap')}），"
+        f"失败后重试的 {q.get('calls_failed', 0)} 次、取自上次记录的 {q.get('calls_replayed', 0)} 次"
+        "（这两样不计入上限）；"
+        f"token {q.get('tokens')}（上限 {lim.get('token_cap')}）；"
+        f"用时 {round(float(q.get('elapsed_s') or 0) / 60, 1)} 分钟；"
+        f"同一个文件最多读了 {read.get('most_parts_one_file', 0)} 部分"
+    )
+    out.append(
+        f"- 过线里程序数得出的：每一问都有核对过的结论 {_yn(ok.get('all_answered'))}；"
+        f"每一问都答到了做法本身 {_yn(ok.get('answered_mechanism'))}；"
+        f"有集成建议 {_yn(ok.get('has_recommendation'))}；未核对不超过两成 {_yn(ok.get('unverified_within_20pct'))}"
+    )
+    return out
+
+
+def _yn(v: object) -> str:
+    return "是" if v else "否"
+
+
+def dry_lines(d: dict) -> list[str]:
+    """预评估产物里要直接读到的几行：结论、自动选中与估算、没进归位的候选、检验未过但已入位的候选。"""
+    lines = [
+        f"- 试算结论：{d.get('plain_summary')}",
+        f"- 自动选中：{d.get('auto_picked')}；估算：{json.dumps(d.get('estimate'), ensure_ascii=False)}",
+    ]
+    for row in d.get("not_placed") or []:  # 提炼不出、没有进入归位的候选（旧产物没有这一栏）
+        lines.append(f"- 没有进入归位：{row.get('candidate')}（{row.get('kind')}）：{row.get('why')}")
+    for it in d.get("items") or []:
+        bad = [c for c in it.get("checks") or [] if not c.get("ok") and not c.get("advisory") and not c.get("override")]
+        if bad:
+            said = "；".join(f"{c.get('id')}（{c.get('detail', '')}）" for c in bad)
+            lines.append(f"- 检验未过但已入位：{it.get('candidate')}：{said}"[:400])
+    return lines
 
 
 def report(a: argparse.Namespace) -> int:
@@ -230,6 +361,8 @@ def report(a: argparse.Namespace) -> int:
                 rules = json.dumps(e.get("body", {}).get("rules"), ensure_ascii=False)[:300]
                 lines.append(f"- 访问申请（序号 {e['seq']}）：{rules}")
         ws = home / "analyses" / pid
+        lines += route_lines(ws)
+        lines += model_call_lines(ws)
         run_f = ws / "run.json"
         if run_f.exists():
             run = json.loads(run_f.read_text(encoding="utf-8"))
@@ -237,10 +370,7 @@ def report(a: argparse.Namespace) -> int:
             dr = (run.get("artifacts") or {}).get("dry_run.json")
             if dr and (ws / "artifacts" / f"{dr}.json").exists():
                 d = json.loads((ws / "artifacts" / f"{dr}.json").read_text(encoding="utf-8"))
-                lines.append(f"- 试算结论：{d.get('plain_summary')}")
-                lines.append(
-                    f"- 自动选中：{d.get('auto_picked')}；估算：{json.dumps(d.get('estimate'), ensure_ascii=False)}"
-                )
+                lines += dry_lines(d)
             snap = ws / "artifacts"
             lics = set()
             for f in snap.glob("*.json"):
@@ -281,6 +411,16 @@ def main() -> int:
             )
             p.add_argument("--tag", default="", help="题号后缀：重跑时题号不能重复，例如 --tag 2 开出 trial-a-2")
             p.add_argument("--cache", default="trial-cache", help="下载的归档放在这里（可重复使用）")
+            p.add_argument(
+                "--own-archive",
+                default="",
+                help="可选：我们自己仓库的源码归档，作“我们的实现”对照材料随题上传（要与 --own-origin 同用）",
+            )
+            p.add_argument(
+                "--own-origin",
+                default="",
+                help="--own-archive 的出处：<仓库地址>@<提交>；地址要与配置里的 analysis.own_repo 相同",
+            )
     a = ap.parse_args()
     return {"setup": setup, "open": open_cases, "report": report}[a.cmd](a)
 

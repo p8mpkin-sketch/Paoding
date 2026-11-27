@@ -13,7 +13,7 @@ from typing import Any
 
 from ..shapes import digest
 from . import checks, data, formulas, schema, survey, text
-from .dan import Dan, estimate_tokens, new_nonce
+from .dan import Dan, estimate_tokens, new_nonce, reading
 
 MAX_OBS_PER_READ = 5
 ATTEMPTS = 3  # 首次 + 重来至多 2 次
@@ -109,10 +109,12 @@ def read(
     tin = tout = 0
     for attempt in range(1, ATTEMPTS + 1):
         n = nonce()
-        reply = dan.call("reader", f"read:{e.key()}:{slot}:{attempt}", _reader_payload(slot, raw, n, errors))
+        key = f"read:{e.key()}:{slot}:{attempt}"
+        reply = dan.call("reader", key, _reader_payload(slot, raw, n, errors))
         tin += reply.tokens_in or estimate_tokens(raw) + 1500
         tout += reply.tokens_out
-        records, errors = _parse_reader(reply.output, slot, snap, e, flags, n, attempt)
+        with reading(key):
+            records, errors = _parse_reader(reply.output, slot, snap, e, flags, n, attempt)
         if not errors:
             return ReadResult(records, tin, tout, False)
     return ReadResult([], tin, tout, True)
@@ -237,6 +239,9 @@ class Inputs:
     mode: str
     max_candidates: int = 5
     focus: list[str] = field(default_factory=list)
+    # 按题读（14-question-led.md）：题面点名的子问与各自的观察 [{id, text, observations}]。空 = 题面没有点名，
+    # 下面两处（载荷、截取）与以前逐字节相同
+    asked: list[dict[str, Any]] = field(default_factory=list)
 
 
 def propose_payload(inp: Inputs, errors: Sequence[str]) -> dict[str, Any]:
@@ -248,9 +253,43 @@ def propose_payload(inp: Inputs, errors: Sequence[str]) -> dict[str, Any]:
         "bang": [{k: e[k] for k in ("id", "slot", "dims", "status") if k in e} for e in inp.bang],
         "unseen": [c["slot"] for c in inp.coverage if c["stop"] in ("weak_signal", "focus_excluded")],
     }
+    if inp.asked:
+        # 第 2 版的提示词：已登记的做法只标注、不因此不提名；题面点名的子问必须有对应的模式
+        p["template"] = "shihuo/v2"
+        p["asked"] = [{"id": a["id"], "text": a["text"], "observations": sorted(a["observations"])} for a in inp.asked]
     if errors:
         p["errors"] = list(errors)
     return p
+
+
+def covers(row: Mapping[str, Any], asked: Mapping[str, Any]) -> bool:
+    """这个候选（或“已有不差”的一行）是否用到了某个子问的观察。"""
+    obs = set(row.get("provenance", {}).get("observations", [])) | set(row.get("observations", []))
+    return bool(obs & set(asked["observations"]))
+
+
+def uncovered(doc: Mapping[str, Any], asked: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """有观察、却既没有成为候选也不在“已有不差”里的子问（题面点名的主题不许凭空消失）。"""
+    rows = [*doc.get("candidates", []), *doc.get("already_have", [])]
+    return [dict(a) for a in asked if a["observations"] and not any(covers(r, a) for r in rows)]
+
+
+def _keep_asked(rows: list[dict[str, Any]], limit: int, asked: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """按上限截取候选，但每个子问优先级最高的那个候选不许被截掉：它顶替保留下来的里面排最后、且没被点名的一个。
+    次序仍按优先级（编号与优先级次序一致是现有的检验）。"""
+    kept, rest = rows[:limit], rows[limit:]
+    for a in asked:
+        if any(covers(r, a) for r in kept):
+            continue
+        extra = next((r for r in rest if covers(r, a)), None)
+        if extra is None:
+            continue
+        loose = [r for r in reversed(kept) if not any(covers(r, b) for b in asked)]
+        if loose:
+            kept.remove(loose[0])
+        kept.append(extra)
+        rest.remove(extra)
+    return [r for r in rows if any(r is k for k in kept)]
 
 
 def _pain(dim: str, inp: Inputs) -> tuple[int, str]:
@@ -391,7 +430,7 @@ def build(inp: Inputs, proposal: Mapping[str, Any]) -> tuple[dict[str, Any], lis
             }
         rows.append(cand)
     rows.sort(key=lambda c: (-c["priority"], data.RISK_LEVEL[c["risk"]], c["difficulty"], c["name"]))
-    rows = rows[: inp.max_candidates]
+    rows = _keep_asked(rows, inp.max_candidates, inp.asked) if inp.asked else rows[: inp.max_candidates]
     for i, row in enumerate(rows, 1):
         row["id"] = f"C{i}"
     unseen = [cv["slot"] for cv in inp.coverage if cv["stop"] in ("weak_signal", "focus_excluded")]

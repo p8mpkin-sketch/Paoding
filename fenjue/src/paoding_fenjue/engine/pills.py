@@ -20,13 +20,13 @@ from typing import Any
 
 from .. import shapes
 from . import data, schema
-from .dan import ROLES, fence
+from .dan import ROLES, Reply, fence, truncated
 
 PROMPTS_ASSET = "adapter/prompts"
 # 每种模板一次调用的输出上限（token）〔占位，取自丹方的用量表并留余量〕。上限含模型的思考：思考占掉额度后
 # JSON 会被截断（截断的输出一律不用）。trial-b-3 里位丹合法 JSON 才约 3000 字符，却用掉 8000–10800 token，
 # 所以归位 12000→24000、识别候选 16000→24000、阅读与复核 4000→8000；下一次重跑量截断率。
-# 驱动用非流式请求、单次最长等 900 秒；上限抬高后若端点拒绝大 max_tokens 或超时，再改流式（13-kernel.md §9.1）。
+# 驱动用流式请求：时限是“流上多久没有字节”与“一次调用总共多久”，不随上限变（13-kernel.md §3.2 的表）。
 MAX_TOKENS = {
     "reader/v1": 8_000,
     "shihuo/v1": 24_000,
@@ -35,10 +35,22 @@ MAX_TOKENS = {
     "cuiyi/blind/v1": 8_000,
     "ruwei/place/v1": 24_000,
     "ruwei/design/v1": 16_000,
+    # 按题读（14-question-led.md §5）。上限含思考。按题阅读一次读约 300 行、交回至多 24 条细事实加 5 条观察：
+    # 可见输出约 3 千 token，思考按基线的比例（60 行约 2 千）估到 6 千以内，上限给到 16000，留一倍以上的余量；
+    # 仍被截断时带着说明重读一次。答题稿可见输出约 5 千，上限 32000。
+    "wenti/terms/v1": 6_000,
+    "wenti/pick/v1": 24_000,  # 输入带目录概览约 8 千 token；真跑时思考 3 万多字就截在 8000：留出思考的余量
+    "reader/q/v1": 16_000,
+    "shihuo/v2": 24_000,
+    "dati/v1": 32_000,
+    "dati/fix/v1": 16_000,
+    "heyan/v1": 12_000,
+    "heyan/depth/v1": 8_000,
 }
 # 活动面板与日志里给人看的步骤名（常规技术词，不用内部名词）
 ROLE_ZH = {"reader": "片段阅读", "main": "主分析", "extra": "并行草稿", "blind": "独立复核", "placer": "归位分析"}
 STEP_ZH = {"read": "阅读片段", "shihuo": "识别候选", "cuiyi": "提炼要点", "ruwei": "归位与实验设计"}
+STEP_ZH |= {"wenti": "解析题面", "qread": "按题阅读", "dati": "撰写回答", "heyan": "回头核对"}
 _HIDDEN = ("template", "excerpt", "nonce", "errors", "schema", "prior_failures")
 
 
@@ -137,6 +149,22 @@ def parse(text: str) -> Any:
     return None
 
 
+def empty_reply(r: Reply, template: str) -> tuple[str, str]:
+    """没有可用内容的回答分三种：拒答（refused）、被输出上限截断（truncated）、解析不出 JSON 对象（not_json）。
+    交回（类别，下一次带给模型的如实说明）。各步都用这一个分法，不把“没有内容”当成“内容不合格”去校验。"""
+    limit = MAX_TOKENS[template]
+    if r.stop == "refusal":
+        return "refused", (
+            "模型拒绝了这次请求（停止原因 refusal），没有产出内容；这不是输出格式的问题，不再重试同一个请求"
+        )
+    if truncated(r, limit):
+        return "truncated", (
+            f"上一次的输出用满了 {limit} token 的上限（思考也算在内）被截断，JSON 不完整，所以没有可用的内容。"
+            "这不是内容的问题，不用缩短各栏：直接重新输出完整的 JSON，思考从简"
+        )
+    return "not_json", "上一次的输出解析不出 JSON 对象：只输出一个 JSON 对象，不要前后说明、代码围栏或多个对象"
+
+
 def label(role: str, key: str) -> str:
     """活动面板上这一次调用的说法：步骤名 + 对象。片段阅读的键里有外部文件的路径，只留位置，不带原文。"""
     head = key.split(":", 1)[0]
@@ -147,6 +175,12 @@ def label(role: str, key: str) -> str:
         body, _, attempt = rest.rpartition(":")
         where, _, slot = body.rpartition(":")
         return f"{step}：{where[:160]}（{slot}，第 {attempt} 次）"
+    if head == "qread":  # qread:<快照>:<路径>:<起行>-<止行>:<次数>：只留位置
+        _, rest = key.split(":", 1)
+        where, _, attempt = rest.rpartition(":")
+        return f"{step}：{where[:160]}（第 {attempt} 次）"
+    if head in ("wenti", "dati", "heyan"):
+        return f"{step}：{':'.join(key.split(':')[1:])[:60]}（{who}）"
     if head == "shihuo":
         return f"{step}：归纳观察（{who}，第 {key.rsplit(':', 1)[-1]} 次）"
     bits = key.split(":")

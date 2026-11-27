@@ -13,7 +13,7 @@ from typing import Any
 
 from .. import lianhua as lh
 from .. import shapes
-from . import checks, data, ruwei, schema, text
+from . import checks, data, ruwei, schema, sections, text
 
 HOLDS = {"yes": "成立", "partial": "部分成立", "no": "不成立"}
 IN_FLIGHT = ("placed", "design_approved", "trialed", "readings_ready")  # 火位锁：在途炼档（12 §2.1 第 2 步）
@@ -29,6 +29,7 @@ class ImportRefused(ValueError):
 
 
 def render_cuiyi(essence: Mapping[str, Any], by: str = "cz") -> dict[str, str]:
+    """火意 → 炼档的萃意八栏。只渲染九栏齐全的火意（进过归位的都是）；不齐的由调用方先用 `sections.gaps` 挡下。"""
     m = essence["masked"]
     premise = []
     for p in m.get("premises", []):
@@ -103,6 +104,8 @@ def bang_updates(
             out.append({"op": "add_run", "id": known, "run": row_run})
             continue
         ess = essences.get(c["id"])
+        if ess is not None and sections.gaps(ess):
+            ess = None  # 九栏不齐的提炼结果不往榜上写：本质句退回用识别时的现象描述，不写融合假设
         entry: dict[str, Any] = {
             "id": next(ids),
             "title": c["title"][:40],
@@ -190,6 +193,10 @@ def v_handoff(
         if shapes.digest(it["placement"]) != it["artifacts"]["placement"]:
             v3.append(f"{cid} 的入位方案与 artifacts.placement 的 sha256 不符")
         v8 += [f"{cid}：{x}" for x in checks.v8(it["placement"])]
+        missing = sections.gaps(it["essence"])
+        if missing:  # 手改过或别处来的交接包：缺栏的火意不逐栏核对（读不动），照实报缺什么
+            v11.append(f"{cid} 的火意缺栏目，不能交实现线：{'；'.join(missing[:6])}"[:300])
+            continue
         v9 += [f"{cid}：{x}" for x in checks.v9(it["placement"], it["essence"])]
         v10 += [f"{cid}：{x}" for x in checks.v10(it["placement"], it["essence"])]
         if render_cuiyi(it["essence"], h["decided_by"]) != it["cuiyi"]:

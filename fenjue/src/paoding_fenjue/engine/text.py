@@ -138,6 +138,59 @@ def longest_common_run(a: list[str], b: list[str]) -> int:
     return best
 
 
+def long_common_runs(queries: list[list[str]], corpus: list[list[str]], at_least: int) -> list[int]:
+    """每段 `queries` 与 `corpus` 各段的最长公共连续片段长度，只在它不短于 `at_least` 时给出（K4、V6）。
+
+    返回值与 `max(longest_common_run(q, seq) for seq in corpus)` 的关系：那个数不短于 `at_least` 时两者相等；
+    短于 `at_least` 时这里给 0。比对只问“够不够门槛、够了是多少”，所以结论和说明文字不变。
+
+    做法：长度 ≥ at_least 的公共片段在语料一侧占 at_least 个连续位置，其中必有一个位置落在步长 s 的格点上，
+    从那里起的 g 元组（g + s - 1 ≤ at_least）整段在片段里。于是只在语料的格点上取 g 元组去查各句的 g 元组表，
+    命中后沿对角线向两头延伸出那一处的公共片段全长，取最大。语料读一遍、不建索引，额外内存只有各句的小表。
+    成本约为「语料长度 / s + 命中数 × 片段长」，不再是「句子长度 × 语料长度」。
+    """
+    best = [0] * len(queries)
+    if at_least < 1 or not corpus:
+        return best
+    g = max(1, at_least // 2)
+    step = at_least - g + 1
+    table: dict[tuple[str, ...], list[tuple[int, int]]] = {}
+    for j, q in enumerate(queries):
+        if len(q) < at_least:
+            continue  # 比门槛还短的句子不可能有够长的公共片段
+        for i in range(len(q) - g + 1):
+            table.setdefault(tuple(q[i : i + g]), []).append((j, i))
+    if not table:
+        return best
+    heads = {k[0] for k in table}
+    for seq in corpus:
+        if len(seq) < at_least:
+            continue
+        done: dict[tuple[int, int], int] = {}  # (句, 对角线) → 已延伸到的语料位置：同一处片段只量一次
+        for c in range(0, len(seq) - g + 1, step):
+            if seq[c] not in heads:
+                continue
+            hits = table.get(tuple(seq[c : c + g]))
+            if not hits:
+                continue
+            for j, i in hits:
+                diag = (j, c - i)
+                if done.get(diag, -1) > c:
+                    continue
+                q = queries[j]
+                lo = 0
+                while i - lo > 0 and c - lo > 0 and q[i - lo - 1] == seq[c - lo - 1]:
+                    lo += 1
+                hi = g
+                while i + hi < len(q) and c + hi < len(seq) and q[i + hi] == seq[c + hi]:
+                    hi += 1
+                done[diag] = c + hi
+                run = lo + hi
+                if run >= at_least and run > best[j]:
+                    best[j] = run
+    return best
+
+
 def ngram_overlap(a: list[str], corpus: set[tuple[str, ...]], n: int = 8) -> float:
     """`a` 的 n 元组里出现在语料 n 元组集合中的比例。"""
     grams = [tuple(a[i : i + n]) for i in range(len(a) - n + 1)]

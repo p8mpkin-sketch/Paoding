@@ -71,9 +71,24 @@ uv run python scripts/trial/trial.py open --url http://127.0.0.1:8200 --token-fi
 uv run python scripts/trial/trial.py report --url http://127.0.0.1:8200 --home ~/paoding-analysis
 ```
 
-写出 `trial-report.md`（每道题：钉住的提交与许可证、花费、事件计数、每次交付与“需要”、工作区走到哪一步、试算结论与估算、
+写出 `trial-report.md`（每道题：钉住的提交与许可证、花费、事件计数、每次交付与“需要”、模型调用的读数——调用次数、
+截断次数、上游超时次数、重试与白等的秒数、最慢的一次调用、各模板的输出范围——工作区走到哪一步、试算结论与估算、
 产物里记的许可证）。把它贴回线程，我来整理成验收读数，对照 [11 §2](../../docs/design/fenjue/11-acceptance.md) 的预期。
 `~/paoding-analysis/analyses/<题号>/` 是完整的工作区导出，有问题时我会请你再贴其中的某个文件。
+
+报告里每道题多一行“读法”：题面点名了问题（“……是怎么做的”）就按题读，否则走通用勘察
+（[14](../../docs/design/fenjue/14-question-led.md)）。按题读的题接着几行是过线要看的：读了多少、细事实条数、被截断的
+次数、结论里核对后“确认 / 推断 / 不支持 / 未核对”各几条、未核对占比、引用落在题面点名文件上的比例、调用数、token、用时。
+
+想让它对照我们自己的实现，开题时带上我们仓库同一提交的归档，并在 `analysis.yaml` 的 `own_repo` 写同一个地址：
+
+```bash
+uv run python scripts/trial/trial.py open --url … --token-file … \
+  --own-archive <我们仓库的归档.tar.gz> --own-origin https://github.com/<owner>/<repo>@<提交>
+```
+
+不带归档也能跑，报告会写明“没有读我们自己的实现，只对照了能力清单”。端点限流紧时把 `analysis.parallel` 调小；
+按题读出问题时把 `analysis.question_led` 设成 `false` 就退回通用勘察。
 
 ## 花费
 

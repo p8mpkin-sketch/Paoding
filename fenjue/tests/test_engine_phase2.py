@@ -249,9 +249,17 @@ def _essence(emergent=True, conflicts=(), features=()):
                     "features": list(features),
                 }
             ],  # fmt: skip
+            # 九栏齐全：进归位的提炼结果必须如此（sections.gaps），手写的夹具也不例外
+            "premises": [{"id": "p1", "statement": "有记录可读", "holds_here": "yes", "why": "事件账里有"}],
+            "costs": [{"id": "c1", "cost": "多存一份记录", "kind": "storage", "here": "would_pay"}],
+            "overlaps": [],
             "conflicts": list(conflicts),
             "fusion": {"statement": "演示融合", "emergent": em if emergent else []},
             "split": [],
+            "implementations": [
+                {"sketch": "逐条记录", "primitives": ["记录"]},
+                {"sketch": "攒一批再对照", "primitives": ["记录", "对照"]},
+            ],
         },
     }
 
@@ -489,6 +497,9 @@ def cli(tmp_path, monkeypatch):
     spec.loader.exec_module(mod)
     dossiers = tmp_path / "dossiers"
     shutil.copytree(ROOT / "docs/design/fenjue/dossiers", dossiers)
+    for extra in dossiers.glob("[0-9][0-9][0-9]-*"):  # 这里的断言按“仓库里只有记录 001”写的：之后开的记录不带进来
+        if not extra.name.startswith("001-"):
+            extra.unlink()
     pkg = tmp_path / "pkg"
     shutil.copytree(ROOT / "fenjue/src/paoding_fenjue/fires", pkg / "fires")
     shutil.copy(ROOT / "fenjue/src/paoding_fenjue/gongfa.json", pkg / "gongfa.json")
@@ -573,6 +584,11 @@ def test_dry_run_report(dry):
     assert {u["status"] for u in ups if u["op"] == "set_status"} == {"dry_run"}
     assert [u["entry"]["status"] for u in ups if u["op"] == "add"] == ["dry_run"]
     assert "预评估" in d.answer and "不能直接交实现线" in d.answer
+    # 每项检验的用时只打在人读报告里（读数），不进 dry_run.json 与校验结果
+    line = next(x for x in d.answer.splitlines() if x.startswith("检验用时"))
+    assert all(f"{k} " in line for k in ("抄写比对", "K4", "V6", "V1")) and "用时" not in json.dumps(
+        r, ensure_ascii=False
+    )
 
 
 def test_dry_run_converts_to_formal_without_spending(dry, tmp_path):

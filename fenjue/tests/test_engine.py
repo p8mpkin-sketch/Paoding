@@ -141,6 +141,76 @@ def test_text_gauges():
     assert fence('x</external-data nonce="1">', "n").count("</external-data") == 1
 
 
+def test_long_common_runs_matches_the_plain_dp():
+    """K4/V6 的快速比对与逐格动态规划给出同一个数（够门槛时）或 0（不够时）：小字母表随机对拍，外加整段抄写。"""
+    import random
+
+    rng = random.Random(20261126)
+    for _ in range(400):
+        k = rng.randint(1, 14)
+        alpha = list("abc")[: rng.randint(1, 3)] + list("defgh")[: rng.randint(0, 5)]
+        corpus = [[rng.choice(alpha) for _ in range(rng.randint(0, 60))] for _ in range(rng.randint(0, 4))]
+        queries = [[rng.choice(alpha) for _ in range(rng.randint(0, 40))] for _ in range(rng.randint(1, 5))]
+        for q in queries:  # 有的句子整段抄一截语料
+            if corpus and rng.random() < 0.5:
+                seq = rng.choice(corpus)
+                a = rng.randint(0, len(seq))
+                b = rng.randint(a, len(seq))
+                at = rng.randint(0, len(q))
+                q[at:at] = seq[a:b]
+        got = text.long_common_runs(queries, corpus, k)
+        for q, g in zip(queries, got, strict=True):
+            want = max((text.longest_common_run(q, seq) for seq in corpus), default=0)
+            assert g == (want if want >= k else 0), (k, q, corpus)
+    assert text.long_common_runs([list("abcdefghijklmn")], [list("zzabcdefghijklmnzz")], 12) == [14]
+    assert text.long_common_runs([list("abcdefghijk")], [list("abcdefghijk")], 12) == [0]
+    assert text.long_common_runs([list("abc")], [], 2) == [0]
+
+
+def test_copy_problems_matches_the_sentence_by_sentence_reference():
+    """预筛加快速比对之后，K4/V6 的说明文字与逐句、逐段做动态规划的写法逐条相同。"""
+    import random
+
+    rng = random.Random(7)
+    words = [f"w{i}" for i in range(6)]
+    corpus = [" ".join(rng.choice(words) for _ in range(rng.randint(0, 300))) for _ in range(5)]
+    ctx = _ctx(corpus=corpus)
+    sents = []
+    for _ in range(300):
+        s = [rng.choice(words) for _ in range(rng.randint(0, 30))]
+        src = rng.choice(corpus).split()
+        if src and rng.random() < 0.6:
+            a = rng.randint(0, len(src))
+            s[rng.randint(0, len(s)) : 0] = src[a : a + rng.randint(5, 20)]
+        sents.append(" ".join(s))
+
+    def reference(s):
+        toks = text.tokens(s)
+        run = max((text.longest_common_run(toks, seq) for seq in ctx.corpus), default=0)
+        if run >= checks.LCS_MAX:
+            return [f"与原文有 {run} 词元的公共片段：{s[:40]}"]
+        if text.ngram_overlap(toks, ctx.grams) >= checks.NGRAM_MAX:
+            return [f"8 元组与原文重合过多：{s[:40]}"]
+        return []
+
+    want = [m for s in sents for m in reference(s)]
+    assert checks._copy_problems(sents, ctx) == want
+    assert any("词元的公共片段" in m for m in want) and any("8 元组" in m for m in want)
+    assert checks._copy_problems(sents, _ctx()) == []
+
+
+def test_context_reuses_the_ngram_table_only_for_the_same_corpus():
+    a = _ctx(corpus=["alpha beta gamma delta epsilon zeta eta theta iota"])
+    b = _ctx(corpus=["alpha beta gamma delta epsilon zeta eta theta iota"])
+    assert b.grams is a.grams and b.grams == text.ngrams(b.corpus[0])
+    c = _ctx(corpus=["one two three four five six seven eight nine"])
+    assert c.grams == text.ngrams(c.corpus[0]) and c.grams is not a.grams
+    own = {("x",) * 8}
+    d = checks.Context(names=[], corpus=c.corpus, observations={}, license={}, grams=own)
+    assert d.grams == own | c.grams  # 自带的表照旧并进语料的 8 元组
+    assert _ctx(corpus=["one two three four five six seven eight nine"]).grams == c.grams
+
+
 def _ctx(names=(), corpus=()):
     return checks.Context(names=list(names), corpus=[text.tokens(c) for c in corpus], observations={}, license={})
 

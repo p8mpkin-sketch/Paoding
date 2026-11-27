@@ -20,8 +20,8 @@ from typing import Any
 from .. import shapes
 from ..lianhua import KERNEL_PATHS
 from ..tables import SEATS
-from . import data, formulas, pills
-from .dan import Dan, Reply, truncated
+from . import data, formulas, pills, sections
+from .dan import Dan, Reply, reading
 
 ATTEMPTS = 3
 TYPES: dict[str, tuple[type, ...]] = {
@@ -1007,6 +1007,14 @@ def precheck(
 # ---------------------------------------------------------------- 一个候选的入位
 
 
+class Unplaceable(ValueError):
+    """提炼结果九栏不齐，进不了归位。`gaps` 是缺的栏目（`sections.gaps` 的原话）。"""
+
+    def __init__(self, candidate: str, gaps: Sequence[str]) -> None:
+        super().__init__(f"{candidate} 的提炼结果缺栏目，无法入位：{'；'.join(gaps[:6])}")
+        self.candidate, self.gaps = candidate, list(gaps)
+
+
 @dataclass
 class Result:
     placement: dict[str, Any]
@@ -1022,24 +1030,12 @@ def _ask(
     """问一次，分清四种结果：有内容、截断、拒答、不是 JSON 对象。没有内容时交回如实的错误，不当空提议去校验；
     最后一项是这一次的类别（content / truncated / refused / not_json）。"""
     r = dan.call(role, key, payload)
-    limit = pills.MAX_TOKENS[template]
     row: dict[str, Any] = {"step": step, "attempt": int(key.rsplit(":", 1)[1]), "tokens_out": r.tokens_out}
     if isinstance(r.output, dict):
         row["kind"] = "content"
         log.append(row)
         return r, r.output, [], "content"
-    if r.stop == "refusal":
-        row["kind"] = "refused"
-        msg = "模型拒绝了这次请求（停止原因 refusal），没有产出内容；这不是输出格式的问题，不再重试同一个请求"
-    elif truncated(r, limit):
-        row["kind"] = "truncated"
-        msg = (
-            f"上一次的输出用满了 {limit} token 的上限（思考也算在内）被截断，JSON 不完整，所以没有可用的内容。"
-            "这不是内容的问题，不用缩短各栏：直接重新输出完整的 JSON，思考从简"
-        )
-    else:
-        row["kind"] = "not_json"
-        msg = "上一次的输出解析不出 JSON 对象：只输出一个 JSON 对象，不要前后说明、代码围栏或多个对象"
+    row["kind"], msg = pills.empty_reply(r, template)
     row["problems"] = [msg]
     log.append(row)
     return r, None, [msg], str(row["kind"])
@@ -1056,7 +1052,13 @@ def place(
 ) -> Result:
     """位丹拆原子（至多 3 次，错误交回）→ 确定性骨架 →（正式）主丹写各臂、读数、步骤（至多 3 次，错误交回）。
 
-    放弃时记的是最后一次“有内容”的尝试的问题；之后的截断或解析不出另记在逐次留档里（`attempts`）。"""
+    放弃时记的是最后一次“有内容”的尝试的问题；之后的截断或解析不出另记在逐次留档里（`attempts`）。
+
+    进门先问九栏齐不齐（`sections.gaps`）：不齐抛 `Unplaceable`，一次模型都不调。这一步里读 `essence["masked"]`
+    各栏的地方（丹的输入、难度、读数、可能的结局）都靠这一条，不各自设防。"""
+    missing = sections.gaps(essence)
+    if missing:
+        raise Unplaceable(str(cand["id"]), missing)
     owners = ownership()
     tokens: dict[str, list[int]] = {"mid": [0, 0], "heavy": [0, 0]}
     base = f"ruwei:{cand['id']}:r{rnd}"
@@ -1084,7 +1086,8 @@ def place(
             errors = [*content_errors, *bad]
             continue
         last_empty = []
-        sk, advice = precheck(cand, essence, prop, owners=owners, locks=locks)
+        with reading(f"{base}:place:{attempt}"):  # 解析位丹这次回答的代码：这里出错才算到这次回答头上
+            sk, advice = precheck(cand, essence, prop, owners=owners, locks=locks)
         log[-1]["problems"] = list(sk.problems)
         if not sk.problems:
             log[-1]["kind"] = "ok"
@@ -1121,7 +1124,8 @@ def place(
             errors = [*content_errors, *bad]
             continue
         last_empty = []
-        placement, problems = complete(sk, essence, design)
+        with reading(f"{base}:design:{attempt}"):
+            placement, problems = complete(sk, essence, design)
         log[-1]["problems"] = list(problems)
         if not problems:
             log[-1]["kind"] = "ok"

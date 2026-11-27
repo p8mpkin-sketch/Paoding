@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import math
+import time
+from collections.abc import Callable
 from typing import Any
 
 STOP_REASON = {
@@ -275,14 +277,22 @@ def _sse(event: str, data: dict[str, Any]) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
+PING_EVERY_S = 10.0
+
+
 class StreamTranslator:
     """Chat Completions 的 SSE 字节 → Messages 的 SSE 字节。feed 给多少吐多少，finish 收尾。
 
     文字与每个工具调用各开一个内容块；工具参数按 input_json_delta 逐段转发。上游的用量在最后一块（include_usage），
-    message_delta 里带出去。上游没给 [DONE] 就断了，finish 也照样把块关好、发 message_stop。"""
+    message_delta 里带出去。上游没给 [DONE] 就断了，finish 也照样把块关好、发 message_stop。
 
-    def __init__(self, model: str = ""):
+    上游在动、这边却没有可转的东西时（推理模型先流一长段 reasoning，这里不转），每隔 PING_EVERY_S 秒发一个
+    Messages 标准的 ping：下游凭“流上多久没有字节”判断上游挂没挂住，上游明明在生成就不该被当成静默。"""
+
+    def __init__(self, model: str = "", clock: Callable[[], float] = time.monotonic):
         self.model = model
+        self.clock = clock
+        self.last_out = clock()
         self.buf = b""
         self.started = False
         self.done = False
@@ -396,9 +406,17 @@ class StreamTranslator:
         if b"\r" in self.buf:
             self.buf = self.buf.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         out = b""
+        events = 0
         while b"\n\n" in self.buf:
             event, self.buf = self.buf.split(b"\n\n", 1)
             out += self._event(event)
+            events += 1
+        now = self.clock()
+        if out:
+            self.last_out = now
+        elif events and self.started and not self.done and now - self.last_out >= PING_EVERY_S:
+            self.last_out = now
+            out = _sse("ping", {"type": "ping"})
         return out
 
     def _event(self, event: bytes) -> bytes:

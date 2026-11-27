@@ -15,8 +15,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from . import checks, data
-from .dan import Dan
+from . import checks, data, pills, sections
+from .dan import Dan, reading
 
 ATTEMPTS = 3
 DRAFTS = ("main", "extra1", "extra2")
@@ -64,6 +64,7 @@ def _payload(
 
 
 def _elements(masked: Mapping[str, Any]) -> set[str]:
+    # 进门时形状不对的栏已经没收（sections.sound）：在的栏都读得动，不在的按空算
     dims = {f"dim:{d}" for o in masked.get("overlaps", []) for d in o.get("dims", [])}
     new = {f"new:{e['dim']}" for e in masked.get("fusion", {}).get("emergent", [])}
     return dims | new
@@ -84,17 +85,24 @@ class Draft:
         return checks.hard_ok(self.checks)
 
 
-def _as_essence(cand: Mapping[str, Any], out: Any) -> dict[str, Any]:
+def _as_essence(cand: Mapping[str, Any], out: Any) -> tuple[dict[str, Any], list[str]]:
+    """模型的回答 → 火意的壳，外加形状上的问题（空列表即九栏的形状都对）。
+
+    遮蔽视图只收形状对的栏（`sections.sound`）：收下的每一栏后面的检验都读得动；没收下的就是“缺”，由 K1 照实报。"""
     if not isinstance(out, dict):
-        return {"v": 1, "candidate": cand["id"], "masked": {}, "provenance": cand["provenance"]}
-    return {
+        return {"v": 1, "candidate": cand["id"], "masked": {}, "provenance": copy.deepcopy(cand["provenance"])}, []
+    masked, dropped = sections.sound(out.get("masked"))
+    refs = out.get("field_refs")
+    body = {
         "v": 1,
         "candidate": cand["id"],
-        "masked": out.get("masked", {}),
+        "masked": masked,
         "provenance": copy.deepcopy(cand["provenance"]),
-        "field_refs": out.get("field_refs", {}),
+        "field_refs": refs if isinstance(refs, dict) else {},
         "plain_summary": str(out.get("plain_summary", ""))[:600],
     }
+    shape = [sections.shape_error(out, masked), *dropped] if sections.structural(masked) or dropped else []
+    return body, shape
 
 
 @dataclass
@@ -102,6 +110,18 @@ class Result:
     essence: dict[str, Any]
     passed: bool
     tokens: dict[str, list[int]]
+    reason: str = ""  # 九栏不齐（缺必填栏、类型不对）时给人看的原因：缺什么、收到的是什么；齐全就是空
+
+
+def gaps_reason(essence: Mapping[str, Any], received: str = "") -> str:
+    """九栏不齐时给人看的一句：缺什么，带上模型实际交回的顶层键；齐全就是空串。
+
+    只管结构这一类（`sections.gaps`）。K1 里别的规则没过（用词不在表内、栏目之间对不上）不算“提炼不出”：
+    九栏都在、下游读得动，照常往下走，由检验结果自己标“未过”。"""
+    detail = sections.describe(essence)
+    if not detail:
+        return ""
+    return (detail[:300] + (f"（收到的顶层键：{received}）" if received else ""))[:400]
 
 
 def distill(
@@ -115,33 +135,54 @@ def distill(
 ) -> Result:
     """一个候选的萃意（第 1–10 步）。`rnd` 是第几轮（cz 在闸点 2 退回重做时加一），进丹调用的键。
 
-    `dry`（试算，09 §3）：只要主稿一稿；K1–K5、K7、K8 照跑，不过只标不重写（K8 指令痕迹例外，照样重写）；
-    不调萃丹与盲审。"""
+    `dry`（试算，09 §3）：只要主稿一稿；K2–K5、K7 照跑，不过只标不重写；K1（结构）、K8（指令痕迹）与内部名词
+    不过照样重写——结构不对的稿子下游读不动，不能“只标”。不调萃丹与盲审。
+
+    重写用完仍不过，分两类：九栏不齐（缺必填栏、类型不对）的 `Result.reason` 写明缺什么，调用方按 `sections.gaps`
+    不让它进归位；九栏齐全而 K1 的其余规则（用词、栏目之间的一致性）没过的，`reason` 为空，照常进归位，
+    检验结果里标着。"""
     obs = evidence(cand, observations)
     tokens: dict[str, list[int]] = {"heavy": [0, 0], "mid": [0, 0]}
+    seen: dict[str, str] = {}  # 稿名 → 模型实际交回的顶层键（写原因用）
 
-    def ask(role: str, key: str, errors: Sequence[str]) -> Draft:
+    def ask(role: str, key: str, name: str, errors: Sequence[str]) -> tuple[Draft, str, list[str]]:
+        """问一次。交回（稿子，类别 content / truncated / refused / not_json，要交回给模型的形状问题）。"""
         r = dan.call(role, key, _payload(cand, obs, role, errors))
         tier = "mid" if role == "blind" else "heavy"
         tokens[tier][0] += r.tokens_in
         tokens[tier][1] += r.tokens_out
-        body = _as_essence(cand, r.output)
-        return Draft(key, body, checks.k_checks(body, ctx, None))
+        with reading(key):
+            body, shape = _as_essence(cand, r.output)
+            draft = Draft(name, body, checks.k_checks(body, ctx, None))
+            seen[name] = sections.received(r.output)
+        if isinstance(r.output, dict):
+            return draft, "content", shape
+        kind, msg = pills.empty_reply(r, f"cuiyi/{role}/v1")
+        return draft, kind, [msg]
 
     base = f"cuiyi:{cand['id']}:r{rnd}"
     errors: list[str] = []
+    content_errors: list[str] = []  # 最近一次有内容的稿子没通过的问题；空手而归的下一次也要带上
     main: Draft | None = None
     for attempt in range(1, ATTEMPTS + 1):
-        main = ask("main", f"{base}:main:{attempt}", errors)
-        main.name = "main"
+        draft, kind, shape = ask("main", f"{base}:main:{attempt}", "main", errors)
+        if kind != "content":
+            main = main or draft  # 留着上一份有内容的稿子；一份都没有才用这份空的
+            if kind == "refused":
+                break
+            errors = [*content_errors, *shape]
+            continue
+        main = draft
         # 给人看的栏里的内部名词（V5 的同一张表同一个函数）：写出来就交回重写，不等到校验报“未过”（dry 也一样）
         vocab = checks._plain(checks.displayed(main.body, "essence"))
         if main.ok and not vocab:
             break
-        if dry and all(c["ok"] for c in main.checks if c["id"] == "K8") and not vocab:
-            break  # 试算只标不重写；例外：指令痕迹（K8，11 §5 N3）与内部名词，都不能带进产物
-        errors = [f"{c['id']}：{c.get('detail', '')}" for c in main.checks if not c["ok"] and not c.get("advisory")]
+        if dry and all(c["ok"] for c in main.checks if c["id"] in ("K1", "K8")) and not vocab:
+            break  # 试算只标不重写；例外：结构（K1）、指令痕迹（K8，11 §5 N3）与内部名词，都不能带进产物
+        errors = [*shape]
+        errors += [f"{c['id']}：{c.get('detail', '')}" for c in main.checks if not c["ok"] and not c.get("advisory")]
         errors += [f"V5：{v}（换成常规的技术词）" for v in vocab]
+        content_errors = list(errors)
     assert main is not None
     if dry:
         ess = main.body
@@ -152,15 +193,16 @@ def distill(
             for k in ("v", "candidate", "masked", "provenance", "field_refs", "drafts", "checks", "plain_summary")
             if k in ess
         }
-        return Result(ess, checks.hard_ok(ess["checks"]), tokens)
+        return Result(ess, checks.hard_ok(ess["checks"]), tokens, gaps_reason(ess, seen.get("main", "")))
     extras = []
     for name in DRAFTS[1:]:
-        d = ask("extra", f"{base}:{name}", [])
-        d.name = name
+        d, _, _ = ask("extra", f"{base}:{name}", name, [])
         extras.append(d)
     drafts = [main, *extras]
     passing = [d for d in drafts if d.ok]
-    pool = passing or [main]
+    # 都不过时交主稿（标“未过”）；主稿连九栏都不齐而另有齐的，取齐的那份——不齐的稿子人没法逐栏改
+    whole = [d for d in drafts if not sections.gaps(d.body)]
+    pool = passing or ([main] if not whole or any(d is main for d in whole) else whole[:1])
     elems = {d.name: _elements(d.body["masked"]) for d in drafts}
 
     def agreement(d: Draft) -> float:
@@ -179,10 +221,12 @@ def distill(
         for x in sorted(elems[d.name] - elems[chosen.name]):
             kind, _, label = x.partition(":")
             disagreements.append(f"{DRAFT_ZH[d.name]}多出“{label}”这一{'新生维' if kind == 'new' else '能力维'}")
-    br = dan.call("blind", f"{base}:blind", {"template": "cuiyi/blind/v1", "masked": chosen.body["masked"]})
-    tokens["mid"][0] += br.tokens_in
-    tokens["mid"][1] += br.tokens_out
-    guess = br.output.get("guess") if isinstance(br.output, dict) else None
+    guess = None
+    if not sections.gaps(chosen.body):  # 九栏不齐的稿子没有可盲审的内容：不花这一次调用，K6 记“未调盲审”
+        br = dan.call("blind", f"{base}:blind", {"template": "cuiyi/blind/v1", "masked": chosen.body["masked"]})
+        tokens["mid"][0] += br.tokens_in
+        tokens["mid"][1] += br.tokens_out
+        guess = br.output.get("guess") if isinstance(br.output, dict) else None
     ess = chosen.body
     ess["drafts"] = {"n": len(drafts), "chosen": chosen.name, "agreement": agreement(chosen)}
     if disagreements:
@@ -193,7 +237,7 @@ def distill(
         for k in ("v", "candidate", "masked", "provenance", "field_refs", "drafts", "checks", "plain_summary")
         if k in ess
     }
-    return Result(ess, checks.hard_ok(ess["checks"]), tokens)
+    return Result(ess, checks.hard_ok(ess["checks"]), tokens, gaps_reason(ess, seen.get(chosen.name, "")))
 
 
 # ---------------------------------------------------------------- 闸点 2 的逐栏修改
