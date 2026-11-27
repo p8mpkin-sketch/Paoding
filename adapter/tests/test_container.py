@@ -68,7 +68,7 @@ class ContainerRig(DockerRig):
 
     def wait_model(self, lease_id, timeout=30):
         """等模型容器起来并且 CLI 已经走到脚本里（事件流里见到 init）。"""
-        name = ContainerLauncher.names(lease_id)["model"]
+        name = self.launcher.names(lease_id)["model"]
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             p = docker("inspect", "--format", "{{.State.Running}}", name)
@@ -215,7 +215,7 @@ def test_model_container_reaches_endpoints_but_nothing_else(crig, graph):  # noq
         deadline = time.monotonic() + 30
         while len([c for c in graph.state["costs"] if c["task_id"] == lid]) < 2 and time.monotonic() < deadline:
             time.sleep(0.05)  # 等脚本走到 hang：两个回合都经代理计了量
-        n = ContainerLauncher.names(lid)
+        n = crig.launcher.names(lid)
 
         # —— 环境变量：端点代理地址 + 任务令牌；没有真实密钥 ——
         env = dict(
@@ -391,9 +391,10 @@ def test_orphans_of_a_dead_adapter_are_swept(tmp_path, upstream):  # noqa: F811
     launcher = ContainerLauncher(IMAGE, port, port)
     try:
         launcher.owner = f"{socket.gethostname()}:999999:1"  # 一个不存在的进程
-        launcher._ensure("l_55")
-        assert leftovers() == ["pd-model-l-55-ep", "pd-model-l-55-net"]
-        assert "pd-model-l-55-ep" in sweep_orphans()
+        n = launcher._ensure("l_55")
+        assert leftovers() == [n["relay"], n["net"]]
+        assert n["relay"] == f"pd-model-{launcher.instance}-l-55-ep"
+        assert n["relay"] in sweep_orphans()
         assert leftovers() == []
     finally:
         launcher.close()
@@ -429,7 +430,7 @@ def test_transport_defaults_to_tcp_on_macos_and_unix_elsewhere(monkeypatch, tmp_
                 assert not [a for a in create if "/run/pd" in a and a.startswith("type=bind")]
                 # 中继先接默认网桥再启动；模型容器的网络照旧是内部网络
                 assert verbs.index("network connect") < verbs.index("start")
-                assert ("network", "connect", "bridge", "pd-model-l-5-ep") in calls
+                assert ("network", "connect", "bridge", launcher.names("l_5")["relay"]) in calls
             else:
                 assert "--add-host" not in create and "network connect" not in verbs
                 assert create[-2:] == ("8081=/run/pd/proxy.sock", "8082=/run/pd/mcp.sock")
@@ -438,3 +439,143 @@ def test_transport_defaults_to_tcp_on_macos_and_unix_elsewhere(monkeypatch, tmp_
             launcher.close()
     with pytest.raises(ct.LaunchError, match="unix 或 tcp"):
         ct.ContainerLauncher(IMAGE, 1, 1, transport="udp")
+
+
+# ---------- 同一台机器上的多个实例：租约同号也互不相碰 ----------
+
+
+class FakeDocker:
+    """只记名字的假 Docker：同名的网络或容器建第二次会失败，rm 删掉点到的名字。够用来看两个启动器会不会互相顶掉。"""
+
+    def __init__(self):
+        self.nets: set[str] = set()
+        self.boxes: set[str] = set()
+        self.lock = threading.Lock()
+
+    def __call__(self, *args, check=True, timeout=120):
+        ok = True
+        with self.lock:
+            if args[:2] == ("network", "create"):
+                ok = args[-1] not in self.nets
+                self.nets.add(args[-1])
+            elif args[:2] == ("network", "rm"):
+                self.nets.discard(args[-1])
+            elif args[0] == "create":
+                name = args[args.index("--name") + 1]
+                ok = name not in self.boxes and args[args.index("--network") + 1] in self.nets
+                self.boxes.add(name)
+            elif args[0] == "rm":
+                self.boxes -= set(args[1:])
+            elif args[0] in ("start", "exec"):
+                ok = args[1] in self.boxes
+        if check and not ok:
+            from paoding_adapter.container import LaunchError
+
+            raise LaunchError(f"docker {args[0]} 失败")
+        return subprocess.CompletedProcess(args, 0 if ok else 1, b"", b"")
+
+
+def test_two_instances_with_the_same_lease_do_not_collide(monkeypatch):
+    """两个全新的实例各自的头一个租约都是同一个小号。并行起来之后：两边都起得来，名字与套接字目录没有一样相同，
+    一边收掉自己的会话不动另一边的东西。不需要 Docker：只看启动器发出的 docker 命令落在哪些名字上。"""
+    from paoding_adapter import container as ct
+
+    fake = FakeDocker()
+    monkeypatch.setattr(ct, "_docker", fake)
+    monkeypatch.setattr(ct.shutil, "which", lambda _: "/usr/bin/docker")
+    a, b = (ct.ContainerLauncher(IMAGE, 4001, 4002, transport="unix") for _ in range(2))
+    try:
+        got: dict[str, object] = {}
+        gate = threading.Barrier(2)
+
+        def boot(key, launcher):
+            gate.wait(5)
+            try:
+                got[key] = launcher._ensure("l_1")
+            except BaseException as e:  # noqa: BLE001  测试里要把失败原样带出线程
+                got[key] = e
+
+        ts = [threading.Thread(target=boot, args=kv) for kv in (("a", a), ("b", b))]
+        [t.start() for t in ts]
+        [t.join(10) for t in ts]
+        na, nb = got["a"], got["b"]
+        assert isinstance(na, dict) and isinstance(nb, dict), got  # 两边都起得来
+        assert a.instance != b.instance and set(na.values()).isdisjoint(nb.values())
+        assert a.sock_dir != b.sock_dir and a.sock_dir.is_dir() and b.sock_dir.is_dir()
+        assert {na["net"], nb["net"]} <= fake.nets and {na["relay"], nb["relay"]} <= fake.boxes
+
+        a.release("l_1")  # 甲收掉自己的会话：乙的网络与中继还在
+        assert nb["net"] in fake.nets and nb["relay"] in fake.boxes
+        assert na["net"] not in fake.nets and na["relay"] not in fake.boxes
+        a.release("l_1")  # 幂等；没登记过的租约也只会落在自己的名字上
+        a.release("l_2")
+        assert nb["net"] in fake.nets and nb["relay"] in fake.boxes
+    finally:
+        a.close()
+        b.close()
+    assert not a.sock_dir.exists() and not b.sock_dir.exists() and fake.nets == set() and fake.boxes == set()
+
+
+def test_instance_tag_is_part_of_every_name_and_can_be_pinned(monkeypatch):
+    from paoding_adapter import container as ct
+
+    monkeypatch.setattr(ct, "_docker", FakeDocker())
+    monkeypatch.setattr(ct.shutil, "which", lambda _: "/usr/bin/docker")
+    launcher = ct.ContainerLauncher(IMAGE, 1, 1, transport="tcp", instance="ab12")
+    base = "pd-model-ab12-l-7"
+    assert launcher.names("l_7") == {"model": base, "relay": base + "-ep", "net": base + "-net"}
+    with pytest.raises(ct.LaunchError, match="instance"):
+        ct.ContainerLauncher(IMAGE, 1, 1, transport="tcp", instance="a/b")
+
+
+@needs_docker
+def test_two_instances_same_lease_run_in_parallel(tmp_path, upstream):  # noqa: F811
+    """真 Docker 上的同一件事：两个启动器、同号租约、并行起。两边的中继都探得通上游，两个模型容器同时在跑、
+    各自连得到自己的中继；一边收场后另一边照常；最后什么都不留。"""
+    port = upstream.server.server_address[1]
+    launchers = [ContainerLauncher(IMAGE, port, port) for _ in range(2)]
+    procs: list[object] = [None, None]
+    errors: list[BaseException] = []
+    gate = threading.Barrier(2)
+
+    def boot(i):
+        ws = tmp_path / f"inst{i}" / "l_1" / "workspace"
+        ws.mkdir(parents=True)
+        (ws.parent / "home").mkdir()
+        gate.wait(10)
+        try:
+            procs[i] = launchers[i](["python", "-I", "-c", "import time; time.sleep(120)"], {}, ws)
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    try:
+        ts = [threading.Thread(target=boot, args=(i,)) for i in range(2)]
+        [t.start() for t in ts]
+        [t.join(120) for t in ts]
+        assert errors == [] and all(procs)
+        names = [la.names("l_1") for la in launchers]
+        assert set(names[0].values()).isdisjoint(names[1].values())
+
+        def running(name):
+            p = docker("inspect", "--format", "{{.State.Running}}", name)
+            return p.returncode == 0 and p.stdout.decode().strip() == "true"
+
+        deadline = time.monotonic() + 30
+        while not all(running(n["model"]) for n in names) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        for n in names:
+            assert running(n["model"]) and running(n["relay"])
+            assert inside(n["model"], CONNECT.format(h=RELAY_ALIAS, p=PROXY_PORT))[0] == 0
+
+        procs[0].terminate()
+        launchers[0].release("l_1")  # 甲收场：乙的容器、中继、网络都还在，照常连得通
+        assert running(names[1]["model"]) and running(names[1]["relay"])
+        assert inside(names[1]["model"], CONNECT.format(h=RELAY_ALIAS, p=PROXY_PORT))[0] == 0
+        assert leftovers() == sorted(names[1].values())
+    finally:
+        for p in procs:
+            if p is not None:
+                p.terminate()
+        for la in launchers:
+            la.close()
+    assert leftovers() == []

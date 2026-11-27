@@ -2,9 +2,12 @@
 
 每个会话（租约）一套三样东西，会话结束时一并拆掉：
 
-    内部网络  pd-model-<租约>-net   `--internal`，隔离网关：没有出站路由，也到不了宿主
-    端点中继  pd-model-<租约>-ep    网络别名 pd-endpoints；8081 → 端点代理，8082 → 工具端点（见 relay.py）
-    模型容器  pd-model-<租约>       CLI 镜像；只挂工作区、会话目录（只读）与它自己的 HOME
+    内部网络  pd-model-<实例>-<租约>-net   `--internal`，隔离网关：没有出站路由，也到不了宿主
+    端点中继  pd-model-<实例>-<租约>-ep    网络别名 pd-endpoints；8081 → 端点代理，8082 → 工具端点（见 relay.py）
+    模型容器  pd-model-<实例>-<租约>       CLI 镜像；只挂工作区、会话目录（只读）与它自己的 HOME
+
+<实例> 是这个启动器自己的一段随机标记。租约 id 由各实例自己的事件序号派生（l_1、l_2……），同一台机器上
+两个实例的租约会同号；名字里只有租约的话，后起的那个会把先起的那个的网络、中继与模型容器拆掉。
 
 模型容器的出站因此只有两处：工具端点与模型端点代理（规格 §3.4.2“出站只放行工具端点与模型端点代理”）。
 它不在执行容器的网络上，所以连不到授权范围内的目标；执行容器也不在这张网络上，连不到模型端点（3.6.4 的 4）。
@@ -24,6 +27,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -148,10 +152,12 @@ class ContainerLauncher:
         pids: int = 512,
         transport: str = "",
         host_ports: tuple[int, int] | None = None,
+        instance: str = "",
     ):
         """transport：中继到 Adapter 的通路，`unix` 或 `tcp`，缺省按平台（default_transport）。
         host_ports：tcp 通路下中继在 host.docker.internal 上要连的两个端口（端点代理、工具端点）；缺省就是
-        proxy_port、mcp_port（Docker Desktop 把 host.docker.internal 转到宿主的本机回环）。"""
+        proxy_port、mcp_port（Docker Desktop 把 host.docker.internal 转到宿主的本机回环）。
+        instance：名字里的实例标记，缺省随机取；同一台机器上的各个启动器必须互不相同。"""
         if not shutil.which("docker"):
             raise LaunchError("模型容器要 Docker，但找不到 docker 命令")
         self.transport = transport or default_transport()
@@ -160,6 +166,9 @@ class ContainerLauncher:
         self.image, self.relay_image, self.mounts = image, relay_image, tuple(mounts)
         self.memory, self.pids = memory, pids
         self.owner = _owner()
+        self.instance = instance or secrets.token_hex(4)
+        if not self.instance.isalnum():
+            raise LaunchError(f"instance 只取字母与数字，不是 {self.instance!r}")
         self.user = f"{os.getuid()}:{os.getgid()}"  # 容器内与 Adapter 同一 uid：工作区文件的属主一致
         self.host_ports = host_ports or (proxy_port, mcp_port)
         self._own_sock_dir = False
@@ -187,9 +196,9 @@ class ContainerLauncher:
     def mcp_base(self) -> str:
         return f"http://{RELAY_ALIAS}:{MCP_PORT}"
 
-    @staticmethod
-    def names(lease_id: str) -> dict[str, Any]:
-        base = "pd-model-" + lease_id.replace("_", "-")
+    def names(self, lease_id: str) -> dict[str, Any]:
+        """这个启动器给一个租约起的三个名字。带实例标记：别的实例的同号租约不会落到同一个名字上。"""
+        base = f"pd-model-{self.instance}-" + lease_id.replace("_", "-")
         return {"model": base, "relay": base + "-ep", "net": base + "-net"}
 
     # ---------- 每个会话一张内部网络 + 一个中继 ----------
