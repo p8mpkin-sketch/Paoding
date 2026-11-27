@@ -39,6 +39,7 @@ def cli(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "_run", lambda cmd, g: (True, "12 passed"))
     monkeypatch.setattr(mod, "kernel_lines", lambda base: 0)
+    monkeypatch.setattr(mod, "gauge_lines", lambda base: 0)
     monkeypatch.setattr(mod, "_git", lambda *a: "abc1234")
     monkeypatch.setattr(mod, "candidate", lambda d: tmp_path / "cand.json")
     return mod, dossiers, pkg
@@ -75,11 +76,13 @@ def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path
     run(mod, "yanti", no)
     run(mod, "ronghuo", no, "--set", "结论可追率:B=0", "--set", "结论可追率:A1=0", "--run-tests")
     d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
-    assert d["status"] == "readings_ready" and d["outcome_proposed"] == "huolian"
+    # 新生维达了门槛，但入位时没有登记原形门：结局最高合炼，记录挂“原形门未判”（现行设计 4.4）
+    assert d["status"] == "readings_ready" and d["outcome_proposed"] == "helian"
+    assert lh.gate_mark(d) == "原形门未判" and d["yanti"]["gauge_lines"] == 0
     run(mod, "status")
     assert "下一步：jue" in capsys.readouterr().out
     kept = len(list((pkg / "archive/gongfa").iterdir()))  # 已存档的功法版本数（随本火修订增长，不写死）
-    run(mod, "jue", no, "--by", "cz", "--outcome", "huolian", "--condition", "演示", "--date", "2026-11-21")
+    run(mod, "jue", no, "--by", "cz", "--outcome", "helian", "--condition", "演示", "--date", "2026-11-21")
     g = json.loads((pkg / "gongfa.json").read_text(encoding="utf-8"))
     assert "h7.result-first@1" in g["fires"]["H7"] and g["holdout"]["H7"] == ["h7.result@1"] and g["jie"] == 3
     # 定阶先存档（FJ6）：新功法与新火进了存档，旧的一份不少
@@ -91,7 +94,7 @@ def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path
     assert "h1.tunshi@2" in e["fires"]["H1"] and "h3.tunshi-tools@1" in e["fires"]["H3"]
     md = (dossiers / f"{no}-result-first.md").read_text(encoding="utf-8")
     d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
-    assert md == lh.render(d) and "| 结局 | 火莲 |" in md
+    assert md == lh.render(d) and "| 结局 | 合炼 |" in md and "原形门未判" in md and "量具改动行数：**0**" in md
     run(mod, "sanhuo", no, "--by", "cz", "--why", "演示散火", "--date", "2026-11-21")
     g = json.loads((pkg / "gongfa.json").read_text(encoding="utf-8"))
     assert "h7.result@1" in g["fires"]["H7"] and g["jie"] == 2 and g["history"][-1]["reverts"] == no

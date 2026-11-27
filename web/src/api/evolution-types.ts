@@ -1,7 +1,7 @@
 // GET /v1/evolution（焚决 04 §7，读端 paoding_fenjue.evolution）：能力配置的版本史、集成记录与结局统计、Holdout 对照。
 // 只读；读数不驱动任何默认值。线格式手写（不在 wire_schema 里：它是组装根的端点，不是内核的）。
 
-export type EvoOutcome = "huolian" | "helian" | "binghuo" | "fanshi";
+export type EvoOutcome = "huolian" | "helian" | "buji" | "binghuo" | "fanshi";
 export type EvoStatus = "identified" | "distilled" | "placed" | "design_approved" | "trialed" | "readings_ready" | "adopted" | "rejected" | "reverted";
 
 /** 一组任务的读数：做成 = 判定通过、人工验收、开放道交付；比率与平均只看已结束的。 */
@@ -31,6 +31,10 @@ export type EvoDossier = {
   slot: string | null;
   replaces: string[];
   kernel_lines_changed: number | null;
+  /** 量具（检验、夹具、评测工具）的改动行数；设这条线之前的记录没有 */
+  gauge_lines_changed?: number | null;
+  /** 与原方案对照的记号：没做对照，或做了没过；对照过了或不需要对照的没有 */
+  gate_mark?: "原形门未判" | "原形门未过" | null;
   outcome_proposed: EvoOutcome | null;
   jie_proposed: number | null;
   verdict: { by: string; date: string; outcome: EvoOutcome; jie?: number; conditions?: string[]; basis?: string } | null;

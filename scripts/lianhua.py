@@ -91,14 +91,23 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
 
 
-def kernel_lines(base: str) -> int:
-    """对体质组件的改动行数（增加 + 删除），与 base 比；工作区里还没提交的也算。"""
-    out = _git("diff", "--numstat", base, "--", *lh.KERNEL_PATHS)
+def _lines(base: str, paths: tuple[str, ...]) -> int:
+    out = _git("diff", "--numstat", base, "--", *paths)
     n = 0
     for line in out.splitlines():
         a, b, _ = line.split("\t", 2)
         n += (int(a) if a.isdigit() else 0) + (int(b) if b.isdigit() else 0)
     return n
+
+
+def kernel_lines(base: str) -> int:
+    """对体质组件的改动行数（增加 + 删除），与 base 比；工作区里还没提交的也算。"""
+    return _lines(base, lh.KERNEL_PATHS)
+
+
+def gauge_lines(base: str) -> int:
+    """对量具的改动行数，算法同上。炼档自己的 JSON 与 .md 不在量具路径里。"""
+    return _lines(base, lh.GAUGE_PATHS)
 
 
 def static_errors(f: dict[str, Any]) -> list[str]:
@@ -191,7 +200,7 @@ def _run(cmd: list[str], gongfa_file: Path | None) -> tuple[bool, str]:
 
 def cmd_new(a: argparse.Namespace) -> None:
     shihuo = {"source": a.source, "phenomenon": a.phenomenon, "gap": a.gap, "is_fire": a.is_fire}
-    d = lh.new(a.no or next_no(), a.name, a.title, a.date or _today(), shihuo)
+    d = lh.new(a.no or next_no(), a.name, a.title, a.date or _today(), shihuo, origin=a.origin)
     print(f"开档 → {save(d).relative_to(ROOT)}；下一步：cuiyi {d['dossier']}")
 
 
@@ -218,7 +227,8 @@ def cmd_ruwei(a: argparse.Namespace) -> None:
     readings = [json.loads(r) for r in a.reading]
     if a.readings:
         readings += json.loads(Path(a.readings).read_text(encoding="utf-8"))
-    d = lh.ruwei(d, f, a.replaces, _kv(a.arm), readings, a.preregistered or "")
+    yuanxing = {"state": a.yuanxing, "why": a.yuanxing_why or ""} if a.yuanxing else None
+    d = lh.ruwei(d, f, a.replaces, _kv(a.arm), readings, a.preregistered or "", yuanxing=yuanxing)
     dest = PKG / "fires" / f"{f['id']}.json"
     if dest.exists() and json.loads(dest.read_text(encoding="utf-8")) != f:
         raise SystemExit(f"{dest.relative_to(ROOT)} 已有一份不同的清单：同 id 的火改了就升 ver、另开一份")
@@ -238,6 +248,7 @@ def cmd_yanti(a: argparse.Namespace) -> None:
     f = json.loads(on_disk.read_text(encoding="utf-8")) if on_disk.exists() else d["fire"]
     errs = static_errors(f)
     n = kernel_lines(a.base)
+    gn = gauge_lines(a.base)
     cand = candidate(d)
     trials: dict[str, dict[str, Any]] = {}
     try:
@@ -250,9 +261,11 @@ def cmd_yanti(a: argparse.Namespace) -> None:
             print(f"{t}：{'过' if ok else '不过'}  {summary}")
     finally:
         cand.unlink(missing_ok=True)
-    d = lh.yanti(d, n, errs, trials, _git("rev-parse", "--short", "HEAD"))
+    d = lh.yanti(d, n, errs, trials, _git("rev-parse", "--short", "HEAD"), gauge_lines=gn)
+    errs = d["yanti"]["static_errors"]
     print(
-        f"体质改动行数 {n}；静态验体 {'全过' if not errs else errs}；验体{'通过' if d['yanti']['passed'] else '不过'}"
+        f"体质改动行数 {n}；量具改动行数 {gn}；静态验体 {'全过' if not errs else errs}；"
+        f"验体{'通过' if d['yanti']['passed'] else '不过'}"
     )
     print(f"验体 → {save(d).relative_to(ROOT)}；下一步：ronghuo {d['dossier']}")
 
@@ -484,6 +497,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("name", help="短名（英文，连字符）")
     p.add_argument("--no", help="档号；缺省取下一个")
     p.add_argument("--date")
+    p.add_argument("--origin", choices=list(lh.ORIGINS), help="出身：自炼、手工、修订")
     for k in ("title", "source", "phenomenon", "gap", "is_fire"):
         p.add_argument("--" + k.replace("_", "-"), dest=k, required=True)
     p.set_defaults(fn=cmd_new)
@@ -500,6 +514,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--reading", action="append", default=[], help="一维读数（JSON）")
     p.add_argument("--readings", help="读数表（JSON 列表文件）")
     p.add_argument("--preregistered")
+    p.add_argument("--yuanxing", choices=list(lh.GATE_STATES), help="原形门的对等声明（入位时登记，之后不改）")
+    p.add_argument("--yuanxing-why", help="未判的原因：不对等在哪里、偏向哪一方")
     p.set_defaults(fn=cmd_ruwei)
     p = sub.add_parser("approve", help="设计 PR 的裁决：值得炼")
     p.add_argument("no")

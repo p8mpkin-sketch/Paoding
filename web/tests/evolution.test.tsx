@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { hrefOf, parseRoute } from "../src/app/router";
-import { Evolution } from "../src/pages/Evolution";
+import { Evolution, GATE_WORD, OUTCOME_WORD } from "../src/pages/Evolution";
 import { navOf } from "../src/shell/AppShell";
 import { renderWith, rig } from "./helpers";
 
@@ -10,6 +10,13 @@ afterEach(cleanup);
 const $ = (c: ParentNode, sel: string) => c.querySelector<HTMLElement>(sel);
 
 describe("能力配置页", () => {
+  it("与原方案对照的结论与记号：界面上是常规技术词，不出现内部名词", () => {
+    expect(OUTCOME_WORD.buji).toBe("不及原方案");
+    expect(Object.keys(OUTCOME_WORD)).toEqual(["huolian", "helian", "buji", "binghuo", "fanshi"]);
+    expect(GATE_WORD).toEqual({ 原形门未判: "未与原方案对照", 原形门未过: "对照原方案未过" });
+    for (const w of [...Object.values(OUTCOME_WORD), ...Object.values(GATE_WORD)]) expect(w).not.toMatch(/原形|火|炼/);
+  });
+
   it("路由与侧栏：/capability", () => {
     expect(hrefOf({ page: "evolution" })).toBe("/capability");
     expect(parseRoute("/capability", "")).toEqual({ page: "evolution" });

@@ -10,6 +10,15 @@ from paoding_fenjue import lianhua as lh
 from paoding_fenjue import shapes
 
 TODAY = "2026-11-21"
+
+
+@pytest.fixture(autouse=True)
+def _before_the_gate(monkeypatch):
+    """这一份测的是设原形门之前的判法（03 §3）。把线调回去（不设门），下面的断言一个字不用改：
+    这就是“线调回去即回到设门之前的行为”。设门之后的判法在 test_gate.py。"""
+    monkeypatch.setattr(lh, "GATE_FROM", None)
+
+
 SHIHUO = {"source": "某系统的结果页（演示）", "phenomenon": "结论先行", "gap": "结果页先列过程", "is_fire": "是"}
 CUIYI = {
     "yi": "结论先于过程呈现",

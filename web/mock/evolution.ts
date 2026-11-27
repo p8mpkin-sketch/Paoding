@@ -47,7 +47,7 @@ export function evolutionDoc(seq: number): Evolution {
         readings: [{ dim: "每次交付花费", kind: "共有", dir: "down", B: 100, A1: 98, F: 101, verdict: "不退" }],
       },
     ],
-    outcomes: { huolian: 1, helian: 0, binghuo: 1, fanshi: 0, decided: 2, pending: 0, reverted: 0 },
+    outcomes: { huolian: 1, helian: 0, buji: 0, binghuo: 1, fanshi: 0, decided: 2, pending: 0, reverted: 0 },
     holdout: [{
       slot: "H6", holdout: "h6.activity@1", active: "h6.activity-ledger@1", dossier: "001", live: true,
       retire_signal: "留出对照上，实时面板的使用与交付率不低于入账前", control_arm: "#115 原样（不入账）",

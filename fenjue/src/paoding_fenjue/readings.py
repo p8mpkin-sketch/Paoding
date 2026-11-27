@@ -14,7 +14,8 @@ from typing import Any
 
 from .shapes import archived_digests, at, current, fire_at, for_problem, gongfa, stamp_of
 
-OUTCOMES = ("huolian", "helian", "binghuo", "fanshi")  # 火莲、合炼、并火、反噬（03 §3）
+OUTCOMES = ("huolian", "helian", "buji", "binghuo", "fanshi")  # 火莲、合炼、不及原形、并火、反噬（03 §3、现行设计 4.3）
+GATE_MARKS = {"未判": "原形门未判", "未过": "原形门未过"}  # 与 lianhua.MARKS 同（读端不 import 炼化）
 DONE = ("solved", "accepted", "delivered")  # 做成：本地或外部判定通过、人工验收、开放道交付
 
 
@@ -47,6 +48,9 @@ def _dossier_row(d: Mapping[str, Any]) -> dict[str, Any]:
         "slot": f.get("slot"),
         "replaces": list((f.get("lineage") or {}).get("from") or []),
         "kernel_lines_changed": d.get("kernel_lines_changed"),
+        "gauge_lines_changed": d.get("gauge_lines_changed"),
+        "origin": d.get("origin"),
+        "gate_mark": GATE_MARKS.get(((d.get("yuanxing") or {}).get("result")) or ""),
         "outcome_proposed": d.get("outcome_proposed"),
         "jie_proposed": d.get("jie_proposed"),
         "verdict": (

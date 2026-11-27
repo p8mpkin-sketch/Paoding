@@ -15,10 +15,12 @@ const POLL_MS = 30_000;
 export const SLOT_WORD: Record<string, string> = {
   H1: "会话策略", H2: "调度编排", H3: "工具集", H4: "上下文管理", H5: "知识检索", H6: "可观测性", H7: "结果呈现", H8: "任务解析",
 };
-export const OUTCOME_WORD: Record<EvoOutcome, string> = { huolian: "新增能力", helian: "全面提升", binghuo: "无增益", fanshi: "回归" };
+export const OUTCOME_WORD: Record<EvoOutcome, string> = { huolian: "新增能力", helian: "全面提升", buji: "不及原方案", binghuo: "无增益", fanshi: "回归" };
+export const GATE_WORD: Record<string, string> = { 原形门未判: "未与原方案对照", 原形门未过: "对照原方案未过" };
 const OUTCOME_NOTE: Record<EvoOutcome, string> = {
   huolian: "出现了基线与外部方案都没有的能力：采纳，版本加一",
   helian: "同一指标上胜过基线与外部方案：采纳，版本加一",
+  buji: "同等条件下不如直接运行原方案：不采纳",
   binghuo: "没有超出两者：不采纳",
   fanshi: "内核测试不过或基线保障指标退步：不采纳",
 };
@@ -90,6 +92,7 @@ function DossierRow({ d }: { d: EvoDossier }) {
         <td data-ev-outcome={v?.outcome ?? d.outcome_proposed ?? ""}>
           {v ? OUTCOME_WORD[v.outcome] : d.outcome_proposed ? `${OUTCOME_WORD[d.outcome_proposed]}（提议）` : "还没有读数"}
           {v?.jie !== undefined && d.status === "adopted" ? <span className="t2"> · 记为 v{v.jie}</span> : null}
+          {d.gate_mark ? <span className="t2" data-ev-gate={d.gate_mark}> · {GATE_WORD[d.gate_mark] ?? d.gate_mark}</span> : null}
         </td>
         <td className="t2">{v ? `${v.by} · ${v.date}` : "—"}</td>
         <td className="r k-mono">{d.kernel_lines_changed === null ? "—" : `${d.kernel_lines_changed} 行`}</td>
