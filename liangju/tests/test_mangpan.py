@@ -5,7 +5,7 @@ import json
 import re
 
 import pytest
-from fakes import ARMS, CANARY, Fake, attempt, by_marks, by_words, lines_as_claims, make_batch, parts, simple
+from lj_rig import ARMS, CANARY, Fake, attempt, by_marks, by_words, lines_as_claims, make_batch, parts, simple
 
 from liangju import mangpan, tici
 from liangju.common import Refused, read_json, read_jsonl, write_json

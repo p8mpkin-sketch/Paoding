@@ -4,7 +4,7 @@ import argparse
 import json
 
 import pytest
-from fakes import ARMS, CANARY, attempt, make_batch, simple
+from lj_rig import ARMS, CANARY, attempt, make_batch, simple
 
 from liangju import huizong, mangpan, pici
 from liangju.common import Refused, read_json, write_json

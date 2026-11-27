@@ -4,7 +4,7 @@ import argparse
 import json
 
 import pytest
-from fakes import attempt
+from lj_rig import attempt
 
 from liangju import tici
 from liangju.common import Refused, read_json, write_json

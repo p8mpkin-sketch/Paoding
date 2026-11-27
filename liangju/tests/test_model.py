@@ -5,7 +5,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from fakes import CANARY
+from lj_rig import CANARY
 
 from liangju.common import Refused
 from liangju.model import TOOLS, HttpClient, JudgeModel, ModelError, Toolbox, ToolCall, with_tools

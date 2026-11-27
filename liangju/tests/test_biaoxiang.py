@@ -2,6 +2,8 @@
 
 import json
 
+import lj_rig  # noqa: F401  把仓库根放进导入路径
+
 from liangju import biaoxiang
 from liangju.common import read_json
 

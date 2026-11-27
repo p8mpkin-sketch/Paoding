@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
-from liangju import mangpan, tici
-from liangju.common import write_json
-from liangju.model import ToolCall, Turn
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:  # 量具不是安装的包：从仓库根导入
+    sys.path.insert(0, str(ROOT))
+
+from liangju import mangpan, tici  # noqa: E402
+from liangju.common import write_json  # noqa: E402
+from liangju.model import ToolCall, Turn  # noqa: E402
 
 
 def parts(user: str) -> dict[str, str]:
