@@ -4,7 +4,7 @@ import argparse
 import json
 
 import pytest
-from lj_rig import ARMS, CANARY, attempt, make_batch, simple
+from lj_rig import ARMS, CANARY, Fake, attempt, by_marks, by_words, make_batch, simple
 
 from liangju import huizong, mangpan, pici
 from liangju.common import Refused, read_json, write_json
@@ -15,11 +15,11 @@ def test_noise_floor(d, m):
     assert huizong.noise_floor(d) == m
 
 
-def judged(tmp_path, monkeypatch, atts, **batch):
+def judged(tmp_path, monkeypatch, atts, fake=None, **batch):
     monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
     bdir, qpath, jpath = make_batch(tmp_path, atts, **batch)
     a = argparse.Namespace(batch=str(bdir), questions=str(qpath), judge=str(jpath), selfcheck=None, jobs=1)
-    assert mangpan.run_judge(a, simple()) == 0
+    assert mangpan.run_judge(a, fake or simple()) == 0
     return bdir, qpath
 
 
@@ -77,6 +77,65 @@ def test_pass_needs_all_three_and_pairs_are_counted_per_attempt(tmp_path, monkey
     }
     assert doc["完整性"]["运行期间代码与配置是否改动过"] == "否"
     assert all(r["运行记录里读回的模型标识与登记一致"] for r in doc["逐臂登记"]["各臂"])
+
+
+# 引擎这条臂交给盲判的文本的样子（`tici.answer_only` 排出来的）：一条一行，结论的原文加出处，没有核对标注。
+ENGINE_TEXT = (
+    "- 重试上限写死为三次（出处：relay/retry.py:10-12（send））\n"
+    "- 批量合并：这条是错的，发送前并不合并（出处：relay/batch.py:5-9）\n"
+    "- 退避间隔按次数翻倍（出处：relay/retry.py:20）\n"
+)
+ENGINE_ITEMS = [
+    {"text": "重试上限写死为三次", "verdict": "supported"},
+    {"text": "这条是错的，发送前并不合并", "verdict": "supported"},
+    {"text": "退避间隔按次数翻倍", "verdict": "partial"},
+]
+
+
+@pytest.mark.parametrize("whole_line", [True, False])
+def test_engine_marked_and_negated_is_still_matched_on_the_answer_only_text(tmp_path, monkeypatch, whole_line):
+    """引擎的结论文字对得上盲判抽到的片段：整理摘的是整行（带出处）还是只摘结论那几个字，都对得上。
+
+    三条里引擎标为已核对的两条都被抽到，其中一条被原文否定：1/2。标为推断的那条不算在内。"""
+
+    def tidy(p):
+        rows = [ln[2:] for ln in p["回答原文"].splitlines() if ln.startswith("- ")]
+        quotes = rows if whole_line else [r.split("（出处")[0].split("：")[-1] for r in rows]
+        return {
+            "subquestions": [
+                {"n": 1, "claims": [{"quote": q, "cite": ""} for q in quotes[:2]]},
+                {"n": 2, "claims": [{"quote": q, "cite": ""} for q in quotes[2:]]},
+            ]
+        }
+
+    a = attempt("B", "q1", 1, ENGINE_TEXT)
+    a.own["engine_items"] = ENGINE_ITEMS
+    bdir, qpath = judged(tmp_path, monkeypatch, [a, attempt("B2", "q1", 1, GOOD)], fake=Fake(tidy, by_marks, by_words))
+    b = next(x for x in huizong.build(bdir, qpath)["每条臂一组"] if x["臂"] == "B")
+    assert b["抽样核对"] == {"抽了": 3, "成立": 2, "被原文否定": 1, "找不到依据": 0}
+    assert b["只报告、不进门"]["引擎标为已核对而被盲判抽样否定（否定数/抽到数）"] == "1/2"
+
+
+def test_prompt_version_comes_from_the_records_not_from_the_disk(tmp_path, monkeypatch):
+    """「盲判三段的版本」取自判的记录与自检记录。判完之后提示词改了，汇总里还是判的时候的那个；两处对不上照实写。"""
+    bdir, qpath = judged(tmp_path, monkeypatch, [attempt("B", "q1", 1, GOOD), attempt("B2", "q1", 1, GOOD)])
+    recorded = mangpan.prompts_digest()
+    monkeypatch.setattr(mangpan, "prompts_digest", lambda: "汇总这一刻磁盘上的另一版")
+    assert huizong.build(bdir, qpath)["批次头"]["盲判三段的版本"] == recorded
+
+    sc = read_json(bdir / "selfcheck.json")
+    write_json(bdir / "selfcheck.json", {**sc, "prompts": "自检时的另一版"})
+    got = huizong.build(bdir, qpath)["批次头"]["盲判三段的版本"]
+    assert got == f"不一致（判的记录：{recorded}；自检记录：自检时的另一版）"
+
+    write_json(bdir / "selfcheck.json", sc)
+    f = sorted((bdir / "verdicts").glob("*.json"))[0]
+    write_json(f, {**read_json(f), "prompts": "另一次判的"})
+    assert huizong.build(bdir, qpath)["批次头"]["盲判三段的版本"].startswith("不一致（判的记录：")
+
+    (bdir / "selfcheck.json").unlink()
+    write_json(f, {**read_json(f), "prompts": recorded})
+    assert huizong.build(bdir, qpath)["批次头"]["盲判三段的版本"] == f"{recorded}（没有自检记录）"
 
 
 def test_plan_cap_overrides_the_runs_own_cap_and_changes_are_reported(tmp_path, monkeypatch):

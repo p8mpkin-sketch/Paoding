@@ -63,7 +63,7 @@ skip_empty = true
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian", "eval/src/paoding_eval", "qicao/src/paoding_qicao", "shuku/src/paoding_shuku", "fenjue/src/paoding_fenjue", "liangju/__init__.py", "liangju/common.py", "liangju/tici.py", "liangju/model.py", "liangju/mangpan.py", "liangju/huizong.py", "liangju/biaoxiang.py", "liangju/pici.py"]
+files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian", "eval/src/paoding_eval", "qicao/src/paoding_qicao", "shuku/src/paoding_shuku", "fenjue/src/paoding_fenjue", "liangju/__init__.py", "liangju/common.py", "liangju/tici.py", "liangju/model.py", "liangju/sousuo.py", "liangju/mangpan.py", "liangju/huizong.py", "liangju/biaoxiang.py", "liangju/pici.py"]
 untyped_calls_exclude = ["paoding_graph.refmodel"]
 
 [[tool.mypy.overrides]]

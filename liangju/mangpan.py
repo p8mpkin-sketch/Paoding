@@ -32,7 +32,8 @@ from typing import Any
 
 from liangju import tici
 from liangju.common import Refused, read_json, sha, write_json
-from liangju.model import FILE_BYTES, Client, HttpClient, JudgeModel, Ledger, ModelError, Toolbox, with_tools
+from liangju.model import Client, HttpClient, JudgeModel, Ledger, ModelError, Toolbox, with_tools
+from liangju.sousuo import FILE_BYTES
 
 HERE = Path(__file__).resolve().parent
 STAGES = ("zhengli", "pandu", "hedui")
@@ -250,6 +251,7 @@ def judge(
         "subquestions": subs,
         "dropped_quotes": dropped,
         "sampled": sampled,
+        "search_timeouts": box.timeouts,
         "answered": all(r["verdict"] == "answered" for r in subs),
         "true": all(c["verdict"] == "holds" for c in sampled),
     }

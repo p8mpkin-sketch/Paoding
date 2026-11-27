@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+import time
 
 import pytest
 from lj_rig import ARMS, CANARY, Fake, attempt, by_marks, by_words, lines_as_claims, make_batch, parts, simple
@@ -284,6 +285,30 @@ def test_batch_resumes_counts_judge_failures_and_rejudges_a_fifth(tmp_path, monk
 
 
 # ---------------------------------------------------------------- 只读工具
+
+
+def test_a_search_that_runs_past_the_time_limit_is_stopped_and_counted(tmp_path):
+    """模型给的正则在一行上回溯个没完：到时限就停，按「没有搜到」回给模型，并记一笔。别的搜索照常。"""
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "a.txt").write_text("a" * 60 + "!\nMAX = 1\n", encoding="utf-8")
+    box = Toolbox(snap, search_seconds=1.0)
+    t0 = time.monotonic()
+    out = box.run("search", {"pattern": r"^(a+)+$"})
+    assert time.monotonic() - t0 < 10 and out.startswith("没有搜到（这次搜索超过了 1 秒的上限")
+    assert box.timeouts == 1
+    assert box.run("search", {"pattern": "MAX"}) == "a.txt:2:MAX = 1" and box.timeouts == 1
+
+
+def test_search_timeouts_are_written_into_the_verdict(tmp_path, monkeypatch):
+    class Slow(Toolbox):
+        def __init__(self, root):
+            super().__init__(root)
+            self.timeouts = 2
+
+    monkeypatch.setattr(mangpan, "Toolbox", Slow)
+    v = mangpan.judge(item("1: 甲\n2: 乙"), simple(), Ledger(None), "seed")
+    assert v["search_timeouts"] == 2
 
 
 def test_toolbox_sees_only_the_snapshot(tmp_path):

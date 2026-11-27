@@ -3,6 +3,9 @@
 盲判与汇总只认这种形状，不认任何一条臂自己的导出。每条臂各有一个转换（这里只有我们自己的引擎这一种：
 `from_export`），转换只读运行结束之后的导出：工作区导出目录、这道题的事件、这道题的预算视图、交付的回答。
 
+每条臂的转换交给盲判的 `answer.md` 只有回答本身。臂自己的过程产物（自己拆的子问、核对标注、读数、候选评估）
+一律不进，对每条臂都一样（引擎这条臂见 `answer_only`）。
+
     <批次目录>/attempts/<臂>/<题号>/<第几次>/attempt.json
     <批次目录>/attempts/<臂>/<题号>/<第几次>/answer.md      （交出了回答才有）
 
@@ -30,7 +33,7 @@ from typing import Any
 
 import yaml
 
-from liangju.common import Refused, read_json, write_json
+from liangju.common import Refused, read_json, read_jsonl, write_json
 
 STATUSES = ("finished", "watchdog", "over_budget", "model_failure", "unreadable_repo", "other")
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,11 +133,58 @@ def _own(export: Path) -> dict[str, Any]:
     return own
 
 
+def _cite(f: dict[str, Any]) -> str:
+    a, b = f["lines"]
+    where = f"{f['path']}:{a}" + (f"-{b}" if b != a else "")
+    return where + (f"（{f['symbol']}）" if f.get("symbol") else "")
+
+
+def answer_only(export: Path, delivered: str | None) -> tuple[str | None, int]:
+    """交给盲判的回答文本：只有回答本身。回 (文本, 没有出现在交付里而被略去的条数)。
+
+    引擎交付的报告里混着它自己的过程产物：第一行的读法说明（它自己拆的子问）、每条结论旁的核对标注、
+    「没读到的」与「核对记录」两节、后面整段的候选预评估。这些一律不进。做法不是从报告里往外删，而是从导出里
+    结构化的回答产物（`ql:answer`）取结论的原文与出处，重新排成一条一行；每条都核对确实出现在交付的报告里，
+    没出现的不算交出去了。引擎核对后撤回的结论（它自己移到「拿不准」的）照它交付时的样子放在「拿不准的」下面，
+    不带核对的说明。没有按题读的运行，交付里没有回答这一节：回 None。"""
+    run = read_json(export / "run.json") if (export / "run.json").exists() else {}
+    ans = _artifact(export, run, "ql:answer")
+    if delivered is None or not ans:
+        return None, 0
+    facts: dict[str, dict[str, Any]] = {}
+    for f in read_jsonl(export / "facts.jsonl"):
+        facts.setdefault(str(f.get("id")), f)
+    skipped = 0
+    stated: list[str] = []
+    unsure: list[str] = [str(r.get("text", "")) for r in ans.get("unsure", [])]
+    for it in ans.get("items", []):
+        text = str(it.get("text", ""))
+        if it.get("verdict") == "unsupported":
+            unsure.append(text)
+            continue
+        if not text or text not in delivered:
+            skipped += 1
+            continue
+        refs = "、".join(_cite(facts[f]) for f in [*it.get("facts", []), *it.get("ours", [])] if f in facts)
+        head = f"{it['title']}：" if it.get("kind") == "rec" and it.get("title") else ""
+        stated.append(f"- {head}{text}" + (f"（出处：{refs}）" if refs else ""))
+    lines = list(stated)
+    for title, rows in (
+        ("不建议采用的：", [str(r.get("text", "")) for r in ans.get("not_recommended", [])]),
+        ("拿不准的：", unsure),
+    ):
+        kept = [r for r in rows if r and r in delivered]
+        skipped += sum(1 for r in rows if r and r not in delivered)
+        if kept:
+            lines += ["", title, *(f"- {r}" for r in kept)]
+    return ("\n".join(lines) + "\n" if lines else None), skipped
+
+
 def from_export(
     export: Path,
     events: list[dict[str, Any]],
     budget: dict[str, Any],
-    answer: str | None,
+    delivered: str | None,
     *,
     arm: str,
     question: str,
@@ -166,9 +216,10 @@ def from_export(
     cap = int((budget.get("cap") or {}).get("usd_milli") or 0) or None
     delivers = [e["body"] for e in events if e.get("kind") == "deliver"]
     own = _own(export)
+    answer, own["undelivered_items"] = answer_only(export, delivered)
     if cap is not None and spent >= cap:
         status = "over_budget"
-    elif answer is not None and delivers and delivers[-1].get("outcome") in ("answered", "partial"):
+    elif delivered is not None and delivers and delivers[-1].get("outcome") in ("answered", "partial"):
         status = "finished"
     elif (own["model_calls"].get("gave_up") or 0) > 0:
         status = "model_failure"

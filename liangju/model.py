@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -18,11 +20,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from liangju import sousuo
 from liangju.common import Refused
+from liangju.sousuo import FILE_BYTES, SEARCH_HITS
 
+ROOT = Path(__file__).resolve().parents[1]
 READ_LINES = 200  # 一次至多读这么多行
-SEARCH_HITS = 50  # 一次搜索至多回这么多处
-FILE_BYTES = 2_000_000  # 更大的文件不搜、不读
+SEARCH_SECONDS = 10.0  # 一次搜索的时间上限：超了按「没有搜到」处理，并记一笔
 
 
 @dataclass(frozen=True)
@@ -253,23 +257,35 @@ TOOLS: list[dict[str, Any]] = [
 
 
 class Toolbox:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, search_seconds: float = SEARCH_SECONDS) -> None:
         self.root = root.resolve()
         if not self.root.is_dir():
             raise Refused(f"快照目录不在：{root}")
+        self.search_seconds = search_seconds
+        self.timeouts = 0  # 有几次搜索超过了时间上限
 
     def _path(self, rel: str) -> Path:
-        p = (self.root / str(rel or ".")).resolve()
-        if p != self.root and self.root not in p.parents:
-            raise ValueError("路径在快照之外")
-        return p
+        return sousuo.inside(self.root, rel)
 
-    def _files(self, under: Path) -> list[Path]:
-        return [
-            p
-            for p in sorted(under.rglob("*"))
-            if p.is_file() and not p.is_symlink() and ".git" not in p.relative_to(self.root).parts
-        ]
+    def _search(self, under: str, pattern: str) -> str:
+        """子进程里搜，到时限就杀掉。超时的那一次按「没有搜到」回给模型（注明是超时），次数记在 `timeouts`。"""
+        ask = json.dumps({"root": str(self.root), "under": under, "pattern": pattern})
+        try:
+            done = subprocess.run(  # noqa: S603  固定的命令：本解释器跑量具自己的搜索模块
+                [sys.executable, "-m", "liangju.sousuo"],
+                input=ask.encode("utf-8"),
+                capture_output=True,
+                cwd=ROOT,
+                timeout=self.search_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            self.timeouts += 1
+            limit = f"这次搜索超过了 {self.search_seconds:g} 秒的上限，已经停下"
+            return f"{sousuo.MISS}（{limit}；换一个更简单的模式或缩小范围）"
+        if done.returncode != 0:
+            return "没做成：搜索进程没有正常结束"
+        return done.stdout.decode("utf-8", "replace")
 
     def run(self, name: str, args: dict[str, Any]) -> str:
         try:
@@ -287,20 +303,7 @@ class Toolbox:
                 body = "\n".join(f"{i}\t{lines[i - 1]}" for i in range(start, end + 1))
                 return f"{args['path']} 第 {start}–{end} 行（共 {len(lines)} 行）\n{body}"
             if name == "search":
-                pat = re.compile(str(args["pattern"]))
-                hits: list[str] = []
-                for p in self._files(self._path(args.get("under", "."))):
-                    if p.stat().st_size > FILE_BYTES:
-                        continue
-                    text = p.read_text(encoding="utf-8", errors="replace")
-                    if "\x00" in text[:1000]:
-                        continue
-                    for i, line in enumerate(text.splitlines(), 1):
-                        if pat.search(line):
-                            hits.append(f"{p.relative_to(self.root).as_posix()}:{i}:{line[:300]}")
-                            if len(hits) >= SEARCH_HITS:
-                                return "\n".join(hits) + "\n（还有更多，缩小范围再搜）"
-                return "\n".join(hits) or "没有搜到"
+                return self._search(str(args.get("under") or "."), str(args["pattern"]))
             return f"没有这个工具：{name}"
         except (OSError, ValueError, KeyError, re.error, TypeError) as e:
             return f"没做成：{type(e).__name__}: {e}"

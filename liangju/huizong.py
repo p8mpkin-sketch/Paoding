@@ -93,6 +93,21 @@ def _engine_marked_negated(rows: list[Row]) -> str:
     return f"{bad}/{hit}" if hit else "抽到的结论里没有引擎标为已核对的"
 
 
+def _prompts_version(verdicts: list[dict[str, Any]], selfcheck: dict[str, Any] | None) -> str:
+    """盲判三段的版本，取自记录：每份判的记录里判的时候记下的摘要，与自检记录里的摘要。
+
+    不取汇总这一刻磁盘上的提示词：判完之后提示词改过的话，那个数说的不是这一批。两处记录对不上就照实写。"""
+    judged = sorted({str(v.get("prompts") or "记录里没有") for v in verdicts})
+    checked = str(selfcheck.get("prompts") or "记录里没有") if selfcheck else None
+    if not judged and checked is None:
+        return "还没有判，也没有自检记录"
+    if len(judged) == 1 and checked in (None, judged[0]):
+        return judged[0] + ("" if checked else "（没有自检记录）")
+    if not judged:
+        return f"{checked}（只有自检记录，还没有判）"
+    return f"不一致（判的记录：{'、'.join(judged)}；自检记录：{checked or '没有'}）"
+
+
 def _arm(name: str, reg: dict[str, Any], rows: list[Row]) -> dict[str, Any]:
     by_q: dict[str, list[Row]] = {}
     for r in rows:
@@ -143,6 +158,7 @@ def _arm(name: str, reg: dict[str, Any], rows: list[Row]) -> dict[str, Any]:
             "每题次最大值": max(times, default=None),
         },
         "没完成的题次数": {zh: sum(r.a.status == code for r in rows) for code, zh in REASONS.items()},
+        "正常结束而交付里没有回答的题次数": sum(r.a.status == "finished" and r.a.answer is None for r in rows),
         "交出了回答而盲判没做成的题次数": sum(r.a.answer is not None and not r.judged for r in rows),
     }
     if any("route" in r.a.own for r in rows):  # 只有我们自己的臂才有的，只报告，不进门
@@ -241,6 +257,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
     sc = read_json(batch_dir / "selfcheck.json") if (batch_dir / "selfcheck.json").exists() else None
     rj = read_json(batch_dir / "rejudge.json") if (batch_dir / "rejudge.json").exists() else None
     fails = read_json(batch_dir / "judge_failures.json") if (batch_dir / "judge_failures.json").exists() else {}
+    verdicts = [r.v for rs in arms.values() for r in rs if r.v]
     judge_model = sorted({(r.v["model"], r.v["model_version"]) for rs in arms.values() for r in rs if r.v})
     start, end = batch.get("start") or {}, batch.get("end")
     changed = end is None or end != start or bool(start.get("dirty"))
@@ -262,7 +279,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             "功法摘要": sorted(g for g in gongfa if g) or ["导出里没有"],
             "各题次开题时的设置摘要": sorted({r.a.settings for rs in arms.values() for r in rs if r.a.settings})
             or ["导出里没有"],
-            "盲判三段的版本": mangpan.prompts_digest(),
+            "盲判三段的版本": _prompts_version(verdicts, sc),
             "盲判用的模型": [f"{n}（{ver}）" for n, ver in judge_model] or ["还没有判"],
             "抽样量": f"每个子问 {mangpan.PER_SUBQ} 条，一份回答至多 {mangpan.PER_ANSWER} 条",
             "归类器的版本": "未就位（第 1 步）",
@@ -289,6 +306,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             else "没有记录",
             "重判一致率": f"{rj['agree']}/{rj['chosen']}（另有 {rj['failed']} 份没做成）" if rj else "没有重判",
             "盲判没做成的回答份数": len(fails),
+            "回原文搜索超过时间上限的次数": sum(int(v.get("search_timeouts") or 0) for v in verdicts),
             "导出的用量与服务商账单的对账差异": batch.get("reconciliation") or "未对账",
         },
         "完整性": {
