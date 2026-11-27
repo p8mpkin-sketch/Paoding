@@ -61,10 +61,11 @@
 
 | 名字 | 是什么 | 要点 |
 | --- | --- | --- |
-| `pd-model-<租约>-net` | 内部网络 | `--internal` 加隔离网关（`gateway_mode_ipv4=isolated`，Docker 27.1 起）：没有出站路由，也到不了宿主；老版本退回普通 `--internal` |
-| `pd-model-<租约>-ep` | 端点中继 | 网络别名 `pd-endpoints`；8081 → 端点代理，8082 → 工具端点。连回 Adapter 进程的通路见下（`transport`），不持有任何密钥 |
-| `pd-model-<租约>` | 模型容器 | CLI 镜像；`--read-only`、`--cap-drop ALL`、`no-new-privileges`、`--init`、与 Adapter 同一 uid；只挂工作区、会话目录（只读）、HOME |
+| `pd-model-<实例>-<租约>-net` | 内部网络 | `--internal` 加隔离网关（`gateway_mode_ipv4=isolated`，Docker 27.1 起）：没有出站路由，也到不了宿主；老版本退回普通 `--internal` |
+| `pd-model-<实例>-<租约>-ep` | 端点中继 | 网络别名 `pd-endpoints`；8081 → 端点代理，8082 → 工具端点。连回 Adapter 进程的通路见下（`transport`），不持有任何密钥 |
+| `pd-model-<实例>-<租约>` | 模型容器 | CLI 镜像；`--read-only`、`--cap-drop ALL`、`no-new-privileges`、`--init`、与 Adapter 同一 uid；只挂工作区、会话目录（只读）、HOME |
 
+- `<实例>` 是每个启动器自己的一段随机标记。租约 id 由各实例自己的事件序号派生，同一台机器上两个实例的租约会同号；名字带上实例标记后，任意多个实例可以同时运行，谁也拆不到别人的容器与网络。Unix 套接字目录本来就是每个启动器各建一个临时目录。标签（属主、租约、角色）不变，孤儿清扫照旧按属主回收。
 - 中继到 Adapter 的通路（`backend.transport`，缺省按平台）：`unix`（Linux）经只读挂载的 Unix 套接字；`tcp`（macOS）——Docker Desktop 的容器在虚拟机里，挂进去的 Unix 套接字连不通——中继另接默认网桥，带 `--add-host host.docker.internal:host-gateway`，经它连宿主本机回环上的两个端点，与评测台 baseline 同法。模型容器只在内部网络上，两种通路下都到不了宿主。中继起来后先从中继里对两个上游各走一个 HTTP 来回，不通就在开会话前报错（说明要换通路），不留到会话里变成“Connection reset by peer”。
 - 容器内环境变量：`ANTHROPIC_BASE_URL=http://pd-endpoints:8081`、`ANTHROPIC_API_KEY=任务令牌`。`--mcp-config` 里的地址是 `http://pd-endpoints:8082/mcp/<会话路径>`。真实密钥只在端点代理进程里。
 - 模型容器不在执行容器的网络上：连不到授权范围内的目标；执行容器不在模型网络上：连不到中继，也就连不到模型端点（3.6.4 的 4）。端点代理与工具端点仍只监听本机回环。
