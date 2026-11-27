@@ -144,3 +144,66 @@ def test_no_docker_skip_passes(tmp_path):
     xml = tmp_path / "j.xml"
     xml.write_text('<testsuites><testsuite><testcase classname="a" name="ok"/></testsuite></testsuites>')
     assert check_no_skips.main(["x", str(xml)]) == 0
+
+
+# ---------------------------------------------------------------- 引擎之外的量具（liangju/）
+
+
+def test_tools_are_one_way(tmp_path):
+    root = _tree(tmp_path)
+    (root / "liangju").mkdir()
+    (root / "liangju" / "ok.py").write_text("import json\nfrom liangju import common\n")
+    assert check_deps.check(root) == []
+    (root / "fenjue" / "src" / "paoding_fenjue" / "bad.py").write_text("from liangju import mangpan\n")
+    (root / "liangju" / "bad.py").write_text("from paoding_fenjue.contract import gongfa\n")
+    errs = check_deps.check(root)
+    assert len(errs) == 2 and "不许 import 量具" in errs[0] and "量具不许 import 组件" in errs[1]
+
+
+def _repo(tmp: pathlib.Path) -> tuple[pathlib.Path, str]:
+    import subprocess
+
+    def git(*args: str) -> str:
+        cmd = ["git", "-C", str(tmp), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args]
+        return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
+
+    git("init", "-q")
+    for rel in ("fenjue/src/paoding_fenjue/engine/a.py", "adapter/prompts/tunshi.md", "liangju/x.py", "docs/a.md"):
+        f = tmp / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("1\n")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    return tmp, git("rev-parse", "HEAD")
+
+
+def _commit(repo: pathlib.Path, files: dict[str, str]) -> None:
+    import subprocess
+
+    for rel, text in files.items():
+        (repo / rel).write_text(text)
+    for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "x"]):
+        subprocess.run(["git", "-C", str(repo), *args], check=True)
+
+
+def test_tools_and_what_they_measure_do_not_change_together(tmp_path):
+    import check_liangju
+
+    repo, base = _repo(tmp_path)
+    _commit(repo, {"liangju/x.py": "2\n", "docs/a.md": "2\n"})
+    assert check_liangju.check(base, "HEAD", str(repo)) == (True, [])
+    _commit(repo, {"adapter/prompts/tunshi.md": "2\n3\n", "fenjue/src/paoding_fenjue/engine/a.py": "2\n"})
+    touched, errs = check_liangju.check(base, "HEAD", str(repo))
+    assert touched and errs == [
+        "adapter/prompts/tunshi.md：改了 3 行",
+        "fenjue/src/paoding_fenjue/engine/a.py：改了 2 行",
+        "adapter/prompts/tunshi.md：摘要变了",
+    ]
+
+
+def test_engine_only_change_is_not_checked(tmp_path):
+    import check_liangju
+
+    repo, base = _repo(tmp_path)
+    _commit(repo, {"fenjue/src/paoding_fenjue/engine/a.py": "2\n"})
+    assert check_liangju.check(base, "HEAD", str(repo)) == (False, [])

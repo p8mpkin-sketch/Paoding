@@ -1,0 +1,10 @@
+{
+ "samples": {
+  "missing-a": {"answered": false, "subq": {"3": "missing"}},
+  "missing-b": {"answered": false, "subq": {"3": "missing"}},
+  "wrong-a": {"true": false},
+  "wrong-b": {"true": false},
+  "premise-a": {"answered": true, "true": true, "premise_false": [3]},
+  "premise-b": {"answered": true, "true": true, "premise_false": [3]}
+ }
+}

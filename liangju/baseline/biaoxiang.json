@@ -1,0 +1,208 @@
+{
+ "digest": "b124f4ab77d57f64583e34075c78fca6c1aa33bb3c7ea282f0379520aee8129c",
+ "files": {
+  "adapter/prompts/tunshi-blind.md": {
+   "提示词里的硬规则": 4
+  },
+  "adapter/prompts/tunshi-cuiyi.md": {
+   "提示词里的硬规则": 14
+  },
+  "adapter/prompts/tunshi-dati-fix.md": {
+   "提示词里的硬规则": 4
+  },
+  "adapter/prompts/tunshi-dati.md": {
+   "提示词里的硬规则": 10
+  },
+  "adapter/prompts/tunshi-design.md": {
+   "提示词里的硬规则": 10
+  },
+  "adapter/prompts/tunshi-heyan-depth.md": {
+   "提示词里的硬规则": 4
+  },
+  "adapter/prompts/tunshi-heyan.md": {
+   "提示词里的硬规则": 4
+  },
+  "adapter/prompts/tunshi-place.md": {
+   "提示词里的硬规则": 8
+  },
+  "adapter/prompts/tunshi-reader-q.md": {
+   "提示词里的硬规则": 19
+  },
+  "adapter/prompts/tunshi-reader.md": {
+   "提示词里的硬规则": 11
+  },
+  "adapter/prompts/tunshi-shihuo-2.md": {
+   "提示词里的硬规则": 15
+  },
+  "adapter/prompts/tunshi-shihuo.md": {
+   "提示词里的硬规则": 12
+  },
+  "adapter/prompts/tunshi-wenti-pick.md": {
+   "提示词里的硬规则": 9
+  },
+  "adapter/prompts/tunshi-wenti.md": {
+   "提示词里的硬规则": 4
+  },
+  "adapter/prompts/tunshi.md": {
+   "提示词里的硬规则": 2
+  },
+  "fenjue/src/paoding_fenjue/engine/__init__.py": {
+   "正则": 0,
+   "词表条目": 0,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/budget.py": {
+   "正则": 0,
+   "词表条目": 3,
+   "门槛常量": 5
+  },
+  "fenjue/src/paoding_fenjue/engine/checks.py": {
+   "正则": 2,
+   "词表条目": 0,
+   "门槛常量": 3
+  },
+  "fenjue/src/paoding_fenjue/engine/cuiyi.py": {
+   "正则": 1,
+   "词表条目": 9,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/dan.py": {
+   "正则": 0,
+   "词表条目": 10,
+   "门槛常量": 3
+  },
+  "fenjue/src/paoding_fenjue/engine/data.py": {
+   "正则": 0,
+   "词表条目": 26,
+   "门槛常量": 12
+  },
+  "fenjue/src/paoding_fenjue/engine/dati.py": {
+   "正则": 1,
+   "词表条目": 35,
+   "门槛常量": 20
+  },
+  "fenjue/src/paoding_fenjue/engine/decision.py": {
+   "正则": 8,
+   "词表条目": 40,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/formulas.py": {
+   "正则": 0,
+   "词表条目": 6,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/handoff.py": {
+   "正则": 0,
+   "词表条目": 25,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/kernel.py": {
+   "正则": 0,
+   "词表条目": 38,
+   "门槛常量": 4
+  },
+  "fenjue/src/paoding_fenjue/engine/materials.py": {
+   "正则": 0,
+   "词表条目": 0,
+   "门槛常量": 5
+  },
+  "fenjue/src/paoding_fenjue/engine/pills.py": {
+   "正则": 0,
+   "词表条目": 47,
+   "门槛常量": 15
+  },
+  "fenjue/src/paoding_fenjue/engine/qled.py": {
+   "正则": 0,
+   "词表条目": 8,
+   "门槛常量": 15
+  },
+  "fenjue/src/paoding_fenjue/engine/run.py": {
+   "正则": 0,
+   "词表条目": 67,
+   "门槛常量": 2
+  },
+  "fenjue/src/paoding_fenjue/engine/ruwei.py": {
+   "正则": 3,
+   "词表条目": 46,
+   "门槛常量": 2
+  },
+  "fenjue/src/paoding_fenjue/engine/schema.py": {
+   "正则": 0,
+   "词表条目": 17,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/sections.py": {
+   "正则": 2,
+   "词表条目": 0,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/shihuo.py": {
+   "正则": 0,
+   "词表条目": 0,
+   "门槛常量": 8
+  },
+  "fenjue/src/paoding_fenjue/engine/survey.py": {
+   "正则": 13,
+   "词表条目": 67,
+   "门槛常量": 11
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/atoms.json": {
+   "词表条目": 281,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/common-words.json": {
+   "词表条目": 290,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/generic-names.json": {
+   "词表条目": 22,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/injection.json": {
+   "词表条目": 59,
+   "门槛常量": 2
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/primitives.json": {
+   "词表条目": 53,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/probes.json": {
+   "词表条目": 23,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/profile.json": {
+   "词表条目": 153,
+   "门槛常量": 34
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/refusals.json": {
+   "词表条目": 8,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/slot-signatures.json": {
+   "词表条目": 124,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/tables/vocab.json": {
+   "词表条目": 60,
+   "门槛常量": 1
+  },
+  "fenjue/src/paoding_fenjue/engine/text.py": {
+   "正则": 11,
+   "词表条目": 0,
+   "门槛常量": 0
+  },
+  "fenjue/src/paoding_fenjue/engine/wenti.py": {
+   "正则": 11,
+   "词表条目": 15,
+   "门槛常量": 8
+  }
+ },
+ "rule": "1",
+ "totals": {
+  "提示词里的硬规则": 130,
+  "正则": 52,
+  "词表条目": 1532,
+  "门槛常量": 158
+ },
+ "v": 1
+}
