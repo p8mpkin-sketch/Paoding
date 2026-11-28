@@ -4,10 +4,11 @@
     uv run python scripts/lianhua.py cuiyi <档号> --yi … --premise … --cost … --overlap … --conflict … \\
         --hypothesis … --split … --masked …
     uv run python scripts/lianhua.py ruwei <档号> --fire 清单草稿.json [--replaces 上一团火] \\
-        --arm B=… --arm A1=… --arm F=… --arm B1=… --reading '{"dim":…,"kind":"新生","dir":"up","gate":1,"test":…}'
-    uv run python scripts/lianhua.py approve <档号> --by cz            # 设计 PR 裁决：值得炼
-    uv run python scripts/lianhua.py yanti <档号> [--base origin/main]   # 体质改动行数、静态验体、换上这团火跑 T1–T5
-    uv run python scripts/lianhua.py ronghuo <档号> --set '维:F=1' … [--run-tests]   # 填读数、判结局
+        --arm B=… --arm A1=… --arm F=… --arm B1=… --reading '{"dim":…,"kind":"新生","dir":"up","gate":1,"test":…}' \\
+        [--arm A0=… --parity equal|ours_or_neutral|theirs --parity-reason …]   # 原形臂与它的条件对等声明
+    uv run python scripts/lianhua.py approve <档号> --by cz [--waive-gate 理由]   # 设计 PR 裁决：值得炼
+    uv run python scripts/lianhua.py yanti <档号> [--base origin/main]   # 体质与量具的改动行数、静态验体、跑 T1–T5
+    uv run python scripts/lianhua.py ronghuo <档号> --set '维:F=1' … [--values 读数.json] [--run-tests]   # 判结局
     uv run python scripts/lianhua.py jue <档号> --by cz --outcome huolian [--condition …]   # 定阶，改功法
     uv run python scripts/lianhua.py sanhuo <档号> --by cz --why …     # 散火：火位指回上一团火
     uv run python scripts/lianhua.py status [<档号>]                    # 每份炼档走到哪一步、下一步是什么
@@ -93,7 +94,16 @@ def _git(*args: str) -> str:
 
 def kernel_lines(base: str) -> int:
     """对体质组件的改动行数（增加 + 删除），与 base 比；工作区里还没提交的也算。"""
-    out = _git("diff", "--numstat", base, "--", *lh.KERNEL_PATHS)
+    return _lines(base, lh.KERNEL_PATHS)
+
+
+def measure_lines(base: str) -> int:
+    """对量具路径的改动行数，数法同上。一次炼化这一项必须是 0（03 §3.2）。"""
+    return _lines(base, lh.MEASURE_PATHS)
+
+
+def _lines(base: str, paths: tuple[str, ...]) -> int:
+    out = _git("diff", "--numstat", base, "--", *paths)
     n = 0
     for line in out.splitlines():
         a, b, _ = line.split("\t", 2)
@@ -218,7 +228,10 @@ def cmd_ruwei(a: argparse.Namespace) -> None:
     readings = [json.loads(r) for r in a.reading]
     if a.readings:
         readings += json.loads(Path(a.readings).read_text(encoding="utf-8"))
-    d = lh.ruwei(d, f, a.replaces, _kv(a.arm), readings, a.preregistered or "")
+    parity = None
+    if a.parity:
+        parity = {"class": a.parity, **({"reason": a.parity_reason} if a.parity_reason else {})}
+    d = lh.ruwei(d, f, a.replaces, _kv(a.arm), readings, a.preregistered or "", parity=parity)
     dest = PKG / "fires" / f"{f['id']}.json"
     if dest.exists() and json.loads(dest.read_text(encoding="utf-8")) != f:
         raise SystemExit(f"{dest.relative_to(ROOT)} 已有一份不同的清单：同 id 的火改了就升 ver、另开一份")
@@ -228,7 +241,7 @@ def cmd_ruwei(a: argparse.Namespace) -> None:
 
 
 def cmd_approve(a: argparse.Namespace) -> None:
-    d = lh.approve_design(load(a.no), a.by, a.date or _today(), a.note or "")
+    d = lh.approve_design(load(a.no), a.by, a.date or _today(), a.note or "", a.waive_gate or "")
     print(f"设计已裁 → {save(d).relative_to(ROOT)}；下一步：yanti {d['dossier']}")
 
 
@@ -238,6 +251,7 @@ def cmd_yanti(a: argparse.Namespace) -> None:
     f = json.loads(on_disk.read_text(encoding="utf-8")) if on_disk.exists() else d["fire"]
     errs = static_errors(f)
     n = kernel_lines(a.base)
+    nm = measure_lines(a.base)
     cand = candidate(d)
     trials: dict[str, dict[str, Any]] = {}
     try:
@@ -250,10 +264,9 @@ def cmd_yanti(a: argparse.Namespace) -> None:
             print(f"{t}：{'过' if ok else '不过'}  {summary}")
     finally:
         cand.unlink(missing_ok=True)
-    d = lh.yanti(d, n, errs, trials, _git("rev-parse", "--short", "HEAD"))
-    print(
-        f"体质改动行数 {n}；静态验体 {'全过' if not errs else errs}；验体{'通过' if d['yanti']['passed'] else '不过'}"
-    )
+    d = lh.yanti(d, n, errs, trials, _git("rev-parse", "--short", "HEAD"), measure_lines=nm)
+    print(f"体质改动行数 {n}；量具改动行数 {nm}；静态验体 {'全过' if not errs else errs}")
+    print(f"验体{'通过' if d['yanti']['passed'] else '不过'}")
     print(f"验体 → {save(d).relative_to(ROOT)}；下一步：ronghuo {d['dossier']}")
 
 
@@ -283,7 +296,7 @@ def cmd_ronghuo(a: argparse.Namespace) -> None:
         cand = candidate(d)
         try:
             for r in d["readings"]:
-                if r.get("test") and "F" not in values.get(r["dim"], {}):
+                if r.get("test") and not r.get("target") and "F" not in values.get(r["dim"], {}):
                     cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", r["test"]]
                     ok, summary = _run(cmd, cand)
                     values.setdefault(r["dim"], {})["F"] = 1 if ok else 0
@@ -500,12 +513,15 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--reading", action="append", default=[], help="一维读数（JSON）")
     p.add_argument("--readings", help="读数表（JSON 列表文件）")
     p.add_argument("--preregistered")
+    p.add_argument("--parity", choices=list(lh.PARITY), help="原形臂的条件对等声明（写下之后不能改）")
+    p.add_argument("--parity-reason", help="条件不对等的原因")
     p.set_defaults(fn=cmd_ruwei)
     p = sub.add_parser("approve", help="设计 PR 的裁决：值得炼")
     p.add_argument("no")
     p.add_argument("--by", required=True)
     p.add_argument("--date")
     p.add_argument("--note")
+    p.add_argument("--waive-gate", help="条件不对等且对原形有利时，对这一份炼档写下的豁免理由：原形门降为参考")
     p.set_defaults(fn=cmd_approve)
     p = sub.add_parser("yanti", help="④ 验体：体质改动行数、静态验体、换上这团火跑体质试炼")
     p.add_argument("no")

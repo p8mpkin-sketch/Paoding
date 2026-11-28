@@ -201,6 +201,38 @@ def test_tools_and_what_they_measure_do_not_change_together(tmp_path):
     ]
 
 
+def test_the_judge_and_its_command_are_tools_too(tmp_path):
+    """判定函数与炼化命令也是量具：碰了它们同样查被量的路径；它们自己虽然在 fenjue/src/ 与 scripts/ 下，不算被量的。"""
+    import check_liangju
+
+    repo, base = _repo(tmp_path)
+    for rel in ("fenjue/src/paoding_fenjue/lianhua.py", "scripts/lianhua.py", "scripts/run.py"):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    _commit(repo, {"fenjue/src/paoding_fenjue/lianhua.py": "1\n", "scripts/lianhua.py": "1\n", "scripts/run.py": "1\n"})
+    base = (
+        __import__("subprocess")
+        .run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+        .stdout.strip()
+    )
+    _commit(repo, {"fenjue/src/paoding_fenjue/lianhua.py": "2\n", "scripts/lianhua.py": "2\n"})
+    assert check_liangju.check(base, "HEAD", str(repo)) == (True, [])
+    _commit(repo, {"fenjue/src/paoding_fenjue/engine/a.py": "2\n", "scripts/run.py": "2\n"})
+    touched, errs = check_liangju.check(base, "HEAD", str(repo))
+    assert touched and errs == ["fenjue/src/paoding_fenjue/engine/a.py：改了 2 行", "scripts/run.py：改了 2 行"]
+
+
+def test_ci_tools_are_all_inside_the_measure_line():
+    """CI 这条线认的量具，都在判定函数那张量具路径表里；体质路径在被量的清单里。"""
+    import check_liangju
+
+    from paoding_fenjue import lianhua
+
+    assert set(check_liangju.TOOLS) <= set(lianhua.MEASURE_PATHS)
+    assert "ci/check_liangju.py" in lianhua.MEASURE_PATHS
+    for k in lianhua.KERNEL_PATHS:
+        assert k.startswith(check_liangju.PROTECTED) or k.startswith("adapter/src/")
+
+
 def test_engine_only_change_is_not_checked(tmp_path):
     import check_liangju
 

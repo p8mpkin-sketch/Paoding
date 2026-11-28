@@ -37,6 +37,7 @@ def test_history_and_outcome_tally():
     assert out["outcomes"] == {
         "huolian": 1,
         "helian": 0,
+        "buji": 0,
         "binghuo": 0,
         "fanshi": 0,
         "decided": 1,

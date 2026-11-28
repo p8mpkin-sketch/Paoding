@@ -10,6 +10,15 @@ from paoding_fenjue import lianhua as lh
 from paoding_fenjue import shapes
 
 TODAY = "2026-11-21"
+
+
+@pytest.fixture(autouse=True)
+def line_set_back(monkeypatch):
+    """这个文件是原形门之前写下的，一条断言都没有改：把划线调回去，判定就回到当时的行为（门的测试在
+    test_lianhua_gate.py）。"""
+    monkeypatch.setattr(lh, "YUANXING_GATE_FROM", None)
+
+
 SHIHUO = {"source": "某系统的结果页（演示）", "phenomenon": "结论先行", "gap": "结果页先列过程", "is_fire": "是"}
 CUIYI = {
     "yi": "结论先于过程呈现",

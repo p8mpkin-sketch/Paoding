@@ -1,7 +1,7 @@
 // GET /v1/evolution（焚决 04 §7，读端 paoding_fenjue.evolution）：能力配置的版本史、集成记录与结局统计、Holdout 对照。
 // 只读；读数不驱动任何默认值。线格式手写（不在 wire_schema 里：它是组装根的端点，不是内核的）。
 
-export type EvoOutcome = "huolian" | "helian" | "binghuo" | "fanshi";
+export type EvoOutcome = "huolian" | "helian" | "buji" | "binghuo" | "fanshi";
 export type EvoStatus = "identified" | "distilled" | "placed" | "design_approved" | "trialed" | "readings_ready" | "adopted" | "rejected" | "reverted";
 
 /** 一组任务的读数：做成 = 判定通过、人工验收、开放道交付；比率与平均只看已结束的。 */

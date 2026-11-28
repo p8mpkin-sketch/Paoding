@@ -15,10 +15,11 @@ const POLL_MS = 30_000;
 export const SLOT_WORD: Record<string, string> = {
   H1: "会话策略", H2: "调度编排", H3: "工具集", H4: "上下文管理", H5: "知识检索", H6: "可观测性", H7: "结果呈现", H8: "任务解析",
 };
-export const OUTCOME_WORD: Record<EvoOutcome, string> = { huolian: "新增能力", helian: "全面提升", binghuo: "无增益", fanshi: "回归" };
+export const OUTCOME_WORD: Record<EvoOutcome, string> = { huolian: "新增能力", helian: "全面提升", buji: "不及原方案", binghuo: "无增益", fanshi: "回归" };
 const OUTCOME_NOTE: Record<EvoOutcome, string> = {
   huolian: "出现了基线与外部方案都没有的能力：采纳，版本加一",
   helian: "同一指标上胜过基线与外部方案：采纳，版本加一",
+  buji: "同等条件下在目标指标上不如被集成的原方案：不采纳",
   binghuo: "没有超出两者：不采纳",
   fanshi: "内核测试不过或基线保障指标退步：不采纳",
 };

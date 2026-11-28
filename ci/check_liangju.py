@@ -1,7 +1,8 @@
 """量具与被量的东西不在同一个改动里变（现行设计第 14.2 节，第 0 步「不改变引擎行为」的前两件）。
 
-一个改动只要碰了 `liangju/`（引擎之外的量具），就查两样：
-1. 路径清单：引擎、适配层、体质、提示词、表、Schema、夹具与录音、组装脚本，这些路径下的改动行数为零。
+一个改动只要碰了量具里单独提、单独裁的那部分（TOOLS：引擎之外的量具 `liangju/`，判定函数与炼化命令），就查两样：
+1. 路径清单：引擎、适配层、体质、提示词、表、Schema、夹具与录音、组装脚本，这些路径下的改动行数为零
+   （TOOLS 自己列出的那几个文件除外）。
 2. 提示词与清单逐项相等：功法清单、火清单、引擎用的提示词，改动前后各取一次摘要，逐个文件相等。
 
 用法：python ci/check_liangju.py <基线提交> [<改动后的提交，缺省 HEAD>]
@@ -14,7 +15,12 @@ import hashlib
 import subprocess
 import sys
 
-TOOLS = "liangju/"
+TOOLS = (
+    "liangju/",  # 引擎之外的量具
+    "fenjue/src/paoding_fenjue/lianhua.py",  # 判定函数与炼化六步
+    "fenjue/src/paoding_fenjue/readings.py",  # 进化读数（只显示）
+    "scripts/lianhua.py",  # 炼化命令
+)
 PROTECTED = (
     "fenjue/src/",  # 引擎、表、Schema、功法清单与火清单、存档
     "fenjue/tests/engine_fixtures/",  # 夹具与录音
@@ -60,7 +66,9 @@ def check(base: str, head: str, cwd: str = ".") -> tuple[bool, list[str]]:
     diff = changed(base, head, cwd)
     if not any(p.startswith(TOOLS) for p in diff):
         return False, []
-    errors = [f"{p}：改了 {n} 行" for p, n in sorted(diff.items()) if p.startswith(PROTECTED)]
+    errors = [
+        f"{p}：改了 {n} 行" for p, n in sorted(diff.items()) if p.startswith(PROTECTED) and not p.startswith(TOOLS)
+    ]
     before, after = digests(base, cwd), digests(head, cwd)
     errors += [f"{p}：摘要变了" for p in sorted(before.keys() | after.keys()) if before.get(p) != after.get(p)]
     return True, errors
@@ -75,7 +83,7 @@ def main(argv: list[str]) -> int:
         print("量具没有改动：不查。")
         return 0
     if errors:
-        print("这个改动碰了量具（liangju/），同时又动了被量的东西：")
+        print("这个改动碰了量具（liangju/、判定函数或炼化命令），同时又动了被量的东西：")
         print("\n".join(f"  {e}" for e in errors))
         return 1
     print(f"量具改动：被量的路径改动零行（{len(PROTECTED)} 条路径），功法清单、火清单与提示词的摘要逐项相等。")

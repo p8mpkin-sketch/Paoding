@@ -22,7 +22,7 @@ jobs:
         run: python ci/check_domain_words.py
       - name: 依赖方向：只走契约接口
         run: python ci/check_deps.py
-      - name: 量具与被量的不一起改（碰了 liangju/ 的改动，引擎、适配层、体质、提示词、表、夹具改动零行）
+      - name: 量具与被量的不一起改（碰了 liangju/、判定函数或炼化命令的改动，引擎、适配层、体质、提示词、表、夹具改动零行）
         if: github.event_name == 'pull_request'
         run: python ci/check_liangju.py HEAD^1 HEAD
       - name: 表项计数不增（哪一类比初值多了就红；要改初值只能改 liangju/baseline/biaoxiang.json）

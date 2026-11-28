@@ -39,6 +39,7 @@ def cli(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "_run", lambda cmd, g: (True, "12 passed"))
     monkeypatch.setattr(mod, "kernel_lines", lambda base: 0)
+    monkeypatch.setattr(mod, "measure_lines", lambda base: 0)
     monkeypatch.setattr(mod, "_git", lambda *a: "abc1234")
     monkeypatch.setattr(mod, "candidate", lambda d: tmp_path / "cand.json")
     return mod, dossiers, pkg
@@ -48,8 +49,9 @@ def run(mod, *argv):
     assert mod.main([str(a) for a in argv]) == 0
 
 
-def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path, capsys):
+def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path, capsys, monkeypatch):
     mod, dossiers, pkg = cli
+    monkeypatch.setattr(lh, "YUANXING_GATE_FROM", None)  # 这一条走的是命令本身，写在原形门之前；门的走法见下一条
     run(mod, "new", "result-first", "--title", "结论先行", "--source", "演示", "--phenomenon", "结论先于过程",
         "--gap", "结果页先列过程", "--is-fire", "是：一类呈现做法", "--date", "2026-11-21")  # fmt: skip
     no = "002"
@@ -103,6 +105,51 @@ def test_a_dossier_goes_from_shihuo_to_sanhuo_without_hand_writing(cli, tmp_path
     # 手写的首炼档，命令不碰
     with pytest.raises(SystemExit, match="手写"):
         mod.load("001")
+
+
+def test_the_commands_carry_the_prototype_gate(cli, tmp_path, monkeypatch):
+    """过了划线的炼档（03 §3.1）：入位时登记原形臂、对等声明与吸收目标维；验体数出量具改动行数；融火时目标维
+    只收成对比较的四格计数；合火在目标维上明显弱于原形，结局提议是不及原形，裁决后不收、功法不动。"""
+    mod, dossiers, pkg = cli
+    g0 = (pkg / "gongfa.json").read_text(encoding="utf-8")
+    run(mod, "new", "result-first", "--title", "结论先行", "--source", "演示", "--phenomenon", "结论先于过程",
+        "--gap", "结果页先列过程", "--is-fire", "是：一类呈现做法", "--date", "2026-11-28")  # fmt: skip
+    no = "002"
+    run(mod, "cuiyi", no, "--yi", "结论先行", "--premise", "结论可信", "--cost", "过程折叠", "--overlap", "H7",
+        "--conflict", "T5", "--hypothesis", "结论先行且一键到留档", "--split", "无", "--masked", "成立")  # fmt: skip
+    f = json.loads((pkg / "fires" / "h7.result.json").read_text(encoding="utf-8"))
+    f.update(id="h7.result-first", ver=1, lineage={"dossier": no, "from": ["h7.result"]})
+    (tmp_path / "draft.json").write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
+    readings = [
+        {"dim": "留出题上的过线数", "kind": "异火", "dir": "up", "target": True, "n": 40},
+        {"dim": "结论可追率", "kind": "新生", "dir": "up", "gate": 1},
+    ]
+    (tmp_path / "readings.json").write_text(json.dumps(readings, ensure_ascii=False), encoding="utf-8")
+    run(mod, "ruwei", no, "--fire", tmp_path / "draft.json", "--replaces", "h7.result", "--arm", "B=原样",
+        "--arm", "B1=原样再跑一遍", "--arm", "A1=只挪结论", "--arm", "F=合火", "--arm", "A0=原形",
+        "--readings", tmp_path / "readings.json", "--parity", "equal")  # fmt: skip
+    assert mod.main(["approve", no, "--by", "cz", "--waive-gate", "想降为参考"]) == 2  # 登记的是对等：谈不上豁免
+    run(mod, "approve", no, "--by", "cz", "--date", "2026-11-28")
+    monkeypatch.setattr(mod, "measure_lines", lambda base: 2)
+    run(mod, "yanti", no)
+    d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
+    assert d["yanti"]["passed"] is False and d["measure_lines_changed"] == 2  # 夹带了量具的改动：验体不过
+    monkeypatch.setattr(mod, "measure_lines", lambda base: 0)
+    run(mod, "yanti", no)
+    same = {"both": 30, "first": 3, "second": 3, "neither": 4}
+    behind = {"both": 24, "first": 1, "second": 12, "neither": 3}
+    pairs = {"B:B1": same, "F:B": same, "F:A1": same, "F:A0": behind}
+    values = {"留出题上的过线数": {"pairs": pairs}, "结论可追率": {"B": 0, "A1": 0, "F": 1}}
+    (tmp_path / "values.json").write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")
+    assert mod.main(["ronghuo", no, "--values", str(tmp_path / "values.json"), "--set", "留出题上的过线数:F=40"]) == 2
+    run(mod, "ronghuo", no, "--values", tmp_path / "values.json")
+    d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
+    assert d["outcome_proposed"] == "buji" and d["jie_proposed"] is None and d["yuanxing_gate"]["state"] == "failed"
+    run(mod, "jue", no, "--by", "cz", "--outcome", "buji", "--date", "2026-11-28")
+    md = (dossiers / f"{no}-result-first.md").read_text(encoding="utf-8")
+    d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
+    assert md == lh.render(d) and "| 结局 | 不及原形 |" in md and "原形门未过" in md and "| 原形臂的条件 | 对等 |" in md
+    assert d["status"] == "rejected" and (pkg / "gongfa.json").read_text(encoding="utf-8") == g0
 
 
 def test_the_archive_only_grows(cli):

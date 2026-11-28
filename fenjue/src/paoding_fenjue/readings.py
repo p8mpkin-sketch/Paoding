@@ -14,7 +14,7 @@ from typing import Any
 
 from .shapes import archived_digests, at, current, fire_at, for_problem, gongfa, stamp_of
 
-OUTCOMES = ("huolian", "helian", "binghuo", "fanshi")  # 火莲、合炼、并火、反噬（03 §3）
+OUTCOMES = ("huolian", "helian", "buji", "binghuo", "fanshi")  # 火莲、合炼、不及原形、并火、反噬（03 §3）
 DONE = ("solved", "accepted", "delivered")  # 做成：本地或外部判定通过、人工验收、开放道交付
 
 
