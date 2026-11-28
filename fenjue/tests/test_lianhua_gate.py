@@ -19,6 +19,13 @@ AHEAD = {"both": 24, "first": 12, "second": 1, "neither": 3}  # 前者（合火�
 BEHIND = {"both": 24, "first": 1, "second": 12, "neither": 3}  # 前者明显弱：落后 11
 
 
+@pytest.fixture(autouse=True)
+def hand_filled_readings(monkeypatch):
+    """这个文件守的是判定函数本身：四格计数直接填进去。试火计划与记录那条线（SHIHUO_FROM）在这里调回去，
+    从记录读入的那条路在 test_shihuo.py。"""
+    monkeypatch.setattr(lh, "SHIHUO_FROM", None)
+
+
 def dossier(no: str = "900", *, a0: bool = True, a1: bool = True, parity: str | None = "equal") -> dict:
     """走到验体通过的一份炼档：一个吸收目标维、一个新生维、一个本火维、一个共有维。"""
     f = copy.deepcopy(shapes.fire("h7.result"))

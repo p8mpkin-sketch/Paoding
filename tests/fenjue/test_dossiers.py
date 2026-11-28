@@ -84,10 +84,13 @@ def test_each_dossier_is_complete(path: Path):
         assert isinstance(v, dict), f"{path.name}：状态 {d['status']} 要有第六节的裁决"
         assert v.get("by") and DATE.match(v.get("date", "")), "裁决要写裁决人与日期"
         assert v.get("outcome") in OUTCOMES
-    if d["status"] == "adopted":
+    manual = d.get("origin") == "手工"  # 手工的结局照记，不加品阶；装没装进功法看 verdict.installed
+    if d["status"] == "adopted" and manual:
+        assert v.get("installed") == lh.MANUAL and "jie" not in v
+    elif d["status"] == "adopted":
         assert v["outcome"] in TAKEN, "只有火莲与合炼可以入功法"
         assert isinstance(v.get("jie"), int) and v["jie"] > 0
-    if d["status"] == "rejected":
+    if d["status"] == "rejected" and not manual:
         assert v["outcome"] not in TAKEN
     if d["status"] == "reverted":
         assert d["reverts"], "已散火的要在第七节记下谁、何时、为什么"
@@ -140,7 +143,10 @@ def test_grade_history_matches_the_verdicts():
         if "dossier" in h:
             d = ds.get(h["dossier"])
             assert d is not None and d["status"] == "adopted", f"第 {h['jie']} 阶记的炼档 {h['dossier']} 没有裁决"
-            assert d["verdict"]["jie"] == h["jie"]
+            if h.get("manual"):  # 手工修订：装进了功法，但不加品阶
+                assert d["verdict"].get("installed") == lh.MANUAL and "jie" not in d["verdict"]
+            else:
+                assert d["verdict"]["jie"] == h["jie"]
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
@@ -155,7 +161,9 @@ def test_dossiers_past_the_line_carry_the_prototype_gate(path: Path):
     if d["status"] in ("readings_ready", "adopted", "rejected", "reverted"):
         gate = d.get("yuanxing_gate")
         assert isinstance(gate, dict) and gate.get("state") in lh.GATE, f"{path.name}：读数已出，要有原形门的状态"
-        if d["status"] in ("adopted", "reverted"):
+        if (d.get("verdict") or {}).get("installed") == lh.MANUAL:  # 手工修订：不加品阶，门没过或没判的挂着记号
+            assert gate["state"] == "passed" or d["verdict"].get("mark") == lh.GATE[gate["state"]]
+        elif d["status"] in ("adopted", "reverted"):
             assert gate["state"] != "failed", "原形门未过的不收"
             assert gate["state"] == "passed" or d["verdict"]["outcome"] == "helian", "原形门未判：结局最高合炼"
     if d.get("yanti"):

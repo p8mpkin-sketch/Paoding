@@ -14,6 +14,7 @@ from typing import Any
 
 from .shapes import archived_digests, at, current, fire_at, for_problem, gongfa, stamp_of
 
+MARKS = {"unjudged": "原形门未判", "failed": "原形门未过"}  # 两个记号公开显示（现行设计 4.4）；过了门的不挂
 OUTCOMES = ("huolian", "helian", "buji", "binghuo", "fanshi")  # 火莲、合炼、不及原形、并火、反噬（03 §3）
 DONE = ("solved", "accepted", "delivered")  # 做成：本地或外部判定通过、人工验收、开放道交付
 
@@ -47,10 +48,20 @@ def _dossier_row(d: Mapping[str, Any]) -> dict[str, Any]:
         "slot": f.get("slot"),
         "replaces": list((f.get("lineage") or {}).get("from") or []),
         "kernel_lines_changed": d.get("kernel_lines_changed"),
+        "measure_lines_changed": d.get("measure_lines_changed"),  # 量具改动行数；验体之前、划线之前的炼档是 None
+        "origin": d.get("origin"),  # 出身：自炼、手工、修订；没登记的是 None
+        # 原形门的记号：未判、未过；判过了的、还没出读数的、不归门管的炼档是 None
+        "gate_mark": MARKS.get(str((d.get("yuanxing_gate") or {}).get("state"))),
         "outcome_proposed": d.get("outcome_proposed"),
         "jie_proposed": d.get("jie_proposed"),
         "verdict": (
-            {k: v[k] for k in ("by", "date", "outcome", "jie", "conditions", "basis") if k in v} if v else None
+            {
+                k: v[k]
+                for k in ("by", "date", "outcome", "jie", "conditions", "basis", "system", "installed", "mark")
+                if k in v
+            }
+            if v
+            else None
         ),
         "reverts": [dict(r) for r in d.get("reverts") or []],
         "readings": [
@@ -93,12 +104,17 @@ def evolution(
 
     ds = sorted((_dossier_row(d) for d in dossiers), key=lambda d: d["dossier"])
     counts = {o: 0 for o in OUTCOMES}
+    manual = 0  # 出身是手工的炼档单列一栏「手工引导」，不计入任何一种结局（N6）
     for d in ds:
         if d["verdict"] and d["verdict"].get("outcome") in counts:
-            counts[d["verdict"]["outcome"]] += 1
+            if d["origin"] == "手工":
+                manual += 1
+            else:
+                counts[d["verdict"]["outcome"]] += 1
     tally = {
         **counts,
-        "decided": sum(counts.values()),
+        "manual": manual,
+        "decided": sum(counts.values()) + manual,
         "pending": sum(1 for d in ds if not d["verdict"]),
         "reverted": sum(1 for d in ds if d["status"] == "reverted"),
     }

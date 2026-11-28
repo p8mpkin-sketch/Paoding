@@ -6,10 +6,12 @@
     uv run python scripts/lianhua.py ruwei <档号> --fire 清单草稿.json [--replaces 上一团火] \\
         --arm B=… --arm A1=… --arm F=… --arm B1=… --reading '{"dim":…,"kind":"新生","dir":"up","gate":1,"test":…}' \\
         [--arm A0=… --parity equal|ours_or_neutral|theirs --parity-reason …]   # 原形臂与它的条件对等声明
+    uv run python scripts/lianhua.py plan <档号> --file 试火计划.json   # 预登记试火计划（003 起；登记之后不能改）
     uv run python scripts/lianhua.py approve <档号> --by cz [--waive-gate 理由]   # 设计 PR 裁决：值得炼
     uv run python scripts/lianhua.py yanti <档号> [--base origin/main]   # 体质与量具的改动行数、静态验体、跑 T1–T5
     uv run python scripts/lianhua.py ronghuo <档号> --set '维:F=1' … [--values 读数.json] [--run-tests]   # 判结局
-    uv run python scripts/lianhua.py jue <档号> --by cz --outcome huolian [--condition …]   # 定阶，改功法
+    uv run python scripts/lianhua.py ronghuo <档号> --record 试火记录.json   # 003 起：读数只从试火记录读入
+    uv run python scripts/lianhua.py jue <档号> --by cz --outcome huolian [--condition …] [--record 试火记录.json]
     uv run python scripts/lianhua.py sanhuo <档号> --by cz --why …     # 散火：火位指回上一团火
     uv run python scripts/lianhua.py status [<档号>]                    # 每份炼档走到哪一步、下一步是什么
     uv run python scripts/lianhua.py render <档号>                      # 由 JSON 重新生成 .md
@@ -240,6 +242,17 @@ def cmd_ruwei(a: argparse.Namespace) -> None:
     print("前三节写完了：开设计 PR 交裁决，通过后 approve")
 
 
+def _record(path: str | None) -> dict[str, Any] | None:
+    """试火记录：试火台写出的那个文件。炼档里只记它的哈希，文件留在跑试火的那台机器上。"""
+    return json.loads(Path(path).read_text(encoding="utf-8")) if path else None
+
+
+def cmd_plan(a: argparse.Namespace) -> None:
+    d = lh.dengji(load(a.no), json.loads(Path(a.file).read_text(encoding="utf-8")))
+    print(f"试火计划已登记（{d['trial_plan_hash'][:12]}）→ {save(d).relative_to(ROOT)}")
+    print(f"交设计裁决：approve {d['dossier']} --by …")
+
+
 def cmd_approve(a: argparse.Namespace) -> None:
     d = lh.approve_design(load(a.no), a.by, a.date or _today(), a.note or "", a.waive_gate or "")
     print(f"设计已裁 → {save(d).relative_to(ROOT)}；下一步：yanti {d['dossier']}")
@@ -292,6 +305,8 @@ def cmd_ronghuo(a: argparse.Namespace) -> None:
     if a.values:
         for dim, v in json.loads(Path(a.values).read_text(encoding="utf-8")).items():
             values.setdefault(dim, {}).update(v)
+    if lh.needs_plan(d) and values:
+        raise lh.StepError("这份炼档的读数只从试火记录读入（--record）；结构读数用 --run-tests 跑出来，不手填")
     if a.run_tests:  # 结构读数：出处测试在换上这团火的功法下过了，合火臂即 1
         cand = candidate(d)
         try:
@@ -303,7 +318,7 @@ def cmd_ronghuo(a: argparse.Namespace) -> None:
                     print(f"{r['dim']}：F={'1' if ok else '0'}  {summary}")
         finally:
             cand.unlink(missing_ok=True)
-    d = lh.ronghuo(d, values, gongfa_raw()["jie"])
+    d = lh.ronghuo(d, values, gongfa_raw()["jie"], record=_record(a.record))
     print(f"结局提议：{lh.OUTCOMES[d['outcome_proposed']]}；品阶提议：{d['jie_proposed']}")
     for w in d["outcome_why"]:
         print("  " + w)
@@ -311,7 +326,7 @@ def cmd_ronghuo(a: argparse.Namespace) -> None:
 
 
 def cmd_jue(a: argparse.Namespace) -> None:
-    d, g = lh.jue(load(a.no), gongfa_raw(), a.by, a.date or _today(), a.outcome, a.condition)
+    d, g = lh.jue(load(a.no), gongfa_raw(), a.by, a.date or _today(), a.outcome, a.condition, record=_record(a.record))
     save(d)
     if g != gongfa_raw():
         dg = archive(g)  # 先存档再生效：新开的题记下的摘要，存档里一定有
@@ -517,6 +532,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--parity", choices=list(lh.PARITY), help="原形臂的条件对等声明（写下之后不能改）")
     p.add_argument("--parity-reason", help="条件不对等的原因")
     p.set_defaults(fn=cmd_ruwei)
+    p = sub.add_parser("plan", help="预登记试火计划（设计裁决之前；登记之后不能改）")
+    p.add_argument("no")
+    p.add_argument("--file", required=True, help="试火计划（JSON）")
+    p.set_defaults(fn=cmd_plan)
+
     p = sub.add_parser("approve", help="设计 PR 的裁决：值得炼")
     p.add_argument("no")
     p.add_argument("--by", required=True)
@@ -534,6 +554,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--set", action="append", default=[], help="维:臂=值")
     p.add_argument("--values", help="读数（JSON：维 → {臂: 值}）")
     p.add_argument("--run-tests", action="store_true", help="出处是测试的读数：换上这团火跑一遍，过了 F=1")
+    p.add_argument("--record", help="试火记录（JSON）：要试火计划的炼档，读数只从它读入")
     p.set_defaults(fn=cmd_ronghuo)
     p = sub.add_parser("jue", help="定阶：记裁决；收下时改功法、上一团火进常设留出")
     p.add_argument("no")
@@ -541,6 +562,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--outcome", required=True, choices=list(lh.OUTCOMES))
     p.add_argument("--condition", action="append", default=[])
     p.add_argument("--date")
+    p.add_argument("--record", help="试火记录（JSON）：定阶之前核它的哈希并重算结局")
     p.set_defaults(fn=cmd_jue)
     p = sub.add_parser("sanhuo", help="⑥ 散火：火位指回上一团火")
     p.add_argument("no")

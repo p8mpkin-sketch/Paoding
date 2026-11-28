@@ -17,7 +17,9 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+from . import shihuo
 from .shapes import FIRE_KEYS, SLOTS
+from .shihuo import CELLS, PAIRS
 
 # 体质组件（算“体质改动行数”用，02 §9）：一次吞噬对这些路径的改动行数，目标是 0
 KERNEL_PATHS = (
@@ -41,6 +43,7 @@ MEASURE_PATHS = (
     "eval/",  # 评测台（药鼎的一部分，设计第一篇）：四臂对照的台子、读数与记录
     "fenjue/src/paoding_fenjue/lianhua.py",  # 判定函数与炼化六步，以及这张表
     "fenjue/src/paoding_fenjue/readings.py",  # 进化读数（只显示）
+    "fenjue/src/paoding_fenjue/shihuo.py",  # 试火计划与试火记录的形状、哈希与核对
     "fenjue/src/paoding_fenjue/shapes.py",  # 留出份额的规则（一道题落进哪条臂）与功法摘要的算法
     "fenjue/src/paoding_fenjue/tables.py",  # 体质对功法的两张表：验体拿它判经脉越界
     "scripts/lianhua.py",  # 炼化命令
@@ -83,6 +86,7 @@ STATUSES = (
 STEP_AFTER = {
     "cuiyi": ("identified", "distilled"),
     "ruwei": ("distilled", "placed"),
+    "plan": ("placed",),
     "approve_design": ("placed",),
     "yanti": ("design_approved", "trialed"),
     "ronghuo": ("trialed", "readings_ready"),
@@ -103,11 +107,17 @@ GATE = {"passed": "原形门已过", "unjudged": "原形门未判", "failed": "�
 PARITY = {"equal": "对等", "ours_or_neutral": "不对等：对我们有利或不偏向任何一方", "theirs": "不对等：对原形有利"}
 # 吸收目标维的输入：成对比较的四格计数（都过、只有前者过、只有后者过、都不过），单位是题次。
 # 四格由盲判的产出与花费记录算出；判定函数在目标维上只读这几栏，不读任何一条臂自己报的数
-PAIRS = ("F:A0", "F:B", "F:A1", "B:B1")
-CELLS = ("both", "first", "second", "neither")
+# （PAIRS 与 CELLS 住在 shihuo.py：试火记录的四格计数与这里读的是同一个形状）
 TARGET_INPUTS = ("dim", "kind", "dir", "target", "pairs", "n")
 ORIGINS = ("自炼", "手工", "修订")  # 出身：吸收器自己走完全程；人设计人实现；修缺陷或删简，不引入外部对象的新做法
 TRIALS = ("T1", "T2", "T3", "T4", "T5")
+
+# 试火计划与记录（03 §4、§5）。按档号划线：这个档号及以后的炼档，设计裁决之前要登记试火计划，运行读数只从
+# 试火记录读入，手填的入口关掉；定阶时核对记录。之前的炼档（002）没有计划，读数照旧由人填。调回 None 即回到之前。
+SHIHUO_FROM: str | None = "003"
+# 人给的结局只能等于或低于系统判出的（N4）。同一级里的两种「不收」诊断不同，不能互换
+RANK = {"fanshi": 0, "binghuo": 1, "buji": 1, "helian": 2, "huolian": 3}
+MANUAL = "手工修订"  # 出身是手工的炼档装进功法的方式：不加品阶，不计成功（N6）
 
 
 class StepError(ValueError):
@@ -262,6 +272,27 @@ def ruwei(
     return d
 
 
+def needs_plan(d: Mapping[str, Any]) -> bool:
+    """这份炼档要不要试火计划与试火记录：按档号划线（SHIHUO_FROM），并且归原形门管。"""
+    return gated(d) and SHIHUO_FROM is not None and str(d["dossier"]) >= SHIHUO_FROM
+
+
+def dengji(d: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    """登记试火计划（入位之后、设计裁决之前）。登记之后不能改；设计裁决时记下它的哈希。
+
+    计划里任何一条臂或盲判的模型栏空着、盲判的模型与某条臂相同、各臂模型不全相同而又没有登记为不对等、
+    花费上限与盲判时限不是按规矩算出的，都拒绝登记（shihuo.check_plan）。"""
+    d = _need(d, "plan")
+    if d.get("trial_plan") is not None and d["trial_plan"] != plan:
+        raise StepError("试火计划已经登记，不能改（一份计划只判一次）；要换就改设计、开下一份炼档重新预登记")
+    errors = shihuo.check_plan(plan, d)
+    if errors:
+        raise StepError("试火计划不能登记：" + "；".join(errors))
+    d["trial_plan"] = copy.deepcopy(plan)
+    d["trial_plan_hash"] = shihuo.digest(plan)
+    return d
+
+
 def approve_design(d: dict[str, Any], by: str, date: str, note: str = "", waive_gate: str = "") -> dict[str, Any]:
     """前三节是设计 PR：裁决“值不值得炼”之后才进验体（02 §5 末）。
 
@@ -273,6 +304,10 @@ def approve_design(d: dict[str, Any], by: str, date: str, note: str = "", waive_
             raise StepError("只有入位时登记为「不对等：对原形有利」的炼档才谈得上豁免原形门")
         d["parity"] = {**d["parity"], "waiver": {"by": by, "date": date, "why": waive_gate}}
     d["design_verdict"] = {"by": by, "date": date, **({"note": note} if note else {})}
+    if needs_plan(d):
+        if d.get("trial_plan") is None:
+            raise StepError("还没有登记试火计划：计划（连同吸收目标维与对等声明）要在设计裁决之前预登记")
+        d["design_verdict"]["plan_hash"] = shihuo.digest(d["trial_plan"])
     d["status"] = "design_approved"
     return d
 
@@ -519,11 +554,8 @@ def judge(d: dict[str, Any]) -> tuple[str, list[str]]:
     return _judge(d, gate=True)
 
 
-def ronghuo(d: dict[str, Any], values: dict[str, dict[str, Any]], jie_now: int) -> dict[str, Any]:
-    """填各臂读数（dim → {B, B1, A1, F, A0, m, n}），判结局，提议品阶。没给 m 时用 |B − B′| 作噪声底。
-
-    过了划线的炼档，吸收目标维只收成对比较的四格计数（dim → {pairs: {"F:A0": {both, first, second, neither}, …}}）。"""
-    d = _need(d, "ronghuo")
+def _fill(d: dict[str, Any], values: Mapping[str, Mapping[str, Any]]) -> None:
+    """把读数填进预登记的各维。赛后不许加维；目标维只收成对比较的四格计数。"""
     dims = {r["dim"] for r in d["readings"]}
     unknown = set(values) - dims
     if unknown:
@@ -548,6 +580,59 @@ def ronghuo(d: dict[str, Any], values: dict[str, dict[str, Any]], jie_now: int) 
         r.update(v)
         if "m" not in r and _num(r.get("B")) is not None and _num(r.get("B1")) is not None:
             r["m"] = abs(float(r["B"]) - float(r["B1"]))
+
+
+def _from_record(d: dict[str, Any], record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """核一份试火记录，回它给出的读数（维 → 值）。记录不合格、不是照登记的那份计划跑的，都拒绝。"""
+    plan = d.get("trial_plan")
+    if plan is None or shihuo.digest(plan) != (d.get("design_verdict") or {}).get("plan_hash"):
+        raise StepError("炼档里的试火计划与设计裁决时记下的哈希对不上：计划登记之后不能改")
+    errors = shihuo.check_record(record, plan)
+    if errors:
+        raise StepError("试火记录不能用来出结局：" + "；".join(errors))
+    try:
+        return shihuo.values(record, plan, d)
+    except ValueError as e:
+        raise StepError(str(e)) from e
+
+
+def ronghuo(
+    d: dict[str, Any],
+    values: dict[str, dict[str, Any]],
+    jie_now: int,
+    record: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """填各臂读数（dim → {B, B1, A1, F, A0, m, n}），判结局，提议品阶。没给 m 时用 |B − B′| 作噪声底。
+
+    过了划线的炼档，吸收目标维只收成对比较的四格计数（dim → {pairs: {"F:A0": {both, first, second, neither}, …}}）。
+    要试火计划的炼档（needs_plan）：运行读数只从试火记录 record 读入，values 里只许有登记了出处测试的结构读数
+    （命令换上这团火跑测试得出，03 §5）；一份计划只判一次。"""
+    d = _need(d, "ronghuo")
+    if needs_plan(d):
+        structural = {r["dim"] for r in d["readings"] if r.get("test") and not r.get("target")}
+        if set(values) - structural:
+            raise StepError(
+                f"这份炼档的运行读数只从试火记录读入：手填的入口已经关掉（{sorted(set(values) - structural)}）。"
+                "只有登记了出处测试的结构读数由命令跑测试得出"
+            )
+        if record is None:
+            raise StepError("要给试火记录：这份炼档的读数只从记录读入")
+        if d.get("trial_record"):
+            raise StepError("这份计划已经判过一次（一份计划只判一次）；想再判，得改设计、重新预登记")
+        ran = _from_record(d, record)
+        if set(ran) & set(values):
+            raise StepError(f"这几维既有测试跑出的结构读数，记录里又报了一份：{sorted(set(ran) & set(values))}")
+        values = {**values, **ran}
+        d["trial_record"] = {
+            "hash": shihuo.digest(record),
+            "plan_hash": record["plan_hash"],
+            "cost_usd_milli": record["cost"]["total_usd_milli"],
+            "items": len(record["items"]),
+        }
+        d["metrics"]["trial_cost_usd_milli"] = record["cost"]["total_usd_milli"]
+    elif record is not None:
+        raise StepError("这份炼档在划线之前，没有登记试火计划：读数照旧填")
+    _fill(d, values)
     outcome, why = judge(d)
     d["outcome_proposed"] = outcome
     d["outcome_why"] = why
@@ -591,6 +676,38 @@ def install(g: dict[str, Any], d: dict[str, Any]) -> tuple[dict[str, Any], str |
     return g, first
 
 
+def system_outcome(d: Mapping[str, Any], record: Mapping[str, Any] | None = None) -> str:
+    """定阶之前由系统重算一次结局。要试火计划的炼档从记录重算，并先核三样（任何一样不对都拒绝）：
+    试火记录给了并且哈希与融火时记下的相同；记录里的计划哈希等于设计裁决时记下的；按记录重算得出结局。"""
+    c = copy.deepcopy(dict(d))
+    if needs_plan(c):
+        if record is None:
+            raise StepError("定阶要给试火记录：没有记录的炼档不能装进功法")
+        if shihuo.digest(record) != (c.get("trial_record") or {}).get("hash"):
+            raise StepError("试火记录的哈希与融火时记下的对不上：不是出结局的那一份记录")
+        if record.get("plan_hash") != (c.get("design_verdict") or {}).get("plan_hash"):
+            raise StepError("记录里的计划哈希不等于设计裁决时记下的：计划在裁决之后变过")
+        _fill(c, _from_record(c, record))
+    elif record is not None:
+        raise StepError("这份炼档在划线之前，没有登记试火计划：定阶不收试火记录")
+    return judge(c)[0]
+
+
+def _regressed_vs_b(d: Mapping[str, Any]) -> bool:
+    """有没有哪一维上合火对本火退了（手工修订装入的条件之一：对 B 不退）。"""
+    for r in d["readings"]:
+        if r.get("target") and gated(d):
+            fb = _cells(r, "F:B")
+            if fb is not None and _behind(fb) > float(r.get("m") or 0):
+                return True
+            continue
+        b, f = _num(r.get("B")), _num(r.get("F"))
+        if r["kind"] != "新生" and b is not None and f is not None:
+            if (1.0 if r["dir"] == "up" else -1.0) * (f - b) < -(_num(r.get("m")) or 0.0):
+                return True
+    return False
+
+
 def jue(
     d: dict[str, Any],
     g: dict[str, Any],
@@ -598,14 +715,28 @@ def jue(
     date: str,
     outcome: str,
     conditions: list[str],
+    record: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """记第六节的裁决。收下（火莲、合炼）时同时改功法：新火装进火位、顶替的那团进常设留出、品阶加一。
-    返回 (炼档, 功法)。g 是功法 JSON（不带算出的摘要）。"""
+    返回 (炼档, 功法)。g 是功法 JSON（不带算出的摘要）。
+
+    过了原形门划线的炼档：人给的结局只能等于或低于系统重算出的（N4）；要试火计划的炼档先核试火记录
+    （system_outcome 的三种拒绝）。出身是手工的炼档（N6）：结局照记，不加品阶、不计成功；验体全过、对本火不退、
+    人没有把结局往低里改时，按「手工修订」装进功法，原形门没过或没判的挂着记号。"""
     d = _need(d, "jue")
     if outcome not in OUTCOMES:
         raise StepError(f"结局只能是 {list(OUTCOMES)}")
+    system = None
+    if gated(d):
+        system = system_outcome(d, record)
+        if outcome != system and RANK[outcome] >= RANK[system]:
+            raise StepError(
+                f"系统判出的结局是{OUTCOMES[system]}，人给的是{OUTCOMES[outcome]}："
+                "人给的结局只能等于或低于系统判出的，不能越过门"
+            )
     g = copy.deepcopy(g)
-    taken = outcome in TAKEN
+    manual = d.get("origin") == "手工"
+    taken = outcome in TAKEN and not manual
     jie = g["jie"] + 1 if taken else None
     d["verdict"] = {
         "by": by,
@@ -613,8 +744,32 @@ def jue(
         "outcome": outcome,
         **({"jie": jie} if jie else {}),
         "conditions": conditions,
+        **({"system": system} if system else {}),
     }
     d["status"] = "adopted" if taken else "rejected"
+    if manual:
+        fits = (
+            bool((d["yanti"] or {}).get("passed")) and not _regressed_vs_b(d) and (system is None or outcome == system)
+        )
+        if not fits or outcome == "fanshi":
+            return d, g
+        g, old = install(g, d)
+        gate = (d.get("yuanxing_gate") or {}).get("state")
+        mark = GATE[gate] if gate in ("unjudged", "failed") else None
+        d["verdict"] = {**d["verdict"], "installed": MANUAL, **({"mark": mark} if mark else {})}
+        d["status"] = "adopted"
+        g["history"] = [
+            *g["history"],
+            {
+                "jie": g["jie"],
+                "change": f"{MANUAL}：{d['title']}（炼档 {d['dossier']}）",
+                "dossier": d["dossier"],
+                "manual": True,
+                **({"mark": mark} if mark else {}),
+                **({"replaces": old} if old else {}),
+            },
+        ]
+        return d, g
     if not taken:
         return d, g
     g, old = install(g, d)
@@ -657,10 +812,16 @@ def sanhuo(d: dict[str, Any], g: dict[str, Any], by: str, date: str, why: str) -
         g["fires"][slot] = refs
         if i == 0:
             first = back
-    g["jie"] = g["jie"] - 1
+    manual = (d.get("verdict") or {}).get("installed") == MANUAL  # 手工修订装入时没有加品阶，散火也不降
+    g["jie"] = g["jie"] if manual else g["jie"] - 1
     g["history"] = [
         *g["history"],
-        {"jie": g["jie"], "change": f"散火：{d['title']}（炼档 {d['dossier']}）", "reverts": d["dossier"]},
+        {
+            "jie": g["jie"],
+            "change": f"散火：{d['title']}（炼档 {d['dossier']}）",
+            "reverts": d["dossier"],
+            **({"manual": True} if manual else {}),
+        },
     ]
     d["reverts"] = [*d["reverts"], {"by": by, "date": date, "why": why, **({"back_to": first} if first else {})}]
     d["metrics"]["reverts"] = len(d["reverts"])
@@ -671,6 +832,8 @@ def sanhuo(d: dict[str, Any], g: dict[str, Any], by: str, date: str, why: str) -
 def next_step(d: dict[str, Any]) -> str | None:
     """这份炼档下一步该做什么（给 status 命令用）。"""
     order = ("cuiyi", "ruwei", "approve_design", "yanti", "ronghuo", "jue")
+    if d["status"] == "placed" and needs_plan(d) and d.get("trial_plan") is None:
+        return "plan"
     for step in order:
         if d["status"] == STEP_AFTER[step][0]:
             return step
@@ -731,6 +894,42 @@ def _engine_sections(d: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _plan_section(d: dict[str, Any]) -> list[str]:
+    """预登记的试火计划（03 §4）：逐臂的模型栏、盲判、题集、上限与时限。题面不在计划里。"""
+    plan = d.get("trial_plan")
+    if not plan:
+        return []
+    j, q, caps, seg = plan["judge"], plan["questions"], plan["caps"], plan["trial_segment"]
+    out = [
+        f"试火计划（登记之后不能改；哈希 `{d['trial_plan_hash'][:12]}`）：",
+        "",
+        "| 臂 | 是什么 | 模型与版本 | 端点 | 计量来源 | 价表 | 采样参数 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for k in ARMS:
+        a = plan["arms"].get(k)
+        if a:
+            sampling = "、".join(f"{x}={a['sampling'][x]}" for x in sorted(a["sampling"])) or "—"
+            out.append(
+                f"| {k} | {_cell(a['what'])} | {_cell(a['model'])} {_cell(a['version'])} | {a['endpoint']} | "
+                f"{a['meter']} | {_cell(a['price_table'])} | {_cell(sampling)} |"
+            )
+    given = j.get("limit_given")
+    out += [
+        "",
+        f"- 盲判：{_cell(j['model'])} {_cell(j['version'])}，三段版本 {_cell(j['prompts'])}；"
+        f"每个子问抽 {j['sample']['per_sub']} 条、一份回答至多 {j['sample']['max']} 条；"
+        f"每题次时限 {j['seconds_per_item']} 秒"
+        + (f"（{_cell(given['by'])} 另给：{_cell(given['why'])}）" if given else ""),
+        f"- 题集：{_cell(q['set'])}（{_cell(q['source'])}），摘要 `{str(q['digest'])[:12]}`，"
+        f"{q['count']} 道，每条臂每道题跑 {q['runs']} 次",
+        f"- 花费上限：每题次 {caps['per_item_usd_milli']}，一次试火合计 {caps['total_usd_milli']}（千分之一美元）；"
+        f"由试跑段 {_cell(seg['batch'])} 的中位数按规矩算出",
+        "",
+    ]
+    return out
+
+
 def render(d: dict[str, Any]) -> str:
     """炼档的 .md：从 JSON 生成，七节齐全（02 §9）。手改会被下一次命令覆盖，要改就改 JSON 再 render。"""
     s, c = d["shihuo"], d["cuiyi"] or {}
@@ -789,6 +988,7 @@ def render(d: dict[str, Any]) -> str:
             f"替换 {_cell(m.get('replaces')) if m.get('replaces') else '无（并存）'} |"
         )
     lines.append("")
+    lines += _plan_section(d)
     lines += _engine_sections(d)
     if d.get("design_verdict"):
         dv = d["design_verdict"]
@@ -850,6 +1050,13 @@ def render(d: dict[str, Any]) -> str:
                     cells = [r["dim"], pair_names[k], *[_cell(c.get(x)) for x in CELLS], _cell(r.get("m"))]
                     cells.append(_cell(r.get("yuanxing")) if k == "F:A0" else "—")
                     lines.append("| " + " | ".join(str(x) for x in cells) + " |")
+    if d.get("trial_record"):
+        tr = d["trial_record"]
+        lines += [
+            "",
+            f"读数出自试火记录 `{tr['hash'][:12]}`（计划 `{tr['plan_hash'][:12]}`，{tr['items']} 个题次，"
+            f"花费 {tr['cost_usd_milli']} 千分之一美元）。一份计划只判一次。",
+        ]
     if d.get("yuanxing_gate"):
         yg = d["yuanxing_gate"]
         lines += ["", f"原形门：**{GATE[yg['state']]}**" + (f"（{'；'.join(yg['why'])}）" if yg["why"] else "") + "。"]
@@ -867,6 +1074,16 @@ def render(d: dict[str, Any]) -> str:
             f"| 结局 | {OUTCOMES[v['outcome']]} |",
             f"| 品阶 | {_cell(v.get('jie'))} |",
             f"| 附加条件 | {_cell('；'.join(v.get('conditions') or []))} |",
+            *([f"| 系统判出的结局 | {OUTCOMES[v['system']]} |"] if v.get("system") else []),
+            *(
+                [
+                    f"| 装入方式 | {v['installed']}：不加品阶，不计成功"
+                    + (f"；{v['mark']}" if v.get("mark") else "")
+                    + " |"
+                ]
+                if v.get("installed")
+                else []
+            ),
         ]
     else:
         lines.append("待裁。")
