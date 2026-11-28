@@ -8,8 +8,10 @@
 归类器的版本（提示词、例句条数、换题重现集），然后全部记录按新版本重算：换一个新的登记簿文件，把历次批次按顺序给上。
 
 启用之前先在换题重现集上测（`evaluate`），四项都合格才启用：同机制的对落进同一类、不同机制的对不落进同一类、
-打乱顺序后的一致率，三个比例都不低于合格线（90%，P3）；同样的输入算两遍划分相同。没有合格的测试记录，`classify`
-拒绝启动。每批另混入两条已知答案的金丝雀（一条已有类别的换述、一条确实全新的），判错则这一批的曲线点不作数。
+打乱顺序后的一致率（只数至少有一遍被放进同一类的对，打乱三次取最低的一次），三个比例都不低于合格线（90%，P3）；
+同样的输入算两遍划分相同。没有合格的测试记录，`classify`
+拒绝启动。每批另混入两条已知答案的金丝雀（一条已有类别的换述、一条确实全新的），判错则这一批的曲线点不作数；
+新句在登记簿里已经有同类时单独报「测不了增类」，不算判错。
 
 登记簿留在跑的那台机器上（里面有发现的那句话）。写进批次目录的 `classes.json` 只有类别编号与计数，汇总从它取数。
 
@@ -37,6 +39,7 @@ from liangju.model import Client, HttpClient, JudgeModel, Ledger, ModelError
 HERE = Path(__file__).resolve().parent
 LINE = 0.90  # 合格线（P3）：换题重现集上两项比例与顺序稳定的一致率的下限
 EXAMPLES = 3  # 每个类别至多留这么多条例句
+SHUFFLES = 3  # 顺序稳定：打乱几次
 STAGE = "guilei"
 
 
@@ -51,7 +54,7 @@ def test_set() -> dict[str, Any]:
 
 def version() -> dict[str, Any]:
     """归类器的版本：提示词、每类例句条数、换题重现集与金丝雀。任何一样变了都是另一个版本，全部记录要重算。"""
-    return {"prompt": sha(prompt().encode("utf-8")), "examples": EXAMPLES, "set": sha(test_set())}
+    return {"prompt": sha(prompt().encode("utf-8")), "examples": EXAMPLES, "shuffles": SHUFFLES, "set": sha(test_set())}
 
 
 def version_id() -> str:
@@ -141,54 +144,77 @@ def partition(texts: list[str], client: Client, ledger: Ledger) -> list[int]:
 # ---------------------------------------------------------------- 换题重现集上的四项
 
 
+def _together(part: list[int]) -> set[tuple[int, int]]:
+    return {(i, j) for i, j in itertools.combinations(range(len(part)), 2) if part[i] == part[j]}
+
+
 def evaluate(client: Client, ledger: Ledger) -> dict[str, Any]:
+    """换题重现集上的前三项。
+
+    顺序稳定怎么算：把处理顺序打乱 `SHUFFLES` 次（每次的顺序由句子的哈希定，固定），各自从空登记簿重算。一致率只数
+    「至少有一遍被放进同一类」的对：两遍都同类的对数，除以至少一遍同类的对数。两遍都不同类的对不算进去，它们占
+    绝大多数、本来就会一致，算进去会把一致率垫高。几次打乱里最低的那一次不低于合格线才算合格。"""
     items = sorted(
         ((g["id"], tidy(s)) for g in test_set()["groups"] for s in g["sentences"]), key=lambda x: sha(x[1].encode())
     )
     texts = [t for _, t in items]
     base = partition(texts, client, ledger)
     again = partition(texts, client, ledger)  # 重复稳定：同样的输入算两遍
-    order = sorted(range(len(texts)), key=lambda i: sha(f"shuffle|{texts[i]}".encode()))
-    moved = partition([texts[i] for i in order], client, ledger)  # 顺序稳定：打乱重算
-    shuffled = [0] * len(texts)
-    for pos, i in enumerate(order):
-        shuffled[i] = moved[pos]
-    same = diff = same_ok = diff_ok = agree = 0
     pairs = list(itertools.combinations(range(len(texts)), 2))
-    for i, j in pairs:
-        together = base[i] == base[j]
-        if items[i][0] == items[j][0]:
-            same += 1
-            same_ok += together
-        else:
-            diff += 1
-            diff_ok += not together
-        agree += together == (shuffled[i] == shuffled[j])
-    rates = {"same": same_ok / same, "different": diff_ok / diff, "order": agree / len(pairs)}
+    truth = {(i, j) for i, j in pairs if items[i][0] == items[j][0]}
+    first = _together(base)
+    same_ok, diff_ok = len(truth & first), len(pairs) - len(truth) - len(first - truth)
+    shuffles = []
+    for k in range(SHUFFLES):
+        order = sorted(range(len(texts)), key=lambda i, k=k: sha(f"shuffle{k}|{texts[i]}".encode()))
+        moved = partition([texts[i] for i in order], client, ledger)
+        back = [0] * len(texts)
+        for pos, i in enumerate(order):
+            back[i] = moved[pos]
+        other = _together(back)
+        either = first | other
+        shuffles.append(
+            {
+                "both": len(first & other),
+                "either": len(either),
+                "agreement": round(len(first & other) / len(either), 4) if either else 1.0,
+                "same_rate": round(len(truth & other) / len(truth), 4),  # 读数：这个顺序下同机制的对落进同一类的比例
+                "classes": len(set(back)),
+            }
+        )
+    worst = min(shuffles, key=lambda x: x["agreement"])
+    rates = {"same": same_ok / len(truth), "different": diff_ok / (len(pairs) - len(truth))}
     return {
-        "v": 1,
+        "v": 2,
         "classifier": version(),
         "line": LINE,
         "sentences": len(texts),
-        "pairs": {"same": [same_ok, same], "different": [diff_ok, diff], "order": [agree, len(pairs)]},
+        "pairs": {"same": [same_ok, len(truth)], "different": [diff_ok, len(pairs) - len(truth)]},
         "split_error": round(1 - rates["same"], 4),  # 拆多了：同机制的对没落进同一类
         "merged_error": round(1 - rates["different"], 4),  # 并多了：不同机制的对落进了同一类
-        "order_agreement": round(rates["order"], 4),
+        "order_agreement": worst["agreement"],  # 几次打乱里最低的一次；只数至少有一遍同类的对
+        "shuffles": shuffles,
         "repeat_identical": base == again,
         "classes": len(set(base)),
-        "ok": all(r >= LINE for r in rates.values()) and base == again,
+        "ok": all(r >= LINE for r in rates.values()) and worst["agreement"] >= LINE and base == again,
     }
 
 
 def canary(reg: dict[str, Any], client: Client, ledger: Ledger) -> dict[str, Any]:
-    """两条已知答案的记录，在登记簿的一份拷贝上判：换述不该增类，全新的该增类。登记簿本身不动。"""
+    """两条已知答案的记录，在登记簿的一份拷贝上判：换述不该增类，全新的该增类。登记簿本身不动。
+
+    三种状态。`passed`：换述没有增类，新句增了类。`wrong`：换述被拆开了，或新句被并进了种子那一类（已知它们不是
+    同一个机制）。`untestable`：新句落进了登记簿里原来就有的另一个类别，说明这个机制已经在登记簿里出现过，
+    「全新」不再成立，这一批测不了增类；这不算判错，要换那一句（一次归类器的版本改动）。"""
     scratch = copy.deepcopy(reg)
     c = {k: tidy(v) for k, v in test_set()["canary"].items()}
     home, _ = assign(scratch, c["seed"], client, ledger)
     para, para_new = assign(scratch, c["paraphrase"], client, ledger)
-    _, novel_new = assign(scratch, c["novel"], client, ledger)
+    where, novel_new = assign(scratch, c["novel"], client, ledger)
     kept = para == home and not para_new
-    return {"paraphrase_kept": kept, "novel_added": novel_new, "ok": kept and novel_new}
+    novel = "added" if novel_new else ("merged_with_seed" if where == home else "class_exists")
+    state = "wrong" if not kept or novel == "merged_with_seed" else ("passed" if novel == "added" else "untestable")
+    return {"paraphrase_kept": kept, "novel": novel, "state": state}
 
 
 # ---------------------------------------------------------------- 整批
@@ -283,8 +309,11 @@ def classify_batch(
         "per_arm": {a: _tally([r for r in rows if r["arm"] == a]) for a in arms},
         "unsentenced_in_batch": unsentenced,
         "canary": check,
-        "curve_point_counts": check["ok"],  # 金丝雀判错：这一批的曲线点不作数
-        "evaluation": {k: ev[k] for k in ("split_error", "merged_error", "order_agreement", "repeat_identical")},
+        "curve_point_counts": check["state"] != "wrong",  # 金丝雀判错：这一批的曲线点不作数
+        "evaluation": {
+            **{k: ev[k] for k in ("split_error", "merged_error", "order_agreement", "repeat_identical")},
+            "shuffles": len(ev["shuffles"]),
+        },
     }
 
 
@@ -296,7 +325,8 @@ def run_evaluate(a: argparse.Namespace, client: Client | None = None) -> int:
     print(
         f"同机制的对落进同一类 {doc['pairs']['same'][0]}/{doc['pairs']['same'][1]}，"
         f"不同机制的对分开 {doc['pairs']['different'][0]}/{doc['pairs']['different'][1]}，"
-        f"打乱顺序后的一致率 {doc['order_agreement']}，两遍划分{'相同' if doc['repeat_identical'] else '不同'}"
+        f"打乱 {len(doc['shuffles'])} 次里最低的一致率 {doc['order_agreement']}（只数至少有一遍同类的对），"
+        f"两遍划分{'相同' if doc['repeat_identical'] else '不同'}"
     )
     print("归类器合格" if doc["ok"] else f"归类器不合格（合格线 {LINE}）：不启用")
     return 0 if doc["ok"] else 1
@@ -321,7 +351,11 @@ def run_classify(a: argparse.Namespace, client: Client | None = None) -> int:
     write_json(path, reg)
     for _, doc in results:
         c = doc["cumulative"]
-        flag = "" if doc["curve_point_counts"] else "；金丝雀判错，这一批的曲线点不作数"
+        flag = {
+            "passed": "",
+            "wrong": "；金丝雀判错，这一批的曲线点不作数",
+            "untestable": "；金丝雀里的新句在登记簿里已有同类，这一批测不了增类，要换那一句（版本改动）",
+        }[doc["canary"]["state"]]
         print(f"批次 {doc['batch']}：累计 {c['classes']} 类，只出现过一次的 {c['singletons']} 类，", end="")
         print(f"发现 {c['findings']} 条{flag}")
     return 0

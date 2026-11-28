@@ -13,6 +13,7 @@ from liangju.model import Ledger, ModelError, Turn
 
 SET = guilei.test_set()
 GROUP = {guilei.tidy(s): f"g{g['id']}" for g in SET["groups"] for s in g["sentences"]}
+BASE = sorted(GROUP, key=lambda t: guilei.sha(t.encode()))  # 测试用的那个处理顺序
 GROUP |= {SET["canary"]["seed"]: "c-seed", SET["canary"]["paraphrase"]: "c-seed", SET["canary"]["novel"]: "c-novel"}
 
 
@@ -60,9 +61,26 @@ class OrderBound(Oracle):  # 只看排在第几个：挨着的三条归一类，
         return "new" if self.full else max(reps)
 
 
-class Moody(Oracle):  # 同样的输入，两遍答得不一样
+class BaseOnly(Oracle):
+    """测试用的那个顺序上全对，换一个顺序就把同机制的句子拆开（只认哈希是偶数的那一半）。"""
+
+    def chat(self, system, messages, tools=None):
+        user = messages[0]["text"]
+        if user.count(" 号\n") == 1 and "例句：" not in user:  # 一遍的第二句：看这一遍是不是测试用的那个顺序
+            new, reps = book(user)
+            self.base = [reps[1], new] == BASE[:2]
+        return super().chat(system, messages, tools)
+
     def answer(self, new, reps):
-        return "new" if len(self.calls) % 2 else super().answer(new, reps)
+        if self.base or int(guilei.sha(new.encode())[:2], 16) % 2 == 0:
+            return super().answer(new, reps)
+        return "new"
+
+
+class Moody(Oracle):  # 同样的输入，两遍答得不一样：第一遍照机制答，之后隔一句拆一句
+    def answer(self, new, reps):
+        late = len(self.calls) > len(BASE) - 1
+        return "new" if late and len(self.calls) % 2 else super().answer(new, reps)
 
 
 def cfg():
@@ -112,7 +130,7 @@ def test_the_answer_is_only_a_class_number_or_new_and_anything_else_is_retried_o
             guilei.ask("乙", classes, Scripted(*bad), Ledger(None))
 
 
-def test_the_version_changes_with_the_prompt_the_example_count_or_the_test_set(monkeypatch, capsys):
+def test_the_version_changes_with_the_prompt_the_two_counts_or_the_test_set(monkeypatch, capsys):
     before = guilei.version()
     assert guilei.main(["version"]) == 0
     assert json.loads(capsys.readouterr().out) == {"id": guilei.version_id(), **before}
@@ -121,6 +139,9 @@ def test_the_version_changes_with_the_prompt_the_example_count_or_the_test_set(m
     assert guilei.version()["prompt"] != before["prompt"]
     monkeypatch.undo()
     monkeypatch.setattr(guilei, "EXAMPLES", 2)
+    assert guilei.version() != before
+    monkeypatch.undo()
+    monkeypatch.setattr(guilei, "SHUFFLES", 5)  # 打乱几次也是版本的一部分
     assert guilei.version() != before
     monkeypatch.undo()
     changed = {**SET, "canary": {**SET["canary"], "novel": "换了一句"}}
@@ -145,8 +166,50 @@ def test_a_classifier_that_reads_the_mechanism_passes_all_four():
     n = sum(len(g["sentences"]) for g in SET["groups"])
     assert doc["ok"] and doc["sentences"] == n and doc["classes"] == len(SET["groups"])
     assert doc["split_error"] == doc["merged_error"] == 0 and doc["order_agreement"] == 1 and doc["repeat_identical"]
-    assert doc["pairs"]["same"][1] + doc["pairs"]["different"][1] == n * (n - 1) // 2 == doc["pairs"]["order"][1]
+    assert doc["pairs"]["same"][1] + doc["pairs"]["different"][1] == n * (n - 1) // 2
     assert doc["line"] == 0.9 == guilei.LINE and doc["classifier"] == guilei.version()
+    same = doc["pairs"]["same"][1]
+    assert (
+        doc["shuffles"]
+        == [{"both": same, "either": same, "agreement": 1.0, "same_rate": 1.0, "classes": len(SET["groups"])}]
+        * guilei.SHUFFLES
+        and guilei.SHUFFLES == 3
+    )
+
+
+def test_a_classifier_that_splits_the_same_mechanism_in_any_other_order_fails_order_stability():
+    """测试用的顺序上全对、换一个顺序就拆的归类器：前两项与重复稳定都看不出来，顺序稳定这一项要拦住。
+
+    全部的对一起数的话，绝大多数是两遍都不同类的对，一致率照样在线上；所以一致率只数至少有一遍同类的对。"""
+    doc = guilei.evaluate(BaseOnly(), Ledger(None))
+    assert doc["split_error"] == doc["merged_error"] == 0 and doc["repeat_identical"]
+    assert doc["order_agreement"] < guilei.LINE and not doc["ok"]
+    assert doc["order_agreement"] == min(s["agreement"] for s in doc["shuffles"])
+    n, same = doc["sentences"], doc["pairs"]["same"][1]
+    for s in doc["shuffles"]:
+        assert s["either"] == same and s["agreement"] == s["same_rate"] == round(s["both"] / same, 4)
+        assert s["classes"] > len(SET["groups"])
+        assert 1 - (s["either"] - s["both"]) / (n * (n - 1) // 2) >= guilei.LINE  # 全部的对一起数：拦不住
+
+
+def test_order_stability_has_no_pairs_to_count_when_nothing_is_ever_put_together():
+    doc = guilei.evaluate(Splitter(), Ledger(None))
+    assert doc["order_agreement"] == 1.0 and not doc["ok"]  # 什么都不并：这一项无对可数，由拆多了那一项拦
+
+
+def test_the_set_has_sentences_shaped_like_real_records():
+    """照真记录的样子：专有名词换成了占位符、数字留着、运行没有正常结束的状态与超出花费上限各自成组。"""
+    by = {g["id"]: [guilei.tidy(s) for s in g["sentences"]] for g in SET["groups"]}
+    texts = [t for ts in by.values() for t in ts]
+    held = [t for t in texts if "〔名〕" in t]
+    assert len(held) >= 6 and sum(1 for t in held if re.search(r"\d", t)) >= 3
+    assert len({g for g, ts in by.items() if any("〔名〕" in t for t in ts)}) >= 5  # 不是都挤在一组里
+    states = {t.split("：", 1)[1].split("（")[0] for t in texts if t.startswith("运行没有正常结束：")}
+    assert len(states) >= 3
+    apart = [next(g for g, ts in by.items() if any(t.startswith(f"运行没有正常结束：{s}") for t in ts)) for s in states]
+    assert len(set(apart)) == len(states)  # 一种状态一组
+    over = next(g for g, ts in by.items() if "运行结束了，花费超出每题上限" in ts)
+    assert over not in apart
 
 
 @pytest.mark.parametrize(
@@ -175,15 +238,20 @@ def test_the_line_is_ninety_percent_on_each_rate(monkeypatch):
     """合格线 90%（P3）：三个比例各自都要不低于它，差一点也不行。"""
     texts = [guilei.tidy(s) for g in SET["groups"] for s in g["sentences"]]
 
-    def with_slips(k: int):  # 把前 k 组各拆出一句：每组三对同机制的对里错两对
+    def with_slips(k: int):  # 把前 k 组各拆出一句：n 句的一组少掉 n-1 对同机制的对
         odd = {guilei.tidy(g["sentences"][-1]) for g in SET["groups"][:k]}
         return Oracle(lambda t: t if t in odd else GROUP.get(t, t))
 
+    def lost(k: int) -> int:
+        return sum(len(g["sentences"]) - 1 for g in SET["groups"][:k])
+
     same = sum(len(g["sentences"]) * (len(g["sentences"]) - 1) // 2 for g in SET["groups"])
-    ok = guilei.evaluate(with_slips(1), Ledger(None))
-    assert ok["pairs"]["same"] == [same - 2, same] and (same - 2) / same >= 0.9 and ok["ok"]
-    bad = guilei.evaluate(with_slips(2), Ledger(None))
-    assert bad["pairs"]["same"] == [same - 4, same] and (same - 4) / same < 0.9 and not bad["ok"]
+    k = max(k for k in range(len(SET["groups"])) if (same - lost(k)) / same >= 0.9)
+    assert k >= 1
+    ok = guilei.evaluate(with_slips(k), Ledger(None))
+    assert ok["pairs"]["same"] == [same - lost(k), same] and ok["ok"] and ok["order_agreement"] == 1
+    bad = guilei.evaluate(with_slips(k + 1), Ledger(None))
+    assert bad["pairs"]["same"] == [same - lost(k + 1), same] and (same - lost(k + 1)) / same < 0.9 and not bad["ok"]
     assert bad["merged_error"] == 0 and len(texts) == ok["sentences"]
 
 
@@ -191,10 +259,36 @@ def test_canaries_a_paraphrase_adds_no_class_and_a_new_one_does_and_the_registry
     reg = guilei.new_registry(cfg())
     guilei.assign(reg, "先有一类", Oracle(), Ledger(None))
     frozen = json.dumps(reg, ensure_ascii=False, sort_keys=True)
-    assert guilei.canary(reg, Oracle(), Ledger(None)) == {"paraphrase_kept": True, "novel_added": True, "ok": True}
-    assert guilei.canary(reg, Splitter(), Ledger(None)) == {"paraphrase_kept": False, "novel_added": True, "ok": False}
-    assert guilei.canary(reg, Lumper(), Ledger(None)) == {"paraphrase_kept": True, "novel_added": False, "ok": False}
+    passed = {"paraphrase_kept": True, "novel": "added", "state": "passed"}
+    assert guilei.canary(reg, Oracle(), Ledger(None)) == passed
+    assert guilei.canary(reg, Splitter(), Ledger(None)) == {**passed, "paraphrase_kept": False, "state": "wrong"}
+    assert guilei.canary(reg, Lumper(), Ledger(None)) == {**passed, "novel": "merged_with_seed", "state": "wrong"}
     assert json.dumps(reg, ensure_ascii=False, sort_keys=True) == frozen
+
+
+SAME_AS_NOVEL = "整篇回答都在寒暄，没有一句落在子问上"  # 与金丝雀里「确实全新的那一句」同一个机制
+
+
+def knows_novel() -> Oracle:
+    return Oracle(lambda t: "c-novel" if t == SAME_AS_NOVEL else GROUP.get(t, t))
+
+
+def test_a_canary_whose_new_sentence_already_has_a_class_in_the_registry_is_untestable_not_wrong():
+    """「全新」只是相对当时的登记簿：登记簿里有了同一机制的类别，新句就不再增类。这不是判错，单独一种状态。"""
+    reg = guilei.new_registry(cfg())
+    guilei.assign(reg, "先有一类", knows_novel(), Ledger(None))
+    assert guilei.canary(reg, knows_novel(), Ledger(None))["state"] == "passed"
+    guilei.assign(reg, SAME_AS_NOVEL, knows_novel(), Ledger(None))
+    frozen = json.dumps(reg, ensure_ascii=False, sort_keys=True)
+    got = guilei.canary(reg, knows_novel(), Ledger(None))
+    assert got == {"paraphrase_kept": True, "novel": "class_exists", "state": "untestable"}
+    assert json.dumps(reg, ensure_ascii=False, sort_keys=True) == frozen
+
+    class AlsoSplits(Oracle):  # 同时把换述拆开了：判错盖过测不了
+        def answer(self, new, reps):
+            return "new" if GROUP.get(new) == "c-seed" else knows_novel().answer(new, reps)
+
+    assert guilei.canary(reg, AlsoSplits(), Ledger(None)) == {**got, "paraphrase_kept": False, "state": "wrong"}
 
 
 # ---------------------------------------------------------------- 整批
@@ -276,12 +370,17 @@ def test_the_same_problem_on_another_question_lands_in_the_existing_class(tmp_pa
     }
     assert second["per_arm"]["B"] == {"classes": 1, "singletons": 0, "findings": 2, "unseen_probability": 0.0}
     assert second["per_arm"]["B2"]["classes"] == 2 and second["per_arm"]["B2"]["findings"] == 3
-    assert second["canary"]["ok"] and second["curve_point_counts"] and second["classifier"] == guilei.version_id()
+    assert (
+        second["canary"]["state"] == "passed"
+        and second["curve_point_counts"]
+        and second["classifier"] == guilei.version_id()
+    )
     assert second["evaluation"] == {
         "split_error": 0.0,
         "merged_error": 0.0,
         "order_agreement": 1.0,
         "repeat_identical": True,
+        "shuffles": guilei.SHUFFLES,
     }
     reg = read_json(tmp_path / "registry.json")
     assert reg["batches"] == ["S0-1", "S0-2"] and len(reg["assigned"]) == 5 and len(reg["classes"]) == 3
@@ -396,14 +495,37 @@ def test_a_wrong_canary_voids_the_curve_point_and_findings_without_a_sentence_ar
 
     assert classify(tmp_path, model, ev, one, fake=LaterSplits()) == 0
     doc = read_json(one / "classes.json")
-    assert (
-        doc["canary"] == {"paraphrase_kept": False, "novel_added": True, "ok": False} and not doc["curve_point_counts"]
-    )
+    assert doc["canary"] == {"paraphrase_kept": False, "novel": "added", "state": "wrong"}
+    assert not doc["curve_point_counts"]
     assert doc["unsentenced_in_batch"] == 1 and doc["cumulative"]["findings"] == 1
     summary = huizong.build(one, qpath)
     got = summary["发现与类别"]["类别"]
-    assert got["这一批的曲线点作数"] is False and got["金丝雀"]["已有类别的换述没有增类"] is False
+    assert got["这一批的曲线点作数"] is False and got["金丝雀"] == {
+        "结果": "判错：这一批的曲线点不作数",
+        "已有类别的换述没有增类": False,
+        "确实全新的那一句": "增了类",
+    }
     assert got["这一批没有写机制、没法归类的发现数"] == 1
+
+
+def test_an_untestable_canary_is_reported_apart_from_a_wrong_one_and_the_curve_point_stands(
+    tmp_path, monkeypatch, capsys
+):
+    model, ev, _ = setup(tmp_path, monkeypatch)
+    one, qpath = judged_batch(tmp_path / "一", "S0-1", {("B", "q1"): BAD, ("B2", "q1"): BAD})
+    rewrite(one, {("B", "q1"): WHY[0], ("B2", "q1"): SAME_AS_NOVEL})
+    capsys.readouterr()
+    assert classify(tmp_path, model, ev, one, fake=knows_novel()) == 0
+    assert "这一批测不了增类，要换那一句（版本改动）" in capsys.readouterr().out
+    doc = read_json(one / "classes.json")
+    assert doc["canary"] == {"paraphrase_kept": True, "novel": "class_exists", "state": "untestable"}
+    assert doc["curve_point_counts"] and doc["cumulative"]["classes"] == 2
+    got = huizong.build(one, qpath)["发现与类别"]["类别"]
+    assert got["这一批的曲线点作数"] is True and got["金丝雀"] == {
+        "结果": "测不了增类：新句在登记簿里已有同类，不算判错；要换那一句（归类器的版本改动）",
+        "已有类别的换述没有增类": True,
+        "确实全新的那一句": "落进了登记簿里已有的另一类",
+    }
 
 
 def test_the_summary_carries_class_numbers_and_counts_and_never_the_sentences(tmp_path, monkeypatch):
@@ -428,6 +550,12 @@ def test_the_summary_carries_class_numbers_and_counts_and_never_the_sentences(tm
         "累计跑过的新题数": 2,
     }
     assert set(got["每条臂的曲线点"]) == {"B", "B2"} and got["每条臂的曲线点"]["B2"]["类别数"] == 2
-    assert got["归类器在换题重现集上"]["拆多了的错误率（同机制的对没落进同一类）"] == 0.0
+    assert got["归类器在换题重现集上"] == {
+        "拆多了的错误率（同机制的对没落进同一类）": 0.0,
+        "并多了的错误率（不同机制的对落进了同一类）": 0.0,
+        "打乱顺序后的一致率（只数至少有一遍同类的对；打乱 3 次里最低的一次）": 1.0,
+        "两遍划分相同": True,
+    }
+    assert got["金丝雀"]["结果"] == "判对"
     blob = json.dumps(after, ensure_ascii=False)
     assert WHY[0] not in blob and WHY[1] not in blob and "独一份" not in blob

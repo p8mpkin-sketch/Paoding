@@ -96,6 +96,7 @@ def _engine_marked_negated(rows: list[Row]) -> str:
 def _classes(doc: dict[str, Any]) -> dict[str, Any]:
     """归类的结果（13.6）：只有类别编号与计数。代表句与例句留在登记簿里，不进汇总。"""
     cum, ev, can = doc["cumulative"], doc["evaluation"], doc["canary"]
+    order = f"打乱顺序后的一致率（只数至少有一遍同类的对；打乱 {ev['shuffles']} 次里最低的一次）"
 
     def curve(t: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -120,13 +121,22 @@ def _classes(doc: dict[str, Any]) -> dict[str, Any]:
         "这一批的曲线点作数": doc["curve_point_counts"],
         "这一批没有写机制、没法归类的发现数": doc["unsentenced_in_batch"],
         "金丝雀": {
+            "结果": {
+                "passed": "判对",
+                "wrong": "判错：这一批的曲线点不作数",
+                "untestable": "测不了增类：新句在登记簿里已有同类，不算判错；要换那一句（归类器的版本改动）",
+            }[can["state"]],
             "已有类别的换述没有增类": can["paraphrase_kept"],
-            "确实全新的增了类": can["novel_added"],
+            "确实全新的那一句": {
+                "added": "增了类",
+                "merged_with_seed": "被并进了种子那一类（判错）",
+                "class_exists": "落进了登记簿里已有的另一类",
+            }[can["novel"]],
         },
         "归类器在换题重现集上": {
             "拆多了的错误率（同机制的对没落进同一类）": ev["split_error"],
             "并多了的错误率（不同机制的对落进了同一类）": ev["merged_error"],
-            "打乱顺序后的一致率": ev["order_agreement"],
+            order: ev["order_agreement"],
             "两遍划分相同": ev["repeat_identical"],
         },
     }
