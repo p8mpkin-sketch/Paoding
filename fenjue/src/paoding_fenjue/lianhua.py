@@ -722,7 +722,8 @@ def jue(
 
     过了原形门划线的炼档：人给的结局只能等于或低于系统重算出的（N4）；要试火计划的炼档先核试火记录
     （system_outcome 的三种拒绝）。出身是手工的炼档（N6）：结局照记，不加品阶、不计成功；验体全过、对本火不退、
-    人没有把结局往低里改时，按「手工修订」装进功法，原形门没过或没判的挂着记号。"""
+    人没有把结局往低里改时，按「手工修订」装进功法，原形门没过或没判的挂着记号。五种结局里只有反噬不装：
+    并火说的是没有可量的增益而不是退步，所以手工的炼档判成并火也照这三条装入；不及原形同理，挂「原形门未过」。"""
     d = _need(d, "jue")
     if outcome not in OUTCOMES:
         raise StepError(f"结局只能是 {list(OUTCOMES)}")
@@ -784,6 +785,46 @@ def jue(
         },
     ]
     return d, g
+
+
+HISTORY_BEFORE_DOSSIERS = 2  # 品阶史最前面的两行（旧法、八火位立名）早于炼档，不指向裁决
+
+
+def check_history(g: Mapping[str, Any], dossiers: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """品阶史的核对（前一半）：每一行都指向一份裁决；过了试火划线的，还要指向一份带试火记录的炼档。
+
+    返回对不上的地方；空表即通过。这里只看炼档里记下的东西（裁决、设计裁决时的计划哈希、融火时记下的记录哈希）；
+    拿试火记录的原件重算一遍是后一半，等试火台就位。"""
+    errors: list[str] = []
+    for i, h in enumerate(g.get("history") or []):
+        where = f"品阶史第 {i + 1} 行（第 {h.get('jie')} 阶）"
+        no = h.get("dossier") or h.get("reverts")
+        if no is None:
+            if i >= HISTORY_BEFORE_DOSSIERS:
+                errors.append(f"{where}没有指向任何炼档：品阶史的每一行都要指向一份裁决")
+            continue
+        d = dossiers.get(str(no))
+        v = (d or {}).get("verdict")
+        if d is None or not isinstance(v, Mapping) or not v.get("by") or v.get("outcome") not in OUTCOMES:
+            errors.append(f"{where}指向炼档 {no}，那里没有裁决")
+            continue
+        if "reverts" in h:
+            if not d.get("reverts"):
+                errors.append(f"{where}记的是散火，炼档 {no} 的第七节却没有散火记录")
+        elif h.get("manual"):
+            if v.get("installed") != MANUAL or "jie" in v:
+                errors.append(f"{where}记的是手工修订，炼档 {no} 的裁决却不是按手工修订装入的")
+        elif v.get("outcome") not in TAKEN or v.get("jie") != h.get("jie"):
+            errors.append(f"{where}与炼档 {no} 的裁决对不上：要是收下的结局，品阶相同")
+        if needs_plan(d):
+            tr, dv = d.get("trial_record"), d.get("design_verdict") or {}
+            if not isinstance(tr, Mapping) or not tr.get("hash"):
+                errors.append(f"{where}指向的炼档 {no} 过了试火划线，却没有试火记录")
+            elif not dv.get("plan_hash") or tr.get("plan_hash") != dv["plan_hash"]:
+                errors.append(f"{where}指向的炼档 {no}：试火记录的计划哈希与设计裁决时记下的不同")
+            elif d.get("trial_plan") is None or shihuo.digest(d["trial_plan"]) != dv["plan_hash"]:
+                errors.append(f"{where}指向的炼档 {no}：登记的试火计划与设计裁决时记下的哈希对不上")
+    return errors
 
 
 def sanhuo(d: dict[str, Any], g: dict[str, Any], by: str, date: str, why: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -925,6 +966,8 @@ def _plan_section(d: dict[str, Any]) -> list[str]:
         f"{q['count']} 道，每条臂每道题跑 {q['runs']} 次",
         f"- 花费上限：每题次 {caps['per_item_usd_milli']}，一次试火合计 {caps['total_usd_milli']}（千分之一美元）；"
         f"由试跑段 {_cell(seg['batch'])} 的中位数按规矩算出",
+        f"- 看门狗的时限：{plan['watchdog_seconds']} 秒，对所有臂是同一个数；"
+        f"取试跑段里本火最长一遍用时（{seg['max_seconds']} 秒）的 {shihuo.WATCHDOG_TIMES} 倍",
         "",
     ]
     return out

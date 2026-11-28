@@ -193,7 +193,8 @@ def test_the_commands_carry_the_trial_plan_and_record(cli, tmp_path):
             "seconds_per_item": 60,
         },  # fmt: skip
         "questions": {"set": "S1", "digest": "q" * 64, "source": "手出", "count": 2, "runs": 2},
-        "trial_segment": {"batch": "T0-1", "median_cost_usd_milli": 10, "median_seconds": 60},
+        "trial_segment": {"batch": "T0-1", "median_cost_usd_milli": 10, "median_seconds": 60, "max_seconds": 200},
+        "watchdog_seconds": 600,
         "caps": {"per_item_usd_milli": 30, "total_usd_milli": 30 * 2 * 3 * 2},
         "seed": "s1",
     }

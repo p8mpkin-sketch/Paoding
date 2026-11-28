@@ -109,6 +109,22 @@ SAMPLES = ("missing-a", "missing-b", "wrong-a", "wrong-b", "premise-a", "premise
 JUDGE = {"name": "judge-model", "version": "7", "wire": "openai", "url": "http://x", "key_env": "LIANGJU_TEST_KEY"}
 
 
+QDOC = {  # make_batch 不另给题目时写出的题集文件
+    "v": 1,
+    "code": "SET-A",
+    "questions": [
+        {
+            "id": f"q{i}",
+            "text": f"题面{i} SENTINEL_QUESTION",
+            "subquestions": ["子问甲 SENTINEL_SUB", "子问乙"],
+            "snapshot": str(CANARY / "snapshot"),
+            "axes": {"language": "python", "ask": "怎么做"},
+        }
+        for i in range(1, 4)
+    ],
+}
+
+
 def attempt(arm: str, q: str, rep: int, answer: str | None, **kw: Any) -> tici.Attempt:
     base: dict[str, Any] = {
         "status": "finished" if answer is not None else "other",
@@ -153,16 +169,7 @@ def make_batch(tmp: Path, attempts: list[tici.Attempt], questions: list[dict[str
     write_json(bdir / "batch.json", {**doc, **batch})
     for a in attempts:
         tici.save(bdir, a)
-    qs = questions or [
-        {
-            "id": f"q{i}",
-            "text": f"题面{i} SENTINEL_QUESTION",
-            "subquestions": ["子问甲 SENTINEL_SUB", "子问乙"],
-            "snapshot": str(CANARY / "snapshot"),
-            "axes": {"language": "python", "ask": "怎么做"},
-        }
-        for i in range(1, 4)
-    ]
+    qs = questions or QDOC["questions"]
     qpath = tmp / "questions.json"
     write_json(qpath, {"v": 1, "code": "SET-A", "questions": qs})
     write_json(
