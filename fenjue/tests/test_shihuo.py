@@ -419,3 +419,10 @@ def test_a_dossier_before_the_plan_line_still_cannot_be_ruled_above_the_system()
 def test_the_record_and_the_judge_read_the_same_four_cells():
     assert (shihuo.PAIRS, shihuo.CELLS) == (lh.PAIRS, lh.CELLS)
     assert "fenjue/src/paoding_fenjue/shihuo.py" in lh.MEASURE_PATHS
+
+
+def test_plan_hash_is_the_same_value_the_batch_header_tool_computes():
+    """批次头（liangju/pici.py）自己算计划哈希，量具与组件互不 import：两边各钉同一份文档的同一个值
+    （另一边是 liangju/tests/test_mangpan.py::test_batch_header_takes_hash_judge_and_caps_from_the_plan_file）。"""
+    doc = {"b": [1, 2, {"丙": None}], "a": "甲", "c": 1.5}
+    assert shihuo.digest(doc) == "874ca7719efb75b5789c8f28e9856c716abffa9bee9ccbcb83c94ee181be1c1e"

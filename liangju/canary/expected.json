@@ -6,5 +6,6 @@
   "wrong-b": {"true": false},
   "premise-a": {"answered": true, "true": true, "premise_false": [3]},
   "premise-b": {"answered": true, "true": true, "premise_false": [3]}
- }
+ },
+ "snapshot": ["README.md", "relay/__init__.py", "relay/config.py", "relay/queue.py", "relay/sender.py"]
 }
