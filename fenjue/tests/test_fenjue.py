@@ -43,10 +43,11 @@ def test_gongfa_fills_all_eight_slots_and_names_every_seat_with_a_form():
     assert form("verify")["fire"] == "h1.review"  # 复核会话（地图 Q34）：体质修炼 002 给了席位能交的事件，这里是形态
     with pytest.raises(KeyError):
         form("judge")  # 判官不是会话，没有形态
-    js = [h["jie"] for h in g["history"]]  # 品阶史只追加：每一步升一阶（收下）或降一阶（散火，带 reverts）
+    # 品阶史只追加：每一步升一阶（收下）或降一阶（散火，带 reverts）；手工修订装入与它的散火不动品阶（带 manual）
+    js = [h["jie"] for h in g["history"]]
     assert js[0] == 0 and js[-1] == g["jie"]
     for h0, h in zip(g["history"], g["history"][1:], strict=False):
-        assert h["jie"] - h0["jie"] == (-1 if "reverts" in h else 1), h
+        assert h["jie"] - h0["jie"] == (0 if h.get("manual") else -1 if "reverts" in h else 1), h
 
 
 def test_lineage_points_at_real_fires_and_dossiers():

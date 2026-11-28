@@ -455,7 +455,9 @@ def test_import_refuses_tampered_handoff_and_rechecks_the_gongfa(runs):
     assert handoff.recheck(h["items"][1]["placement"]) == []
 
 
-def test_group_installs_and_reverts_together():
+def test_group_installs_and_reverts_together(monkeypatch):
+    # 这条测试守的是火组整组装入与散火，炼档是手搭的、没有读数：把原形门的划线调回去，定阶不重算结局
+    monkeypatch.setattr(lh, "YUANXING_GATE_FROM", None)
     g = {k: v for k, v in shapes.gongfa().items() if k != "digest"}
     d = {
         "dossier": "009", "title": "演示", "status": "readings_ready", "replaces": "h1.solo",

@@ -152,6 +152,97 @@ def test_the_commands_carry_the_prototype_gate(cli, tmp_path, monkeypatch):
     assert d["status"] == "rejected" and (pkg / "gongfa.json").read_text(encoding="utf-8") == g0
 
 
+def test_the_commands_carry_the_trial_plan_and_record(cli, tmp_path):
+    """划线之后的炼档（03 §4、§5）：设计裁决之前登记试火计划；融火只收试火记录，手填被拒；
+    定阶要给同一份记录，人给的结局高于系统判出的被拒。"""
+    mod, dossiers, pkg = cli
+    no = "003"
+    run(mod, "new", "result-first", "--no", no, "--title", "结论先行", "--source", "演示",
+        "--phenomenon", "结论先于过程", "--gap", "结果页先列过程", "--is-fire", "是：一类呈现做法",
+        "--date", "2026-11-28", "--origin", "自炼")  # fmt: skip
+    run(mod, "cuiyi", no, "--yi", "结论先行", "--premise", "结论可信", "--cost", "过程折叠", "--overlap", "H7",
+        "--conflict", "T5", "--hypothesis", "结论先行且一键到留档", "--split", "无", "--masked", "成立")  # fmt: skip
+    f = json.loads((pkg / "fires" / "h7.result.json").read_text(encoding="utf-8"))
+    f.update(id="h7.result-first", ver=1, lineage={"dossier": no, "from": ["h7.result"]})
+    (tmp_path / "draft.json").write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
+    readings = [
+        {"dim": "留出题上的过线数", "kind": "异火", "dir": "up", "target": True, "n": 4},
+        {"dim": "结论可追率", "kind": "新生", "dir": "up", "gate": 1},
+    ]
+    (tmp_path / "readings.json").write_text(json.dumps(readings, ensure_ascii=False), encoding="utf-8")
+    run(mod, "ruwei", no, "--fire", tmp_path / "draft.json", "--replaces", "h7.result", "--arm", "B=原样",
+        "--arm", "B1=原样再跑一遍", "--arm", "F=合火", "--readings", tmp_path / "readings.json",
+        "--parity", "equal")  # fmt: skip
+    assert mod.main(["approve", no, "--by", "cz"]) == 2  # 还没有登记试火计划
+    arm = {
+        "model": "m-main",
+        "version": "v1",
+        "endpoint": "proxy",
+        "sampling": {},
+        "meter": "ledger",
+        "price_table": "t@1",
+    }
+    plan = {
+        "dossier": no,
+        "arms": {a: {"what": a, **arm} for a in ("B", "B1", "F")},
+        "judge": {
+            "model": "",
+            "version": "v1",
+            "prompts": "p@1",
+            "sample": {"per_sub": 2, "max": 8},
+            "seconds_per_item": 60,
+        },  # fmt: skip
+        "questions": {"set": "S1", "digest": "q" * 64, "source": "手出", "count": 2, "runs": 2},
+        "trial_segment": {"batch": "T0-1", "median_cost_usd_milli": 10, "median_seconds": 60},
+        "caps": {"per_item_usd_milli": 30, "total_usd_milli": 30 * 2 * 3 * 2},
+        "seed": "s1",
+    }
+    (tmp_path / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+    assert mod.main(["plan", no, "--file", str(tmp_path / "plan.json")]) == 2  # 盲判的模型栏空着
+    plan["judge"]["model"] = "m-judge"
+    (tmp_path / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+    run(mod, "plan", no, "--file", tmp_path / "plan.json")
+    run(mod, "approve", no, "--by", "cz", "--date", "2026-11-28")
+    run(mod, "yanti", no)
+    items = [
+        {"arm": a, "q": q, "run": n, "passed": True, "cost_usd_milli": 10, "task": f"{a}{q}{n}", "log_head": "h"}
+        for a in plan["arms"] for q in ("q1", "q2") for n in (1, 2)
+    ]  # fmt: skip
+    from paoding_fenjue import shihuo
+
+    record = {
+        "plan_hash": shihuo.digest(plan), "purpose": "判定", "status": "complete",
+        "arms": {a: {"digest": "d", "model": "m-main", "version": "v1"} for a in plan["arms"]},
+        "questions": {"set": "S1", "digest": "q" * 64},
+        "judge": {"model": "m-judge", "version": "v1", "prompts": "p@1"},
+        "items": items, "readings": {"结论可追率": {"B": 0, "F": 1}}, "cost": {"total_usd_milli": 120},
+    }  # fmt: skip
+    (tmp_path / "record.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    assert mod.main(["ronghuo", no, "--set", "结论可追率:F=1"]) == 2  # 手填的入口关掉了
+    run(mod, "ronghuo", no, "--record", tmp_path / "record.json")
+    d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
+    assert d["outcome_proposed"] == "helian" and d["yuanxing_gate"]["state"] == "unjudged"  # 没有原形臂：最高合炼
+    assert mod.main(["jue", no, "--by", "cz", "--outcome", "helian"]) == 2  # 没给记录
+    assert mod.main(["jue", no, "--by", "cz", "--outcome", "huolian", "--record", str(tmp_path / "record.json")]) == 2
+    run(
+        mod,
+        "jue",
+        no,
+        "--by",
+        "cz",
+        "--outcome",
+        "helian",
+        "--record",
+        tmp_path / "record.json",
+        "--date",
+        "2026-11-28",
+    )
+    d = json.loads((dossiers / f"{no}-result-first.json").read_text(encoding="utf-8"))
+    md = (dossiers / f"{no}-result-first.md").read_text(encoding="utf-8")
+    assert d["status"] == "adopted" and d["verdict"]["system"] == "helian" and md == lh.render(d)
+    assert "试火计划（登记之后不能改" in md and "读数出自试火记录" in md and "| 系统判出的结局 | 合炼 |" in md
+
+
 def test_the_archive_only_grows(cli):
     """存档只增不改：清单改了内容却没升 ver，存档命令停下。"""
     mod, _, pkg = cli

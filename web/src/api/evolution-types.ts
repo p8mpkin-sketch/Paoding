@@ -16,7 +16,7 @@ export type EvoStats = {
   avg_wall_s: number | null;
 };
 
-export type EvoHistory = { jie: number; change: string; dossier?: string; replaces?: string; reverts?: string };
+export type EvoHistory = { jie: number; change: string; dossier?: string; replaces?: string; reverts?: string; manual?: boolean; mark?: string };
 export type EvoRevision = { fire: string; from: string | null; change: string };
 export type EvoVersion = EvoStats & { jie: number; digest: string | null; current: boolean; repinned?: boolean };
 
@@ -31,9 +31,12 @@ export type EvoDossier = {
   slot: string | null;
   replaces: string[];
   kernel_lines_changed: number | null;
+  measure_lines_changed?: number | null;
+  origin?: string | null;
+  gate_mark?: string | null;
   outcome_proposed: EvoOutcome | null;
   jie_proposed: number | null;
-  verdict: { by: string; date: string; outcome: EvoOutcome; jie?: number; conditions?: string[]; basis?: string } | null;
+  verdict: { by: string; date: string; outcome: EvoOutcome; jie?: number; conditions?: string[]; basis?: string; system?: EvoOutcome; installed?: string; mark?: string } | null;
   reverts: { by?: string; date?: string; why?: string; back_to?: string }[];
   readings: EvoReading[];
 };
@@ -58,7 +61,7 @@ export type Evolution = {
   revisions: EvoRevision[];
   versions: EvoVersion[];
   dossiers: EvoDossier[];
-  outcomes: Record<EvoOutcome, number> & { decided: number; pending: number; reverted: number };
+  outcomes: Record<EvoOutcome, number> & { decided: number; pending: number; reverted: number; manual?: number };
   holdout: EvoHoldout[];
   as_of: number;
 };

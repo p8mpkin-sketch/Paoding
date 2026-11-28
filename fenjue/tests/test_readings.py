@@ -40,6 +40,7 @@ def test_history_and_outcome_tally():
         "buji": 0,
         "binghuo": 0,
         "fanshi": 0,
+        "manual": 0,
         "decided": 1,
         "pending": 0,
         "reverted": 0,
@@ -104,3 +105,35 @@ def test_repinned_tasks_get_their_own_row_and_stay_out_of_both_arms():
     assert h["main"]["tasks"] + h["held"]["tasks"] == 1  # 只有没改钉的 a
     assert {(r["jie"], r["digest"]) for r in out["archive"]} >= {(2, OLD), (2, live)}
     assert [r["digest"] for r in out["archive"] if r["current"]] == [live]
+
+
+def test_each_dossier_carries_its_gate_mark_origin_and_measure_lines():
+    """两个记号公开显示（现行设计 4.4、4.8）：读的一侧每份炼档带出原形门的记号、出身、量具改动行数。
+    过了门的、还没出读数的、不归门管的炼档，记号是空的。"""
+    base = {**D001, "verdict": None, "status": "readings_ready"}
+    unjudged = {**base, "dossier": "002", "yuanxing_gate": {"state": "unjudged", "why": []}, "origin": "自炼",
+                "measure_lines_changed": 0}  # fmt: skip
+    failed = {**base, "dossier": "003", "yuanxing_gate": {"state": "failed", "why": ["x"]}, "origin": "手工"}
+    passed = {**base, "dossier": "004", "yuanxing_gate": {"state": "passed", "why": []}, "origin": "修订"}
+    waiting = {**base, "dossier": "005", "status": "design_approved"}
+    rows = {d["dossier"]: d for d in run([], [D001, unjudged, failed, passed, waiting])["dossiers"]}
+    assert [rows[n]["gate_mark"] for n in ("001", "002", "003", "004", "005")] == [
+        None,
+        "原形门未判",
+        "原形门未过",
+        None,
+        None,
+    ]
+    assert [rows[n]["origin"] for n in ("001", "002", "003", "004", "005")] == [None, "自炼", "手工", "修订", None]
+    assert rows["002"]["measure_lines_changed"] == 0 and rows["001"]["measure_lines_changed"] is None
+
+
+def test_hand_made_dossiers_are_counted_apart_and_never_as_a_success():
+    verdict = {"by": "cz", "date": "2026-11-28", "outcome": "helian", "conditions": [], "system": "helian",
+               "installed": "手工修订", "mark": "原形门未判"}  # fmt: skip
+    hand = {**D001, "dossier": "003", "origin": "手工", "status": "adopted", "verdict": verdict}
+    out = run([], [D001, hand])
+    t = out["outcomes"]
+    assert (t["huolian"], t["helian"], t["manual"], t["decided"]) == (1, 0, 1, 2)
+    row = out["dossiers"][1]["verdict"]
+    assert (row["installed"], row["mark"], row["system"]) == ("手工修订", "原形门未判", "helian") and "jie" not in row
