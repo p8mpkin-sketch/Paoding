@@ -143,6 +143,41 @@ def test_grade_history_matches_the_verdicts():
             assert d["verdict"]["jie"] == h["jie"]
 
 
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
+def test_dossiers_past_the_line_carry_the_prototype_gate(path: Path):
+    """原形门按档号划线（03 §3.1）。划线之前的炼档（001）不追溯：原样通过，不带门的任何栏。
+    划线及以后的炼档，一旦读数已出：带原形门的状态；裁决收下的，门不能是「未过」，门「未判」时最高合炼；
+    验体记下的量具改动行数是 0。"""
+    d = load(path)
+    if not lh.gated(d):
+        assert "yuanxing_gate" not in d and "parity" not in d, f"{path.name} 在划线之前，不追溯"
+        return
+    if d["status"] in ("readings_ready", "adopted", "rejected", "reverted"):
+        gate = d.get("yuanxing_gate")
+        assert isinstance(gate, dict) and gate.get("state") in lh.GATE, f"{path.name}：读数已出，要有原形门的状态"
+        if d["status"] in ("adopted", "reverted"):
+            assert gate["state"] != "failed", "原形门未过的不收"
+            assert gate["state"] == "passed" or d["verdict"]["outcome"] == "helian", "原形门未判：结局最高合炼"
+    if d.get("yanti"):
+        assert d["yanti"].get("measure_lines") == 0, f"{path.name}：一次炼化对量具的改动行数必须是 0"
+
+
+def test_dossier_001_is_exempt_and_still_passes_as_it_is():
+    d = dossiers()["001"]
+    assert not lh.gated(d) and d["status"] == "adopted" and d["verdict"]["outcome"] == "huolian"
+    assert lh.YUANXING_GATE_FROM is not None and d["dossier"] < lh.YUANXING_GATE_FROM <= "002"
+
+
+def test_the_noise_floor_is_the_same_number_on_both_sides_of_the_fence():
+    """判定函数与引擎之外的汇总各算一次噪声底（两边互不 import）：同一个不一致数，两边给的是同一个数。"""
+    import sys
+
+    sys.path.insert(0, str(ROOT))
+    from liangju import huizong
+
+    assert all(lh.noise_floor(n) == huizong.noise_floor(n) for n in range(0, 400))
+
+
 def engine_gongfa():
     return json.loads(Path(shapes.engine_gongfa_path()).read_text(encoding="utf-8"))
 
