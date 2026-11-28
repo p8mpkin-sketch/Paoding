@@ -5,6 +5,8 @@
 2. A → B 必须在 ALLOWED 表里。graph 不依赖任何组件。
 3. 功法组件（焚决 F2，docs/design/fenjue/02-lianhua.md §6.1“体质内部不可达”）另有一张禁止表：
    不开网络套接字、不起子进程、不直接碰数据库文件。它只读清单、算摘要。
+4. 引擎之外的量具（`liangju/`）是单向的：任何组件都不许 import 它；它自己也不 import 任何组件
+   （只读运行结束之后的导出，不运行引擎的代码）。
 """
 
 from __future__ import annotations
@@ -47,8 +49,30 @@ def imports(path: pathlib.Path) -> list[tuple[int, str]]:
     return out
 
 
-def check(root: pathlib.Path) -> list[str]:
+TOOLS = "liangju"  # 引擎之外的量具
+TOOLS_SKIP = {"canary"}  # 自检样本里的合成仓库是数据，不是代码
+
+
+def check_tools(root: pathlib.Path) -> list[str]:
     errors = []
+    for comp in [*ALLOWED, "scripts", "ci"]:
+        for f in sorted((root / comp).rglob("*.py")):
+            for line, mod in imports(f):
+                if mod.split(".")[0] == TOOLS:
+                    errors.append(f"{f.relative_to(root)}:{line}: {comp} 不许 import 量具（{TOOLS} 是单向的）")
+    for f in sorted((root / TOOLS).rglob("*.py")):
+        if TOOLS_SKIP & set(f.relative_to(root).parts):
+            continue
+        for line, mod in imports(f):
+            if mod.split(".")[0].startswith("paoding_"):
+                errors.append(
+                    f"{f.relative_to(root)}:{line}: 量具不许 import 组件（{mod}）：只读导出，不运行引擎的代码"
+                )
+    return errors
+
+
+def check(root: pathlib.Path) -> list[str]:
+    errors = check_tools(root)
     for comp, allowed in ALLOWED.items():
         for f in sorted((root / comp).rglob("*.py")):
             for line, mod in imports(f):
