@@ -1,0 +1,155 @@
+{
+ "v": 1,
+ "note": "校验拦得住坏题：四道故意做坏的题各自该被哪一项拦下（caught_by），另有一道做对的题该通过（caught_by 为 null）。快照用盲判自检的那一份（canary/snapshot）。",
+ "cases": {
+  "good": {
+   "caught_by": null,
+   "axes": {"ask": "how", "premise": "holds", "where": "code"},
+   "draft": {
+    "text": "这个转发器是按什么条件决定把攒着的消息发出去的？下游收不下的时候，队列满了它怎么办？",
+    "subquestions": [
+     {
+      "q": "它按什么条件把攒着的消息发出去？",
+      "points": [
+       {
+        "point": "队列里攒够一批的条数，或者最早的一条已经等够了规定的秒数，两个条件满足一个就发。",
+        "evidence": [{"path": "relay/sender.py", "start": 18, "end": 20}]
+       },
+       {
+        "point": "一批至多 16 条；最早的一条等够 2 秒，不满一批也发。",
+        "evidence": [{"path": "relay/config.py", "start": 3, "end": 4}]
+       }
+      ]
+     },
+     {
+      "q": "队列满了的时候它怎么处理新来的消息？",
+      "points": [
+       {
+        "point": "丢掉队列里最早的一条给新来的让位，并把丢掉的条数加一；放消息的一方不会被挡住。",
+        "evidence": [{"path": "relay/queue.py", "start": 14, "end": 18}]
+       }
+      ]
+     }
+    ],
+    "absent": null
+   }
+  },
+  "pointer": {
+   "caught_by": "evidence",
+   "axes": {"ask": "how", "premise": "holds", "where": "code"},
+   "draft": {
+    "text": "这个转发器发送一批消息失败之后，这一批消息去哪里了？失败的条数记在哪里？",
+    "subquestions": [
+     {
+      "q": "发送失败之后这一批消息怎么处理？",
+      "points": [
+       {
+        "point": "记一条警告日志然后丢掉这一批，不放回队列，也不再试。",
+        "evidence": [{"path": "relay/sender.py", "start": 29, "end": 99}]
+       }
+      ]
+     },
+     {
+      "q": "失败的条数记在哪里？",
+      "points": [
+       {
+        "point": "发送的一方自己有一个计数，失败一批就加上这一批的条数。",
+        "evidence": [{"path": "relay/sender.py", "start": 31, "end": 31}]
+       }
+      ]
+     }
+    ],
+    "absent": null
+   }
+  },
+  "premise": {
+   "caught_by": "evidence",
+   "axes": {"ask": "whether", "premise": "fails", "where": "code"},
+   "draft": {
+    "text": "队列满了丢消息的时候，它有没有把丢了多少条记下来？丢的是新来的还是最早的？",
+    "subquestions": [
+     {
+      "q": "它有没有记下因为队列满而丢掉的条数？",
+      "points": [
+       {
+        "point": "没有：队列满了只是把消息丢掉，不记数。",
+        "evidence": [{"path": "relay/queue.py", "start": 14, "end": 18}]
+       }
+      ]
+     },
+     {
+      "q": "队列满了丢的是哪一条？",
+      "points": [
+       {
+        "point": "丢的是队列里最早的一条。",
+        "evidence": [{"path": "relay/queue.py", "start": 15, "end": 16}]
+       }
+      ]
+     }
+    ],
+    "absent": {
+     "sub": 1,
+     "searched": ["dropped"],
+     "expected_at": {"path": "relay/queue.py", "start": 14, "end": 18},
+     "actual": "放消息的那一段只做了丢弃与追加，没有任何计数。"
+    }
+   }
+  },
+  "leak": {
+   "caught_by": "leak",
+   "axes": {"ask": "how", "premise": "holds", "where": "code"},
+   "draft": {
+    "text": "BoundedQueue 满了的时候是怎么处理新来的消息的？取一批消息的时候是从哪一头取的？",
+    "subquestions": [
+     {
+      "q": "队列满了的时候它怎么处理新来的消息？",
+      "points": [
+       {
+        "point": "丢掉队列里最早的一条给新来的让位，并把丢掉的条数加一。",
+        "evidence": [{"path": "relay/queue.py", "start": 8, "end": 18}]
+       }
+      ]
+     },
+     {
+      "q": "取一批消息的时候是从哪一头取的？",
+      "points": [
+       {
+        "point": "从队首一条一条取，取够要的条数或者队列空了为止。",
+        "evidence": [{"path": "relay/queue.py", "start": 23, "end": 27}]
+       }
+      ]
+     }
+    ],
+    "absent": null
+   }
+  },
+  "common": {
+   "caught_by": "needs_repo",
+   "axes": {"ask": "how", "premise": "holds", "where": "code"},
+   "draft": {
+    "text": "这个用 Python 写的有界先进先出队列，底层用的是标准库里的哪种容器？从队首取出一个元素用的是这种容器的哪个方法？",
+    "subquestions": [
+     {
+      "q": "底层用的是标准库里的哪种容器？",
+      "points": [
+       {
+        "point": "用的是标准库 collections 里的双端队列。",
+        "evidence": [{"path": "relay/queue.py", "start": 3, "end": 3}, {"path": "relay/queue.py", "start": 10, "end": 10}]
+       }
+      ]
+     },
+     {
+      "q": "从队首取出一个元素用的是哪个方法？",
+      "points": [
+       {
+        "point": "用的是双端队列从左端弹出一个元素的那个方法。",
+        "evidence": [{"path": "relay/queue.py", "start": 23, "end": 27}]
+       }
+      ]
+     }
+    ],
+    "absent": null
+   }
+  }
+ }
+}

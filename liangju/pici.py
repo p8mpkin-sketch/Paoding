@@ -17,6 +17,9 @@ yuanxing（原形）。任何一条臂的模型栏空着，`start` 拒绝登记�
 `--runs` 可以不给；给了就与计划逐项核对。带计划的批次现在只认五个臂名（B、B1、A1、F、A0）。
 没有计划的批次（起点轮）用 `--arms` 登记，盲判一栏是空的，时限写「无」。
 
+用途是「判定」而题集是生成器出的（题集文件里有 `generator` 一栏）时，要用 `--anchor` 给出这一版生成器与人出的锚题集
+对过的记录（`python -m liangju.chuti anchor` 写的那一份），并且是在噪声底之内的；没有就不登记。别的用途不查。
+
 `start` 与 `end` 各记一次仓库的提交号、工作区是否干净、配置文件的摘要；两次不一样，汇总里「运行期间代码与配置是否
 改动过」就是「是」。
 """
@@ -31,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from liangju import mangpan
+from liangju import chuti, mangpan
 from liangju.common import Refused, read_json, sha, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,6 +202,11 @@ def start(a: argparse.Namespace) -> int:
         raise Refused("带计划的批次，看门狗的时限从计划里取，不另给 --watchdog-s")
     if a.purpose not in PURPOSES:
         raise Refused(f"用途只取 {PURPOSES}")
+    if a.purpose == "判定" and a.questions:
+        record = read_json(Path(a.anchor)) if getattr(a, "anchor", None) else None
+        why = chuti.anchored(read_json(Path(a.questions)), record)
+        if why:
+            raise Refused(why)
     out = Path(a.batch) / "batch.json"
     if out.exists():
         raise Refused(f"{out} 已经在了：一个批次只登记一次")
@@ -248,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("start")
     for name in ("batch", "id", "purpose", "config"):
         s.add_argument(f"--{name}", required=True)
-    for name in ("set-code", "set-source", "arms", "plan", "questions", "runs"):
+    for name in ("set-code", "set-source", "arms", "plan", "questions", "runs", "anchor"):
         s.add_argument(f"--{name}")
     s.add_argument("--parallel", default=4)
     s.add_argument("--watchdog-s")
