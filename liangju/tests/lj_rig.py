@@ -105,6 +105,7 @@ ARMS = {
         "price_table": "t1",
     },
 }
+SAMPLES = ("missing-a", "missing-b", "wrong-a", "wrong-b", "premise-a", "premise-b")  # 三份已知答案，两种文风
 JUDGE = {"name": "judge-model", "version": "7", "wire": "openai", "url": "http://x", "key_env": "LIANGJU_TEST_KEY"}
 
 
@@ -170,8 +171,9 @@ def make_batch(tmp: Path, attempts: list[tici.Attempt], questions: list[dict[str
             "ok": True,
             "model": "judge-model",
             "version": "7",
-            "prompts": mangpan.prompts_digest(),
-            "results": {"s": {"ok": True}},
+            **mangpan.version(),
+            "results": {name: {"ok": True, "seconds": 30.0} for name in SAMPLES},
+            "seconds_max": 30.0,
         },
     )
     jpath = tmp / "judge.json"

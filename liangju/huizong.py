@@ -259,6 +259,8 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
     fails = read_json(batch_dir / "judge_failures.json") if (batch_dir / "judge_failures.json").exists() else {}
     verdicts = [r.v for rs in arms.values() for r in rs if r.v]
     judge_model = sorted({(r.v["model"], r.v["model_version"]) for rs in arms.values() for r in rs if r.v})
+    limit = (batch.get("judge") or {}).get("seconds_per_item")
+    timed = [float(v["seconds"]) for v in verdicts if isinstance(v.get("seconds"), int | float)]
     start, end = batch.get("start") or {}, batch.get("end")
     changed = end is None or end != start or bool(start.get("dirty"))
     gongfa = {r.a.gongfa for rs in arms.values() for r in rs}
@@ -281,6 +283,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             or ["导出里没有"],
             "盲判三段的版本": _prompts_version(verdicts, sc),
             "盲判用的模型": [f"{n}（{ver}）" for n, ver in judge_model] or ["还没有判"],
+            "每题次的盲判时限（秒）": limit if limit is not None else "无",
             "抽样量": f"每个子问 {mangpan.PER_SUBQ} 条，一份回答至多 {mangpan.PER_ANSWER} 条",
             "归类器的版本": "未就位（第 1 步）",
             "并行路数": batch["parallel"],
@@ -304,6 +307,10 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             "盲判的自检样本": {k: ("判对" if r["ok"] else "判错") for k, r in sc["results"].items()}
             if sc
             else "没有记录",
+            "自检时每个题次的盲判用时（秒）": {k: r.get("seconds", "没有记") for k, r in sc["results"].items()}
+            if sc
+            else "没有记录",
+            "正式判时用时超过时限的回答份数": sum(t > limit for t in timed) if limit is not None else "无（没有时限）",
             "重判一致率": f"{rj['agree']}/{rj['chosen']}（另有 {rj['failed']} 份没做成）" if rj else "没有重判",
             "盲判没做成的回答份数": len(fails),
             "回原文搜索超过时间上限的次数": sum(int(v.get("search_timeouts") or 0) for v in verdicts),

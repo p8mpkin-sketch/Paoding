@@ -2,12 +2,15 @@
 
     python -m liangju.pici start --batch <批次目录> --id S0-1 --purpose 起点轮 --arms arms.json \
         --config <引擎配置文件> --set-code <题集代号> --set-source 手出 \
-        [--plan-hash …] [--runs 2] [--parallel 4] [--watchdog-s …]
+        [--plan <试火计划文件>] [--runs 2] [--parallel 4] [--watchdog-s …]
     python -m liangju.pici end --batch <批次目录> --config <引擎配置文件>
 
 `arms.json`：`{臂名: {"role": …, "model": …, "version": …, "endpoint": …, "sampling": {…}, "metering": …,
 "price_table": …}}`。`role` 取 benhuo（本火）、tonghuo（同火对照）、hehuo（合火）、yihuo（异火单炼）、
 yuanxing（原形）。任何一条臂的模型栏空着，`start` 拒绝登记。
+
+带 `--plan` 时，计划的哈希、盲判一栏（模型、版本、三段提示词的版本、抽样量、每题次的盲判时限）与花费上限都从
+计划文件里取，不另手填；盲判启动前拿这一栏核对。没有计划的批次（起点轮）盲判一栏是空的，时限写「无」。
 
 `start` 与 `end` 各记一次仓库的提交号、工作区是否干净、配置文件的摘要；两次不一样，汇总里「运行期间代码与配置是否
 改动过」就是「是」。
@@ -28,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ROLES = ("benhuo", "tonghuo", "hehuo", "yihuo", "yuanxing")
 PURPOSES = ("起点轮", "中期旗帜", "判定")
 ARM_FIELDS = ("role", "model", "version", "endpoint", "metering", "price_table")
+JUDGE_FIELDS = ("model", "version", "prompts", "sample", "seconds_per_item")  # 与试火计划的盲判一栏同名
 
 
 def stamp(config: Path, repo: Path = ROOT) -> dict[str, Any]:
@@ -54,6 +58,25 @@ def check_arms(arms: dict[str, Any]) -> None:
             raise Refused(f"臂 {name} 的 role 只取 {ROLES}")
 
 
+def from_plan(plan: Any) -> dict[str, Any]:
+    """从试火计划里取批次头要的三样：哈希、盲判一栏、花费上限。计划本身合不合规矩由登记计划的那一处查。"""
+    judge = plan.get("judge") if isinstance(plan, dict) else None
+    if not isinstance(judge, dict) or any(judge.get(k) in (None, "") for k in JUDGE_FIELDS):
+        raise Refused(f"计划里的盲判一栏不全：要有 {JUDGE_FIELDS}")
+    limit = judge["seconds_per_item"]
+    if isinstance(limit, bool) or not isinstance(limit, int | float) or limit <= 0:
+        raise Refused("计划里每题次的盲判时限要是一个正数（秒）")
+    caps = plan.get("caps") if isinstance(plan.get("caps"), dict) else {}
+    return {
+        "plan_hash": sha(plan),
+        "judge": {k: judge[k] for k in JUDGE_FIELDS},
+        "caps": {
+            "per_question_usd_milli": caps.get("per_item_usd_milli"),
+            "total_usd_milli": caps.get("total_usd_milli"),
+        },
+    }
+
+
 def start(a: argparse.Namespace) -> int:
     arms = read_json(Path(a.arms))
     check_arms(arms)
@@ -62,12 +85,14 @@ def start(a: argparse.Namespace) -> int:
     out = Path(a.batch) / "batch.json"
     if out.exists():
         raise Refused(f"{out} 已经在了：一个批次只登记一次")
+    planned = from_plan(read_json(Path(a.plan))) if a.plan else None
     doc = {
         "v": 1,
         "id": a.id,
         "date": datetime.date.today().isoformat(),
         "purpose": a.purpose,
-        "plan_hash": a.plan_hash or "无",
+        "plan_hash": planned["plan_hash"] if planned else "无",
+        "judge": planned["judge"] if planned else None,
         "question_set": {"code": a.set_code, "source": a.set_source},
         "runs_per_question": int(a.runs),
         "parallel": int(a.parallel),
@@ -75,7 +100,7 @@ def start(a: argparse.Namespace) -> int:
         "arms": arms,
         "unequal": [],
         "yuanxing_gate": "可判" if any(x["role"] == "yuanxing" for x in arms.values()) else "未判：这一批没有跑原形臂",
-        "caps": {"per_question_usd_milli": None, "total_usd_milli": None},
+        "caps": planned["caps"] if planned else {"per_question_usd_milli": None, "total_usd_milli": None},
         "start": stamp(Path(a.config)),
         "end": None,
         "converted_to_dev": 0,
@@ -107,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("start")
     for name in ("batch", "id", "purpose", "arms", "config", "set-code", "set-source"):
         s.add_argument(f"--{name}", required=True)
-    s.add_argument("--plan-hash")
+    s.add_argument("--plan")
     s.add_argument("--runs", default=2)
     s.add_argument("--parallel", default=4)
     s.add_argument("--watchdog-s")
