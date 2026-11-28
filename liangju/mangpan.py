@@ -17,6 +17,7 @@
 启动前拿批次头里登记的那一份与现在磁盘上的核对，对不上就不判。
 
     python -m liangju.mangpan version
+    python -m liangju.mangpan qualify --plan <试火计划文件> --judge judge.json --selfcheck selfcheck.json
     python -m liangju.mangpan selfcheck --judge judge.json --out <批次目录>/selfcheck.json
     python -m liangju.mangpan judge --batch <批次目录> --questions questions.json --judge judge.json [--jobs 4]
     python -m liangju.mangpan rejudge --batch <批次目录> --questions questions.json --judge judge.json
@@ -29,7 +30,9 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +54,7 @@ SUB_VERDICTS = ("answered", "partial", "missing")
 CLAIM_VERDICTS = ("holds", "refuted", "no_basis")
 ADVERSE = ("partial", "missing", "refuted", "no_basis", "incomplete")  # 五种不利的判断
 MASK = "〔名〕"
+JUDGE_FIELDS = ("model", "version", "prompts", "sample", "seconds_per_item")  # 与试火计划的盲判一栏同名
 
 
 def prompts() -> dict[str, str]:
@@ -61,11 +65,21 @@ def prompts_digest() -> str:
     return sha({k: sha(v.encode("utf-8")) for k, v in prompts().items()})
 
 
-def canary_digest() -> str:
-    """自检样本的版本：题面、子问、六份回答、预期与快照，逐个文件的摘要合起来。"""
+def canary_files() -> dict[str, Path]:
+    """自检真读的文件，一个不多：题面与子问、预期、预期里点了名的每份回答、清单里列出的快照文件。
+
+    样本目录里别的文件（系统或编辑器自己生成的）自检不读，也就不算进样本的版本。"""
     root = HERE / "canary"
-    files = sorted(p for p in root.rglob("*") if p.is_file())
-    return sha({p.relative_to(root).as_posix(): sha(p.read_bytes()) for p in files})
+    expected = read_json(root / "expected.json")
+    rels = ["question.json", "expected.json"]
+    rels += [f"answers/{name}.md" for name in sorted(expected["samples"])]
+    rels += [f"snapshot/{rel}" for rel in sorted(expected["snapshot"])]
+    return {rel: root / rel for rel in rels}
+
+
+def canary_digest() -> str:
+    """自检样本的版本：`canary_files` 里每个文件的摘要合起来。"""
+    return sha({rel: sha(p.read_bytes()) for rel, p in canary_files().items()})
 
 
 def version() -> dict[str, Any]:
@@ -356,17 +370,34 @@ def findings(
 def selfcheck(client: Client, ledger: Ledger, clock: Callable[[], float] = time.monotonic) -> dict[str, Any]:
     """三份已知答案的样本（两种文风各一份）。全查不抽样，任何一份判错都不算通过。
 
-    每份样本是一个题次，记它从头判完用了多少秒（没做成的也记到放弃为止）。全查比正式判时的抽样只多不少。"""
-    q = read_json(HERE / "canary" / "question.json")
-    expected = read_json(HERE / "canary" / "expected.json")["samples"]
+    每份样本是一个题次，记它从头判完用了多少秒（没做成的也记到放弃为止）。对同一份回答，全查比抽样只多不少；
+    但样本题次比真实题次小得多（快照只有几个文件），又是一份一份顺次判的，所以这里的用时**不是**真实题次用时的
+    上界，只用来在候选之间比快慢、对着时限把明显判不完的筛掉。真实的用时看汇总里正式判的那一栏。
+
+    盲判对着的快照是清单里那几个文件的一份临时拷贝：样本目录里多出别的文件，它看不到。"""
+    files = canary_files()
+    with tempfile.TemporaryDirectory(prefix="liangju-canary-") as tmp:
+        snapshot = Path(tmp) / "snapshot"
+        for rel, src in files.items():
+            if rel.startswith("snapshot/"):
+                (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, Path(tmp) / rel)
+        return _selfcheck(files, snapshot, client, ledger, clock)
+
+
+def _selfcheck(
+    files: dict[str, Path], snapshot: Path, client: Client, ledger: Ledger, clock: Callable[[], float]
+) -> dict[str, Any]:
+    q = read_json(files["question.json"])
+    expected = read_json(files["expected.json"])["samples"]
     results: dict[str, dict[str, Any]] = {}
     for name, want in sorted(expected.items()):
         item = BlindItem(
             question="canary",
             text=q["text"],
             subquestions=tuple(q["subquestions"]),
-            answer=(HERE / "canary" / "answers" / f"{name}.md").read_text(encoding="utf-8"),
-            snapshot=HERE / "canary" / "snapshot",
+            answer=files[f"answers/{name}.md"].read_text(encoding="utf-8"),
+            snapshot=snapshot,
         )
         began = clock()
         try:
@@ -411,27 +442,52 @@ def load_questions(path: Path) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _gate(
-    batch_dir: Path, cfg: JudgeModel, attempts: list[tici.Attempt], selfcheck_path: Path | None
-) -> dict[str, Any]:
-    """启动前的核对：盲判的模型登记全了（`JudgeModel.load` 已查）、与各臂的模型不同、与批次头里从计划带来的盲判
-    一栏对得上、自检样本都判对过并且每个题次都在时限内。"""
-    batch = read_json(batch_dir / "batch.json")
-    arm_models = {str(a.get("model") or "") for a in (batch.get("arms") or {}).values()}
-    arm_models |= {m for a in attempts for m in a.models_seen}
-    if cfg.name in arm_models:
-        raise Refused(f"盲判的模型 {cfg.name} 与某条臂的模型相同：盲判的模型必须与各臂不同")
-    limit = _registered(batch, cfg)
-    f = selfcheck_path or batch_dir / "selfcheck.json"
-    if not f.exists():
-        raise Refused(f"没有自检记录（{f}）：先跑 selfcheck，三份样本都判对了才启用")
-    sc = read_json(f)
+def plan_judge(plan: Any) -> dict[str, Any]:
+    """试火计划的盲判一栏，栏不全或时限不是正数就拒绝。批次登记与选盲判模型都从这里取。"""
+    judge = plan.get("judge") if isinstance(plan, dict) else None
+    if not isinstance(judge, dict) or any(judge.get(k) in (None, "") for k in JUDGE_FIELDS):
+        raise Refused(f"计划里的盲判一栏不全：要有 {JUDGE_FIELDS}")
+    limit = judge["seconds_per_item"]
+    if isinstance(limit, bool) or not isinstance(limit, int | float) or limit <= 0:
+        raise Refused("计划里每题次的盲判时限要是一个正数（秒）")
+    return {k: judge[k] for k in JUDGE_FIELDS}
+
+
+def ruler_matches(reg: dict[str, Any]) -> list[str]:
+    """计划登记的三段版本与抽样量，是不是现在磁盘上这把尺子的。"""
+    now, out = version(), []
+    if reg.get("prompts") != now["prompts"]:
+        out.append("三段提示词的版本与试火计划里登记的不同：提示词是量具，换了版本要另立计划")
+    if reg.get("sample") != now["sample"]:
+        out.append("抽样量与试火计划里登记的不同")
+    return out
+
+
+def qualify(reg: dict[str, Any] | None, cfg: JudgeModel, sc: Any) -> dict[str, Any]:
+    """一个盲判模型能不能启用，由机器判。`reg` 是计划的盲判一栏（没有计划时是 None，那就没有时限），
+    `cfg` 是盲判的登记，`sc` 是一份自检记录。批次启动前与选盲判模型时走的是这同一道核对。"""
+    reasons: list[str] = []
+    registered: bool | None = None
+    limit: float | None = None
+    if reg is not None:
+        registered = (reg.get("model"), reg.get("version")) == (cfg.name, cfg.version)
+        if not registered:
+            reasons.append("盲判的模型或版本与试火计划里登记的不同：计划登记之后不改")
+        reasons += ruler_matches(reg)
+        raw = reg.get("seconds_per_item")
+        if isinstance(raw, bool) or not isinstance(raw, int | float) or raw <= 0:
+            reasons.append("盲判一栏里没有每题次的盲判时限")
+        else:
+            limit = float(raw)
+    sc = sc if isinstance(sc, dict) else {}
     now = version()
     same = sc.get("model") == cfg.name and sc.get("version") == cfg.version and sc.get("prompts") == now["prompts"]
-    if not (sc.get("ok") and same):
-        raise Refused("自检记录不是这个模型、这版提示词的，或没有全部判对：这一批盲判不作数")
-    if sc.get("canary") != now["canary"] or sc.get("sample") != now["sample"]:
-        raise Refused("自检记录不是用现在这套自检样本与抽样量做的：重跑 selfcheck")
+    correct = bool(sc.get("ok")) and same
+    if not correct:
+        reasons.append("自检记录不是这个模型、这版提示词的，或没有全部判对：这一批盲判不作数")
+    current = sc.get("canary") == now["canary"] and sc.get("sample") == now["sample"]
+    if not current:
+        reasons.append("自检记录不是用现在这套自检样本与抽样量做的：重跑 selfcheck")
     expected = set(read_json(HERE / "canary" / "expected.json")["samples"])
     results = sc.get("results") if isinstance(sc.get("results"), dict) else {}
     took: dict[str, float] = {}
@@ -439,39 +495,53 @@ def _gate(
         v = r.get("seconds") if isinstance(r, dict) else None
         if not isinstance(v, bool) and isinstance(v, int | float) and v >= 0:
             took[k] = float(v)
-    if set(took) != expected or len(took) != len(results):
-        raise Refused("自检记录里没有每个题次的用时，或样本不全：重跑 selfcheck")
-    if limit is not None:
+    timed = set(took) == expected and len(took) == len(results)
+    if not timed:
+        reasons.append("自检记录里没有每个题次的用时，或样本不全：重跑 selfcheck")
+    within: bool | None = None
+    if limit is not None and timed:
         over = sorted(k for k, v in took.items() if v > limit)
+        within = not over
         if over:
-            raise Refused(
+            reasons.append(
                 f"自检时 {'、'.join(over)} 的盲判用时超过每题次的盲判时限（{limit} 秒）："
                 "这个模型判不完，换下一个候选，不改时限"
             )
-    return dict(batch)
+    return {
+        "ok": not reasons,
+        "is_the_registered_judge": registered,
+        "all_correct": correct and current,
+        "timed": timed,
+        "within_limit": within,
+        "limit": limit,
+        "slowest": max(took.values()) if timed else None,
+        "reasons": reasons,
+    }
 
 
-def _registered(batch: dict[str, Any], cfg: JudgeModel) -> float | None:
-    """批次头里从试火计划带来的盲判一栏，与实际要用的核对。回每题次的盲判时限（秒）；没有计划的批次回 None。"""
+def _gate(
+    batch_dir: Path, cfg: JudgeModel, attempts: list[tici.Attempt], selfcheck_path: Path | None
+) -> dict[str, Any]:
+    """启动前的核对：盲判的模型登记全了（`JudgeModel.load` 已查）、与各臂的模型不同、与批次头里从计划带来的盲判
+    一栏对得上、自检样本都判对过并且每个题次都在时限内。后两样就是 `qualify`。"""
+    batch = read_json(batch_dir / "batch.json")
+    arm_models = {str(a.get("model") or "") for a in (batch.get("arms") or {}).values()}
+    arm_models |= {m for a in attempts for m in a.models_seen}
+    if cfg.name in arm_models:
+        raise Refused(f"盲判的模型 {cfg.name} 与某条臂的模型相同：盲判的模型必须与各臂不同")
     planned = str(batch.get("plan_hash") or "无") != "无"
     reg = batch.get("judge")
-    if not planned and reg is None:
-        return None
-    if not isinstance(reg, dict):
-        raise Refused("这一批登记了试火计划，批次头里却没有盲判一栏：用 pici start --plan 登记，时限不能缺")
-    if not planned:
+    if not planned and reg is not None:
         raise Refused("批次头里有盲判一栏却没有计划哈希：这一栏只从试火计划里来，不手填")
-    if (reg.get("model"), reg.get("version")) != (cfg.name, cfg.version):
-        raise Refused("盲判的模型或版本与试火计划里登记的不同：计划登记之后不改")
-    now = version()
-    if reg.get("prompts") != now["prompts"]:
-        raise Refused("三段提示词的版本与试火计划里登记的不同：提示词是量具，换了版本要另立计划")
-    if reg.get("sample") != now["sample"]:
-        raise Refused("抽样量与试火计划里登记的不同")
-    limit = reg.get("seconds_per_item")
-    if isinstance(limit, bool) or not isinstance(limit, int | float) or limit <= 0:
-        raise Refused("批次头里没有每题次的盲判时限")
-    return float(limit)
+    if planned and not isinstance(reg, dict):
+        raise Refused("这一批登记了试火计划，批次头里却没有盲判一栏：用 pici start --plan 登记，时限不能缺")
+    f = selfcheck_path or batch_dir / "selfcheck.json"
+    if not f.exists():
+        raise Refused(f"没有自检记录（{f}）：先跑 selfcheck，三份样本都判对了才启用")
+    answer = qualify(reg, cfg, read_json(f))
+    if not answer["ok"]:
+        raise Refused(answer["reasons"][0])
+    return dict(batch)
 
 
 def _items(batch_dir: Path, questions: dict[str, dict[str, Any]]) -> tuple[list[tici.Attempt], dict[str, BlindItem]]:
@@ -577,9 +647,38 @@ def run_selfcheck(a: argparse.Namespace, client: Client | None = None) -> int:
     write_json(out, {**doc, "model": cfg.name, "version": cfg.version})
     for name, r in doc["results"].items():
         print(f"{name}：{'判对' if r['ok'] else '判错'}，用时 {r['seconds']} 秒")
-    print(f"最慢的一个题次 {doc['seconds_max']} 秒；启动前拿它们与计划里每题次的盲判时限比")
+    print(f"最慢的一个题次 {doc['seconds_max']} 秒；与计划里的时限比由 qualify 做，不拿屏幕上的数去比")
     print("自检通过" if doc["ok"] else "自检没有通过：这个模型、这版提示词下的盲判不作数")
     return 0 if doc["ok"] else 1
+
+
+def run_qualify(a: argparse.Namespace) -> int:
+    """选盲判模型时用：还没有批次，给计划、盲判的登记与一份自检记录，回答这个候选能不能启用。"""
+    plan = read_json(Path(a.plan))
+    cfg = JudgeModel.load(read_json(Path(a.judge)))
+    answer = qualify(plan_judge(plan), cfg, read_json(Path(a.selfcheck)))
+    arms = plan.get("arms") if isinstance(plan.get("arms"), dict) else {}
+    same = sorted(n for n, x in arms.items() if isinstance(x, dict) and x.get("model") == cfg.name)
+    if same:
+        answer["reasons"].append(f"盲判的模型与 {'、'.join(same)} 臂相同：盲判的模型必须与各臂不同")
+        answer["ok"] = False
+
+    def zh(x: bool | None) -> str:
+        return "不适用" if x is None else ("是" if x else "否")
+
+    out = {
+        "可以启用": zh(answer["ok"]),
+        "是计划登记的那一个盲判": zh(answer["is_the_registered_judge"]),
+        "与各臂的模型都不同": zh(not same),
+        "自检全部判对（这个模型、这版提示词、这套样本）": zh(answer["all_correct"]),
+        "自检记录里每个题次都有用时": zh(answer["timed"]),
+        "每个题次都在时限内": zh(answer["within_limit"]) if answer["timed"] else "没有用时，判不了",
+        "每题次的盲判时限（秒）": answer["limit"],
+        "自检最慢的一个题次（秒）": answer["slowest"],
+        "不能启用的理由": answer["reasons"],
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0 if answer["ok"] else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -589,6 +688,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("selfcheck", help="三份已知答案的样本")
     s.add_argument("--judge", required=True)
     s.add_argument("--out", required=True)
+    c = sub.add_parser("qualify", help="选盲判模型：这份自检是不是全部判对并且在时限内、盲判是不是计划登记的那一个")
+    for name in ("plan", "judge", "selfcheck"):
+        c.add_argument(f"--{name}", required=True)
     for name in ("judge", "rejudge"):
         j = sub.add_parser(name)
         j.add_argument("--batch", required=True)
@@ -601,6 +703,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(version(), ensure_ascii=False, indent=1, sort_keys=True))
         return 0
     try:
+        if a.cmd == "qualify":
+            return run_qualify(a)
         return {"selfcheck": run_selfcheck, "judge": run_judge, "rejudge": run_rejudge}[a.cmd](a)
     except Refused as e:
         print(f"拒绝：{e}", file=sys.stderr)

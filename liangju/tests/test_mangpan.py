@@ -4,10 +4,24 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import time
 
 import pytest
-from lj_rig import ARMS, CANARY, SAMPLES, Fake, attempt, by_marks, by_words, lines_as_claims, make_batch, parts, simple
+from lj_rig import (
+    ARMS,
+    CANARY,
+    JUDGE,
+    SAMPLES,
+    Fake,
+    attempt,
+    by_marks,
+    by_words,
+    lines_as_claims,
+    make_batch,
+    parts,
+    simple,
+)
 
 from liangju import mangpan, pici, tici
 from liangju.common import Refused, read_json, read_jsonl, sha, write_json
@@ -288,6 +302,14 @@ def test_the_committed_samples_are_three_known_answers_each_in_two_styles():
     assert set(expected) == set(SAMPLES) == {p.stem for p in (CANARY / "answers").glob("*.md")}
     for known in ("missing", "wrong", "premise"):
         assert expected[f"{known}-a"] == expected[f"{known}-b"]
+    listed = read_json(CANARY / "expected.json")["snapshot"]
+    assert len(listed) == 5 and all((CANARY / "snapshot" / rel).is_file() for rel in listed)
+    assert set(mangpan.canary_files()) == {
+        "question.json",
+        "expected.json",
+        *(f"answers/{n}.md" for n in SAMPLES),
+        *(f"snapshot/{rel}" for rel in listed),
+    }
     styles = {
         s: [(CANARY / "answers" / f"{k}-{s}.md").read_text(encoding="utf-8") for k in ("missing", "wrong")]
         for s in "ab"
@@ -315,8 +337,6 @@ def test_the_version_names_the_prompts_the_sampling_and_the_samples(tmp_path, mo
         monkeypatch.setattr(mangpan, "prompts", lambda s=stage: {**real, s: real[s] + "。"})
         assert mangpan.version()["prompts"] != before["prompts"]
     monkeypatch.undo()
-    import shutil
-
     shutil.copytree(mangpan.HERE / "canary", tmp_path / "canary")
     shutil.copytree(mangpan.HERE / "prompts", tmp_path / "prompts")
     monkeypatch.setattr(mangpan, "HERE", tmp_path)
@@ -327,9 +347,14 @@ def test_the_version_names_the_prompts_the_sampling_and_the_samples(tmp_path, mo
     assert after["canary"] != before["canary"] and after["prompts"] == before["prompts"]
 
 
+def plan_arm(**kw):
+    base = {"what": "臂", "model": "arm-model", "version": "1", "endpoint": "proxy", "sampling": {"temperature": 0}}
+    return {**base, "meter": "ledger", "price_table": "t1", **kw}
+
+
 PLAN = {
     "dossier": "003",
-    "arms": {},
+    "arms": {"B": plan_arm(), "B1": plan_arm(), "F": plan_arm()},
     "judge": {"model": "judge-model", "version": "7", "prompts": "", "sample": {}, "seconds_per_item": 40},
     "questions": {},
     "trial_segment": {},
@@ -338,11 +363,16 @@ PLAN = {
 }
 
 
-def planned(tmp_path, **judge):
-    """一个登记了试火计划的批次：批次头里的盲判一栏从计划来。"""
-    plan = {**PLAN, "judge": {**PLAN["judge"], **mangpan.version(), **judge}}
-    plan["judge"].pop("canary")
-    reg = pici.from_plan(plan)
+def real_plan(**judge):
+    """一份盲判一栏照现在这把尺子填的计划。"""
+    ruler = {k: v for k, v in mangpan.version().items() if k != "canary"}
+    return {**PLAN, "judge": {**PLAN["judge"], **ruler, **judge}}
+
+
+def planned(tmp_path, **header_judge):
+    """一个登记了试火计划的批次：批次头里的臂、盲判一栏与上限都从计划来。`header_judge` 是登记之后对批次头的手改。"""
+    reg = pici.from_plan(real_plan())
+    reg["judge"] = {**reg["judge"], **header_judge}
     return make_batch(tmp_path, [attempt("B", "q1", 1, "1: 甲\n2: 乙")], **reg)
 
 
@@ -388,7 +418,8 @@ def test_a_batch_without_a_plan_has_no_time_limit_but_still_needs_the_timing(tmp
 
 
 def test_the_judge_must_be_the_one_the_plan_registered(tmp_path, monkeypatch):
-    """计划里登记的盲判一栏（模型、版本、三段提示词的版本、抽样量、时限）随批次头带来，启动前逐项核对。"""
+    """计划里登记的盲判一栏（模型、版本、三段提示词的版本、抽样量、时限）随批次头带来，启动前逐项核对。
+    登记时已经核过尺子的版本；这里守的是登记之后尺子或批次头又变了。"""
     monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
 
     def refused(where, header=None, **judge) -> str:
@@ -404,11 +435,177 @@ def test_the_judge_must_be_the_one_the_plan_registered(tmp_path, monkeypatch):
     assert "模型或版本与试火计划里登记的不同" in refused(tmp_path / "2", version="8")
     assert "三段提示词的版本与试火计划里登记的不同" in refused(tmp_path / "3", prompts="旧的一版")
     assert "抽样量与试火计划里登记的不同" in refused(tmp_path / "4", sample={"per_sub": 1, "max": 8})
-    assert "没有盲判一栏" in refused(tmp_path / "5", header={"judge": None})  # 有计划哈希而没有时限
-    assert "不手填" in refused(tmp_path / "6", header={"plan_hash": "无"})
-    for bad in ({"judge": {}}, {"judge": {**PLAN["judge"], "seconds_per_item": 0}}, []):
-        with pytest.raises(Refused):
-            pici.from_plan({**PLAN, **bad} if isinstance(bad, dict) else bad)
+    assert "没有每题次的盲判时限" in refused(tmp_path / "5", seconds_per_item=None)
+
+
+def test_refusal_reasons_say_which_side_of_the_header_is_missing(tmp_path, monkeypatch):
+    """批次头里计划哈希与盲判一栏要么都有要么都没有；缺哪一边，理由就说哪一边。"""
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+
+    def refused(where, **header) -> str:
+        where.mkdir()
+        bdir, qpath, jpath = planned(where)
+        write_json(bdir / "batch.json", {**read_json(bdir / "batch.json"), **header})
+        with pytest.raises(Refused) as e:
+            mangpan.run_judge(ns(bdir, qpath, jpath), simple())
+        return str(e.value)
+
+    for n, missing in enumerate((None, "不是一张表", [])):  # 有计划哈希，没有（像样的）盲判一栏
+        why = refused(tmp_path / f"a{n}", judge=missing)
+        assert "这一批登记了试火计划，批次头里却没有盲判一栏" in why
+    for n, extra in enumerate(({"model": "judge-model"}, "不是一张表", [])):  # 没有计划哈希，却有盲判一栏
+        why = refused(tmp_path / f"b{n}", plan_hash="无", judge=extra)
+        assert "有盲判一栏却没有计划哈希" in why and "登记了试火计划" not in why
+
+
+def test_registering_a_batch_with_a_plan_checks_everything_already_known(tmp_path):
+    """核对发生在花钱之前：三段版本或抽样量对不上、花费上限缺或不是正数、臂与计划逐臂对不上，都拒绝登记。"""
+    arms, cfg, plan = tmp_path / "arms.json", tmp_path / "cfg.yaml", tmp_path / "plan.json"
+    cfg.write_text("x: 1\n")
+    n = 0
+
+    def start(doc, given=None) -> int:
+        nonlocal n
+        n += 1
+        write_json(plan, doc)
+        argv = ["start", "--batch", str(tmp_path / f"b{n}"), "--id", "P-1", "--purpose", "判定", "--config", str(cfg)]
+        argv += ["--set-code", "SET-A", "--set-source", "生成", "--plan", str(plan)]
+        if given is not None:
+            write_json(arms, given)
+            argv += ["--arms", str(arms)]
+        code = pici.main(argv)
+        assert (tmp_path / f"b{n}" / "batch.json").exists() == (code == 0)  # 被拒绝时什么都没有登记
+        return code
+
+    def why(doc, given=None) -> str:
+        with pytest.raises(Refused) as e:
+            pici.from_plan(doc, given)
+        assert start(doc, given) == 2
+        return str(e.value)
+
+    good = real_plan()
+    assert "三段提示词的版本" in why(real_plan(prompts="旧的一版"))
+    assert "抽样量" in why(real_plan(sample={"per_sub": 1, "max": 8}))
+    for caps in ({}, None, {"per_item_usd_milli": 90}, {"per_item_usd_milli": None, "total_usd_milli": 1080}):
+        assert "花费上限缺了或不是正数" in why({**good, "caps": caps})
+    for bad in (0, -5, True, "90", 1.5):
+        assert "花费上限缺了或不是正数" in why({**good, "caps": {"per_item_usd_milli": bad, "total_usd_milli": 1080}})
+        assert "花费上限缺了或不是正数" in why({**good, "caps": {"per_item_usd_milli": 90, "total_usd_milli": bad}})
+
+    same = {k: {f: v for f, v in a.items() if f != "what"} for k, a in good["arms"].items()}
+    changes = {"model": "另一个", "version": "2", "endpoint": "direct", "sampling": {"temperature": 1}}
+    changes |= {"meter": "export", "price_table": "t2"}
+    assert tuple(changes) == pici.PLAN_ARM_FIELDS
+    for field, other in changes.items():
+        assert f"B 臂的 {[field]} 与计划里登记的不同" in why(good, {**same, "B": {**same["B"], field: other}})
+        lacking = {k: v for k, v in same["B"].items() if k != field}
+        assert f"B 臂的 {[field]}" in why(good, {**same, "B": lacking})
+    assert "不一致" in why(good, {k: v for k, v in same.items() if k != "F"})  # 计划有，登记的没有
+    assert "不一致" in why(good, {**same, "A1": same["B"]})  # 登记的有，计划没有
+    assert "不一致" in why(good, ARMS)  # 没有计划的批次用的那套登记：臂名都对不上
+    assert "不认识" in why({**good, "arms": {**good["arms"], "X": plan_arm()}})
+    assert "B 臂缺 ['model']" in why({**good, "arms": {**good["arms"], "B": plan_arm(model="")}})
+    assert "必须与各臂不同" in why({**good, "arms": {**good["arms"], "F": plan_arm(model="judge-model")}})
+
+    assert start(good, same) == 0  # 逐项相同：照常登记
+    assert start(good) == 0  # 不另给：臂从计划里取
+    a, b = (read_json(tmp_path / f"b{k}" / "batch.json") for k in (n - 1, n))
+    assert a["arms"] == b["arms"] and set(a["arms"]) == {"B", "B1", "F"}
+    assert [a["arms"][k]["role"] for k in ("B", "B1", "F")] == ["benhuo", "tonghuo", "hehuo"]
+    assert {k: v for k, v in a["arms"]["B"].items() if k != "role"} == good["arms"]["B"]  # 各栏原样，不另抄一种写法
+    write_json(arms, ARMS)
+    argv = ["start", "--batch", str(tmp_path / "无计划"), "--id", "S0", "--purpose", "起点轮", "--config", str(cfg)]
+    argv += ["--set-code", "SET-A", "--set-source", "手出"]
+    assert pici.main(argv) == 2 and pici.main([*argv, "--arms", str(arms)]) == 0  # 没有计划的批次照旧用 --arms
+
+
+def test_qualify_answers_for_a_candidate_judge_before_any_batch_exists(tmp_path, monkeypatch, capsys):
+    """选盲判模型：给计划、盲判的登记与一份自检记录，机器回答是否全部判对并且在时限内、是否计划登记的那一个。"""
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+    plan, jpath, scpath = tmp_path / "plan.json", tmp_path / "judge.json", tmp_path / "selfcheck.json"
+    write_json(plan, real_plan())
+    write_json(jpath, JUDGE)
+    a = argparse.Namespace(judge=str(jpath), out=str(scpath))
+    assert mangpan.run_selfcheck(a, Fake(_canary_tidy, _canary_read, _canary_check)) == 0  # 真走一遍自检命令
+    sc = read_json(scpath)
+    argv = ["qualify", "--plan", str(plan), "--judge", str(jpath), "--selfcheck", str(scpath)]
+
+    def ask(record=None, judge=None, doc=None) -> tuple[int, dict]:
+        write_json(scpath, record or sc)
+        write_json(jpath, {**JUDGE, **(judge or {})})
+        write_json(plan, doc or real_plan())
+        capsys.readouterr()
+        code = mangpan.main(argv)
+        return code, json.loads(capsys.readouterr().out)
+
+    code, out = ask()
+    assert code == 0 and out["不能启用的理由"] == [] and out["每题次的盲判时限（秒）"] == 40.0
+    assert [out[k] for k in ("可以启用", "是计划登记的那一个盲判", "与各臂的模型都不同", "每个题次都在时限内")] == [
+        "是"
+    ] * 4
+    assert out["自检全部判对（这个模型、这版提示词、这套样本）"] == out["自检记录里每个题次都有用时"] == "是"
+
+    slow = {**sc, "results": {k: {**r, "seconds": 41.0 if k == "premise-a" else 3.0} for k, r in sc["results"].items()}}
+    code, out = ask(slow)
+    assert code == 1 and out["可以启用"] == "否" and out["每个题次都在时限内"] == "否"
+    assert out["自检全部判对（这个模型、这版提示词、这套样本）"] == "是" and out["自检最慢的一个题次（秒）"] == 41.0
+    assert "premise-a 的盲判用时超过每题次的盲判时限" in out["不能启用的理由"][0]
+
+    code, out = ask({**sc, "ok": False})
+    assert (
+        code == 1
+        and out["自检全部判对（这个模型、这版提示词、这套样本）"] == "否"
+        and out["每个题次都在时限内"] == "是"
+    )
+    code, out = ask({**sc, "results": {k: {"ok": True} for k in SAMPLES}})
+    assert code == 1 and out["自检记录里每个题次都有用时"] == "否" and out["每个题次都在时限内"] == "没有用时，判不了"
+    code, out = ask(judge={"name": "另一个候选"})  # 自检是别的模型做的，它也不是计划登记的那一个
+    assert code == 1 and out["是计划登记的那一个盲判"] == "否" and len(out["不能启用的理由"]) == 2
+    code, out = ask({**sc, "model": "arm-model"}, judge={"name": "arm-model"}, doc=real_plan(model="arm-model"))
+    assert code == 1 and out["与各臂的模型都不同"] == "否" and out["是计划登记的那一个盲判"] == "是"
+    code, out = ask(doc=real_plan(prompts="旧的一版"))
+    assert code == 1 and "三段提示词的版本" in out["不能启用的理由"][0]
+    write_json(plan, {**real_plan(), "judge": {"model": "judge-model"}})
+    assert mangpan.main(argv) == 2  # 计划里盲判一栏不全：拒绝
+
+    # 批次启动前走的是同一道核对：同一份计划、同一份慢的自检记录，批次也不启动
+    (tmp_path / "批").mkdir()
+    bdir, qpath, bj = planned(tmp_path / "批")
+    write_json(bdir / "selfcheck.json", slow)
+    with pytest.raises(Refused) as e:
+        mangpan.run_judge(ns(bdir, qpath, bj), simple())
+    assert "premise-a 的盲判用时超过每题次的盲判时限" in str(e.value)
+
+
+def test_a_stray_file_among_the_samples_changes_nothing(tmp_path, monkeypatch):
+    """样本的版本只由自检真读的文件决定：目录里多出与样本无关的文件，版本不变，旧的自检记录照常能用，
+    盲判对着的快照里也没有它。"""
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+    before = mangpan.version()
+    shutil.copytree(mangpan.HERE / "canary", tmp_path / "canary")
+    shutil.copytree(mangpan.HERE / "prompts", tmp_path / "prompts")
+    monkeypatch.setattr(mangpan, "HERE", tmp_path)
+    bdir, qpath, jpath = planned(tmp_path)  # 自检记录是在多出文件之前做的
+    for where in ("", "answers", "snapshot", "snapshot/relay"):
+        (tmp_path / "canary" / where / ".DS_Store").write_bytes(b"\x00\x01")
+    (tmp_path / "canary" / "answers" / "草稿.md").write_text("不是样本", encoding="utf-8")
+    (tmp_path / "canary" / "snapshot" / "relay" / "notes.py.swp").write_text("x", encoding="utf-8")
+    assert mangpan.version() == before
+    assert mangpan.run_judge(ns(bdir, qpath, jpath), simple()) == 0
+
+    seen: list[list[str]] = []
+    inner = mangpan._selfcheck
+
+    def spy(files, snapshot, *rest):
+        seen.append(sorted(p.relative_to(snapshot).as_posix() for p in snapshot.rglob("*") if p.is_file()))
+        return inner(files, snapshot, *rest)
+
+    monkeypatch.setattr(mangpan, "_selfcheck", spy)
+    doc = mangpan.selfcheck(Fake(_canary_tidy, _canary_read, _canary_check), Ledger(None))
+    assert doc["ok"] and doc["canary"] == before["canary"] and set(doc["results"]) == set(SAMPLES)
+    assert seen == [sorted(read_json(tmp_path / "canary" / "expected.json")["snapshot"])]
+    (tmp_path / "canary" / "snapshot" / "relay" / "config.py").write_text("改了一个真读的文件", encoding="utf-8")
+    assert mangpan.version()["canary"] != before["canary"]
 
 
 PARITY_DOC = {"b": [1, 2, {"丙": None}], "a": "甲", "c": 1.5}
@@ -416,12 +613,11 @@ PARITY_HASH = "874ca7719efb75b5789c8f28e9856c716abffa9bee9ccbcb83c94ee181be1c1e"
 
 
 def test_batch_header_takes_hash_judge_and_caps_from_the_plan_file(tmp_path):
-    arms, cfg, plan = tmp_path / "arms.json", tmp_path / "cfg.yaml", tmp_path / "plan.json"
-    write_json(arms, ARMS)
+    cfg, plan = tmp_path / "cfg.yaml", tmp_path / "plan.json"
     cfg.write_text("x: 1\n")
-    doc = {**PLAN, "judge": {**PLAN["judge"], "prompts": "p1", "sample": {"per_sub": 2, "max": 8}}}
+    doc = real_plan()
     write_json(plan, doc)
-    argv = ["start", "--batch", str(tmp_path / "b"), "--id", "P-1", "--purpose", "判定", "--arms", str(arms)]
+    argv = ["start", "--batch", str(tmp_path / "b"), "--id", "P-1", "--purpose", "判定"]
     argv += ["--config", str(cfg), "--set-code", "SET-A", "--set-source", "生成", "--plan", str(plan)]
     assert pici.main(argv) == 0
     head = read_json(tmp_path / "b" / "batch.json")
@@ -494,6 +690,35 @@ def test_rejudge_reports_the_agreement_rate_and_counts_a_changed_conclusion(tmp_
     assert check["重判一致率"].startswith("3/3")
     assert check["自检时每个题次的盲判用时（秒）"] == dict.fromkeys(SAMPLES, 30.0)
     assert huizong.build(bdir, qpath)["批次头"]["每题次的盲判时限（秒）"] == "无"
+
+
+def test_summary_reports_median_and_max_seconds_of_the_real_judging_with_or_without_a_limit(tmp_path, monkeypatch):
+    """正式判每题次用时的中位数与最大值，有没有时限都报：起点轮跑完就能拿它与自检的用时比出倍数。"""
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+    from liangju import huizong
+
+    def build(where, reg, seconds):
+        where.mkdir()
+        atts = [attempt("B", f"q{q}", 1, f"1: 甲{q}\n2: 乙") for q in (1, 2, 3)]
+        atts += [attempt("B1", f"q{q}", 1, f"1: 丙{q}\n2: 乙") for q in (1, 2)]
+        arms = reg.get("arms") or {"B": ARMS["B"], "B1": ARMS["B2"]}
+        bdir, qpath, jpath = make_batch(where, atts, **{**reg, "arms": arms})
+        assert mangpan.run_judge(ns(bdir, qpath, jpath), simple()) == 0
+        index = {(r["arm"], r["question"]): r["blind"] for r in read_json(bdir / "index.json")}
+        for key, sec in seconds.items():
+            f = bdir / "verdicts" / f"{index[key]}.json"
+            write_json(f, {**read_json(f), "seconds": sec})
+        return huizong.build(bdir, qpath)
+
+    seconds = {("B", "q1"): 10.0, ("B", "q2"): 50.0, ("B", "q3"): 20.0, ("B1", "q1"): 400.0, ("B1", "q2"): 30.0}
+    want = {"份数": 5, "中位数": 30.0, "最大值": 400.0}
+    free = build(tmp_path / "无计划", {}, seconds)
+    assert free["量具自检"]["正式判每题次的盲判用时（秒）"] == want
+    assert free["量具自检"]["正式判时用时超过时限的回答份数"] == "无（没有时限）"
+    bound = build(tmp_path / "有计划", pici.from_plan(real_plan()), seconds)
+    assert bound["量具自检"]["正式判每题次的盲判用时（秒）"] == want
+    assert bound["批次头"]["每题次的盲判时限（秒）"] == 40 and bound["量具自检"]["正式判时用时超过时限的回答份数"] == 2
+    assert [a["计量来源"] for a in bound["逐臂登记"]["各臂"]] == ["ledger"] * 3  # 计划的词表原样带到汇总
 
 
 # ---------------------------------------------------------------- 只读工具

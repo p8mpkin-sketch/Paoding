@@ -238,7 +238,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
                 "版本标识": reg["version"],
                 "端点": reg["endpoint"],
                 "采样参数": reg.get("sampling") or {},
-                "计量来源": reg["metering"],
+                "计量来源": reg.get("metering") or reg.get("meter"),
                 "价表版本": reg["price_table"],
                 "运行记录里读回的模型标识与登记一致": bool(seen) and seen == [reg["model"]],
             }
@@ -310,6 +310,13 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             "自检时每个题次的盲判用时（秒）": {k: r.get("seconds", "没有记") for k, r in sc["results"].items()}
             if sc
             else "没有记录",
+            "正式判每题次的盲判用时（秒）": {
+                "份数": len(timed),
+                "中位数": round(statistics.median(timed), 3),
+                "最大值": round(max(timed), 3),
+            }
+            if timed
+            else "还没有判，或判的记录里没有用时",
             "正式判时用时超过时限的回答份数": sum(t > limit for t in timed) if limit is not None else "无（没有时限）",
             "重判一致率": f"{rj['agree']}/{rj['chosen']}（另有 {rj['failed']} 份没做成）" if rj else "没有重判",
             "盲判没做成的回答份数": len(fails),
