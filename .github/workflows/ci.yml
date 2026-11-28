@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # 合并请求检出的是合并提交：要它的第一个父提交（目标分支）来比改了哪些路径
       - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:
@@ -20,6 +22,11 @@ jobs:
         run: python ci/check_domain_words.py
       - name: 依赖方向：只走契约接口
         run: python ci/check_deps.py
+      - name: 量具与被量的不一起改（碰了 liangju/ 的改动，引擎、适配层、体质、提示词、表、夹具改动零行）
+        if: github.event_name == 'pull_request'
+        run: python ci/check_liangju.py HEAD^1 HEAD
+      - name: 表项计数不增（哪一类比初值多了就红；要改初值只能改 liangju/baseline/biaoxiang.json）
+        run: python -m liangju.biaoxiang --check liangju/baseline/biaoxiang.json
       - name: 前端类型与线格式 schema 一致（types.ts 是生成物）
         run: python scripts/gen-types.py --check
       - name: ruff lint（含 BLE：不许宽接 Exception）

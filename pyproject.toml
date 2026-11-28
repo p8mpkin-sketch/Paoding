@@ -46,7 +46,7 @@ paoding-fenjue = { workspace = true }
 members = ["pd", "graph", "adapter", "executor", "judgebox", "watchdog", "eval", "sinan", "tongjian", "qicao", "shuku", "fenjue"]
 
 [tool.pytest.ini_options]
-testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "tongjian/tests", "qicao/tests", "shuku/tests", "fenjue/tests", "ci/tests", "tests/integration", "tests/fenjue"]
+testpaths = ["graph/tests", "pd/tests", "adapter/tests", "executor/tests", "judgebox/tests", "watchdog/tests", "eval/tests", "sinan/tests", "tongjian/tests", "qicao/tests", "shuku/tests", "fenjue/tests", "ci/tests", "tests/integration", "tests/fenjue", "liangju/tests"]
 
 # 覆盖率（P2-3）：只量组件源码与组装脚本。CI 里 `pytest --cov` 之后由 ci/coverage_by_component.py 按组件汇总。
 # 子进程里跑的代码（假 CLI、被测试起成子进程的 run.py）量不到，读数因此偏低而不偏高。
@@ -63,7 +63,7 @@ skip_empty = true
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian", "eval/src/paoding_eval", "qicao/src/paoding_qicao", "shuku/src/paoding_shuku", "fenjue/src/paoding_fenjue"]
+files = ["graph/src/paoding_graph", "executor/src/paoding_executor", "adapter/src/paoding_adapter", "judgebox/src/paoding_judgebox", "tongjian/src/paoding_tongjian", "eval/src/paoding_eval", "qicao/src/paoding_qicao", "shuku/src/paoding_shuku", "fenjue/src/paoding_fenjue", "liangju/__init__.py", "liangju/common.py", "liangju/tici.py", "liangju/model.py", "liangju/sousuo.py", "liangju/mangpan.py", "liangju/huizong.py", "liangju/biaoxiang.py", "liangju/pici.py"]
 untyped_calls_exclude = ["paoding_graph.refmodel"]
 
 [[tool.mypy.overrides]]
@@ -83,8 +83,9 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-# problems/ 是题目环境（数据），不是组件代码，不归这里管；引擎验收夹具（fenjue/tests/engine_fixtures/ 下的合成外部系统）同理
-extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web", "problems", "fenjue/tests/engine_fixtures/*/"]
+# problems/ 是题目环境（数据），不是组件代码，不归这里管；引擎验收夹具（fenjue/tests/engine_fixtures/ 下的合成外部系统）同理；
+# liangju/canary 是盲判自检样本里的合成仓库，也是数据
+extend-exclude = ["docs/design/reference-model", "graph/src/paoding_graph/refmodel.py", "web", "problems", "fenjue/tests/engine_fixtures/*/", "liangju/canary"]
 
 [tool.ruff.lint]
 # E/W/F：基本错误；I：导入顺序；B：常见缺陷；UP：过时写法；BLE：不许宽接 Exception（审计 P1-4）
