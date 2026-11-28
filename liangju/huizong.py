@@ -93,6 +93,55 @@ def _engine_marked_negated(rows: list[Row]) -> str:
     return f"{bad}/{hit}" if hit else "抽到的结论里没有引擎标为已核对的"
 
 
+def _classes(doc: dict[str, Any]) -> dict[str, Any]:
+    """归类的结果（13.6）：只有类别编号与计数。代表句与例句留在登记簿里，不进汇总。"""
+    cum, ev, can = doc["cumulative"], doc["evaluation"], doc["canary"]
+    order = f"打乱顺序后的一致率（只数至少有一遍同类的对；打乱 {ev['shuffles']} 次里最低的一次）"
+
+    def curve(t: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "类别数": t["classes"],
+            "只出现过一次的类别数": t["singletons"],
+            "发现总数": t["findings"],
+            "下一次失败属于没见过的类别的概率（约）": t["unseen_probability"],
+        }
+
+    return {
+        "每个类别一行": [
+            {
+                "类别编号": c["id"],
+                "这一批出现的题数": c["questions"],
+                "出现在哪几条臂": c["arms"],
+                "这一批才第一次出现": c["new_in_batch"],
+            }
+            for c in doc["classes"]
+        ],
+        "累计": {**curve(cum), "累计跑过的新题数": cum["questions"]},
+        "每条臂的曲线点": {arm: curve(t) for arm, t in sorted(doc["per_arm"].items())},
+        "这一批的曲线点作数": doc["curve_point_counts"],
+        "这一批没有写机制、没法归类的发现数": doc["unsentenced_in_batch"],
+        "金丝雀": {
+            "结果": {
+                "passed": "判对",
+                "wrong": "判错：这一批的曲线点不作数",
+                "untestable": "测不了增类：新句在登记簿里已有同类，不算判错；要换那一句（归类器的版本改动）",
+            }[can["state"]],
+            "已有类别的换述没有增类": can["paraphrase_kept"],
+            "确实全新的那一句": {
+                "added": "增了类",
+                "merged_with_seed": "被并进了种子那一类（判错）",
+                "class_exists": "落进了登记簿里已有的另一类",
+            }[can["novel"]],
+        },
+        "归类器在换题重现集上": {
+            "拆多了的错误率（同机制的对没落进同一类）": ev["split_error"],
+            "并多了的错误率（不同机制的对落进了同一类）": ev["merged_error"],
+            order: ev["order_agreement"],
+            "两遍划分相同": ev["repeat_identical"],
+        },
+    }
+
+
 def _prompts_version(verdicts: list[dict[str, Any]], selfcheck: dict[str, Any] | None) -> str:
     """盲判三段的版本，取自记录：每份判的记录里判的时候记下的摘要，与自检记录里的摘要。
 
@@ -254,6 +303,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             pairs[f"{ROLE_ZH[first]}对{ROLE_ZH[second]}"] = cells
 
     found = read_jsonl(batch_dir / "findings.jsonl")
+    classes = read_json(batch_dir / "classes.json") if (batch_dir / "classes.json").exists() else None
     sc = read_json(batch_dir / "selfcheck.json") if (batch_dir / "selfcheck.json").exists() else None
     rj = read_json(batch_dir / "rejudge.json") if (batch_dir / "rejudge.json").exists() else None
     fails = read_json(batch_dir / "judge_failures.json") if (batch_dir / "judge_failures.json").exists() else {}
@@ -285,7 +335,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
             "盲判用的模型": [f"{n}（{ver}）" for n, ver in judge_model] or ["还没有判"],
             "每题次的盲判时限（秒）": limit if limit is not None else "无",
             "抽样量": f"每个子问 {mangpan.PER_SUBQ} 条，一份回答至多 {mangpan.PER_ANSWER} 条",
-            "归类器的版本": "未就位（第 1 步）",
+            "归类器的版本": classes["classifier"] if classes else "这一批还没有归类",
             "并行路数": batch["parallel"],
             "看门狗的时限（秒）": batch["watchdog_s"] if batch["watchdog_s"] is not None else "没有设",
             "每题上限的来源": "试火计划" if plan_cap is not None else "各次运行自己的上限",
@@ -301,7 +351,7 @@ def build(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
         "发现与类别": {
             "发现记录数": {zh: sum(r["verdict"] == k for r in found) for k, zh in ADVERSE_ZH.items()}
             | {"合计": len(found)},
-            "类别": "归类器未就位：发现记录先存着，第 1 步补算",
+            "类别": _classes(classes) if classes else "这一批还没有归类：发现记录先存着，跑 guilei classify 补算",
         },
         "量具自检": {
             "盲判的自检样本": {k: ("判对" if r["ok"] else "判错") for k, r in sc["results"].items()}
