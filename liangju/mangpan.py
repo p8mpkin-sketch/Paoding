@@ -559,10 +559,34 @@ def _items(batch_dir: Path, questions: dict[str, dict[str, Any]]) -> tuple[list[
 
 
 def _same_set(batch: dict[str, Any], questions_path: Path) -> None:
-    """带计划的批次登记时记下了题集的摘要：开判前再核一次，手里这份题集文件还是不是登记的那一套。"""
+    """登记时记下了题集的摘要：开判前再核一次，手里这份题集文件还是不是登记的那一套。用途是判定的批次另核一次
+    题集有没有与锚对过。`judge` 与 `rejudge` 都走这里。"""
+    doc = read_json(questions_path)
     want = (batch.get("question_set") or {}).get("digest")
-    if want and sha(read_json(questions_path)) != want:
+    if want and sha(doc) != want:
         raise Refused("题集文件的摘要与批次登记时的不同：这不是这一批登记的那一套题")
+    if batch.get("purpose") == "判定":  # 生成的题集有没有与锚对过：登记时查过，开判前再核一次
+        why = anchored(doc, batch.get("anchor"))
+        if why:
+            raise Refused(why)
+
+
+def anchored(questions: Any, record: Any) -> str | None:
+    """一套题能不能用于判定。人出的题集不用对；生成器出的题集（题集文件里有 `generator` 一栏）要有一份与人出的
+    锚题集「对过了并且在噪声底之内」的记录（`chuti anchor` 写的），而且是这一版生成器、这一份配额的。回不能用的
+    原因，能用就回 None。登记批次时查一次，开判前再查一次。"""
+    g = questions.get("generator") if isinstance(questions, dict) else None
+    if not isinstance(g, dict):
+        return None
+    if not isinstance(record, dict):
+        return "这套题是生成器出的：先与人出的锚题集对一次（chuti anchor），对过了才能用于判定"
+    if record.get("generator") != g.get("id"):
+        return "与锚题集对过的是另一版生成器：这一版要重新对"
+    if not record.get("quota") or record.get("quota") != g.get("quota"):
+        return "与锚题集对过的是另一份配额出的题：配额换了，要重新对"
+    if not record.get("ok"):
+        return "这一版生成器的题与锚题集的过线比例之差超出了噪声底：只能用于旗帜，不能用于判定"
+    return None
 
 
 def _seed(batch: dict[str, Any], questions_path: Path) -> str:
