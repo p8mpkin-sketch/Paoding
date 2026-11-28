@@ -76,7 +76,8 @@ DOC_SUFFIXES = frozenset(
     ".md .rst .txt .adoc .yaml .yml .toml .ini .cfg .conf .json .xml .properties .env .example".split()
 )
 GITHUB = "https://api.github.com"
-PER_QUERY = 100  # 检索候选时每一格取回的仓库数
+PER_QUERY = 100  # 检索候选时一页取回的仓库数
+PAGES = 5  # 每一格至多取这么多页
 
 
 class Dropped(Exception):
@@ -137,6 +138,11 @@ def check_quota(quota: Any) -> dict[str, Any]:
         lang, _, size = str(key).rpartition("/")
         if not lang or size not in sizes or not _count(n):
             raise Refused(f"配额里的格子 {key} 写得不对：要「语言/档名」，档名在 sizes 里，题数是正整数")
+    stars = quota.get("stars")
+    if stars is not None:
+        ok = isinstance(stars, list) and len(stars) == 2 and _count(stars[0], zero=True)
+        if not ok or not (stars[1] is None or (_count(stars[1]) and stars[1] >= stars[0])):
+            raise Refused("配额里的 stars 写得不对：要 [下限, 上限]，上限不小于下限或是 null")
     total = sum(cells.values())
     for axis, values in AXES.items():
         got = quota.get(axis)
@@ -270,30 +276,42 @@ def _github(url: str) -> Any:
 
 
 def find_candidates(quota: Any, get: Get = _github) -> list[dict[str, Any]]:
-    """候选来自公开仓库的检索结果：每一格检索一次（语言、大小区间、不是分叉、没有归档），每个仓库钉住缺省分支当时的
-    提交号。检索结果随时间变，所以取样对着的是存下来的这份清单，清单的摘要记进题集。"""
+    """候选来自公开仓库的检索结果：每一格检索一次（语言、大小区间、不是分叉、没有归档；配额里写了 `stars` 就再
+    加上星数区间），至多取 `PAGES` 页，每个仓库钉住缺省分支当时的提交号。许可证不在配额清单里的不会被取样，所以
+    不去钉它的提交号，也不进清单。检索结果随时间变，所以取样对着的是存下来的这份清单，清单的摘要记进题集。
+
+    为什么多取几页：检索按星数排，一个格子最前面的常常是清单类、教程类仓库，出不了代码题；候选只有一页的话，
+    这些仓库会把替补耗光。取样是按种子在整份清单里抽的，候选多了，抽到它们的比例就低。"""
     quota = check_quota(quota)
     out: list[dict[str, Any]] = []
+    stars = quota.get("stars")
     for cell in sorted(quota["cells"]):
         lang, _, size = cell.rpartition("/")
         lo, hi = quota["sizes"][size]
         q = f"language:{lang} size:{lo}..{hi - 1 if hi is not None else '*'} fork:false archived:false"
-        found = get(f"{GITHUB}/search/repositories?q={urllib.parse.quote(q)}&sort=stars&per_page={PER_QUERY}")
-        for item in found.get("items") or []:
-            name, branch = str(item.get("full_name") or ""), str(item.get("default_branch") or "")
-            if not name or not branch:
-                continue
-            head = get(f"{GITHUB}/repos/{name}/commits/{urllib.parse.quote(branch)}")
-            out.append(
-                {
-                    "repo": name,
-                    "commit": str(head.get("sha") or ""),
-                    "language": lang,
-                    "size_kb": item.get("size"),
-                    "license": str((item.get("license") or {}).get("spdx_id") or ""),
-                    "url": str(item.get("clone_url") or f"https://github.com/{name}.git"),
-                }
-            )
+        if stars:
+            q += f" stars:{stars[0]}..{stars[1] if stars[1] is not None else '*'}"
+        for page in range(1, PAGES + 1):
+            url = f"{GITHUB}/search/repositories?q={urllib.parse.quote(q)}&sort=stars&per_page={PER_QUERY}&page={page}"
+            items = get(url).get("items") or []
+            for item in items:
+                name, branch = str(item.get("full_name") or ""), str(item.get("default_branch") or "")
+                spdx = str((item.get("license") or {}).get("spdx_id") or "")
+                if not name or not branch or spdx not in quota["licenses"]:
+                    continue
+                head = get(f"{GITHUB}/repos/{name}/commits/{urllib.parse.quote(branch)}")
+                out.append(
+                    {
+                        "repo": name,
+                        "commit": str(head.get("sha") or ""),
+                        "language": lang,
+                        "size_kb": item.get("size"),
+                        "license": spdx,
+                        "url": str(item.get("clone_url") or f"https://github.com/{name}.git"),
+                    }
+                )
+            if len(items) < PER_QUERY:
+                break  # 这一格的检索结果到头了
     return out
 
 
@@ -767,16 +785,47 @@ def spot_tally(sheet: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _benhuo(summary: dict[str, Any]) -> tuple[int, int, int | None]:
+SAME = {  # 对锚时两边必须相同的几样：栏名到给人看的说法
+    "benhuo": {"model": "本火的模型", "version": "本火的版本", "gongfa": "本火的功法摘要"},
+    "judge": {"model": "盲判的模型", "version": "盲判的版本", "prompts": "盲判三段的版本", "sampling": "盲判的抽样量"},
+}
+
+
+def anchor_side(batch_dir: Path, questions_path: Path) -> dict[str, Any]:
+    """对锚的一边：本火臂过了几个题次、噪声底，以及这一边的本火是哪一条、盲判是哪一把、自检过了没有。"""
+    summary = huizong.build(batch_dir, questions_path)
     rows = [r for r in summary["每条臂一组"] if r["角色"] == huizong.ROLE_ZH["benhuo"]]
     if len(rows) != 1 or not rows[0]["题次数"]:
-        raise Refused("批次里没有本火臂的题次（或不止一条本火臂）：对不了")
+        raise Refused(f"{batch_dir} 里没有本火臂的题次（或不止一条本火臂）：对不了")
     pair = summary["成对比较"].get(f"{huizong.ROLE_ZH['benhuo']}对{huizong.ROLE_ZH['tonghuo']}") or {}
-    return rows[0]["过线的题次数"], rows[0]["题次数"], pair.get("噪声底 m")
+    reg = read_json(batch_dir / "batch.json")["arms"][rows[0]["臂"]]
+    verdicts = [read_json(f) for f in sorted((batch_dir / "verdicts").glob("*.json"))]
+    judges = {
+        (str(v.get("model")), str(v.get("model_version")), str(v.get("prompts")), tuple(v.get("sampling") or []))
+        for v in verdicts
+    }
+    if len(judges) != 1:
+        raise Refused(f"{batch_dir} 里的盲判记录不是同一个模型、同一版尺子判出来的（或还没有判）：对不了")
+    model, version_, prompts_, sampling = next(iter(judges))
+    f = batch_dir / "selfcheck.json"
+    sc = read_json(f) if f.exists() else {}
+    return {
+        "digest": sha(read_json(questions_path)),
+        "passed": rows[0]["过线的题次数"],
+        "attempts": rows[0]["题次数"],
+        "noise_floor": pair.get("噪声底 m"),
+        "benhuo": {"model": reg["model"], "version": reg["version"], "gongfa": rows[0]["功法摘要"]},
+        "judge": {"model": model, "version": version_, "prompts": prompts_, "sampling": list(sampling)},
+        "selfcheck": bool(sc.get("ok"))
+        and (sc.get("model"), sc.get("version"), sc.get("prompts")) == (model, version_, prompts_),
+    }
 
 
-def anchor(anchor_sum: dict[str, Any], anchor_q: Any, gen_sum: dict[str, Any], gen_q: Any) -> dict[str, Any]:
+def anchor(a: dict[str, Any], anchor_q: Any, g: dict[str, Any], gen_q: Any) -> dict[str, Any]:
     """与人出的题是不是同一把尺子：本火臂在锚题集与生成的题集上的过线比例之差，要在噪声底之内。
+
+    两边必须可比，不可比就不出记录：本火是同一条（模型、版本、功法摘要），盲判是同一把（模型、版本、三段的版本、
+    抽样量），两边的盲判自检都过。不然量出来的差是两条臂或两把尺子的差，不是两套题的差。
 
     噪声底是按题次数算的一个数（本火对同火对照的不一致数 d，取 2 倍的 d 的平方根）。这里把它换成比例：每一边的
     噪声底除以那一边的题次数，两边里取大的那个。两边至少有一边要带同火对照，不然没有噪声底可比。"""
@@ -784,36 +833,32 @@ def anchor(anchor_sum: dict[str, Any], anchor_q: Any, gen_sum: dict[str, Any], g
         raise Refused("生成的那一边给的不是生成器出的题集（题集文件里没有 generator 一栏）")
     if isinstance(anchor_q, dict) and anchor_q.get("generator"):
         raise Refused("锚题集要是人出的那一套：这一份是生成器出的")
-    a_pass, a_n, a_m = _benhuo(anchor_sum)
-    g_pass, g_n, g_m = _benhuo(gen_sum)
-    floors = [m / n for m, n in ((a_m, a_n), (g_m, g_n)) if m is not None]
+    differ = [zh for part, names in SAME.items() for key, zh in names.items() if a[part][key] != g[part][key]]
+    if differ:
+        raise Refused(f"两边不可比，不出记录：{'、'.join(differ)}不同。对锚时两边要是同一条本火、同一把盲判")
+    unchecked = [zh for zh, side in (("锚", a), ("生成", g)) if not side["selfcheck"]]
+    if unchecked:
+        raise Refused(f"两边不可比，不出记录：{'、'.join(unchecked)}的那一边没有这把盲判通过的自检记录")
+    floors = [s["noise_floor"] / s["attempts"] for s in (a, g) if s["noise_floor"] is not None]
     if not floors:
         raise Refused("两边都没有同火对照：没有噪声底，对不了")
-    gap = abs(a_pass / a_n - g_pass / g_n)
+    gap = abs(a["passed"] / a["attempts"] - g["passed"] / g["attempts"])
+    counts = ("digest", "passed", "attempts", "noise_floor")
     return {
-        "v": 1,
+        "v": 2,
         "generator": gen_q["generator"]["id"],
-        "anchor": {"digest": sha(anchor_q), "passed": a_pass, "attempts": a_n, "noise_floor": a_m},
-        "generated": {"digest": sha(gen_q), "passed": g_pass, "attempts": g_n, "noise_floor": g_m},
+        "quota": gen_q["generator"].get("quota"),  # 配额换了，题的难度分布跟着变：记录跟着配额走
+        "benhuo": g["benhuo"],
+        "judge": g["judge"],
+        "anchor": {k: a[k] for k in counts},
+        "generated": {k: g[k] for k in counts},
         "gap": round(gap, 4),
         "floor": round(max(floors), 4),
         "ok": gap <= max(floors) + 1e-9,
     }
 
 
-def anchored(questions: Any, record: Any) -> str | None:
-    """一套题能不能用于判定。人出的题集不用对；生成的题集要有一份「对过了并且在噪声底之内」的记录，而且是这一版
-    生成器的。回不能用的原因，能用就回 None。"""
-    g = questions.get("generator") if isinstance(questions, dict) else None
-    if not isinstance(g, dict):
-        return None
-    if not isinstance(record, dict):
-        return "这套题是生成器出的：先与人出的锚题集对一次（chuti anchor），对过了才能用于判定"
-    if record.get("generator") != g.get("id"):
-        return "与锚题集对过的是另一版生成器：这一版要重新对"
-    if not record.get("ok"):
-        return "这一版生成器的题与锚题集的过线比例之差超出了噪声底：只能用于旗帜，不能用于判定"
-    return None
+anchored = mangpan.anchored  # 一套题能不能用于判定：登记批次时与开判前都查（定义在盲判那边，两处共用）
 
 
 # ---------------------------------------------------------------- 命令
@@ -906,7 +951,7 @@ def run_spot(a: argparse.Namespace) -> int:
 
 def run_anchor(a: argparse.Namespace) -> int:
     aq, gq = Path(a.anchor_questions), Path(a.generated_questions)
-    doc = anchor(huizong.build(Path(a.anchor), aq), read_json(aq), huizong.build(Path(a.generated), gq), read_json(gq))
+    doc = anchor(anchor_side(Path(a.anchor), aq), read_json(aq), anchor_side(Path(a.generated), gq), read_json(gq))
     write_json(Path(a.out), doc)
     print(f"过线比例之差 {doc['gap']}，噪声底（比例）{doc['floor']}：", end="")
     print(

@@ -17,8 +17,9 @@ yuanxing（原形）。任何一条臂的模型栏空着，`start` 拒绝登记�
 `--runs` 可以不给；给了就与计划逐项核对。带计划的批次现在只认五个臂名（B、B1、A1、F、A0）。
 没有计划的批次（起点轮）用 `--arms` 登记，盲判一栏是空的，时限写「无」。
 
-用途是「判定」而题集是生成器出的（题集文件里有 `generator` 一栏）时，要用 `--anchor` 给出这一版生成器与人出的锚题集
-对过的记录（`python -m liangju.chuti anchor` 写的那一份），并且是在噪声底之内的；没有就不登记。别的用途不查。
+用途是「判定」的批次必须给题集文件（`--questions`）。题集是生成器出的（题集文件里有 `generator` 一栏）时，还要用
+`--anchor` 给出这一版生成器、这一份配额与人出的锚题集对过的记录（`python -m liangju.chuti anchor` 写的那一份），并且
+是在噪声底之内的；没有就不登记。记录记进批次头，`judge` 与 `rejudge` 开判前再核一次。别的用途不查。
 
 `start` 与 `end` 各记一次仓库的提交号、工作区是否干净、配置文件的摘要；两次不一样，汇总里「运行期间代码与配置是否
 改动过」就是「是」。
@@ -34,7 +35,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from liangju import chuti, mangpan
+from liangju import mangpan
 from liangju.common import Refused, read_json, sha, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -202,11 +203,18 @@ def start(a: argparse.Namespace) -> int:
         raise Refused("带计划的批次，看门狗的时限从计划里取，不另给 --watchdog-s")
     if a.purpose not in PURPOSES:
         raise Refused(f"用途只取 {PURPOSES}")
-    if a.purpose == "判定" and a.questions:
+    record = None
+    if a.purpose == "判定":
+        if not a.questions:
+            raise Refused("用途是判定的批次要给题集文件（--questions）：题集的摘要记进批次头，开判前再核")
         record = read_json(Path(a.anchor)) if getattr(a, "anchor", None) else None
-        why = chuti.anchored(read_json(Path(a.questions)), record)
+        why = mangpan.anchored(read_json(Path(a.questions)), record)
         if why:
             raise Refused(why)
+    question_set = planned["question_set"] if planned else {"code": a.set_code, "source": a.set_source}
+    if not planned and a.questions:  # 没有计划也给了题集文件：摘要与题数照样记下，开判前核
+        digest, count = set_digest(read_json(Path(a.questions)))
+        question_set = {**question_set, "digest": digest, "count": count}
     out = Path(a.batch) / "batch.json"
     if out.exists():
         raise Refused(f"{out} 已经在了：一个批次只登记一次")
@@ -217,7 +225,8 @@ def start(a: argparse.Namespace) -> int:
         "purpose": a.purpose,
         "plan_hash": planned["plan_hash"] if planned else "无",
         "judge": planned["judge"] if planned else None,
-        "question_set": planned["question_set"] if planned else {"code": a.set_code, "source": a.set_source},
+        "question_set": question_set,
+        "anchor": record,  # 生成的题集与锚对过的记录；人出的题集与别的用途是 None
         "runs_per_question": planned["runs_per_question"] if planned else int(a.runs or 2),
         "parallel": int(a.parallel),
         "watchdog_s": planned["watchdog_s"] if planned else (float(a.watchdog_s) if a.watchdog_s else None),

@@ -202,32 +202,50 @@ def test_a_quota_that_is_incomplete_or_does_not_add_up_is_refused():
     assert chuti.check_quota(QUOTA) is QUOTA
 
 
-def test_candidates_come_from_a_search_per_cell_and_each_is_pinned_to_a_commit():
+def test_candidates_come_from_several_pages_of_a_search_per_cell_and_each_is_pinned(monkeypatch):
+    monkeypatch.setattr(chuti, "PER_QUERY", 2)
+    monkeypatch.setattr(chuti, "PAGES", 3)
     asked = []
+
+    def item(name: str, lic: str = "MIT") -> dict:
+        return {"full_name": name, "default_branch": "main", "size": 12, "license": {"spdx_id": lic}}
 
     def get(url: str):
         asked.append(url)
-        if "/search/repositories" in url:
-            lang = "Go" if "language%3AGo" in url else "Python"
-            return {
-                "items": [
-                    {
-                        "full_name": f"o/{lang}-{len(asked)}",
-                        "default_branch": "main",
-                        "size": 12,
-                        "license": {"spdx_id": "MIT"},
-                        "clone_url": "https://example.invalid/x.git",
-                    },
-                    {"full_name": "", "default_branch": "main"},
-                ]
-            }
-        return {"sha": "a" * 40}
+        if "/search/repositories" not in url:
+            return {"sha": "a" * 40}
+        page = int(url.rsplit("page=", 1)[1])
+        if "language%3AGo" in url:  # 这一格结果很多：取满三页为止
+            return {"items": [item(f"o/go-{page}-a"), item(f"o/go-{page}-b", "GPL-3.0")]}
+        if "size%3A0..999" in url:  # Python/小：第二页就到头了
+            return {"items": [item("o/py-1"), item("o/py-2")] if page == 1 else [item("o/py-3")]}
+        return {"items": [item("o/big-1"), {"full_name": "", "default_branch": "main"}][: 2 if page == 1 else 0]}
 
     rows = chuti.find_candidates(QUOTA, get)
-    assert len(rows) == 3 and all(r["commit"] == "a" * 40 and r["license"] == "MIT" for r in rows)
+    assert sorted(r["repo"] for r in rows) == [
+        "o/big-1",
+        "o/go-1-a",
+        "o/go-2-a",
+        "o/go-3-a",
+        "o/py-1",
+        "o/py-2",
+        "o/py-3",
+    ]
+    assert all(r["commit"] == "a" * 40 and r["license"] == "MIT" for r in rows)
+    assert all(r["url"] == f"https://github.com/{r['repo']}.git" for r in rows)
     searches = [u for u in asked if "/search/" in u]
-    assert len(searches) == 3 and all("fork%3Afalse" in u and "archived%3Afalse" in u for u in searches)
-    assert any("size%3A0..999" in u for u in searches) and any("size%3A1000..%2A" in u for u in searches)
+    assert all("fork%3Afalse" in u and "archived%3Afalse" in u and "per_page=2" in u for u in searches)
+    pages = lambda mark: [int(u.rsplit("page=", 1)[1]) for u in searches if mark in u]  # noqa: E731
+    assert pages("language%3AGo") == [1, 2, 3]  # 至多三页
+    assert pages("language%3APython%20size%3A0..999") == [1, 2]  # 不满一页就到头了
+    assert pages("size%3A1000..%2A") == [1, 2]
+    assert not any("go-1-b" in u for u in asked)  # 许可证不在清单里的：不去钉提交号，也不进清单
+    assert "stars%3A" not in "".join(searches)
+    asked.clear()
+    chuti.find_candidates({**QUOTA, "stars": [50, 5000]}, get)
+    assert all("stars%3A50..5000" in u for u in asked if "/search/" in u)
+    with pytest.raises(Refused):
+        chuti.check_quota({**QUOTA, "stars": [10, 5]})
     assert chuti.sample(rows, {**QUOTA, "cells": {"Go/小": 1}, **one_of_each(1)}, "s", set())["slots"]
 
 
@@ -765,10 +783,11 @@ def test_the_spot_check_picks_by_the_set_digest_and_reports_a_rate_only_when_fil
 # ---------------------------------------------------------------- 与人出的题是不是同一把尺子
 
 GOOD, BAD = "1: 甲\n2: 乙", "1: 甲\n2: 这条是错的"
-GEN = {"generator": {"id": chuti.version_id()}}
+GEN = {"generator": {"id": chuti.version_id(), "quota": "配额甲的摘要"}}
+RECORD = {"generator": chuti.version_id(), "quota": "配额甲的摘要", "ok": True}
 
 
-def judged(tmp, passes: dict[str, list[bool]], header: dict | None = None):
+def judged(tmp, passes: dict[str, list[bool]], header: dict | None = None, **batch):
     """搭一个判过的批次：每条臂在每道题上过不过线照 `passes` 给。回 (批次目录, 题集文件)。"""
     tmp.mkdir()
     atts = [attempt(arm, f"q{i}", 1, GOOD if ok else BAD) for arm, oks in passes.items() for i, ok in enumerate(oks, 1)]
@@ -778,55 +797,135 @@ def judged(tmp, passes: dict[str, list[bool]], header: dict | None = None):
         for i in range(1, n + 1)
     ]
     arms = {k: v for k, v in ARMS.items() if k in passes}
-    bdir, qpath, jpath = make_batch(tmp, atts, qs, arms=arms)
+    bdir, qpath, jpath = make_batch(tmp, atts, qs, arms=arms, **batch)
     write_json(qpath, {**read_json(qpath), **(header or {})})
-    ns = argparse.Namespace(batch=str(bdir), questions=str(qpath), judge=str(jpath), selfcheck=None, jobs=1)
-    assert mangpan.run_judge(ns, simple()) == 0
+    assert mangpan.run_judge(judge_args(bdir, qpath), simple()) == 0
     return bdir, qpath
+
+
+def judge_args(bdir, qpath) -> argparse.Namespace:
+    jpath = qpath.parent / "judge.json"
+    return argparse.Namespace(batch=str(bdir), questions=str(qpath), judge=str(jpath), selfcheck=None, jobs=1)
+
+
+def anchor_cli(tmp_path, ab, aq, gb, gq, name: str = "anchor.json") -> int:
+    argv = ["anchor", "--anchor", str(ab), "--anchor-questions", str(aq), "--generated", str(gb)]
+    return chuti.main([*argv, "--generated-questions", str(gq), "--out", str(tmp_path / name)])
 
 
 def anchor(tmp_path, a: dict, g: dict, name: str = "anchor.json") -> tuple[int, dict]:
     n = len(list(tmp_path.iterdir()))
     ab, aq = judged(tmp_path / f"锚{n}", a)
     gb, gq = judged(tmp_path / f"生成{n}", g, GEN)
-    argv = ["anchor", "--anchor", str(ab), "--anchor-questions", str(aq), "--generated", str(gb)]
-    code = chuti.main([*argv, "--generated-questions", str(gq), "--out", str(tmp_path / name)])
-    return code, read_json(tmp_path / name)
+    return anchor_cli(tmp_path, ab, aq, gb, gq, name), read_json(tmp_path / name)
+
+
+T, F = True, False
+ANCHOR_RUN = {"B": [T] * 8 + [F] * 2, "B2": [T] * 7 + [F] * 3}  # 本火 10 题过 8；同火对照 1 题不一致，噪声底 m = 2
 
 
 def test_a_generated_set_within_the_noise_floor_of_the_anchor_may_be_used_for_verdicts(tmp_path, monkeypatch):
     monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
-    t, f = True, False
-    # 锚：本火 10 题过 8，同火对照有 1 题不一致，噪声底 m = 2，折成比例 0.2
-    a = {"B": [t] * 8 + [f] * 2, "B2": [t] * 7 + [f] * 3}
-    code, doc = anchor(tmp_path, a, {"B": [t] * 6 + [f] * 4})  # 生成的：过 6，差 0.2，刚好在内
-    assert code == 0 and doc["ok"] and doc["gap"] == 0.2 and doc["floor"] == 0.2
+    code, doc = anchor(tmp_path, ANCHOR_RUN, {"B": [T] * 6 + [F] * 4})  # 生成的：过 6，差 0.2，刚好在内
+    assert code == 0 and doc["ok"] and doc["gap"] == 0.2 and doc["floor"] == 0.2  # 噪声底折成比例 2/10
     assert doc["anchor"]["noise_floor"] == 2 and doc["generated"]["noise_floor"] is None
     assert doc["generator"] == chuti.version_id() and doc["anchor"]["passed"] == 8
-    code, doc = anchor(tmp_path, a, {"B": [t] * 5 + [f] * 5}, "far.json")  # 过 5，差 0.3
+    assert doc["quota"] == "配额甲的摘要"  # 记录钉住配额
+    assert doc["benhuo"] == {"model": "arm-model", "version": "1", "gongfa": ["g" * 8]}
+    assert doc["judge"] == {
+        "model": "judge-model",
+        "version": "7",
+        "prompts": mangpan.prompts_digest(),
+        "sampling": [mangpan.PER_SUBQ, mangpan.PER_ANSWER],
+    }
+    assert mangpan.anchored(GEN, doc) is None
+    code, doc = anchor(tmp_path, ANCHOR_RUN, {"B": [T] * 5 + [F] * 5}, "far.json")  # 过 5，差 0.3
     assert code == 1 and not doc["ok"] and doc["gap"] == 0.3
+    assert "只能用于旗帜" in mangpan.anchored(GEN, doc)
+
+
+def test_the_two_sides_of_an_anchor_comparison_must_use_the_same_arm_and_the_same_ruler(tmp_path, monkeypatch, capsys):
+    """两边不可比就不出记录：本火要是同一条，盲判要是同一把，两边的自检都过。理由说清是哪一样。"""
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+    ab, aq = judged(tmp_path / "锚", ANCHOR_RUN)
+    n = 0
+
+    def why(change, side: str = "生成") -> str:
+        nonlocal n
+        n += 1
+        gb, gq = judged(tmp_path / f"生成{n}", {"B": [T] * 6 + [F] * 4}, GEN)
+        ab2 = tmp_path / f"锚{n}" / "batch"
+        shutil.copytree(ab, ab2)
+        change(gb if side == "生成" else ab2)
+        capsys.readouterr()
+        assert anchor_cli(tmp_path, ab2, aq, gb, gq, f"r{n}.json") == 2
+        assert not (tmp_path / f"r{n}.json").exists()  # 不出记录
+        return capsys.readouterr().err
+
+    def verdicts(bdir, **change) -> None:  # 这一边是另一把尺子判的：判的记录与自检记录都是它的
+        for f in (bdir / "verdicts").glob("*.json"):
+            write_json(f, {**read_json(f), **change})
+        renamed = {{"model_version": "version"}.get(k, k): v for k, v in change.items() if k != "sampling"}
+        write_json(bdir / "selfcheck.json", {**read_json(bdir / "selfcheck.json"), **renamed})
+
+    def arm(bdir, **change) -> None:
+        doc = read_json(bdir / "batch.json")
+        doc["arms"]["B"] = {**doc["arms"]["B"], **change}
+        write_json(bdir / "batch.json", doc)
+
+    def gongfa(bdir) -> None:
+        for f in (bdir / "attempts").rglob("attempt.json"):
+            doc = read_json(f)
+            if doc["arm"] == "B":
+                write_json(f, {**doc, "gongfa": "h" * 8})
+
+    assert "盲判的模型不同" in why(lambda b: verdicts(b, model="另一个盲判"))
+    assert "盲判的版本不同" in why(lambda b: verdicts(b, model_version="8"))
+    assert "盲判三段的版本不同" in why(lambda b: verdicts(b, prompts="旧的一版"))
+    assert "盲判的抽样量不同" in why(lambda b: verdicts(b, sampling=[1, 8]))
+    assert "本火的版本不同" in why(lambda b: arm(b, version="2"))
+    assert "本火的模型不同" in why(lambda b: arm(b, model="arm-model-2"))
+    assert "本火的功法摘要不同" in why(gongfa)
+    assert "本火的版本、盲判的模型不同" in why(lambda b: (arm(b, version="2"), verdicts(b, model="另一个盲判")))
+
+    def unchecked(bdir) -> None:
+        write_json(bdir / "selfcheck.json", {**read_json(bdir / "selfcheck.json"), "ok": False})
+
+    assert "生成的那一边没有这把盲判通过的自检记录" in why(unchecked)
+    assert "锚的那一边没有这把盲判通过的自检记录" in why(unchecked, side="锚")
+    assert "锚的那一边" in why(lambda b: (b / "selfcheck.json").unlink(), side="锚")
+
+    def mixed(bdir) -> None:  # 一边里的记录是两把尺子判的
+        first = sorted((bdir / "verdicts").glob("*.json"))[0]
+        write_json(first, {**read_json(first), "prompts": "旧的一版"})
+
+    assert "不是同一个模型、同一版尺子判出来的" in why(mixed)
 
 
 def test_the_anchor_comparison_needs_a_noise_floor_a_human_anchor_and_a_generated_set(tmp_path, monkeypatch):
     monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
-    t = True
-    b, q = judged(tmp_path / "一", {"B": [t, t], "B2": [t, t]})
-    lone, lq = judged(tmp_path / "二", {"B": [t, t]}, GEN)
-    summary = lambda bd, qp: chuti.huizong.build(bd, qp)  # noqa: E731
+    b, q = judged(tmp_path / "一", {"B": [T, T], "B2": [T, T]})
+    lone, lq = judged(tmp_path / "二", {"B": [T, T]}, GEN)
+    side = chuti.anchor_side
     with pytest.raises(Refused) as e:
-        chuti.anchor(summary(b, q), read_json(q), summary(b, q), read_json(q))
+        chuti.anchor(side(b, q), read_json(q), side(b, q), read_json(q))
     assert "没有 generator 一栏" in str(e.value)
     with pytest.raises(Refused) as e:
-        chuti.anchor(summary(lone, lq), read_json(lq), summary(lone, lq), read_json(lq))
+        chuti.anchor(side(lone, lq), read_json(lq), side(lone, lq), read_json(lq))
     assert "人出的" in str(e.value)
-    human_lone, hq = judged(tmp_path / "三", {"B": [t, t]})
+    human_lone, hq = judged(tmp_path / "三", {"B": [T, T]})
     with pytest.raises(Refused) as e:
-        chuti.anchor(summary(human_lone, hq), read_json(hq), summary(lone, lq), read_json(lq))
+        chuti.anchor(side(human_lone, hq), read_json(hq), side(lone, lq), read_json(lq))
     assert "没有噪声底" in str(e.value)
+    with pytest.raises(Refused) as e:
+        chuti.anchor_side(tmp_path / "三" / "batch", tmp_path / "二" / "questions.json")  # 题集里的题号对得上，臂不在
+        side(*judged(tmp_path / "四", {"B2": [T, T]}))
+    assert "没有本火臂的题次" in str(e.value)
 
 
-def test_a_generated_set_cannot_be_registered_for_a_verdict_until_its_generator_was_anchored(tmp_path):
-    """P2：生成的题集先与 cz 手出的那一套对过才能用于判定。旗帜与起点轮不查；人出的题集不查。"""
+def test_a_generated_set_cannot_be_registered_for_a_verdict_until_its_generator_and_quota_were_anchored(tmp_path):
+    """P2：生成的题集先与 cz 手出的那一套对过才能用于判定。记录跟生成器的版本与配额走。旗帜与起点轮不查；
+    人出的题集不查。用途是判定的批次必须给题集文件，记录记进批次头。"""
     arms, cfg = tmp_path / "arms.json", tmp_path / "cfg.yaml"
     write_json(arms, ARMS)
     cfg.write_text("x: 1\n")
@@ -840,7 +939,9 @@ def test_a_generated_set_cannot_be_registered_for_a_verdict_until_its_generator_
         nonlocal n
         n += 1
         argv = ["start", "--batch", str(tmp_path / f"b{n}"), "--id", "P", "--purpose", purpose, "--config", str(cfg)]
-        argv += ["--arms", str(arms), "--set-code", "S", "--set-source", "生成", "--questions", str(questions)]
+        argv += ["--arms", str(arms), "--set-code", "S", "--set-source", "生成"]
+        if questions is not None:
+            argv += ["--questions", str(questions)]
         if record is not None:
             write_json(rec, record)
             argv += ["--anchor", str(rec)]
@@ -848,13 +949,53 @@ def test_a_generated_set_cannot_be_registered_for_a_verdict_until_its_generator_
         assert (tmp_path / f"b{n}" / "batch.json").exists() == (code == 0)
         return code
 
-    ok = {"generator": chuti.version_id(), "ok": True}
     assert start("判定", gen) == 2
-    assert start("判定", gen, {**ok, "ok": False}) == 2
-    assert start("判定", gen, {**ok, "generator": "另一版"}) == 2
-    assert start("判定", gen, ok) == 0
-    assert start("中期旗帜", gen) == 0 and start("起点轮", gen) == 0
-    assert start("判定", human) == 0
-    assert "只能用于旗帜" in chuti.anchored(read_json(gen), {**ok, "ok": False})
-    assert "另一版生成器" in chuti.anchored(read_json(gen), {**ok, "generator": "另一版"})
+    assert start("判定", gen, {**RECORD, "ok": False}) == 2
+    assert start("判定", gen, {**RECORD, "generator": "另一版"}) == 2
+    assert start("判定", gen, {**RECORD, "quota": "配额乙的摘要"}) == 2  # 同一版生成器，换了一份配额
+    assert start("判定", gen, {k: v for k, v in RECORD.items() if k != "quota"}) == 2  # 旧记录没有钉配额
+    assert start("判定", gen, RECORD) == 0
+    head = read_json(tmp_path / f"b{n}" / "batch.json")
+    assert head["anchor"] == RECORD and head["question_set"]["digest"] == sha(read_json(gen))  # 记进批次头
+    assert head["question_set"]["count"] == 1
+    assert start("判定", None) == 2 and start("判定", None, RECORD) == 2  # 判定必须给题集文件
+    assert start("中期旗帜", gen) == 0 and start("起点轮", gen) == 0 and start("起点轮", None) == 0
+    assert start("判定", human) == 0 and read_json(tmp_path / f"b{n}" / "batch.json")["anchor"] is None
+    assert "只能用于旗帜" in chuti.anchored(read_json(gen), {**RECORD, "ok": False})
+    assert "另一版生成器" in chuti.anchored(read_json(gen), {**RECORD, "generator": "另一版"})
+    assert "配额换了，要重新对" in chuti.anchored(read_json(gen), {**RECORD, "quota": "配额乙的摘要"})
     assert "先与人出的锚题集对一次" in chuti.anchored(read_json(gen), None)
+
+
+def test_judge_and_rejudge_check_again_that_a_generated_set_was_anchored(tmp_path, monkeypatch):
+    """这条线在每一处都守着：批次头是用途判定、题集是生成的，开判前再核一次；judge 与 rejudge 都核。"""
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+    atts = [attempt("B", "q1", 1, GOOD), attempt("B2", "q1", 1, GOOD)]
+    qs = [{"id": "q1", "text": "题", "subquestions": ["子问甲", "子问乙"], "snapshot": str(SNAP)}]
+    bdir, qpath, _ = make_batch(tmp_path, atts, qs, purpose="判定")
+    write_json(qpath, {**read_json(qpath), **GEN})
+    args = judge_args(bdir, qpath)
+
+    def head(**change) -> None:
+        write_json(bdir / "batch.json", {**read_json(bdir / "batch.json"), **change})
+
+    for record, reason in (
+        (None, "先与人出的锚题集对一次"),
+        ({**RECORD, "quota": "配额乙的摘要"}, "配额换了，要重新对"),
+        ({**RECORD, "generator": "另一版"}, "另一版生成器"),
+        ({**RECORD, "ok": False}, "只能用于旗帜"),
+    ):
+        head(anchor=record)
+        for run in (mangpan.run_judge, mangpan.run_rejudge):
+            with pytest.raises(Refused) as e:
+                run(args, simple())
+            assert reason in str(e.value)
+        assert not (bdir / "verdicts").exists()  # 一份都没有判
+    head(anchor=RECORD)
+    assert mangpan.run_judge(args, simple()) == 0 and mangpan.run_rejudge(args, simple()) == 0
+    head(anchor=None, purpose="中期旗帜")  # 别的用途不查
+    assert mangpan.run_rejudge(args, simple()) == 0
+    head(purpose="判定", question_set={"code": "S", "source": "生成", "digest": "登记时的另一套"})
+    with pytest.raises(Refused) as e:
+        mangpan.run_judge(args, simple())
+    assert "不是这一批登记的那一套题" in str(e.value)
