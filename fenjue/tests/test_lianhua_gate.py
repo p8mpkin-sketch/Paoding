@@ -147,7 +147,8 @@ def test_other_alien_dimensions_may_not_fall_below_the_prototype_either():
         ("equal", False, SAME, "passed", "huolian"),
         ("equal", False, BEHIND, "failed", "buji"),
         ("ours_or_neutral", False, BEHIND, "failed", "buji"),  # 输了照样不收
-        ("ours_or_neutral", False, AHEAD, "passed", "huolian"),  # 赢了只作旗帜，不改变结局
+        ("ours_or_neutral", False, AHEAD, "unjudged", "helian"),  # 赢了只作旗帜，不作判定：未判，最高合炼
+        ("ours_or_neutral", False, SAME, "unjudged", "helian"),
         ("theirs", False, BEHIND, "failed", "buji"),  # 没有豁免：门照判
         ("theirs", True, BEHIND, "unjudged", "helian"),  # 有豁免：门降为参考，结局最高合炼
         ("theirs", True, SAME, "unjudged", "helian"),
@@ -163,7 +164,7 @@ def test_unequal_conditions(parity, waiver, fa0, state, outcome):
         d["status"] = "trialed"
     d = run(d, values(fa0=fa0))
     assert (d["yuanxing_gate"]["state"], d["outcome_proposed"]) == (state, outcome), d["outcome_why"]
-    if parity == "ours_or_neutral" and state == "passed":
+    if parity == "ours_or_neutral" and state == "unjudged":
         assert "只作旗帜" in d["yuanxing_gate"]["why"][0]
     if waiver:
         assert "豁免" in d["yuanxing_gate"]["why"][0] and "写下豁免" in lh.render(d)
@@ -197,6 +198,36 @@ def test_parity_is_declared_at_placement_and_cannot_move():
     d["status"] = "placed"
     with pytest.raises(lh.StepError, match="才谈得上豁免"):
         lh.approve_design(d, "cz", TODAY, waive_gate="想降为参考")
+
+
+def test_a_dossier_placed_without_a_parity_declaration_stays_unjudged_for_good():
+    """入位时没登记对等声明的炼档，设计裁决之后补不了：入位这一步已经过去，裁决与之后的每一步都不收它。
+    这份炼档的原形门永远是「未判」，结局最高合炼；要登记就开下一份炼档。"""
+    d = dossier(parity=None)  # 已经走过设计裁决与验体
+    f, arms, readings = d["fire"], d["arms"], [dict(r) for r in d["readings"]]
+    for status in ("design_approved", "trialed", "readings_ready"):
+        late = {**copy.deepcopy(d), "status": status}
+        with pytest.raises(lh.StepError, match="之后做"):
+            lh.ruwei(late, f, "h7.result", arms, readings, parity={"class": "equal"})
+    waiting = {**copy.deepcopy(d), "status": "placed"}
+    with pytest.raises(lh.StepError, match="才谈得上豁免"):
+        lh.approve_design(waiting, "cz", TODAY, waive_gate="补一个声明")
+    assert "parity" not in lh.approve_design(waiting, "cz", TODAY)
+    out = run(d, values(fa0=SAME))  # 原形的读数再好看也一样
+    assert "parity" not in out and out["yuanxing_gate"] == {"state": "unjudged", "why": ["入位时没有登记对等声明"]}
+    assert out["outcome_proposed"] == "helian"
+
+
+def test_origin_is_one_of_three_and_shows_in_the_dossier():
+    shihuo = {"source": "s", "phenomenon": "p", "gap": "g", "is_fire": "是"}
+    assert lh.ORIGINS == ("自炼", "手工", "修订")
+    for origin in lh.ORIGINS:
+        d = lh.new("900", "x", "演示", TODAY, shihuo, origin=origin)
+        assert d["origin"] == origin and f"| 出身 | {origin} |" in lh.render(d)
+    with pytest.raises(lh.StepError, match="出身只能是"):
+        lh.new("900", "x", "演示", TODAY, shihuo, origin="捡来的")
+    plain = lh.new("900", "x", "演示", TODAY, shihuo)  # 方案分析导入的炼档不经这个参数：不带这一栏，也不显示
+    assert "origin" not in plain and "出身" not in lh.render(plain)
 
 
 def test_target_dimension_must_be_alien_and_carry_a_sample_size():
@@ -309,7 +340,10 @@ def test_measure_paths_exist_and_are_apart_from_the_kernel():
     for rel in lh.MEASURE_PATHS:
         assert (ROOT / rel).exists(), f"量具路径 {rel} 不在了：改了名就改这张表"
         assert not rel.startswith(lh.KERNEL_PATHS) and not any(k.startswith(rel) for k in lh.KERNEL_PATHS)
-    assert "fenjue/src/paoding_fenjue/lianhua.py" in lh.MEASURE_PATHS  # 判定函数自己在线内
+    assert "fenjue/src/paoding_fenjue/lianhua.py" in lh.MEASURE_PATHS  # 判定函数与这张表自己在线内
+    assert set(lh.MEASURE_WITH_ENGINE) < set(lh.MEASURE_PATHS)  # 例外只能是量具，并且只是其中几样
+    for must in ("eval/", "adapter/config/prices.yaml", "fenjue/src/paoding_fenjue/shapes.py", "ci/check_liangju.py"):
+        assert must in lh.MEASURE_PATHS and must not in lh.MEASURE_WITH_ENGINE  # 评测台、价表、留出规则、检查自己
 
 
 # ---------------------------------------------------------------- 按档号划的线

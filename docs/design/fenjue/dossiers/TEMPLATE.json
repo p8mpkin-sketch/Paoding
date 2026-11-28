@@ -4,6 +4,7 @@
   "title": "〈标题〉",
   "status": "identified",
   "identified": "YYYY-MM-DD",
+  "origin": "自炼",
   "fire": {
     "id": "hN.name",
     "ver": 1,

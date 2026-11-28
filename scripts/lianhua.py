@@ -201,7 +201,7 @@ def _run(cmd: list[str], gongfa_file: Path | None) -> tuple[bool, str]:
 
 def cmd_new(a: argparse.Namespace) -> None:
     shihuo = {"source": a.source, "phenomenon": a.phenomenon, "gap": a.gap, "is_fire": a.is_fire}
-    d = lh.new(a.no or next_no(), a.name, a.title, a.date or _today(), shihuo)
+    d = lh.new(a.no or next_no(), a.name, a.title, a.date or _today(), shihuo, origin=a.origin)
     print(f"开档 → {save(d).relative_to(ROOT)}；下一步：cuiyi {d['dossier']}")
 
 
@@ -497,6 +497,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("name", help="短名（英文，连字符）")
     p.add_argument("--no", help="档号；缺省取下一个")
     p.add_argument("--date")
+    p.add_argument("--origin", choices=list(lh.ORIGINS), help="出身：自炼、手工、修订")
     for k in ("title", "source", "phenomenon", "gap", "is_fire"):
         p.add_argument("--" + k.replace("_", "-"), dest=k, required=True)
     p.set_defaults(fn=cmd_new)

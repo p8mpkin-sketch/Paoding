@@ -31,12 +31,18 @@ KERNEL_PATHS = (
     "adapter/src/paoding_adapter/creds.py",
 )
 
-# 量具（算“量具改动行数”用，03 §3.2）：一次炼化对这些路径的改动行数必须是 0。量具的改动单独提、单独裁，
-# 不属于任何一次炼化
+# 量具（03 §3.2）。这张表是「量具」唯一的定义：验体时数「量具改动行数」用它，CI 那条线（ci/check_liangju.py）
+# 也从这个文件里读它，两处认的是同一批路径。
+#   一次炼化：对表里每一条路径的改动行数都必须是 0。
+#   人提的改动：碰了表里的路径，就不许在同一个改动里动被量的东西（引擎、适配层、体质、提示词、组装脚本）；
+#   只有 MEASURE_WITH_ENGINE 里的那几样例外，各自写了理由。
 MEASURE_PATHS = (
     "liangju/",  # 引擎之外的量具：盲判三段与它的提示词、汇总、表项计数，以后的试火台、归类器、题目生成器
-    "fenjue/src/paoding_fenjue/lianhua.py",  # 判定函数与炼化六步
+    "eval/",  # 评测台（药鼎的一部分，设计第一篇）：四臂对照的台子、读数与记录
+    "fenjue/src/paoding_fenjue/lianhua.py",  # 判定函数与炼化六步，以及这张表
     "fenjue/src/paoding_fenjue/readings.py",  # 进化读数（只显示）
+    "fenjue/src/paoding_fenjue/shapes.py",  # 留出份额的规则（一道题落进哪条臂）与功法摘要的算法
+    "fenjue/src/paoding_fenjue/tables.py",  # 体质对功法的两张表：验体拿它判经脉越界
     "scripts/lianhua.py",  # 炼化命令
     "fenjue/src/paoding_fenjue/engine/checks.py",  # 检验代码：萃意的检验与产物校验器
     "fenjue/src/paoding_fenjue/engine/schema.py",
@@ -44,9 +50,23 @@ MEASURE_PATHS = (
     "fenjue/src/paoding_fenjue/engine/schemas/",  # Schema
     "fenjue/src/paoding_fenjue/engine/tables/",  # 各张表
     "fenjue/tests/engine_fixtures/",  # 验收夹具与录音
-    "tests/fenjue/goldens/",
-    "ci/check_liangju.py",  # 守这条线的检查本身
+    "tests/fenjue/goldens/",  # 黄金日志
+    "adapter/tests/golden/",
+    "tests/fenjue/trials.py",  # 体质试炼 T1–T5 的清单
+    "adapter/config/prices.yaml",  # 价表：「在预算内完成」按它折算
+    "ci/check_liangju.py",  # 守这条线的检查本身：改它按改量具来审
 )
+# 允许与被量的东西同一个改动的量具，以及为什么。不在这里的量具一律不许。
+_REPLAYED = "被录的行为一变就得在同一个改动里重录，分开提必有一个提交回放不过"
+MEASURE_WITH_ENGINE = {
+    "fenjue/tests/engine_fixtures/": f"录音是引擎输入输出的逐字节记录：{_REPLAYED}",
+    "tests/fenjue/goldens/": f"黄金日志是事件账的逐字节记录：{_REPLAYED}",
+    "adapter/tests/golden/": f"适配层的黄金样本：{_REPLAYED}",
+    "fenjue/src/paoding_fenjue/engine/tables/": (
+        "表是引擎读的参数：换读法的那个改动里要一起增删，分开提必有一个提交里引擎读不到表或表没人读；"
+        "表的增长另有表项计数那条线管着"
+    ),
+}
 
 # 状态：识火 → 萃意 → 入位 → 设计已裁（cz：值得炼）→ 验体 → 融火（读数已出）→ 收下 / 不收 → 入功法后散火
 STATUSES = (
@@ -86,6 +106,7 @@ PARITY = {"equal": "对等", "ours_or_neutral": "不对等：对我们有利或�
 PAIRS = ("F:A0", "F:B", "F:A1", "B:B1")
 CELLS = ("both", "first", "second", "neither")
 TARGET_INPUTS = ("dim", "kind", "dir", "target", "pairs", "n")
+ORIGINS = ("自炼", "手工", "修订")  # 出身：吸收器自己走完全程；人设计人实现；修缺陷或删简，不引入外部对象的新做法
 TRIALS = ("T1", "T2", "T3", "T4", "T5")
 
 
@@ -102,8 +123,13 @@ def _need(d: dict[str, Any], step: str) -> dict[str, Any]:
 # ---------------------------------------------------------------- ① 识火
 
 
-def new(no: str, name: str, title: str, today: str, shihuo: dict[str, Any]) -> dict[str, Any]:
-    """开一份炼档。shihuo：出处、现象、我们缺什么、是否异火（02 §3）。不是异火的不开档，进普通需求。"""
+def new(
+    no: str, name: str, title: str, today: str, shihuo: dict[str, Any], origin: str | None = None
+) -> dict[str, Any]:
+    """开一份炼档。shihuo：出处、现象、我们缺什么、是否异火（02 §3）。不是异火的不开档，进普通需求。
+    origin：出身（ORIGINS）。手工的不加品阶、不计成功，在裁决定阶那一步落实。"""
+    if origin is not None and origin not in ORIGINS:
+        raise StepError(f"出身只能是 {'/'.join(ORIGINS)}")
     for k in ("source", "phenomenon", "gap", "is_fire"):
         if not shihuo.get(k):
             raise StepError(f"识火要写 {k}")
@@ -115,6 +141,7 @@ def new(no: str, name: str, title: str, today: str, shihuo: dict[str, Any]) -> d
         "title": title,
         "status": "identified",
         "identified": today,
+        **({"origin": origin} if origin else {}),
         "generated": True,
         "shihuo": dict(shihuo),
         "cuiyi": None,
@@ -364,7 +391,7 @@ def _gate(d: Mapping[str, Any], seen: list[dict[str, Any]], has_target: bool) ->
     if any(g["state"] == "unjudged" for g in seen):
         return "unjudged", ["配上对的题次数少于预登记的样本量：结论只作旗帜"]
     if parity["class"] == "ours_or_neutral":
-        return "passed", ["条件不对等（对我们有利或不偏向任何一方）：门照判；胜过原形的话只作旗帜，不作判定"]
+        return "unjudged", ["条件不对等（对我们有利或不偏向任何一方）：门照判，输了照样不收；没输只作旗帜，不作判定"]
     if parity["class"] == "theirs":
         return "passed", ["条件不对等且对原形有利，没有豁免：门照判"]
     return "passed", []
@@ -727,6 +754,7 @@ def render(d: dict[str, Any]) -> str:
         f"| 现象 | {_cell(s.get('phenomenon'))} |",
         f"| 我们缺什么 | {_cell(s.get('gap'))} |",
         f"| 是否异火 | {_cell(s.get('is_fire'))} |",
+        *([f"| 出身 | {_cell(d['origin'])} |"] if d.get("origin") else []),
         "",
         "## 二、萃意",
         "",

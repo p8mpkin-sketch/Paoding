@@ -1,9 +1,18 @@
-"""量具与被量的东西不在同一个改动里变（现行设计第 14.2 节，第 0 步「不改变引擎行为」的前两件）。
+"""量具与被量的东西不在同一个改动里变（docs/design/fenjue/03-huolian.md §3.2）。
 
-一个改动只要碰了量具里单独提、单独裁的那部分（TOOLS：引擎之外的量具 `liangju/`，判定函数与炼化命令），就查两样：
-1. 路径清单：引擎、适配层、体质、提示词、表、Schema、夹具与录音、组装脚本，这些路径下的改动行数为零
-   （TOOLS 自己列出的那几个文件除外）。
-2. 提示词与清单逐项相等：功法清单、火清单、引擎用的提示词，改动前后各取一次摘要，逐个文件相等。
+「量具」只有一个定义：`paoding_fenjue.lianhua.MEASURE_PATHS`。这里不另列一份，直接从那个文件里读（只解析字面量，
+不 import，所以不装包也能跑）。数「量具改动行数」的表与这条检查认的是同一批路径。
+
+一个改动只要碰了量具（表里的任何一条路径；`MEASURE_WITH_ENGINE` 里写了理由的那几样除外），就查两样：
+1. 被量的路径改动行数为零：体质（同一个文件里的 `KERNEL_PATHS`），以及引擎、功法清单与火清单、适配层、提示词、
+   其余组件、组装脚本（下面的 MEASURED）。
+2. 功法清单、火清单、引擎用的提示词，改动前后各取一次摘要，逐个文件相等。
+
+`MEASURE_WITH_ENGINE` 里的量具（录音、黄金日志、引擎读的表）允许与被量的东西同一个改动，理由写在那张表里；
+只碰了它们时这条检查不启动。这个脚本自己在量具表里：改它按改量具来审，不能和引擎同一个改动。
+
+仓库里每个文件都归且只归一个区（`zone`）：量具、量具（可随引擎）、体质、被量、其他。没归类的文件会让
+ci/tests 里的测试变红。
 
 用法：python ci/check_liangju.py <基线提交> [<改动后的提交，缺省 HEAD>]
 CI 里基线取合并提交的第一个父提交（`HEAD^1`，即目标分支）；不是合并请求时不跑。
@@ -11,32 +20,80 @@ CI 里基线取合并提交的第一个父提交（`HEAD^1`，即目标分支）
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import subprocess
 import sys
 
-TOOLS = (
-    "liangju/",  # 引擎之外的量具
-    "fenjue/src/paoding_fenjue/lianhua.py",  # 判定函数与炼化六步
-    "fenjue/src/paoding_fenjue/readings.py",  # 进化读数（只显示）
-    "scripts/lianhua.py",  # 炼化命令
-)
-PROTECTED = (
-    "fenjue/src/",  # 引擎、表、Schema、功法清单与火清单、存档
-    "fenjue/tests/engine_fixtures/",  # 夹具与录音
-    "tests/fenjue/goldens/",
+TABLES = "fenjue/src/paoding_fenjue/lianhua.py"  # 量具表与体质表住在这里
+# 被量的（体质之外）：这一轮跑起来的系统本身
+MEASURED = (
+    "fenjue/src/",  # 引擎、功法清单与火清单、存档（表里列为量具的那几个文件除外）
     "adapter/src/",  # 适配层
     "adapter/prompts/",  # 提示词
-    "adapter/config/",  # 价表
-    "adapter/tests/golden/",
-    "judgebox/",  # 以下是体质（paoding_fenjue.lianhua.KERNEL_PATHS）
-    "qicao/src/",
-    "graph/src/",
-    "executor/src/",
-    "watchdog/src/",
+    "pd/src/",  # 以下是其余组件
+    "sinan/src/",
+    "tongjian/src/",
+    "shuku/src/",
     "scripts/",  # 组装脚本：引擎是从这里起的
 )
+# 其他：文档、界面、测试、各组件的说明与打包文件、仓库的配置。逐条列出，新添的目录不会自动落进来
+OTHER = (
+    ".github/",
+    ".gitignore",
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock",
+    "docs/",
+    "web/",
+    "problems/",
+    "tests/",
+    "ci/",
+    *(
+        f"{c}/{x}"
+        for c in ("adapter", "fenjue", "pd", "sinan", "tongjian", "shuku")
+        for x in ("tests/", "pyproject.toml")
+    ),
+    *(f"{c}/{x}" for c in ("executor", "graph", "qicao", "watchdog") for x in ("tests/", "pyproject.toml", "SPEC.md")),
+    *(f"{c}/SPEC.md" for c in ("adapter", "pd", "sinan", "tongjian", "shuku")),
+)
+ZONES = ("量具", "量具（可随引擎）", "体质", "被量", "其他")
 PINNED = ("fenjue/src/paoding_fenjue/gongfa", "fenjue/src/paoding_fenjue/fires/", "adapter/prompts/")
+
+
+def tables(source: str) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """从判定函数那个文件的源码里读三张表：量具、其中可随引擎的、体质。"""
+    want: dict[str, tuple[str, ...] | None] = {"MEASURE_PATHS": None, "MEASURE_WITH_ENGINE": None, "KERNEL_PATHS": None}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            name, value = node.targets[0].id, node.value
+            if name in want and isinstance(value, ast.Dict):  # 例外表：只要路径（键），理由是给人看的
+                want[name] = tuple(ast.literal_eval(k) for k in value.keys if k is not None)
+            elif name in want:
+                want[name] = tuple(ast.literal_eval(value))
+    measure, with_engine, kernel = want["MEASURE_PATHS"], want["MEASURE_WITH_ENGINE"], want["KERNEL_PATHS"]
+    if measure is None or with_engine is None or kernel is None:
+        raise SystemExit(f"{TABLES} 里读不到 {[k for k, v in want.items() if v is None]}：量具表改了名就改这里")
+    stray = sorted(set(with_engine) - set(measure))
+    if stray:
+        raise SystemExit(f"MEASURE_WITH_ENGINE 里的 {stray} 不在 MEASURE_PATHS 里：例外只能是量具")
+    return measure, with_engine, kernel
+
+
+def zone(path: str, measure: tuple[str, ...], with_engine: tuple[str, ...], kernel: tuple[str, ...]) -> str | None:
+    """一个文件归哪个区。量具表最先认（它列的是具体的文件与目录），然后体质、被量、其他。都不是：没归类。"""
+    if path.startswith(with_engine):
+        return "量具（可随引擎）"
+    if path.startswith(measure):
+        return "量具"
+    if path.startswith(kernel):
+        return "体质"
+    if path.startswith(MEASURED):
+        return "被量"
+    if path.startswith(OTHER):
+        return "其他"
+    return None
 
 
 def git(cwd: str, *args: str) -> str:
@@ -62,13 +119,15 @@ def digests(rev: str, cwd: str = ".") -> dict[str, str]:
 
 
 def check(base: str, head: str, cwd: str = ".") -> tuple[bool, list[str]]:
-    """回 (这个改动碰没碰量具, 违反的地方)。没碰量具时什么都不查。"""
+    """回 (这个改动碰没碰量具, 违反的地方)。没碰量具（或只碰了可随引擎的那几样）时什么都不查。
+
+    量具表取改动之后的那一版：往表里添一条路径的改动，自己就按新表查。"""
+    measure, with_engine, kernel = tables(git(cwd, "show", f"{head}:{TABLES}"))
     diff = changed(base, head, cwd)
-    if not any(p.startswith(TOOLS) for p in diff):
+    zones = {p: zone(p, measure, with_engine, kernel) for p in diff}
+    if "量具" not in zones.values():
         return False, []
-    errors = [
-        f"{p}：改了 {n} 行" for p, n in sorted(diff.items()) if p.startswith(PROTECTED) and not p.startswith(TOOLS)
-    ]
+    errors = [f"{p}（{zones[p]}）：改了 {n} 行" for p, n in sorted(diff.items()) if zones[p] in ("体质", "被量")]
     before, after = digests(base, cwd), digests(head, cwd)
     errors += [f"{p}：摘要变了" for p in sorted(before.keys() | after.keys()) if before.get(p) != after.get(p)]
     return True, errors
@@ -80,13 +139,13 @@ def main(argv: list[str]) -> int:
         return 2
     touched, errors = check(argv[1], argv[2] if len(argv) > 2 else "HEAD")
     if not touched:
-        print("量具没有改动：不查。")
+        print("量具没有改动（或只动了可以随引擎一起改的那几样）：不查。")
         return 0
     if errors:
-        print("这个改动碰了量具（liangju/、判定函数或炼化命令），同时又动了被量的东西：")
+        print("这个改动碰了量具，同时又动了被量的东西：")
         print("\n".join(f"  {e}" for e in errors))
         return 1
-    print(f"量具改动：被量的路径改动零行（{len(PROTECTED)} 条路径），功法清单、火清单与提示词的摘要逐项相等。")
+    print("量具改动：体质与被量的路径改动零行，功法清单、火清单与提示词的摘要逐项相等。")
     return 0
 
 
