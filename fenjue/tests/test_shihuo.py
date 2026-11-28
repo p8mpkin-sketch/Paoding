@@ -15,7 +15,7 @@ from paoding_fenjue import shapes, shihuo
 TODAY = "2026-11-28"
 TARGET = "留出题上的过线数"
 ARMS = ("B", "B1", "A1", "F", "A0")
-QUESTIONS, MEDIAN_COST, MEDIAN_SECONDS = 20, 100, 600
+QUESTIONS, MEDIAN_COST, MEDIAN_SECONDS, MAX_SECONDS = 20, 100, 600, 900
 
 
 def placed(no: str = "900", *, parity: str | None = "equal", target: bool = True, origin: str | None = None) -> dict:
@@ -50,7 +50,13 @@ def plan(no: str = "900") -> dict:
             "seconds_per_item": MEDIAN_SECONDS,
         },  # fmt: skip
         "questions": {"set": "S1", "digest": "q" * 64, "source": "手出", "count": QUESTIONS, "runs": 2},
-        "trial_segment": {"batch": "T0-1", "median_cost_usd_milli": MEDIAN_COST, "median_seconds": MEDIAN_SECONDS},
+        "trial_segment": {
+            "batch": "T0-1",
+            "median_cost_usd_milli": MEDIAN_COST,
+            "median_seconds": MEDIAN_SECONDS,
+            "max_seconds": MAX_SECONDS,
+        },
+        "watchdog_seconds": 3 * MAX_SECONDS,
         "caps": shihuo.caps_from(MEDIAN_COST, QUESTIONS, len(ARMS)),
         "seed": "s1",
     }
@@ -146,6 +152,36 @@ def test_caps_and_the_judging_time_limit_follow_the_rule_and_are_not_typed_in():
     p = plan()
     del p["judge"]["seconds_per_item"]
     refuses(lambda: lh.dengji(placed(), p), "每题次的盲判时限要写进计划")
+
+
+def test_the_watchdog_limit_is_three_times_the_longest_baseline_run_and_is_not_typed_in():
+    """看门狗的时限进计划的形状（P6）：试跑段里本火最长一遍用时的 3 倍，按规矩算出，不手填。"""
+    good = plan()
+    assert good["watchdog_seconds"] == shihuo.watchdog_from(MAX_SECONDS) == 3 * MAX_SECONDS
+    done = lh.dengji(placed(), good)
+    assert f"看门狗的时限：{3 * MAX_SECONDS} 秒" in lh.render(
+        done
+    ) and f"最长一遍用时（{MAX_SECONDS} 秒）" in lh.render(done)
+
+    def changed(**kw):
+        p = plan()
+        for k, v in kw.items():
+            if k == "watchdog_seconds":
+                p[k] = v
+            else:
+                p["trial_segment"][k] = v
+        return p
+
+    for typed in (3 * MAX_SECONDS + 1, 3600, MAX_SECONDS, 0, None, "2700"):
+        refuses(lambda t=typed: lh.dengji(placed(), changed(watchdog_seconds=t)), "看门狗的时限不是按规矩算出的")
+    for missing in (None, 0, -1, True, "900"):
+        refuses(lambda m=missing: lh.dengji(placed(), changed(max_seconds=m)), "本火最长一遍的用时")
+    short = changed(max_seconds=MEDIAN_SECONDS - 1, watchdog_seconds=3 * (MEDIAN_SECONDS - 1))
+    refuses(lambda: lh.dengji(placed(), short), "比中位数还短")
+    p = plan()
+    del p["watchdog_seconds"]
+    refuses(lambda: lh.dengji(placed(), p), "试火计划的栏不对", "watchdog_seconds")
+    refuses(lambda: lh.dengji(placed(), changed(watchdog_s=2700)), "试跑段一栏多了")
 
 
 def test_the_plan_names_the_arms_placed_and_the_sample_size_registered():
@@ -374,6 +410,39 @@ def test_a_hand_made_dossier_that_passes_the_gate_still_gets_no_grade():
     assert g2["jie"] == g["jie"] and done["verdict"]["installed"] == lh.MANUAL and "mark" not in done["verdict"]
 
 
+@pytest.mark.parametrize(
+    ("kw", "outcome", "mark"),
+    [
+        ({}, "huolian", None),
+        ({"new": 0.5, "f": 36}, "helian", None),
+        ({"new": 0.5}, "binghuo", None),  # 并火：没有可量的增益，但验体全过、对本火不退
+        ({"f": 36, "a0": 38}, "buji", "原形门未过"),
+    ],
+)
+def test_a_hand_made_dossier_is_installed_as_a_revision_under_every_outcome_but_backfire(kw, outcome, mark):
+    """手工的炼档装不装入只看三条（验体全过、对本火不退、人没有把结局往低里改），不看结局是哪一种：
+    判成并火也按「手工修订」装入，不加品阶、不计成功。"""
+    d, _, r = judged(origin="手工", **kw)
+    assert d["outcome_proposed"] == outcome
+    g = shapes._read("gongfa.json")
+    done, g2 = lh.jue(d, g, "cz", TODAY, outcome, [], record=r)
+    assert done["status"] == "adopted" and done["verdict"]["installed"] == lh.MANUAL and "jie" not in done["verdict"]
+    assert done["verdict"]["outcome"] == outcome and done["verdict"].get("mark") == mark
+    assert g2["jie"] == g["jie"] and "h7.result-first@1" in g2["fires"]["H7"]
+    last = g2["history"][-1]
+    assert last["manual"] and last["dossier"] == "900" and last.get("mark") == mark
+    one = {"dossier": "001", "verdict": {"by": "cz", "outcome": "huolian", "jie": 2}}
+    assert lh.check_history(g2, {"900": done, "001": one}) == []
+
+
+def test_a_hand_made_dossier_judged_parallel_is_not_installed_when_the_person_lowered_it_there():
+    """系统判的是火莲，人改低成并火：这不是照实的结局，手工的不装入。"""
+    d, _, r = judged(origin="手工")
+    g = shapes._read("gongfa.json")
+    done, g2 = lh.jue(d, g, "cz", TODAY, "binghuo", [], record=r)
+    assert done["status"] == "rejected" and "installed" not in done["verdict"] and g2 == g
+
+
 @pytest.mark.parametrize("kw", [{"leaks": 1}, {"f": 20, "new": 0.5}], ids=["本火维退步", "目标维对本火退了"])
 def test_a_hand_made_dossier_that_falls_behind_the_baseline_is_not_installed(kw):
     d, _, r = judged(origin="手工", **kw)
@@ -419,6 +488,59 @@ def test_a_dossier_before_the_plan_line_still_cannot_be_ruled_above_the_system()
 def test_the_record_and_the_judge_read_the_same_four_cells():
     assert (shihuo.PAIRS, shihuo.CELLS) == (lh.PAIRS, lh.CELLS)
     assert "fenjue/src/paoding_fenjue/shihuo.py" in lh.MEASURE_PATHS
+
+
+# ---------------------------------------------------------------- 品阶史的核对（前一半）
+
+
+def test_every_grade_history_row_points_to_a_ruling_and_past_the_line_to_a_trial_record():
+    d, _, r = judged()
+    g = shapes._read("gongfa.json")
+    done, g2 = lh.jue(d, g, "cz", TODAY, "huolian", [], record=r)
+    ds = {"900": done, "001": {"dossier": "001", "verdict": {"by": "cz", "outcome": "huolian", "jie": 2}}}
+    assert lh.check_history(g2, ds) == []
+
+    def errors(dossier=None, row=None, drop=()):
+        c = copy.deepcopy(done)
+        for path, v in (dossier or {}).items():
+            node = c
+            for k in path[:-1]:
+                node = node[k]
+            node[path[-1]] = v
+        for k in drop:
+            del c[k]
+        hist = [*g2["history"][:-1], {**g2["history"][-1], **(row or {})}]
+        return lh.check_history({**g2, "history": hist}, {**ds, "900": c})
+
+    def one(words, **kw):
+        got = errors(**kw)
+        assert len(got) == 1 and words in got[0], got
+
+    one("没有试火记录", dossier={("trial_record",): None})
+    one("没有试火记录", drop=("trial_record",))
+    one("试火记录的计划哈希与设计裁决时记下的不同", dossier={("trial_record", "plan_hash"): "0" * 64})
+    one("登记的试火计划与设计裁决时记下的哈希对不上", dossier={("trial_plan", "seed"): "换过了"})
+    one("那里没有裁决", dossier={("verdict",): None})
+    one("那里没有裁决", dossier={("verdict", "by"): ""})
+    one("对不上", dossier={("verdict", "jie"): 9})
+    one("对不上", dossier={("verdict", "outcome"): "binghuo"})
+    one("不是按手工修订装入的", row={"manual": True})
+    one("那里没有裁决", row={"dossier": "999"})
+    extra = {**g2, "history": [*g2["history"], {"jie": g2["jie"] + 1, "change": "凭空多出的一阶"}]}
+    assert "没有指向任何炼档" in lh.check_history(extra, ds)[0]
+    back, g3 = lh.sanhuo(copy.deepcopy(done), g2, "cz", TODAY, "演示")
+    assert lh.check_history(g3, {**ds, "900": back}) == []
+    assert "没有散火记录" in lh.check_history(g3, ds)[0]  # 品阶史记了散火，炼档里没有
+
+
+def test_dossiers_before_the_plan_line_need_no_trial_record_in_the_history(monkeypatch):
+    """按档号划线：划线之前的炼档（001、002）品阶史只要指向裁决。"""
+    live = {"001": {"dossier": "001", "verdict": {"by": "cz", "outcome": "huolian", "jie": 2}}}
+    assert lh.check_history(shapes._read("gongfa.json"), live) == []
+    assert "那里没有裁决" in lh.check_history(shapes._read("gongfa.json"), {})[0]
+    monkeypatch.setattr(lh, "YUANXING_GATE_FROM", "001")
+    monkeypatch.setattr(lh, "SHIHUO_FROM", "001")
+    assert "没有试火记录" in lh.check_history(shapes._read("gongfa.json"), live)[0]
 
 
 def test_plan_hash_is_the_same_value_the_batch_header_tool_computes():

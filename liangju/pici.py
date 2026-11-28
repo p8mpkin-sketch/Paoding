@@ -3,16 +3,19 @@
     python -m liangju.pici start --batch <批次目录> --id S0-1 --purpose 起点轮 --arms arms.json \
         --config <引擎配置文件> --set-code <题集代号> --set-source 手出 [--runs 2] [--parallel 4] [--watchdog-s …]
     python -m liangju.pici start --batch <批次目录> --id P-1 --purpose 判定 --plan <试火计划文件> \
-        --config <引擎配置文件> --set-code <题集代号> --set-source 生成
+        --questions <题集文件> --config <引擎配置文件>
+    python -m liangju.pici digest --questions <题集文件>
     python -m liangju.pici end --batch <批次目录> --config <引擎配置文件>
 
 `arms.json`：`{臂名: {"role": …, "model": …, "version": …, "endpoint": …, "sampling": {…}, "metering": …,
 "price_table": …}}`。`role` 取 benhuo（本火）、tonghuo（同火对照）、hehuo（合火）、yihuo（异火单炼）、
 yuanxing（原形）。任何一条臂的模型栏空着，`start` 拒绝登记。
 
-带 `--plan` 时，计划的哈希、逐臂一栏、盲判一栏（模型、版本、三段提示词的版本、抽样量、每题次的盲判时限）与花费
-上限都从计划文件里取，不另抄一份；凡是登记时已经知道的都在登记时核对（见 `from_plan`），对不上就不登记。这时
-`--arms` 可以不给；给了就与计划逐项核对。没有计划的批次（起点轮）用 `--arms` 登记，盲判一栏是空的，时限写「无」。
+带 `--plan` 时，计划的哈希、逐臂一栏、盲判一栏（模型、版本、三段提示词的版本、抽样量、每题次的盲判时限）、花费
+上限、看门狗的时限、题集的代号、来源与每题跑几次都从计划文件里取，不另抄一份；题集文件的摘要与题数对着计划核。
+凡是登记时已经知道的都在登记时核对（见 `from_plan`），对不上就不登记。这时 `--arms`、`--set-code`、`--set-source`、
+`--runs` 可以不给；给了就与计划逐项核对。带计划的批次现在只认五个臂名（B、B1、A1、F、A0）。
+没有计划的批次（起点轮）用 `--arms` 登记，盲判一栏是空的，时限写「无」。
 
 `start` 与 `end` 各记一次仓库的提交号、工作区是否干净、配置文件的摘要；两次不一样，汇总里「运行期间代码与配置是否
 改动过」就是「是」。
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -96,13 +100,53 @@ def _cap(x: Any) -> bool:
     return isinstance(x, int) and not isinstance(x, bool) and x > 0
 
 
-def from_plan(plan: Any, arms: Any = None) -> dict[str, Any]:
+def set_digest(questions: Any) -> tuple[str, int]:
+    """题集的摘要与题数。摘要是题集文件内容（键排序、紧凑分隔的 JSON）的 sha256，与汇总里「题集摘要」是同一个数；
+    试火计划的题集一栏里 `digest` 填的就是它（`python -m liangju.pici digest --questions <题集文件>`）。"""
+    rows = questions.get("questions") if isinstance(questions, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise Refused("题集文件里没有题")
+    return sha(questions), len(rows)
+
+
+def _plan_set(plan: dict[str, Any], questions: Any, given: dict[str, Any]) -> dict[str, Any]:
+    """题集的代号、来源、每题跑几次从计划里取；另给了就逐项核对。题集文件的摘要与题数也在这里对着计划核。"""
+    raw = plan.get("questions")
+    q: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    runs = q.get("runs")
+    if any(not str(q.get(k) or "").strip() for k in ("set", "source", "digest")):
+        raise Refused("计划里题集一栏不全：要有代号、来源与摘要")
+    if isinstance(runs, bool) or not isinstance(runs, int) or runs <= 0:
+        raise Refused("计划里没有写每条臂每道题跑几次")
+    names = {"code": ("题集代号", q["set"]), "source": ("题集来源", q["source"]), "runs": ("每题跑的次数", runs)}
+    for key, (zh, want) in names.items():
+        got = given.get(key)
+        if got is not None and str(got) != str(want):
+            raise Refused(f"{zh}（{got}）与计划里登记的（{want}）不同：以计划为准，计划登记之后不改")
+    if questions is None:
+        raise Refused("带计划登记批次要给题集文件（--questions）：题集的摘要与题数在登记时对着计划核")
+    digest, count = set_digest(questions)
+    if digest != q["digest"]:
+        raise Refused("题集文件的摘要与计划里登记的不同：这不是计划登记的那一套题")
+    if count != q.get("count"):
+        raise Refused(f"题集文件里有 {count} 道题，计划登记的是 {q.get('count')} 道")
+    return {"question_set": {"code": q["set"], "source": q["source"], "digest": digest, "count": count}, "runs": runs}
+
+
+def from_plan(
+    plan: Any, arms: Any = None, questions: Any = None, given: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """带计划登记批次。凡是登记时已经知道的，都在这里核对，不等到花了钱再拒绝：
 
     - 计划盲判一栏里三段的版本与抽样量，要与现在磁盘上的尺子相同；
-    - 花费上限两栏都要有，并且是正整数；
+    - 花费上限两栏都要有，并且是正整数；看门狗的时限要有，并且是正数；
     - 逐臂一栏只有计划这一处来源：批次头里的臂从计划里取。另给了一份臂的登记（`arms`）就逐项核对，对不上就拒绝；
-    - 盲判的模型与任何一条臂都不同。
+    - 盲判的模型与任何一条臂都不同；
+    - 题集的代号、来源、每题跑几次从计划里取，另给了（`given`）就逐项核对；题集文件（`questions`）的摘要与题数
+      要与计划登记的相同。
+
+    带计划的批次现在只认五个臂名（`PLAN_ROLES`：B、B1、A1、F、A0），与判定函数的五条臂一一对应。第二对（另一个原形）
+    来的时候要放开这张表，现在不放。
 
     跑完才知道的（读回的模型标识、功法摘要、花费合计）留在出记录时核。计划本身合不合规矩（上限是不是按规矩算出的、
     与炼档对不对得上）由登记计划的那一处查。"""
@@ -113,16 +157,23 @@ def from_plan(plan: Any, arms: Any = None) -> dict[str, Any]:
     caps = plan.get("caps") if isinstance(plan.get("caps"), dict) else {}
     if not _cap(caps.get("per_item_usd_milli")) or not _cap(caps.get("total_usd_milli")):
         raise Refused("计划里的花费上限缺了或不是正数：每题次上限与总上限都要有，登记时就要定下")
+    watchdog = plan.get("watchdog_seconds")
+    if isinstance(watchdog, bool) or not isinstance(watchdog, int | float) or watchdog <= 0:
+        raise Refused("计划里没有看门狗的时限，或不是正数：它在计划里按规矩算出，登记时就要定下")
     planned = _plan_arms(plan)
     if arms is not None:
         _same_arms(arms, planned)
     same = sorted(n for n, a in planned.items() if a["model"] == judge["model"])
     if same:
         raise Refused(f"盲判的模型与 {'、'.join(same)} 臂相同：盲判的模型必须与各臂不同")
+    qs = _plan_set(plan, questions, given or {})
     return {
+        "question_set": qs["question_set"],
+        "runs_per_question": qs["runs"],
         "plan_hash": sha(plan),
         "judge": judge,
         "arms": planned,
+        "watchdog_s": float(watchdog),
         "caps": {
             "per_question_usd_milli": caps["per_item_usd_milli"],
             "total_usd_milli": caps["total_usd_milli"],
@@ -132,14 +183,20 @@ def from_plan(plan: Any, arms: Any = None) -> dict[str, Any]:
 
 def start(a: argparse.Namespace) -> int:
     given = read_json(Path(a.arms)) if a.arms else None
-    planned = from_plan(read_json(Path(a.plan)), given) if a.plan else None
+    planned = None
+    if a.plan:
+        said = {"code": a.set_code, "source": a.set_source, "runs": a.runs}
+        questions = read_json(Path(a.questions)) if a.questions else None
+        planned = from_plan(read_json(Path(a.plan)), given, questions, said)
     if planned:
         arms = planned["arms"]
-    elif given is None:
-        raise Refused("没有计划的批次要用 --arms 登记各臂")
+    elif given is None or not a.set_code or not a.set_source:
+        raise Refused("没有计划的批次要用 --arms 登记各臂，并给出题集的代号与来源（--set-code、--set-source）")
     else:
         arms = given
         check_arms(arms)
+    if planned and a.watchdog_s:
+        raise Refused("带计划的批次，看门狗的时限从计划里取，不另给 --watchdog-s")
     if a.purpose not in PURPOSES:
         raise Refused(f"用途只取 {PURPOSES}")
     out = Path(a.batch) / "batch.json"
@@ -152,10 +209,10 @@ def start(a: argparse.Namespace) -> int:
         "purpose": a.purpose,
         "plan_hash": planned["plan_hash"] if planned else "无",
         "judge": planned["judge"] if planned else None,
-        "question_set": {"code": a.set_code, "source": a.set_source},
-        "runs_per_question": int(a.runs),
+        "question_set": planned["question_set"] if planned else {"code": a.set_code, "source": a.set_source},
+        "runs_per_question": planned["runs_per_question"] if planned else int(a.runs or 2),
         "parallel": int(a.parallel),
-        "watchdog_s": float(a.watchdog_s) if a.watchdog_s else None,
+        "watchdog_s": planned["watchdog_s"] if planned else (float(a.watchdog_s) if a.watchdog_s else None),
         "arms": arms,
         "unequal": [],
         "yuanxing_gate": "可判" if any(x["role"] == "yuanxing" for x in arms.values()) else "未判：这一批没有跑原形臂",
@@ -189,18 +246,23 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="liangju.pici")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("start")
-    for name in ("batch", "id", "purpose", "config", "set-code", "set-source"):
+    for name in ("batch", "id", "purpose", "config"):
         s.add_argument(f"--{name}", required=True)
-    s.add_argument("--arms")
-    s.add_argument("--plan")
-    s.add_argument("--runs", default=2)
+    for name in ("set-code", "set-source", "arms", "plan", "questions", "runs"):
+        s.add_argument(f"--{name}")
     s.add_argument("--parallel", default=4)
     s.add_argument("--watchdog-s")
     e = sub.add_parser("end")
     e.add_argument("--batch", required=True)
     e.add_argument("--config", required=True)
+    g = sub.add_parser("digest", help="题集的摘要与题数：计划的题集一栏照它填")
+    g.add_argument("--questions", required=True)
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "digest":
+            digest, count = set_digest(read_json(Path(a.questions)))
+            print(json.dumps({"digest": digest, "count": count}))
+            return 0
         return {"start": start, "end": end}[a.cmd](a)
     except Refused as x:
         print(f"拒绝：{x}", file=sys.stderr)

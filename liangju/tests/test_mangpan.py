@@ -12,6 +12,7 @@ from lj_rig import (
     ARMS,
     CANARY,
     JUDGE,
+    QDOC,
     SAMPLES,
     Fake,
     attempt,
@@ -356,9 +357,10 @@ PLAN = {
     "dossier": "003",
     "arms": {"B": plan_arm(), "B1": plan_arm(), "F": plan_arm()},
     "judge": {"model": "judge-model", "version": "7", "prompts": "", "sample": {}, "seconds_per_item": 40},
-    "questions": {},
+    "questions": {"set": "SET-A", "source": "生成", "digest": sha(QDOC), "count": 3, "runs": 2},
     "trial_segment": {},
     "caps": {"per_item_usd_milli": 90, "total_usd_milli": 1080},
+    "watchdog_seconds": 2700,
     "seed": "s",
 }
 
@@ -371,7 +373,7 @@ def real_plan(**judge):
 
 def planned(tmp_path, **header_judge):
     """一个登记了试火计划的批次：批次头里的臂、盲判一栏与上限都从计划来。`header_judge` 是登记之后对批次头的手改。"""
-    reg = pici.from_plan(real_plan())
+    reg = pici.from_plan(real_plan(), None, QDOC)
     reg["judge"] = {**reg["judge"], **header_judge}
     return make_batch(tmp_path, [attempt("B", "q1", 1, "1: 甲\n2: 乙")], **reg)
 
@@ -461,6 +463,8 @@ def test_refusal_reasons_say_which_side_of_the_header_is_missing(tmp_path, monke
 def test_registering_a_batch_with_a_plan_checks_everything_already_known(tmp_path):
     """核对发生在花钱之前：三段版本或抽样量对不上、花费上限缺或不是正数、臂与计划逐臂对不上，都拒绝登记。"""
     arms, cfg, plan = tmp_path / "arms.json", tmp_path / "cfg.yaml", tmp_path / "plan.json"
+    qfile = tmp_path / "questions.json"
+    write_json(qfile, QDOC)
     cfg.write_text("x: 1\n")
     n = 0
 
@@ -469,7 +473,7 @@ def test_registering_a_batch_with_a_plan_checks_everything_already_known(tmp_pat
         n += 1
         write_json(plan, doc)
         argv = ["start", "--batch", str(tmp_path / f"b{n}"), "--id", "P-1", "--purpose", "判定", "--config", str(cfg)]
-        argv += ["--set-code", "SET-A", "--set-source", "生成", "--plan", str(plan)]
+        argv += ["--plan", str(plan), "--questions", str(qfile)]
         if given is not None:
             write_json(arms, given)
             argv += ["--arms", str(arms)]
@@ -479,7 +483,7 @@ def test_registering_a_batch_with_a_plan_checks_everything_already_known(tmp_pat
 
     def why(doc, given=None) -> str:
         with pytest.raises(Refused) as e:
-            pici.from_plan(doc, given)
+            pici.from_plan(doc, given, QDOC)
         assert start(doc, given) == 2
         return str(e.value)
 
@@ -492,6 +496,8 @@ def test_registering_a_batch_with_a_plan_checks_everything_already_known(tmp_pat
         assert "花费上限缺了或不是正数" in why({**good, "caps": {"per_item_usd_milli": bad, "total_usd_milli": 1080}})
         assert "花费上限缺了或不是正数" in why({**good, "caps": {"per_item_usd_milli": 90, "total_usd_milli": bad}})
 
+    for bad in (None, 0, -1, True, "2700"):
+        assert "看门狗的时限" in why({**good, "watchdog_seconds": bad})
     same = {k: {f: v for f, v in a.items() if f != "what"} for k, a in good["arms"].items()}
     changes = {"model": "另一个", "version": "2", "endpoint": "direct", "sampling": {"temperature": 1}}
     changes |= {"meter": "export", "price_table": "t2"}
@@ -608,6 +614,67 @@ def test_a_stray_file_among_the_samples_changes_nothing(tmp_path, monkeypatch):
     assert mangpan.version()["canary"] != before["canary"]
 
 
+def test_registering_with_a_plan_takes_the_question_set_from_it_and_checks_what_is_given(tmp_path, capsys):
+    """题集的代号、来源、每题跑几次从计划里取；另给的与计划不同就不登记。题集文件的摘要与题数也在登记时核。"""
+    cfg, plan, qfile = tmp_path / "cfg.yaml", tmp_path / "plan.json", tmp_path / "questions.json"
+    cfg.write_text("x: 1\n")
+    write_json(plan, real_plan())
+    write_json(qfile, QDOC)
+    n = 0
+
+    def start(*more, questions=qfile) -> tuple[int, str]:
+        nonlocal n
+        n += 1
+        argv = ["start", "--batch", str(tmp_path / f"b{n}"), "--id", "P-1", "--purpose", "判定", "--config", str(cfg)]
+        argv += ["--plan", str(plan), *(["--questions", str(questions)] if questions else []), *more]
+        capsys.readouterr()
+        code = pici.main(argv)
+        assert (tmp_path / f"b{n}" / "batch.json").exists() == (code == 0)
+        return code, capsys.readouterr().err
+
+    assert start("--set-source", "手出") == (
+        2,
+        "拒绝：题集来源（手出）与计划里登记的（生成）不同：以计划为准，计划登记之后不改\n",
+    )
+    assert "每题跑的次数（3）与计划里登记的（2）不同" in start("--runs", "3")[1]
+    assert "题集代号（SET-B）与计划里登记的（SET-A）不同" in start("--set-code", "SET-B")[1]
+    assert "要给题集文件" in start(questions=None)[1]
+    other = tmp_path / "other.json"
+    write_json(other, {**QDOC, "questions": [*QDOC["questions"][:2], {**QDOC["questions"][2], "text": "换了一道"}]})
+    assert "题集文件的摘要与计划里登记的不同" in start(questions=other)[1]
+    write_json(other, {"v": 1, "questions": []})
+    assert "题集文件里没有题" in start(questions=other)[1]
+    write_json(plan, {**real_plan(), "questions": {**PLAN["questions"], "count": 4}})
+    assert "题集文件里有 3 道题，计划登记的是 4 道" in start()[1]
+    for lacking in ("set", "source", "digest", "runs"):
+        write_json(plan, {**real_plan(), "questions": {k: v for k, v in PLAN["questions"].items() if k != lacking}})
+        assert start()[0] == 2
+    write_json(plan, real_plan())
+    assert start("--set-code", "SET-A", "--set-source", "生成", "--runs", "2")[0] == 0  # 逐项相同：照常登记
+    assert start()[0] == 0  # 不另给：从计划里取
+    a, b = (read_json(tmp_path / f"b{k}" / "batch.json") for k in (n - 1, n))
+    assert (
+        a["question_set"] == b["question_set"] == {"code": "SET-A", "source": "生成", "digest": sha(QDOC), "count": 3}
+    )
+    assert a["runs_per_question"] == b["runs_per_question"] == 2
+    assert pici.main(["digest", "--questions", str(qfile)]) == 0  # 计划的题集一栏照这个命令给的填
+    assert json.loads(capsys.readouterr().out) == {"digest": sha(QDOC), "count": 3}
+
+
+def test_the_judge_checks_again_that_the_question_file_is_the_registered_set(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIANGJU_TEST_KEY", "k")
+    bdir, qpath, jpath = planned(tmp_path)
+    doc = read_json(qpath)
+    write_json(qpath, {**doc, "questions": [{**doc["questions"][0], "text": "登记之后换过"}, *doc["questions"][1:]]})
+    for run in (mangpan.run_judge, mangpan.run_rejudge):
+        with pytest.raises(Refused) as e:
+            run(ns(bdir, qpath, jpath), simple())
+        assert "不是这一批登记的那一套题" in str(e.value)
+    assert not (bdir / "verdicts").exists()
+    write_json(qpath, doc)
+    assert mangpan.run_judge(ns(bdir, qpath, jpath), simple()) == 0
+
+
 PARITY_DOC = {"b": [1, 2, {"丙": None}], "a": "甲", "c": 1.5}
 PARITY_HASH = "874ca7719efb75b5789c8f28e9856c716abffa9bee9ccbcb83c94ee181be1c1e"
 
@@ -617,8 +684,10 @@ def test_batch_header_takes_hash_judge_and_caps_from_the_plan_file(tmp_path):
     cfg.write_text("x: 1\n")
     doc = real_plan()
     write_json(plan, doc)
+    qfile = tmp_path / "questions.json"
+    write_json(qfile, QDOC)
     argv = ["start", "--batch", str(tmp_path / "b"), "--id", "P-1", "--purpose", "判定"]
-    argv += ["--config", str(cfg), "--set-code", "SET-A", "--set-source", "生成", "--plan", str(plan)]
+    argv += ["--config", str(cfg), "--plan", str(plan), "--questions", str(qfile)]
     assert pici.main(argv) == 0
     head = read_json(tmp_path / "b" / "batch.json")
     # 哈希的算法与登记计划的那一处相同：键排序、紧凑分隔的 JSON 的 sha256。量具与组件互不 import，
@@ -632,6 +701,11 @@ def test_batch_header_takes_hash_judge_and_caps_from_the_plan_file(tmp_path):
     )
     assert head["judge"] == doc["judge"] and head["judge"]["seconds_per_item"] == 40
     assert head["caps"] == {"per_question_usd_milli": 90, "total_usd_milli": 1080}
+    assert head["watchdog_s"] == 2700.0  # 看门狗的时限也从计划里取
+    assert head["question_set"] == {"code": "SET-A", "source": "生成", "digest": sha(QDOC), "count": 3}
+    assert head["runs_per_question"] == 2
+    argv[2] = str(tmp_path / "b1")
+    assert pici.main([*argv, "--watchdog-s", "60"]) == 2  # 计划里有的不另给
     write_json(plan, {**doc, "judge": {**doc["judge"], "seconds_per_item": None}})
     argv[2] = str(tmp_path / "b2")
     assert pici.main(argv) == 2 and not (tmp_path / "b2").exists()  # 计划里没有时限：不登记
@@ -715,7 +789,7 @@ def test_summary_reports_median_and_max_seconds_of_the_real_judging_with_or_with
     free = build(tmp_path / "无计划", {}, seconds)
     assert free["量具自检"]["正式判每题次的盲判用时（秒）"] == want
     assert free["量具自检"]["正式判时用时超过时限的回答份数"] == "无（没有时限）"
-    bound = build(tmp_path / "有计划", pici.from_plan(real_plan()), seconds)
+    bound = build(tmp_path / "有计划", pici.from_plan(real_plan(), None, QDOC), seconds)
     assert bound["量具自检"]["正式判每题次的盲判用时（秒）"] == want
     assert bound["批次头"]["每题次的盲判时限（秒）"] == 40 and bound["量具自检"]["正式判时用时超过时限的回答份数"] == 2
     assert [a["计量来源"] for a in bound["逐臂登记"]["各臂"]] == ["ledger"] * 3  # 计划的词表原样带到汇总

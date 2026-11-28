@@ -139,6 +139,7 @@ def test_fires_that_were_not_taken_are_not_in_the_gongfa():
 def test_grade_history_matches_the_verdicts():
     """品阶史里带档号的每一阶，都是那份档裁决的品阶；只追加（test_fenjue 另核 0..jie 连续）。"""
     ds = dossiers()
+    assert lh.check_history(gongfa(), ds) == []  # 每一行都指向一份裁决；过了试火划线的指向带试火记录的炼档
     for h in gongfa()["history"]:
         if "dossier" in h:
             d = ds.get(h["dossier"])

@@ -24,7 +24,9 @@ ARM_FIELDS = ("what", "model", "version", "endpoint", "sampling", "meter", "pric
 PURPOSES = ("试跑", "判定")
 CAP_TIMES = 3  # 每题花费上限 = 试跑段里本火每题花费中位数的 3 倍（P9）
 
-PLAN_KEYS = ("dossier", "arms", "judge", "questions", "trial_segment", "caps", "seed")
+WATCHDOG_TIMES = 3  # 看门狗的时限 = 试跑段里本火最长一遍用时的 3 倍（P6）
+
+PLAN_KEYS = ("dossier", "arms", "judge", "questions", "trial_segment", "caps", "watchdog_seconds", "seed")
 JUDGE_KEYS = ("model", "version", "prompts", "sample", "seconds_per_item")
 RECORD_KEYS = ("plan_hash", "purpose", "status", "arms", "questions", "judge", "items", "readings", "cost")
 
@@ -51,6 +53,11 @@ def caps_from(median_cost_usd_milli: int, questions: int, arms: int, runs: int =
     """花费上限的机械规矩（P9）：每题上限是中位数的 3 倍，总上限是题数、臂数、次数与每题上限的乘积。"""
     per = CAP_TIMES * median_cost_usd_milli
     return {"per_item_usd_milli": per, "total_usd_milli": per * questions * arms * runs}
+
+
+def watchdog_from(max_seconds: int) -> int:
+    """看门狗时限的机械规矩（P6）：试跑段里本火最长一遍用时的 3 倍。它救的是挂死的运行，对所有臂是同一个数。"""
+    return WATCHDOG_TIMES * max_seconds
 
 
 def check_plan(plan: Mapping[str, Any], d: Mapping[str, Any]) -> list[str]:
@@ -125,6 +132,19 @@ def check_plan(plan: Mapping[str, Any], d: Mapping[str, Any]) -> list[str]:
         errors.append(f"题集一栏多了 {sorted(set(q) - {'set', 'digest', 'source', 'count', 'runs'})}")
 
     seg = plan["trial_segment"] if isinstance(plan["trial_segment"], Mapping) else {}
+    if not _pos(seg.get("max_seconds")):
+        errors.append("试跑段要写明本火最长一遍的用时（max_seconds）：看门狗的时限由它算出")
+    elif plan["watchdog_seconds"] != watchdog_from(seg["max_seconds"]):
+        errors.append(
+            f"看门狗的时限不是按规矩算出的：应当是 {watchdog_from(seg['max_seconds'])} 秒"
+            f"（试跑段里本火最长一遍用时的 {WATCHDOG_TIMES} 倍，不手填）"
+        )
+    elif _pos(seg.get("median_seconds")) and seg["max_seconds"] < seg["median_seconds"]:
+        errors.append("试跑段里本火最长一遍的用时比中位数还短：两个数填反了或抄错了")
+    if set(seg) - {"batch", "median_cost_usd_milli", "median_seconds", "max_seconds"}:
+        errors.append(
+            f"试跑段一栏多了 {sorted(set(seg) - {'batch', 'median_cost_usd_milli', 'median_seconds', 'max_seconds'})}"
+        )
     if not _text(seg.get("batch")) or not _pos(seg.get("median_cost_usd_milli")) or not _pos(seg.get("median_seconds")):
         errors.append("试跑段要写明批次号、本火每题花费的中位数与本火一遍用时的中位数：上限与时限由它们算出")
     elif _pos(q.get("count")) and arms:

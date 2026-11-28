@@ -558,6 +558,13 @@ def _items(batch_dir: Path, questions: dict[str, dict[str, Any]]) -> tuple[list[
     return attempts, items
 
 
+def _same_set(batch: dict[str, Any], questions_path: Path) -> None:
+    """带计划的批次登记时记下了题集的摘要：开判前再核一次，手里这份题集文件还是不是登记的那一套。"""
+    want = (batch.get("question_set") or {}).get("digest")
+    if want and sha(read_json(questions_path)) != want:
+        raise Refused("题集文件的摘要与批次登记时的不同：这不是这一批登记的那一套题")
+
+
 def _seed(batch: dict[str, Any], questions_path: Path) -> str:
     plan = str(batch.get("plan_hash") or "")
     return plan if plan and plan != "无" else sha(read_json(questions_path))
@@ -569,6 +576,7 @@ def run_judge(a: argparse.Namespace, client: Client | None = None) -> int:
     questions = load_questions(qpath)
     attempts, items = _items(batch_dir, questions)
     batch = _gate(batch_dir, cfg, attempts, Path(a.selfcheck) if a.selfcheck else None)
+    _same_set(batch, qpath)
     client = client or HttpClient(cfg)
     ledger = Ledger(batch_dir / "judge_calls.jsonl")
     seed = _seed(batch, qpath)
@@ -621,6 +629,7 @@ def run_rejudge(a: argparse.Namespace, client: Client | None = None) -> int:
     cfg = JudgeModel.load(read_json(Path(a.judge)))
     attempts, items = _items(batch_dir, load_questions(qpath))
     batch = _gate(batch_dir, cfg, attempts, Path(a.selfcheck) if a.selfcheck else None)
+    _same_set(batch, qpath)
     client = client or HttpClient(cfg)
     ledger = Ledger(batch_dir / "judge_calls.jsonl")
     seed = _seed(batch, qpath)
